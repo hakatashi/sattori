@@ -303,6 +303,15 @@ def main():
         record_proc.wait(timeout=10)
     ffmpeg_log_file.close()
     log(f"ffmpeg exit_code={record_proc.returncode}")
+    # ffmpeg の最終統計(総フレーム数・dup/drop 等)をログに残し、コンテナ終了後も
+    # CloudWatch Logs から処理落ちを診断できるようにする(ffmpeg.log はファイルなので
+    # awslogs ドライバに拾われず、コンテナ破棄で消えてしまうため)。
+    try:
+        with open(ffmpeg_log_path, "r", errors="replace") as f:
+            for line in f.read().splitlines()[-5:]:
+                log(f"ffmpeg: {line}")
+    except OSError:
+        pass
 
     subprocess.run(["pkill", "-9", "-x", GAME_EXE])
     subprocess.run(["wineserver", "-k"], env=env)

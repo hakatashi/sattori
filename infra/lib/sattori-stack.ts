@@ -18,6 +18,7 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as logs from "aws-cdk-lib/aws-logs";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
@@ -108,7 +109,16 @@ export class SattoriStack extends Stack {
       allowAllOutbound: true,
     });
 
-    // ワーカー EC2 に付与するロール。ECR pull・リプレイ取得・動画出力・状態更新。
+    // ワーカーコンテナのログ(entrypoint・録画・ffmpeg進捗)を集約する
+    // CloudWatch Logs ロググループ。docker の awslogs ドライバが書き込む。
+    // 録画の重複フレーム(処理落ち)診断に使うため、失敗時も残るよう EC2 側で送出する。
+    const workerLogGroup = new logs.LogGroup(this, "WorkerLogGroup", {
+      logGroupName: "/sattori/worker",
+      retention: logs.RetentionDays.TWO_WEEKS,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    // ワーカー EC2 に付与するロール。ECR pull・リプレイ取得・動画出力・状態更新・ログ送出。
     const workerRole = new iam.Role(this, "WorkerRole", {
       assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
     });
@@ -116,6 +126,8 @@ export class SattoriStack extends Stack {
     outputBucket.grantWrite(workerRole);
     jobsTable.grantReadWriteData(workerRole);
     workerRepo.grantPull(workerRole);
+    // awslogs ドライバはストリーム作成とイベント送出を行う。
+    workerLogGroup.grantWrite(workerRole);
 
     const workerInstanceProfile = new iam.InstanceProfile(this, "WorkerInstanceProfile", {
       role: workerRole,
@@ -135,6 +147,7 @@ export class SattoriStack extends Stack {
       CDN_DOMAIN: mediaDistribution.distributionDomainName,
       JOBS_TABLE: jobsTable.tableName,
       WORKER_IMAGE: `${workerRepo.repositoryUri}:latest`,
+      WORKER_LOG_GROUP: workerLogGroup.logGroupName,
       WORKER_AMI_ID: workerAmiId,
       WORKER_SUBNET_ID: vpc.publicSubnets[0]!.subnetId,
       WORKER_INSTANCE_PROFILE_ARN: workerInstanceProfile.instanceProfileArn,

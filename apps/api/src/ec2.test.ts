@@ -9,6 +9,7 @@ const config: ApiConfig = {
   cdnDomain: "cdn.example.net",
   jobsTable: "sattori-jobs",
   workerImage: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker:latest",
+  logGroup: "/sattori/worker",
   maxReplayBytes: 5 * 1024 * 1024,
   ec2: {
     amiId: "ami-xxxx",
@@ -44,6 +45,12 @@ describe("buildUserData", () => {
     // ECR ログイン先レジストリが正しく抽出されている
     expect(decoded).toContain("123456789012.dkr.ecr.ap-northeast-1.amazonaws.com");
     expect(decoded).toContain("shutdown -h now");
+    // ECS エージェントを停止して x11grab とのCPUコンテンションを避ける
+    expect(decoded).toContain("systemctl disable --now ecs");
+    // CloudWatch Logs へジョブIDのストリームで送出する
+    expect(decoded).toContain("--log-driver awslogs");
+    expect(decoded).toContain("awslogs-group=/sattori/worker");
+    expect(decoded).toContain("awslogs-stream=job-1");
   });
 
   it("ウォーターマーク無効時は WATERMARK=0", () => {
