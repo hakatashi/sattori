@@ -15,11 +15,13 @@ worker/__pycache__/
 **/__pycache__/
 *.pyc
 
-# 東方ゲーム本体・リプレイ・録画物（著作権物・個人データ・生成物）
+# 東方ゲーム本体・リプレイ・録画物・MOD成果物・素材（著作権物・個人データ・生成物）
 worker/games/
 worker/instances/
 worker/prefixes/
 worker/runs/
+worker/mods/
+worker/assets/
 *.rpy
 *.mp4
 

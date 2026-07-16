@@ -55,7 +55,7 @@ export function loadConfig(): ApiConfig {
       instanceProfileArn: required("WORKER_INSTANCE_PROFILE_ARN"),
       securityGroupId: required("WORKER_SECURITY_GROUP_ID"),
       instanceType: process.env.WORKER_INSTANCE_TYPE ?? "c7i.xlarge",
-      region: process.env.AWS_REGION ?? "ap-northeast-1",
+      region: process.env.AWS_REGION ?? "us-east-1",
     },
   };
 }
