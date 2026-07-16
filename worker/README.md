@@ -13,6 +13,11 @@
 | `record_th07.py` | th07 録画パイプライン本体(任意ファイル名リプレイを正規スロットで再生) |
 | `status.py` | DynamoDB へのジョブ状態反映 |
 | `Dockerfile` | 実行イメージ定義 |
+| `mods/common/` | DLL インジェクタ(`injector.exe`)・共通フック処理のソース(C++, MSVC) |
+| `mods/th07_replay_autoplay/` | th07 自動再生フック DLL(`th07_hook.dll`)のソース(C++, MSVC) |
+
+`mods/` 配下はソース・ビルドスクリプトのみリポジトリで管理する
+(元は `touhou-recorder` の PoC で作成したもの)。ビルド方法は後述。
 
 ## リポジトリに含まれない資産(ビルド前に配置が必要)
 
@@ -23,10 +28,31 @@
 ```
 worker/games/th07/                                     # th07 本体一式(.cfg はウィンドウモード)
 worker/prefixes/th07-wined3d-gl/                       # 日本語ロケール初期化済み WINEPREFIX
-worker/mods/common/build/injector.exe                  # DLL インジェクタ
-worker/mods/th07_replay_autoplay/build/th07_hook.dll   # 自動再生 MOD
+worker/mods/common/build/injector.exe                  # DLL インジェクタ(下記手順でビルド)
+worker/mods/th07_replay_autoplay/build/th07_hook.dll   # 自動再生 MOD(下記手順でビルド)
 worker/assets/watermark/watermark-60fps.webm           # ウォーターマーク素材(VP9 アルファ)
 ```
+
+## MOD (DLL インジェクタ / 自動再生フック) のビルド
+
+`mods/` はソースのみ管理しており、`injector.exe` / `th07_hook.dll` 自体は
+`.gitignore` 済みのビルド成果物。**Windows + Visual Studio (C++ x86/x64 tools)**
+が必要(ゲームが 32bit ネイティブ Win32 バイナリのため MSVC の x86 ツールチェーンで
+ビルドする)。x86 Native Tools Command Prompt for VS、または通常のコマンドプロンプトから:
+
+```bat
+worker\mods\common\build_injector.bat
+worker\mods\th07_replay_autoplay\build.bat
+```
+
+- `build_injector.bat` は `setup_vcvars.bat`(vswhere.exe で VS を検出し
+  `vcvars32.bat` を呼ぶ)経由で環境を整えてから `cl.exe` で
+  `worker/mods/common/build/injector.exe` を生成する。
+- `th07_replay_autoplay/build.bat` は `dllmain.cpp` と `common/` の
+  `dinput_hook.cpp` / `window_wait.cpp` / `logging.cpp` を静的にまとめて
+  `worker/mods/th07_replay_autoplay/build/th07_hook.dll` を生成する。
+- ビルドしたら上記2ファイルを `docker build` 前に配置する(ビルドマシンが
+  そのまま `worker/` チェックアウトなら追加コピーは不要)。
 
 ## 実行時の環境変数
 
