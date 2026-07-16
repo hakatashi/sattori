@@ -14,9 +14,16 @@ const ec2 = new EC2Client({});
  */
 export function buildUserData(config: ApiConfig, job: JobRecord): string {
   const registry = config.workerImage.split("/")[0] ?? "";
+  // trap EXIT で必ず shutdown する（Spot 終了 = 課金停止）。ECR ログインや
+  // docker 実行が失敗しても、インスタンスを起動したまま残さない（孤児防止）。
+  // set -e は付けない（途中失敗でも trap を通って確実に停止させるため）。
   const script = `#!/bin/bash
-set -euo pipefail
 export AWS_DEFAULT_REGION=${config.ec2.region}
+trap 'shutdown -h now' EXIT
+# ECS 最適化 AMI は docker を含むが、プレーンな docker ホストとして使うため明示起動。
+systemctl enable --now docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true
+# aws CLI が無い環境向けのフォールバック導入。
+command -v aws >/dev/null 2>&1 || dnf install -y awscli >/dev/null 2>&1 || dnf install -y aws-cli >/dev/null 2>&1 || true
 aws ecr get-login-password --region ${config.ec2.region} | docker login --username AWS --password-stdin ${registry}
 docker run --rm \\
   -e JOB_ID=${job.jobId} \\
@@ -27,7 +34,6 @@ docker run --rm \\
   -e JOBS_TABLE=${config.jobsTable} \\
   -e WATERMARK=${job.options.watermark ? "1" : "0"} \\
   ${config.workerImage}
-shutdown -h now
 `;
   return Buffer.from(script, "utf-8").toString("base64");
 }
