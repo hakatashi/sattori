@@ -20,12 +20,21 @@ export function buildUserData(config: ApiConfig, job: JobRecord): string {
   const script = `#!/bin/bash
 export AWS_DEFAULT_REGION=${config.ec2.region}
 trap 'shutdown -h now' EXIT
-# ECS 最適化 AMI は docker を含むが、プレーンな docker ホストとして使うため明示起動。
+# ECS 最適化 AMI は docker を含むが、プレーンな docker ホストとして使う。常駐する
+# ECS エージェントが 4vCPU を消費し、高負荷区間(弾幕)で ffmpeg の x11grab キャプチャと
+# CPU コンテンションを起こしてフレーム取りこぼし(処理落ち)を増やすため停止する。
+# 検証: 八雲藍(Extra ボス)戦の重複フレーム率が 15-26%(有効時) → 4.8%(停止時) に改善。
+systemctl disable --now ecs >/dev/null 2>&1 || true
+# プレーンな docker ホストとして使うため docker のみ明示起動。
 systemctl enable --now docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true
 # aws CLI が無い環境向けのフォールバック導入。
 command -v aws >/dev/null 2>&1 || dnf install -y awscli >/dev/null 2>&1 || dnf install -y aws-cli >/dev/null 2>&1 || true
 aws ecr get-login-password --region ${config.ec2.region} | docker login --username AWS --password-stdin ${registry}
 docker run --rm \\
+  --log-driver awslogs \\
+  --log-opt awslogs-region=${config.ec2.region} \\
+  --log-opt awslogs-group=${config.logGroup} \\
+  --log-opt awslogs-stream=${job.jobId} \\
   -e AWS_DEFAULT_REGION=${config.ec2.region} \\
   -e AWS_REGION=${config.ec2.region} \\
   -e JOB_ID=${job.jobId} \\

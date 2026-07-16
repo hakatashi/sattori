@@ -12,6 +12,8 @@ export interface ApiConfig {
   jobsTable: string;
   /** 録画ワーカーの ECR イメージ URI。 */
   workerImage: string;
+  /** ワーカーコンテナのログを送出する CloudWatch Logs ロググループ名。 */
+  logGroup: string;
   /** 録画 EC2 の起動パラメータ。 */
   ec2: Ec2LaunchConfig;
   /** アップロード可能な .rpy の最大サイズ（バイト）。 */
@@ -48,6 +50,7 @@ export function loadConfig(): ApiConfig {
     cdnDomain: required("CDN_DOMAIN"),
     jobsTable: required("JOBS_TABLE"),
     workerImage: required("WORKER_IMAGE"),
+    logGroup: required("WORKER_LOG_GROUP"),
     maxReplayBytes: Number(process.env.MAX_REPLAY_BYTES ?? 5 * 1024 * 1024),
     ec2: {
       amiId: required("WORKER_AMI_ID"),
