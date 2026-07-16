@@ -1,0 +1,34 @@
+:root {
+  --bg: #0f1020;
+  --panel: #1a1b33;
+  --panel-border: #2c2d50;
+  --text: #ececf5;
+  --text-muted: #9a9ac0;
+  --accent: #b36cf0;
+  --accent-hover: #c688ff;
+  --danger: #ff6b8a;
+  --radius: 14px;
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", Meiryo, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent);
+}
+
+button {
+  font-family: inherit;
+}
