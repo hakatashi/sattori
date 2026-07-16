@@ -7,7 +7,18 @@ import os
 
 import boto3
 
-_dynamodb = boto3.resource("dynamodb")
+# boto3 リソースは遅延生成する。モジュール import 時に生成すると、リージョン
+# 未設定（AWS_DEFAULT_REGION/AWS_REGION 無し）の環境で NoRegionError が発生し
+# entrypoint 全体が import 段階でクラッシュしてしまうため（コンテナ実行時は
+# UserData から AWS_DEFAULT_REGION を渡すが、防御的に遅延化しておく）。
+_dynamodb = None
+
+
+def _table(name):
+    global _dynamodb
+    if _dynamodb is None:
+        _dynamodb = boto3.resource("dynamodb")
+    return _dynamodb.Table(name)
 
 
 def _now():
@@ -21,7 +32,7 @@ def update_status(job_id, status, *, output_path=None, error=None):
         # ローカル検証等でテーブル未設定なら DynamoDB 更新はスキップする。
         print(f"[status] JOBS_TABLE 未設定のため更新スキップ: {job_id} -> {status}", flush=True)
         return
-    table = _dynamodb.Table(table_name)
+    table = _table(table_name)
 
     expr = "SET #s = :s, updatedAt = :u"
     names = {"#s": "status"}

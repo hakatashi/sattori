@@ -26,6 +26,8 @@ systemctl enable --now docker >/dev/null 2>&1 || service docker start >/dev/null
 command -v aws >/dev/null 2>&1 || dnf install -y awscli >/dev/null 2>&1 || dnf install -y aws-cli >/dev/null 2>&1 || true
 aws ecr get-login-password --region ${config.ec2.region} | docker login --username AWS --password-stdin ${registry}
 docker run --rm \\
+  -e AWS_DEFAULT_REGION=${config.ec2.region} \\
+  -e AWS_REGION=${config.ec2.region} \\
   -e JOB_ID=${job.jobId} \\
   -e GAME=${job.game} \\
   -e REPLAY_BUCKET=${config.uploadBucket} \\
