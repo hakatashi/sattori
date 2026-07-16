@@ -7,7 +7,8 @@ const app = new App();
 new SattoriStack(app, "SattoriStack", {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION ?? "ap-northeast-1",
+    // コスト最適化のため既定を us-east-1（最安リージョン）にする。
+    region: process.env.CDK_DEFAULT_REGION ?? "us-east-1",
   },
   description: "Sattori 東方リプレイ録画サービス (フェーズ1)",
 });

@@ -18,7 +18,7 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as lambda from "aws-cdk-lib/aws-lambda";
-import { NodejsFunction, OutputFormat } from "aws-cdk-lib/aws-lambda-nodejs";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type { Construct } from "constructs";
@@ -150,7 +150,8 @@ export class SattoriStack extends Stack {
         timeout: Duration.seconds(30),
         environment: commonEnv,
         bundling: {
-          format: OutputFormat.ESM,
+          // CJS で出力する。ESM 出力だと AWS SDK 内部の動的 require("node:https")
+          // が Lambda(ESM) で "Dynamic require not supported" となり失敗するため。
           // @sattori/shared(ワークスペース依存)を含めてすべてバンドルする。
           externalModules: [],
         },
