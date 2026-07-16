@@ -15,15 +15,23 @@ worker/__pycache__/
 **/__pycache__/
 *.pyc
 
-# 東方ゲーム本体・リプレイ・録画物・MOD成果物・素材（著作権物・個人データ・生成物）
+# 東方ゲーム本体・リプレイ・録画物・素材（著作権物・個人データ・生成物）
 worker/games/
 worker/instances/
 worker/prefixes/
 worker/runs/
-worker/mods/
 worker/assets/
 *.rpy
 *.mp4
+
+# MODビルド成果物（ソース・ビルドスクリプトのみコミットする。Windows+MSVCでビルド）
+worker/mods/**/build/
+worker/mods/**/*.obj
+worker/mods/**/*.exp
+worker/mods/**/*.lib
+worker/mods/**/*.pdb
+worker/mods/**/*.ilk
+worker/mods/**/*.log
 
 # env / secrets
 .env

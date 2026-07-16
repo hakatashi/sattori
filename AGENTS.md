@@ -93,8 +93,13 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 - `record_th07.py`: th07 録画本体。PoC `scripts/11_...` の刷新版。
 - **任意ファイル名のリプレイを正規スロット名 `th7_01.rpy` として配置**することで、
   MOD の「リプレイ一覧の1件目を固定選択」ロジックを改修せずに任意リプレイを再生する。
-- ゲーム本体・WINEPREFIX・MOD ビルド成果物・ウォーターマーク素材は**リポジトリに含めない**
-  （`.gitignore` 済み）。ビルド前に `worker/` 配下へ配置する（`worker/README.md` 参照）。
+- `worker/mods/`: DLL インジェクタ（`common/injector.cpp`）と th07 自動再生フック
+  （`th07_replay_autoplay/dllmain.cpp`）の**ソースはこのリポジトリで管理**（元は
+  `touhou-recorder` PoC）。C++/MSVC（Windows + VS C++ x86 tools）でビルドが必要
+  （ビルド手順は `worker/README.md`）。
+- ゲーム本体・WINEPREFIX・MOD **ビルド成果物**（`injector.exe`/`th07_hook.dll` 等）・
+  ウォーターマーク素材は**リポジトリに含めない**（`.gitignore` 済み）。ビルド/配置は
+  `worker/` 配下へ（`worker/README.md` 参照）。
 
 ### PoC 由来の必修ハマりどころ（`touhou-recorder/reports/` 由来）
 - 録画開始は MODログ `WaitForStableWindow: stable` 確認後（早いと重複フレーム多発）。
