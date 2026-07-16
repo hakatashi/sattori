@@ -1,0 +1,6 @@
+# 録画ワーカーの Python 依存。Docker イメージ内では numpy/pillow は apt の
+# python3-numpy / python3-pil で導入し、boto3 のみ pip で入れる(Dockerfile 参照)。
+# ローカルで直接実行する場合はこのファイルで仮想環境を作る。
+boto3>=1.34
+numpy>=1.26
+pillow>=10.0

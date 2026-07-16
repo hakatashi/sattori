@@ -1,0 +1,102 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 2rem;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.heading {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.steps {
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+}
+
+.dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--panel-border);
+}
+
+.step[data-state="done"] .dot {
+  background: var(--accent);
+}
+
+.step[data-state="active"] .dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(179, 108, 240, 0.25);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.step[data-state="failed"] .dot {
+  background: var(--danger);
+}
+
+.stepLabel {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+}
+
+.download {
+  display: inline-block;
+  padding: 0.85rem 1.5rem;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.download:hover {
+  background: var(--accent-hover);
+}
+
+.reset {
+  align-self: center;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px rgba(179, 108, 240, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(179, 108, 240, 0.1);
+  }
+}

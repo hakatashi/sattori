@@ -1,0 +1,39 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build outputs
+dist/
+build/
+*.tsbuildinfo
+cdk.out/
+.turbo/
+
+# python worker
+worker/.venv/
+worker/__pycache__/
+**/__pycache__/
+*.pyc
+
+# 東方ゲーム本体・リプレイ・録画物（著作権物・個人データ・生成物）
+worker/games/
+worker/instances/
+worker/prefixes/
+worker/runs/
+*.rpy
+*.mp4
+
+# env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# logs
+logs/
+*.log
+
+# editor / OS
+.DS_Store
+.vscode/
+.idea/

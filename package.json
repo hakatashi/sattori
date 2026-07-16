@@ -1,0 +1,25 @@
+{
+  "name": "sattori",
+  "version": "0.1.0",
+  "private": true,
+  "description": "東方Projectのリプレイファイルから録画動画を自動生成するウェブサービス",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "turbo": "^2.5.0",
+    "typescript": "^7.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}

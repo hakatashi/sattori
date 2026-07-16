@@ -1,0 +1,71 @@
+import type { JobStatus } from "@sattori/shared";
+import { useJobPolling } from "../hooks/useJobPolling.ts";
+import styles from "./JobProgress.module.css";
+
+interface Props {
+  jobId: string;
+  onReset: () => void;
+}
+
+/** 各ステータスのユーザー向け表示文言と進捗段階（0..4）。 */
+const STATUS_META: Record<JobStatus, { label: string; step: number }> = {
+  queued: { label: "録画の順番を待っています", step: 0 },
+  launching: { label: "録画用サーバーを起動しています", step: 1 },
+  recording: { label: "リプレイを録画しています", step: 2 },
+  uploading: { label: "録画データを準備しています", step: 3 },
+  done: { label: "録画が完了しました", step: 4 },
+  failed: { label: "録画に失敗しました", step: 4 },
+};
+
+const STEPS = ["待機", "起動", "録画", "変換", "完了"];
+
+export function JobProgress({ jobId, onReset }: Props) {
+  const { job, loadError } = useJobPolling(jobId);
+  const status = job?.status ?? "queued";
+  const meta = STATUS_META[status];
+  const failed = status === "failed";
+  const done = status === "done";
+
+  return (
+    <section className={styles.card}>
+      <h1 className={styles.heading}>{meta.label}</h1>
+
+      <ol className={styles.steps} aria-label="録画の進捗">
+        {STEPS.map((name, index) => {
+          const state =
+            failed && index === meta.step
+              ? "failed"
+              : index < meta.step
+                ? "done"
+                : index === meta.step
+                  ? "active"
+                  : "todo";
+          return (
+            <li key={name} className={styles.step} data-state={state}>
+              <span className={styles.dot} />
+              <span className={styles.stepLabel}>{name}</span>
+            </li>
+          );
+        })}
+      </ol>
+
+      {!done && !failed && <p className={styles.hint}>このページは自動で更新されます。</p>}
+      {loadError && <p className={styles.hint}>{loadError}</p>}
+      {failed && (
+        <p className={styles.error}>
+          {job?.error ?? "録画中に問題が発生しました。もう一度お試しください。"}
+        </p>
+      )}
+
+      {done && job?.downloadUrl && (
+        <a className={styles.download} href={job.downloadUrl} download>
+          動画をダウンロード
+        </a>
+      )}
+
+      <button type="button" className={styles.reset} onClick={onReset}>
+        別のリプレイを録画する
+      </button>
+    </section>
+  );
+}
