@@ -51,7 +51,22 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     await launchRecordingInstance(config, job);
     await updateJobStatus(config.jobsTable, job.jobId, "launching");
   } catch (err) {
-    await updateJobStatus(config.jobsTable, job.jobId, "failed");
+    // RunInstances 失敗の原因（Spotキャパシティ不足/IAM/AMI等）を切り分けられるよう、
+    // 例外の詳細を CloudWatch Logs に残す（DynamoDB の error は簡潔な文言のみ保持）。
+    console.error(
+      JSON.stringify({
+        event: "launch_failed",
+        jobId: job.jobId,
+        name: err instanceof Error ? err.name : undefined,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    await updateJobStatus(
+      config.jobsTable,
+      job.jobId,
+      "failed",
+      "録画ワーカーの起動に失敗しました",
+    );
     return error(502, "launch_failed", "録画ワーカーの起動に失敗しました。時間をおいて再試行してください");
   }
 
