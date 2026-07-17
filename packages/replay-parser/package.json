@@ -1,7 +1,8 @@
 {
-  "name": "@sattori/shared",
+  "name": "@sattori/replay-parser",
   "version": "0.1.0",
-  "private": true,
+  "description": "Decoder for Touhou Project replay files (.rpy), covering th06 through th20. Zero runtime dependencies.",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
@@ -11,15 +12,14 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@sattori/replay-parser": "workspace:*"
-  },
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
