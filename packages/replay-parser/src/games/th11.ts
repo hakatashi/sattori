@@ -5,7 +5,7 @@ import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type Repla
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
-/** t11r (東方地霊殿) デコーダ。threplay の Read_t11r を移植。 */
+/** t11r (東方地霊殿, SA) decoder. Ported from Read_t11r in threplay. */
 export function parseTh11(original: Uint8Array): ParsedReplay {
   const decodedata = decodeModernBody(
     original,
@@ -26,8 +26,8 @@ export function parseTh11(original: Uint8Array): ParsedReplay {
     const pieces = decodedata[stageOffset + 0x1a] ?? 0;
     split.lives = resourceCount(lives, pieces, 5);
     split.graze = readBufferedUint32LE(decodedata, stageOffset + 0x34);
-    // threplay の Read_t11r はボム数を抽出しておらず常に "0" を返していた。
-    // 実データではないため、このパッケージでは取得不能として null を返す。
+    // threplay's Read_t11r did not extract the bomb count and always returned "0".
+    // Since that is not real data, this package returns null to indicate it cannot be obtained.
     split.bombs = null;
     splits.push(split);
     stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0x90;

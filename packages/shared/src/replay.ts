@@ -1,4 +1,4 @@
-import type { ParsedReplay } from "@sattori/replay-parser";
+import type { ParsedReplay } from "@sattori/touhou-replay-parser";
 import type { GameId } from "./games.js";
 
 /**
@@ -26,7 +26,7 @@ export interface ReplayInfo {
 }
 
 /**
- * `@sattori/replay-parser` の `ParsedReplay`（ステージ内訳など Sattori では
+ * `@sattori/touhou-replay-parser` の `ParsedReplay`（ステージ内訳など Sattori では
  * 使わない情報も含むリッチな型）を `ReplayInfo` に変換する。
  * replay-parser は単体でOSS公開できるよう Sattori 固有の型に依存しない設計に
  * なっているため、変換はこの Sattori 側（shared）で行う。

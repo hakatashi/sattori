@@ -7,7 +7,7 @@ import { decodeModernBody } from "./modern-body.js";
 
 const UFO_COLORS = ["None", "Red", "Blue", "Green"];
 
-/** t12r (東方星蓮船) デコーダ。threplay の Read_t12r を移植。 */
+/** t12r (東方星蓮船, UFO) decoder. Ported from Read_t12r in threplay. */
 export function parseTh12(original: Uint8Array): ParsedReplay {
   const decodedata = decodeModernBody(
     original,

@@ -1,9 +1,9 @@
 import { ReplayCorruptError } from "./errors.js";
 
 /**
- * 展開後サイズの妥当性チェック用上限（64MiB）。
- * ヘッダの length/dlength フィールドは信頼できない外部入力なので、
- * ここでガードしないと不正な巨大値で無制限に確保しようとしてしまう。
+ * Upper bound (64MiB) used to sanity-check decompressed sizes.
+ * The header's length/dlength fields are untrusted external input, so
+ * without this guard an invalid huge value would attempt an unbounded allocation.
  */
 const MAX_ALLOC_BYTES = 64 * 1024 * 1024;
 
@@ -19,14 +19,14 @@ interface BitCursor {
 }
 
 function getBit(buffer: Uint8Array, length: number, cursor: BitCursor, bitLength: number): number {
-  // https://github.com/Fluorohydride/thprac/blob/master/common.cpp (common.cpp の get_bit を移植)
+  // https://github.com/Fluorohydride/thprac/blob/master/common.cpp (ported from get_bit in common.cpp)
   let result = 0;
   for (let i = 0; i < bitLength; i++) {
     result <<= 1;
     if (cursor.pointer >= length) {
-      // 元実装は buffer 境界を超えて読み進めることがあるが、直後に
-      // 呼び出し側で `pointer >= length` を確認して打ち切るため実害はない。
-      // ここでは 0 埋めで安全側に倒す。
+      // The original implementation can read past the buffer boundary, but this
+      // is harmless because the caller immediately checks `pointer >= length`
+      // and stops. Here we fail safe by zero-filling.
       cursor.filter >>= 1;
       if (cursor.filter === 0) {
         cursor.pointer++;
@@ -48,15 +48,16 @@ function getBit(buffer: Uint8Array, length: number, cursor: BitCursor, bitLength
 }
 
 /**
- * threp (https://github.com/Fluorohydride/threp/blob/master/common.cpp) の
- * decompress() を移植した LZSS 系展開（13bit辞書 / 4bit長）。
- * `length` は入力（圧縮済み）バイト数、`outLength` は展開後の期待バイト数。
+ * An LZSS-family decompressor (13-bit dictionary / 4-bit run length) ported
+ * from decompress() in threp (https://github.com/Fluorohydride/threp/blob/master/common.cpp).
+ * `length` is the input (compressed) byte count, `outLength` is the expected decompressed byte count.
  */
 export function decompress(buffer: Uint8Array, length: number, outLength: number): Uint8Array {
   assertSaneAllocSize(outLength, "decompressed length");
-  // length はヘッダから読んだ信頼できない値。バッファの実サイズを超える値は
-  // 破損データであり、そのまま使うとループが実際のデータ量に対して不当に
-  // 長時間回り続ける（DoSになり得る）ため、物理的に取り得ない値はここで丸める。
+  // length is an untrusted value read from the header. A value exceeding the
+  // buffer's actual size indicates corrupt data, and using it as-is would let
+  // the loop run for an unreasonably long time relative to the actual data
+  // size (a potential DoS), so we clamp it here to a physically possible value.
   const boundedLength = Math.min(length, buffer.length);
   const decoded = new Uint8Array(outLength);
   const dict = new Uint8Array(0x2010);
@@ -81,8 +82,9 @@ export function decompress(buffer: Uint8Array, length: number, outLength: number
       if (cursor.pointer >= boundedLength) break;
       runLength += 3;
       for (let i = 0; i < runLength && dest < outLength; i++) {
-        // index は不正入力なら負値/範囲外になり得るが、TypedArray の範囲外
-        // read/write は例外を投げず undefined→0 に丸められるので安全。
+        // index can be negative or out of range for invalid input, but
+        // out-of-range TypedArray read/write does not throw and is
+        // coerced to undefined -> 0, so this is safe.
         const value = dict[(index + i) & 0x1fff] ?? 0;
         dict[dest & 0x1fff] = value;
         decoded[dest] = value;
@@ -95,8 +97,8 @@ export function decompress(buffer: Uint8Array, length: number, outLength: number
 }
 
 /**
- * threp の decode()（ブロック単位の XOR 難読化解除）を移植。
- * `buffer` の先頭 `length` バイトを in-place で書き換える。
+ * Ported from threp's decode() (block-wise XOR deobfuscation).
+ * Rewrites the first `length` bytes of `buffer` in place.
  */
 export function xorBlockDecode(buffer: Uint8Array, length: number, blockSizeInit: number, baseInit: number, add: number): void {
   assertSaneAllocSize(length, "xorBlockDecode length");
@@ -137,7 +139,7 @@ export function xorBlockDecode(buffer: Uint8Array, length: number, blockSizeInit
   }
 }
 
-/** 旧世代フォーマット（th06-09）で使われる単純な加算キー方式の復号。 */
+/** Decodes the simple additive-key scheme used by the older format (th06-09). */
 export function additiveKeyDecode(buffer: Uint8Array, start: number, initialKey: number, increment: number): void {
   let key = initialKey & 0xff;
   for (let i = start; i < buffer.length; i++) {

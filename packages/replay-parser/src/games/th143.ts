@@ -4,8 +4,8 @@ import { normalizeText, type ParsedReplay } from "../types.js";
 import { REPLAY_GAME_TITLES, type ReplayGameId } from "../game-ids.js";
 
 /**
- * t143 (弾幕アマノジャク) / t156 (秘封ナイトメアダイアリー) 共通デコーダ。
- * threplay の Read_t143（Read_t156 はこれを呼ぶだけの別名）を移植。
+ * Shared decoder for t143 (弾幕アマノジャク, ISC) / t156 (秘封ナイトメアダイアリー, VD).
+ * Ported from Read_t143 in threplay (Read_t156 is just an alias that calls it).
  */
 export function parseTh143Family(original: Uint8Array, game: "th143" | "th165"): ParsedReplay {
   const reader = new ByteReader(original);

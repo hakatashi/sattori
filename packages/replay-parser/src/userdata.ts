@@ -4,8 +4,9 @@ import { ReplayCorruptError } from "./errors.js";
 const USER_MAGIC = [0x55, 0x53, 0x45, 0x52]; // "USER"
 
 /**
- * threplay の JumpToUser 相当。`pointerFieldOffset` にある4バイトのオフセット値を
- * 読み、その位置に "USER" マーカーがあることを確認してからカーソルをその直後へ進める。
+ * Equivalent to JumpToUser in threplay. Reads the 4-byte offset value at
+ * `pointerFieldOffset`, confirms a "USER" marker exists at that position, and
+ * then advances the cursor just past it.
  */
 export function jumpToUser(reader: ByteReader, pointerFieldOffset: number): void {
   reader.seek(pointerFieldOffset);
@@ -17,7 +18,7 @@ export function jumpToUser(reader: ByteReader, pointerFieldOffset: number): void
   }
 }
 
-/** `long.TryParse(text + "0", ...)` 相当。末尾に省略された1桁を復元してから数値化する。 */
+/** Equivalent to `long.TryParse(text + "0", ...)`. Restores the omitted trailing digit before converting to a number. */
 export function parseScoreWithTrailingZero(text: string): number | null {
   return parseIntStrict(`${text}0`);
 }
@@ -39,15 +40,15 @@ export interface CommonUserdataFields {
 }
 
 /**
- * th10 (風神録) 〜 th18 (虹龍洞) で共通の USER セクションレイアウト
- * （threplay の `Read_Userdata` を移植）。
+ * The USER section layout shared by th10 (東方風神録, MoF) through
+ * th18 (東方虹龍洞, UM) (ported from threplay's `Read_Userdata`).
  */
 export function readModernUserdata(reader: ByteReader): CommonUserdataFields {
   jumpToUser(reader, 12);
-  reader.readUint32LE(); // USER セクション長（未使用）
+  reader.readUint32LE(); // USER section length (unused)
   reader.skip(4);
-  reader.readAnsiString(); // 例: "東方○○ リプレイファイル情報" (SJIS)
-  reader.readAnsiString(); // ゲームバージョン文字列（未使用）
+  reader.readAnsiString(); // e.g. "東方○○ リプレイファイル情報" ("Touhou XX Replay File Info", SJIS)
+  reader.readAnsiString(); // game version string (unused)
   reader.skip(5);
   const name = reader.readAnsiString();
   reader.skip(5);

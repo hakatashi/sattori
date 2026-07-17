@@ -16,11 +16,11 @@ describe("ByteReader", () => {
   });
 
   it("reads a CRLF-terminated ANSI string and leaves the cursor right after the terminator", () => {
-    // "ABC\r\nXYZ" というレイアウトを想定。ReadStringANSI 相当の挙動を検証する。
+    // Assumes a layout of "ABC\r\nXYZ". Verifies behavior equivalent to ReadStringANSI.
     const bytes = Uint8Array.from([...Buffer.from("ABC\r\nXYZ")]);
     const reader = new ByteReader(bytes);
     expect(reader.readAnsiString()).toBe("ABC");
-    // 元実装の file.Seek(-1, Current) 相当により、カーソルは \n の直後に位置する。
+    // The cursor sits right after \n, equivalent to file.Seek(-1, Current) in the original implementation.
     expect(reader.pos).toBe(5);
     expect(reader.readBytes(3)).toEqual(Uint8Array.from([...Buffer.from("XYZ")]));
   });
@@ -39,7 +39,7 @@ describe("decodeAnsiText", () => {
   });
 
   it("falls back to Latin1-style mapping for non-Shift_JIS bytes", () => {
-    const bytes = Uint8Array.from([0xff, 0xfe]); // 有効なShift_JISとして解釈できない
+    const bytes = Uint8Array.from([0xff, 0xfe]); // cannot be interpreted as valid Shift_JIS
     expect(decodeAnsiText(bytes)).toBe("ÿþ");
   });
 

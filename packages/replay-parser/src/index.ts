@@ -70,7 +70,7 @@ export function parseReplay(data: Uint8Array): ReplayParseResult {
     if (error instanceof ReplayCorruptError) {
       return { ok: false, error: { code: "corrupt", message: error.message } };
     }
-    // 未知の例外も安全側に倒し、決して throw しない。
+    // Fail safe on unknown exceptions too — never throw.
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, error: { code: "corrupt", message: `unexpected error while parsing: ${message}` } };
   }

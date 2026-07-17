@@ -4,8 +4,8 @@ import { normalizeText, type ParsedReplay } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 
 /**
- * t95r (東方文花帖 ～ Shoot the Bullet) デコーダ。threplay の Read_t95r を移植。
- * LZSSによる本文圧縮を持たず、USER セクションのみで完結する。
+ * t95r (東方文花帖, StB) decoder. Ported from Read_t95r in threplay.
+ * Has no LZSS body compression; everything is contained in the USER section.
  */
 export function parseTh095(original: Uint8Array): ParsedReplay {
   const reader = new ByteReader(original);

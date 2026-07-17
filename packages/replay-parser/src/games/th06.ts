@@ -20,8 +20,9 @@ function readNullTerminatedAnsi(buffer: Uint8Array, start: number): { text: stri
 }
 
 /**
- * T6RP (東方紅魔郷) デコーダ。threplay の Read_T6RP を移植。
- * ヘッダは単純な加算キー方式（key を +7 ずつ更新しつつ減算）で復号される。
+ * T6RP (東方紅魔郷, EoSD) decoder. Ported from Read_T6RP in threplay.
+ * The header is decoded with a simple additive-key scheme (subtracting a key
+ * that is updated by +7 each step).
  */
 export function parseTh06(original: Uint8Array): ParsedReplay {
   if (original.length < 0x38) {

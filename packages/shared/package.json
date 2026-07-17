@@ -17,7 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@sattori/replay-parser": "workspace:*"
+    "@sattori/touhou-replay-parser": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

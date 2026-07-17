@@ -8,9 +8,10 @@ import { REPLAY_GAME_TITLES } from "../game-ids.js";
 const HEADER_SIZE = 36;
 
 /**
- * 128r (妖精大戦争 ～ 東方三月精) デコーダ。threplay の Read_128r を移植。
- * USER セクションの読み取りは旧世代方式だが、ステージ内訳は th10 以降と同じ
- * XORブロック復号 + LZSS展開のパイプラインを使うハイブリッドな形式。
+ * 128r (妖精大戦争 ～ 東方三月精, GFW) decoder. Ported from Read_128r in threplay.
+ * The USER section is read using the old-generation method, but the per-stage
+ * breakdown is a hybrid format using the same XOR block decoding + LZSS
+ * decompression pipeline as th10 onward.
  */
 export function parseTh128(original: Uint8Array): ParsedReplay {
   const reader = new ByteReader(original);
@@ -29,7 +30,7 @@ export function parseTh128(original: Uint8Array): ParsedReplay {
   reader.skip(5);
   const difficulty = reader.readAnsiString();
   reader.skip(6);
-  reader.readAnsiString(); // stage (重複、元実装でも破棄)
+  reader.readAnsiString(); // stage (duplicate, also discarded by the original implementation)
   reader.skip(6);
   const score = parseScoreWithTrailingZero(reader.readAnsiString());
 
@@ -50,8 +51,8 @@ export function parseTh128(original: Uint8Array): ParsedReplay {
     const split = emptySplit();
     split.score = readBufferedUint32LE(decodedata, stageOffset + 0xc) * 10;
     split.power = String(readBufferedUint32LE(decodedata, stageOffset + 0x10) + 1);
-    // th128 は lives/bombs を個数ではなく百分率ゲージとして記録する
-    // （ReplayResourceCount.count がパーセンテージ、maxPieces=100 固定）。
+    // th128 records lives/bombs as a percentage gauge rather than a count
+    // (ReplayResourceCount.count holds the percentage, maxPieces is fixed at 100).
     split.lives = resourceCount(Math.trunc(readBufferedUint32LE(decodedata, stageOffset + 0x80) / 100), null, 100);
     split.bombs = resourceCount(Math.trunc(readBufferedUint32LE(decodedata, stageOffset + 0x84) / 100), null, 100);
     const freezeArea = readFloat32LE(decodedata, stageOffset + 0x88);

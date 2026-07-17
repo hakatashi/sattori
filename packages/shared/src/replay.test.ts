@@ -1,4 +1,4 @@
-import type { ParsedReplay } from "@sattori/replay-parser";
+import type { ParsedReplay } from "@sattori/touhou-replay-parser";
 import { describe, expect, it } from "vitest";
 import { fromParsedReplay } from "./replay.js";
 

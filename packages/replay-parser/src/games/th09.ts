@@ -27,11 +27,11 @@ const CHARACTERS = [
 const HEADER_SIZE = 0xc0;
 
 /**
- * T9RP (東方花映塚) デコーダ。threplay の Read_T9RP を移植。
- * 対戦(VS)専用タイトルのため、プレイヤーのキャラクターは
- * トップレベルの character ではなく各 split の additional に
- * "PlayerChar vs OpponentChar" として現れる（story モード時は
- * split から先頭キャラをトップレベル character にも複製する）。
+ * T9RP (東方花映塚, PoFV) decoder. Ported from Read_T9RP in threplay.
+ * Since this title is VS-battle only, the player's character does not appear
+ * as the top-level `character` but as "PlayerChar vs OpponentChar" in each
+ * split's `additional` (in story mode, the leading character from the splits
+ * is also duplicated into the top-level `character`).
  */
 export function parseTh09(original: Uint8Array): ParsedReplay {
   const reader = new ByteReader(original);
@@ -70,7 +70,7 @@ export function parseTh09(original: Uint8Array): ParsedReplay {
   let character: string | null = null;
 
   if (scoreOffsets[9] === 0) {
-    // ストーリーモード: ステージごとに自キャラ・相手キャラが記録される。
+    // Story mode: self and opponent characters are recorded per stage.
     for (let i = 0; i <= maxStage; i++) {
       const raw = scoreOffsets[i];
       if (!raw) continue;
@@ -87,7 +87,7 @@ export function parseTh09(original: Uint8Array): ParsedReplay {
       splits.push(split);
     }
   } else {
-    // VSモード: 1エントリのみ。
+    // VS mode: only one entry.
     const offset1 = scoreOffsets[9]! - HEADER_SIZE;
     const offset2 = scoreOffsets[19]! - HEADER_SIZE;
     const selfChar = CHARACTERS[decodeData[offset1 + 0x6]!] ?? "?";

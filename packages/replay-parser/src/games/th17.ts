@@ -5,7 +5,7 @@ import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type Repla
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
-/** t17r (東方鬼形獣) デコーダ。threplay の Read_t17r を移植。 */
+/** t17r (東方鬼形獣, WBaWC) decoder. Ported from Read_t17r in threplay. */
 export function parseTh17(original: Uint8Array): ParsedReplay {
   const decodedata = decodeModernBody(
     original,

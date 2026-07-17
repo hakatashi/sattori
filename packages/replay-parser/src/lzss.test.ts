@@ -16,7 +16,7 @@ describe("readBufferedUint32LE", () => {
 
 describe("additiveKeyDecode", () => {
   it("is the inverse of the th06/07-style additive-key XOR scramble", () => {
-    // 暗号化側: buffer[i] = (plain[i] + key) & 0xff; key += increment
+    // Encoding side: buffer[i] = (plain[i] + key) & 0xff; key += increment
     const plain = Uint8Array.from([10, 20, 30, 40]);
     const initialKey = 5;
     const increment = 7;

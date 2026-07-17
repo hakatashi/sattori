@@ -10,13 +10,13 @@ const DIFFICULTIES = ["Easy", "Normal", "Hard", "Lunatic", "Extra", "Phantasm"];
 const HEADER_SIZE = 0x54;
 
 /**
- * T7RP (東方妖々夢) デコーダ。threplay の Read_T7RP を移植。
+ * T7RP (東方妖々夢, PCB) decoder. Ported from Read_T7RP in threplay.
  *
- * ヘッダオフセット 0x07 は、過去に録画用バイナリと再生できないリプレイ
- * バージョンが存在することが本番運用で判明した際の手がかり（Issue #16、
- * 現在は録画用ゲームバイナリ側のバージョンアップにより解消済み）。
- * このパッケージでは値の意味を断定せず、生の formatVersion として
- * 返すのみに留める。
+ * Header offset 0x07 was the clue that surfaced in production when it turned
+ * out some replay versions could not be played back with the recording
+ * binary (Issue #16, since resolved by upgrading the recording game binary).
+ * This package does not assume a specific meaning for the value and simply
+ * exposes it as the raw formatVersion.
  */
 export function parseTh07(original: Uint8Array): ParsedReplay {
   if (original.length < HEADER_SIZE + 4) {
