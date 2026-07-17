@@ -1,7 +1,7 @@
 import { decodeAnsiText } from "../byte-reader.js";
 import { ReplayCorruptError } from "../errors.js";
 import { additiveKeyDecode, decompress, readBufferedUint32LE } from "../lzss.js";
-import { emptySplit, normalizeText, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 
 const CHARACTERS = ["ReimuA", "ReimuB", "MarisaA", "MarisaB", "SakuyaA", "SakuyaB"];
@@ -95,10 +95,10 @@ function readSplitCommon(decodeData: Uint8Array, offset: number, stage: number):
   split.piv = readBufferedUint32LE(decodeData, offset + 0x8);
   const pointItems = readBufferedUint32LE(decodeData, offset + 0x4);
   const cherryMax = readBufferedUint32LE(decodeData, offset + 0xc);
-  split.additional = `Point Items: ${pointItems} | CherryMAX: ${cherryMax}`;
+  split.additional = { pointItems, cherryMax };
   split.graze = readBufferedUint32LE(decodeData, offset + 0x14);
   split.power = String(decodeData[offset + 0x22] ?? 0);
-  split.lives = String(decodeData[offset + 0x23] ?? 0);
-  split.bombs = String(decodeData[offset + 0x24] ?? 0);
+  split.lives = resourceCount(decodeData[offset + 0x23] ?? 0);
+  split.bombs = resourceCount(decodeData[offset + 0x24] ?? 0);
   return split;
 }

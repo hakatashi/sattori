@@ -1,0 +1,28 @@
+{
+  "game": "th11",
+  "gameTitle": "東方地霊殿 ～ Subterranean Animism.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "14/12/11 05:17",
+  "character": "MarisaC",
+  "difficulty": "Extra",
+  "stage": "Extra Stage Clear",
+  "score": 478484390,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 7,
+      "score": 0,
+      "power": "0.00",
+      "piv": 200000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null
+    }
+  ]
+}

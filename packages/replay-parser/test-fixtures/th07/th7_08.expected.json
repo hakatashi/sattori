@@ -1,0 +1,35 @@
+{
+  "game": "th07",
+  "gameTitle": "東方妖々夢 ～ Perfect Cherry Blossom.",
+  "formatVersion": 5,
+  "player": "koyi",
+  "date": "01/18",
+  "character": "MarisaA",
+  "difficulty": "Phantasm",
+  "stage": null,
+  "score": 311737100,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 7,
+      "score": 1,
+      "power": "0",
+      "piv": 65,
+      "lives": {
+        "count": 0,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 65,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 65,
+      "additional": {
+        "pointItems": 65,
+        "cherryMax": 65
+      }
+    }
+  ]
+}

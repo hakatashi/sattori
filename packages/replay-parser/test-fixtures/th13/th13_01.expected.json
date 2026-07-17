@@ -1,0 +1,140 @@
+{
+  "game": "th13",
+  "gameTitle": "東方神霊廟 ～ Ten Desires.",
+  "formatVersion": 144,
+  "player": "koyi",
+  "date": "24/05/11 01:55",
+  "character": "Reimu",
+  "difficulty": "Easy",
+  "stage": "Stage All Clear",
+  "score": 154721320,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "1.00",
+      "piv": 5000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 0,
+      "additional": {
+        "trance": 200,
+        "tranceMax": 600
+      }
+    },
+    {
+      "stage": 2,
+      "score": 4413400,
+      "power": "2.74",
+      "piv": 6100,
+      "lives": {
+        "count": 2,
+        "pieces": 3,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 3,
+        "maxPieces": 8
+      },
+      "graze": 30,
+      "additional": {
+        "trance": 66,
+        "tranceMax": 600
+      }
+    },
+    {
+      "stage": 3,
+      "score": 15066860,
+      "power": "3.74",
+      "piv": 12110,
+      "lives": {
+        "count": 2,
+        "pieces": 1,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 6,
+        "maxPieces": 8
+      },
+      "graze": 133,
+      "additional": {
+        "trance": 234,
+        "tranceMax": 600
+      }
+    },
+    {
+      "stage": 4,
+      "score": 29469590,
+      "power": "4.00",
+      "piv": 14170,
+      "lives": {
+        "count": 2,
+        "pieces": 9,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 4,
+        "maxPieces": 8
+      },
+      "graze": 311,
+      "additional": {
+        "trance": 88,
+        "tranceMax": 600
+      }
+    },
+    {
+      "stage": 5,
+      "score": 53992290,
+      "power": "4.00",
+      "piv": 17770,
+      "lives": {
+        "count": 3,
+        "pieces": 7,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 4,
+        "pieces": 4,
+        "maxPieces": 8
+      },
+      "graze": 452,
+      "additional": {
+        "trance": 88,
+        "tranceMax": 600
+      }
+    },
+    {
+      "stage": 6,
+      "score": 84314410,
+      "power": "4.00",
+      "piv": 22590,
+      "lives": {
+        "count": 4,
+        "pieces": 5,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 6,
+        "pieces": 6,
+        "maxPieces": 8
+      },
+      "graze": 1576,
+      "additional": {
+        "trance": 88,
+        "tranceMax": 600
+      }
+    }
+  ]
+}

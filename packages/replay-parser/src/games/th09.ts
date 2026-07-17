@@ -2,7 +2,7 @@ import { ByteReader } from "../byte-reader.js";
 import { ReplayCorruptError } from "../errors.js";
 import { additiveKeyDecode, decompress, readBufferedUint32LE } from "../lzss.js";
 import { jumpToUser } from "../userdata.js";
-import { emptySplit, normalizeText, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 
 const CHARACTERS = [
@@ -79,10 +79,10 @@ export function parseTh09(original: Uint8Array): ParsedReplay {
       const split = emptySplit();
       split.stage = i + 1;
       split.score = readBufferedUint32LE(decodeData, offset) * 10;
-      split.lives = String(decodeData[offset + 0x8] ?? 0);
+      split.lives = resourceCount(decodeData[offset + 0x8] ?? 0);
       const selfChar = CHARACTERS[decodeData[offset + 0x6]!] ?? "?";
       const opponentChar = CHARACTERS[decodeData[offsetP2 + 0x6]!] ?? "?";
-      split.additional = `${selfChar} vs ${opponentChar}`;
+      split.additional = { self: selfChar, opponent: opponentChar };
       if (i === 0) character = selfChar;
       splits.push(split);
     }
@@ -93,7 +93,7 @@ export function parseTh09(original: Uint8Array): ParsedReplay {
     const selfChar = CHARACTERS[decodeData[offset1 + 0x6]!] ?? "?";
     const opponentChar = CHARACTERS[decodeData[offset2 + 0x6]!] ?? "?";
     const split = emptySplit();
-    split.additional = `${selfChar} vs ${opponentChar}`;
+    split.additional = { self: selfChar, opponent: opponentChar };
     character = selfChar;
     splits.push(split);
   }

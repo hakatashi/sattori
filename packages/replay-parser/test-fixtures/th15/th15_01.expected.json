@@ -1,0 +1,32 @@
+{
+  "game": "th15",
+  "gameTitle": "東方紺珠伝 ～ Legacy of Lunatic Kingdom.",
+  "formatVersion": null,
+  "player": null,
+  "date": "25/10/22 02:23",
+  "character": "Reimu",
+  "difficulty": "Hard",
+  "stage": "Stage 1",
+  "score": 30269670,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "1.00",
+      "piv": 10000,
+      "lives": {
+        "count": 9,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 0,
+      "additional": null
+    }
+  ]
+}

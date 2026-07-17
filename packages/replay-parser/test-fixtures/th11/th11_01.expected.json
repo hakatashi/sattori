@@ -1,0 +1,98 @@
+{
+  "game": "th11",
+  "gameTitle": "東方地霊殿 ～ Subterranean Animism.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "14/12/04 18:24",
+  "character": "ReimuA",
+  "difficulty": "Easy",
+  "stage": "Stage All Clear",
+  "score": 258644590,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "0.00",
+      "piv": 25000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null
+    },
+    {
+      "stage": 2,
+      "score": 6495060,
+      "power": "3.35",
+      "piv": 31980,
+      "lives": {
+        "count": 3,
+        "pieces": 2,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 56,
+      "additional": null
+    },
+    {
+      "stage": 3,
+      "score": 15744630,
+      "power": "4.00",
+      "piv": 32820,
+      "lives": {
+        "count": 4,
+        "pieces": 4,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 188,
+      "additional": null
+    },
+    {
+      "stage": 4,
+      "score": 29622240,
+      "power": "4.00",
+      "piv": 25250,
+      "lives": {
+        "count": 5,
+        "pieces": 0,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 311,
+      "additional": null
+    },
+    {
+      "stage": 5,
+      "score": 54595850,
+      "power": "4.00",
+      "piv": 27740,
+      "lives": {
+        "count": 6,
+        "pieces": 4,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 970,
+      "additional": null
+    },
+    {
+      "stage": 6,
+      "score": 80367150,
+      "power": "3.55",
+      "piv": 25140,
+      "lives": {
+        "count": 6,
+        "pieces": 3,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 1582,
+      "additional": null
+    }
+  ]
+}

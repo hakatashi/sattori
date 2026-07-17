@@ -1,0 +1,35 @@
+{
+  "game": "th08",
+  "gameTitle": "東方永夜抄 ～ Imperishable Night.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "2026/01/23 23:55:08",
+  "character": "八雲　紫",
+  "difficulty": "Extra",
+  "stage": "最終ステージ\tClear",
+  "score": 879440560,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 7,
+      "score": 879440560,
+      "power": "0",
+      "piv": 300000,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 0,
+      "additional": {
+        "pointItems": 0,
+        "time": 0
+      }
+    }
+  ]
+}

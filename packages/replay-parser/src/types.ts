@@ -1,6 +1,24 @@
 import type { ReplayGameId } from "./game-ids.js";
 
 /**
+ * 残機・ボム等、「本体の個数」＋「次の1個までの欠片」で構成される資源の記録。
+ * 欠片システムを持たないゲーム、またはそのゲームでデータが取得できない場合は
+ * `pieces`/`maxPieces` が null になる。
+ *
+ * 例外: th128（妖精大戦争）はこのフィールドを百分率ゲージとして使っており、
+ * `count` がパーセンテージ（0-100+）、`maxPieces` は常に100、`pieces` は
+ * 常に null になる（該当ファイルのコメント参照）。
+ */
+export interface ReplayResourceCount {
+  /** 本体の個数（またはth128に限りパーセンテージ）。 */
+  count: number;
+  /** 次の1個までに集めた欠片の数。 */
+  pieces: number | null;
+  /** 欠片の最大値（分母）。判別できなければ null。 */
+  maxPieces: number | null;
+}
+
+/**
  * ステージ（面）ごとの記録。ゲームによって記録される項目が異なるため、
  * 該当データを含まないゲームでは各フィールドが null になる。
  */
@@ -18,14 +36,18 @@ export interface ReplayStageSplit {
   power: string | null;
   /** PIV（Point of Item Value）等、ゲーム固有の得点指標。 */
   piv: number | null;
-  /** 残機（ゲームによっては欠片数を含む文字列）。 */
-  lives: string | null;
-  /** ボム数（ゲームによっては欠片数を含む文字列）。 */
-  bombs: string | null;
+  /** 残機。 */
+  lives: ReplayResourceCount | null;
+  /** ボム数。 */
+  bombs: ReplayResourceCount | null;
   /** グレイズ数。 */
   graze: number | null;
-  /** UFO の色・トランス・季節等、ゲーム固有の付加情報。 */
-  additional: string | null;
+  /**
+   * UFOの色・トランス・季節等、ゲーム固有の付加情報。キー名・値の形はゲームごとに
+   * 異なる（各ゲームのデコーダ実装のコメントを参照）。該当データがない
+   * ゲームでは null。
+   */
+  additional: Record<string, number | string | (number | string)[]> | null;
 }
 
 /**
@@ -96,4 +118,8 @@ export function emptySplit(): ReplayStageSplit {
     graze: null,
     additional: null,
   };
+}
+
+export function resourceCount(count: number, pieces: number | null = null, maxPieces: number | null = null): ReplayResourceCount {
+  return { count, pieces, maxPieces };
 }
