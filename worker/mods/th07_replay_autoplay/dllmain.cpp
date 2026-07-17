@@ -38,8 +38,8 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("Buffering 1500ms for title screen animation...");
     Sleep(1500);
 
-    Log("Step 1: Down x3 (select 'Replay' on main menu)");
-    for (int i = 0; i < 3; i++) {
+    Log("Step 1: Down x2 (select 'Replay' on main menu)");
+    for (int i = 0; i < 2; i++) {
         PressKey(DIK_DOWN);
         Sleep(250);
     }

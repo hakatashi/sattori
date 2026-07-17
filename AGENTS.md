@@ -91,7 +91,7 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 
 - `entrypoint.py`: S3からリプレイDL → 録画 → S3へUP → DynamoDB更新。UserData から `docker run`。
 - `record_th07.py`: th07 録画本体。PoC `scripts/11_...` の刷新版。
-- **任意ファイル名のリプレイを正規スロット名 `th7_01.rpy` として配置**することで、
+- **任意ファイル名のリプレイを正規スロット名 `th7_ud0000.rpy` として配置**することで、
   MOD の「リプレイ一覧の1件目を固定選択」ロジックを改修せずに任意リプレイを再生する。
 - `worker/mods/`: DLL インジェクタ（`common/injector.cpp`）と th07 自動再生フック
   （`th07_replay_autoplay/dllmain.cpp`）の**ソースはこのリポジトリで管理**（元は
