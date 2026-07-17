@@ -12,6 +12,7 @@ import * as s3 from "aws-cdk-lib/aws-s3";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
@@ -224,8 +225,22 @@ export class SattoriStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
+
+    // カスタムドメイン用証明書。CloudFront にアタッチする証明書は us-east-1 必須
+    // (このスタック自体が既定で us-east-1 なので同一スタック内で作成できる)。
+    // hakatashi.com は Route 53 以外の DNS で管理しているため、hostedZone による
+    // 自動検証はできない。DNS 検証用 CNAME は `cdk deploy` 実行中に ACM コンソール
+    // (us-east-1)で確認し、外部 DNS へ手動追加する。
+    const webDomainName = "sattori.hakatashi.com";
+    const webCertificate = new acm.Certificate(this, "WebCertificate", {
+      domainName: webDomainName,
+      validation: acm.CertificateValidation.fromDns(),
+    });
+
     const webDistribution = new cloudfront.Distribution(this, "WebCdn", {
       defaultRootObject: "index.html",
+      domainNames: [webDomainName],
+      certificate: webCertificate,
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(webBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -251,7 +266,9 @@ export class SattoriStack extends Stack {
     // --- 出力 --------------------------------------------------------------
 
     new CfnOutput(this, "ApiUrl", { value: httpApi.apiEndpoint });
-    new CfnOutput(this, "WebUrl", { value: `https://${webDistribution.distributionDomainName}` });
+    new CfnOutput(this, "WebUrl", { value: `https://${webDomainName}` });
+    // 外部 DNS 側で `sattori` を CNAME としてこのドメインへ向ける。
+    new CfnOutput(this, "WebCdnDomain", { value: webDistribution.distributionDomainName });
     new CfnOutput(this, "MediaCdnDomain", { value: mediaDistribution.distributionDomainName });
     new CfnOutput(this, "WorkerRepoUri", { value: workerRepo.repositoryUri });
   }
