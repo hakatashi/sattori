@@ -15,6 +15,7 @@ export function parseTh10(original: Uint8Array): ParsedReplay {
 
   const splits: ReplayStageSplit[] = [];
   let stageOffset = 0x64;
+  let frameCount = 0;
   const stageCount = Math.min(decodedata[0x4c] ?? 0, 6);
   for (let i = 0; i < stageCount; i++) {
     const split = emptySplit();
@@ -27,7 +28,12 @@ export function parseTh10(original: Uint8Array): ParsedReplay {
     // threplay's Read_t10r did not extract the bomb count and always returned "0".
     // Since that is not real data, this package returns null to indicate it cannot be obtained.
     split.bombs = null;
+    // stageOffset+0x4 is the per-stage frame count (unused by threplay, but
+    // read by threp's own th10.cpp when it walks the same stage blocks).
+    const stageFrameCount = readBufferedUint32LE(decodedata, stageOffset + 0x4);
+    split.frameCount = stageFrameCount;
     splits.push(split);
+    frameCount += stageFrameCount;
     stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0x1c4;
   }
 
@@ -46,5 +52,6 @@ export function parseTh10(original: Uint8Array): ParsedReplay {
     score: userdata.score,
     cleared: userdata.stage.includes("Clear"),
     splits,
+    frameCount: stageCount > 0 ? frameCount : null,
   };
 }

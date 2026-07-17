@@ -29,7 +29,9 @@
       "additional": {
         "pointItems": 0,
         "time": 0
-      }
+      },
+      "frameCount": null
     }
-  ]
+  ],
+  "frameCount": null
 }

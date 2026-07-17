@@ -29,7 +29,8 @@
       "additional": {
         "trance": 200,
         "tranceMax": 600
-      }
+      },
+      "frameCount": 11003
     },
     {
       "stage": 2,
@@ -50,7 +51,8 @@
       "additional": {
         "trance": 81,
         "tranceMax": 600
-      }
+      },
+      "frameCount": 16025
     },
     {
       "stage": 3,
@@ -71,7 +73,8 @@
       "additional": {
         "trance": 88,
         "tranceMax": 600
-      }
+      },
+      "frameCount": 17262
     },
     {
       "stage": 4,
@@ -92,7 +95,8 @@
       "additional": {
         "trance": 84,
         "tranceMax": 600
-      }
+      },
+      "frameCount": 17782
     },
     {
       "stage": 5,
@@ -113,7 +117,8 @@
       "additional": {
         "trance": 88,
         "tranceMax": 600
-      }
+      },
+      "frameCount": 19292
     },
     {
       "stage": 6,
@@ -134,7 +139,9 @@
       "additional": {
         "trance": 88,
         "tranceMax": 600
-      }
+      },
+      "frameCount": 25345
     }
-  ]
+  ],
+  "frameCount": 106709
 }

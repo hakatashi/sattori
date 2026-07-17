@@ -50,6 +50,15 @@ export interface ReplayStageSplit {
    * decoder implementation). Null for games without such data.
    */
   additional: Record<string, number | string | (number | string)[]> | null;
+  /**
+   * Number of in-game frames played during this stage/segment (i.e. from
+   * this checkpoint up to the next one, or to the end of the replay for the
+   * last split). See `ParsedReplay.frameCount` for the fixed-60fps
+   * conversion to seconds and the games this is currently populated for.
+   * Null for games where this package does not (yet) know how to locate the
+   * per-frame input log.
+   */
+  frameCount: number | null;
 }
 
 /**
@@ -82,6 +91,17 @@ export interface ParsedReplay {
   cleared: boolean | null;
   /** Per-stage records (empty array for games where this cannot be determined). */
   splits: ReplayStageSplit[];
+  /**
+   * Total number of in-game frames the replay plays back (all recorded
+   * stages/segments summed). The main-series games run gameplay logic at a
+   * fixed 60 frames/sec, so dividing by 60 gives the playback duration in
+   * seconds. This is the number of frames the game itself will replay, and
+   * does not include any recording-pipeline overhead (menu automation,
+   * end-of-replay detection lag, etc.) on top of that.
+   * Null for games/replay types where this package does not (yet) know how
+   * to locate the per-frame input log.
+   */
+  frameCount: number | null;
 }
 
 export type ReplayParseErrorCode =
@@ -119,6 +139,7 @@ export function emptySplit(): ReplayStageSplit {
     bombs: null,
     graze: null,
     additional: null,
+    frameCount: null,
   };
 }
 

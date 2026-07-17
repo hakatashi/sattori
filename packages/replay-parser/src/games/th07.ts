@@ -10,6 +10,25 @@ const DIFFICULTIES = ["Easy", "Normal", "Hard", "Lunatic", "Extra", "Phantasm"];
 const HEADER_SIZE = 0x54;
 
 /**
+ * Size of the fixed per-checkpoint header preceding each stage's raw input
+ * log within the decompressed body (37 bytes of fields actually read by
+ * `readSplitCommon`, rounded up to a 4-byte-aligned 40). Combined with
+ * `BYTES_PER_FRAME`, this was determined by reverse-engineering the
+ * checked-in `test-fixtures/th07/*.rpy` fixtures: for every stage-to-stage
+ * checkpoint gap in a multi-stage (non-clear) replay, `(gap - 40) / 4` comes
+ * out to an exact integer, and applying the same formula to a single-stage
+ * (Extra-clear) replay whose actual recorded duration is independently known
+ * (`touhou-recorder` reports/11 and reports/20, both around 840-852s for
+ * `th7_07.rpy`) lands within that measured range. Neither threplay nor threp
+ * (the sources this package otherwise ports from) documents or parses this
+ * input log, so treat this as an empirically-derived model, not a confirmed
+ * upstream spec.
+ */
+const STAGE_CHECKPOINT_HEADER_SIZE = 40;
+/** See `STAGE_CHECKPOINT_HEADER_SIZE`. */
+const BYTES_PER_FRAME = 4;
+
+/**
  * T7RP (東方妖々夢, PCB) decoder. Ported from Read_T7RP in threplay.
  *
  * Header offset 0x07 was the clue that surfaced in production when it turned
@@ -53,17 +72,34 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
   const name = decodeAnsiText(decodeData.subarray(10, 18));
   const score = readBufferedUint32LE(decodeData, 24) * 10;
 
+  // checkpointOffsets are decodeData-relative offsets to each stage's score
+  // snapshot header, in the same order the stages were played. The original
+  // C# (threplay) used score_offsets[6] directly (without the -HEADER_SIZE
+  // adjustment applied to every other index) for the max_stage===6 "cleared
+  // in one recorded checkpoint" case (e.g. an Extra-stage clear) — an
+  // inconsistency that this port initially carried over as well. That bug
+  // caused readSplitCommon to read 0x54 bytes too far into the body, landing
+  // inside the raw per-frame input log instead of the checkpoint header
+  // (visible in the old golden fixtures as suspiciously uniform values like
+  // score=97/piv=97/graze=97). Applying the same -HEADER_SIZE adjustment
+  // uniformly here fixes that.
+  const checkpointOffsets: number[] = [];
   const splits: ReplayStageSplit[] = [];
   if (maxStage === 6) {
-    const offset = scoreOffsets[6]!;
-    splits.push(readClearSplit(decodeData, offset));
+    checkpointOffsets.push(scoreOffsets[6]! - HEADER_SIZE);
   } else {
     for (let i = 0; i <= maxStage; i++) {
       const raw = scoreOffsets[i]!;
       if (raw === 0) continue;
-      splits.push(readStageSplit(decodeData, raw - HEADER_SIZE, i + 1));
+      checkpointOffsets.push(raw - HEADER_SIZE);
     }
   }
+  const stageFrameCounts = perCheckpointFrameCounts(decodeData, checkpointOffsets);
+  checkpointOffsets.forEach((offset, i) => {
+    const split = readSplitCommon(decodeData, offset, maxStage === 6 ? 7 : i + 1);
+    split.frameCount = stageFrameCounts[i]!;
+    splits.push(split);
+  });
 
   return {
     game: "th07",
@@ -77,15 +113,22 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
     score,
     cleared: maxStage === 6,
     splits,
+    frameCount: stageFrameCounts.length === 0 ? null : stageFrameCounts.reduce((a, b) => a + b, 0),
   };
 }
 
-function readClearSplit(decodeData: Uint8Array, offset: number): ReplayStageSplit {
-  return readSplitCommon(decodeData, offset, 7);
-}
-
-function readStageSplit(decodeData: Uint8Array, offset: number, stage: number): ReplayStageSplit {
-  return readSplitCommon(decodeData, offset, stage);
+/**
+ * Returns the per-frame input log length for each checkpoint-to-checkpoint
+ * (or last-checkpoint-to-end-of-body) span, in the same order as
+ * `checkpointOffsets`. See `STAGE_CHECKPOINT_HEADER_SIZE` for the model this
+ * is based on.
+ */
+function perCheckpointFrameCounts(decodeData: Uint8Array, checkpointOffsets: number[]): number[] {
+  return checkpointOffsets.map((offset, i) => {
+    const start = offset + STAGE_CHECKPOINT_HEADER_SIZE;
+    const end = i + 1 < checkpointOffsets.length ? checkpointOffsets[i + 1]! : decodeData.length;
+    return Math.max(0, Math.floor((end - start) / BYTES_PER_FRAME));
+  });
 }
 
 function readSplitCommon(decodeData: Uint8Array, offset: number, stage: number): ReplayStageSplit {

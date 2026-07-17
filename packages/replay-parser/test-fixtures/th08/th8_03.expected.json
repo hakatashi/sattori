@@ -29,7 +29,8 @@
       "additional": {
         "pointItems": 0,
         "time": 0
-      }
+      },
+      "frameCount": null
     },
     {
       "stage": 2,
@@ -50,7 +51,8 @@
       "additional": {
         "pointItems": 59,
         "time": 0
-      }
+      },
+      "frameCount": null
     },
     {
       "stage": 3,
@@ -71,7 +73,8 @@
       "additional": {
         "pointItems": 180,
         "time": 1
-      }
+      },
+      "frameCount": null
     },
     {
       "stage": 4,
@@ -93,7 +96,8 @@
         "pointItems": 409,
         "time": 2,
         "route": "4B"
-      }
+      },
+      "frameCount": null
     },
     {
       "stage": 5,
@@ -114,7 +118,8 @@
       "additional": {
         "pointItems": 664,
         "time": 3
-      }
+      },
+      "frameCount": null
     },
     {
       "stage": 6,
@@ -136,7 +141,9 @@
         "pointItems": 820,
         "time": 4,
         "route": "6B"
-      }
+      },
+      "frameCount": null
     }
-  ]
+  ],
+  "frameCount": null
 }

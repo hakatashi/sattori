@@ -75,6 +75,7 @@ export function parseTh06(original: Uint8Array): ParsedReplay {
     score,
     cleared: maxStage === 6,
     splits,
+    frameCount: null,
   };
 }
 

@@ -75,6 +75,7 @@ export function parseTh08(original: Uint8Array): ParsedReplay {
     score,
     cleared,
     splits,
+    frameCount: null,
   };
 }
 

@@ -26,7 +26,8 @@
         "maxPieces": 8
       },
       "graze": 0,
-      "additional": null
+      "additional": null,
+      "frameCount": 10327
     },
     {
       "stage": 2,
@@ -44,7 +45,8 @@
         "maxPieces": 8
       },
       "graze": 503,
-      "additional": null
+      "additional": null,
+      "frameCount": 12673
     },
     {
       "stage": 3,
@@ -62,7 +64,8 @@
         "maxPieces": 8
       },
       "graze": 1632,
-      "additional": null
+      "additional": null,
+      "frameCount": 15272
     },
     {
       "stage": 4,
@@ -80,7 +83,8 @@
         "maxPieces": 8
       },
       "graze": 2468,
-      "additional": null
+      "additional": null,
+      "frameCount": 18694
     },
     {
       "stage": 5,
@@ -98,7 +102,9 @@
         "maxPieces": 8
       },
       "graze": 4302,
-      "additional": null
+      "additional": null,
+      "frameCount": 15786
     }
-  ]
+  ],
+  "frameCount": 72752
 }
