@@ -25,8 +25,8 @@ export const REPLAY_GAME_IDS = [
   "th165",
   "th17",
   "th18",
-  // th19 (東方獣王園) にはリプレイ保存機能自体が存在しないため対象外
-  // （.rpy ファイルが存在しない）。
+  // リプレイ保存機能が存在しない th19 (東方獣王園) は対象外
+  // "th19",
   "th20",
 ] as const;
 
@@ -41,8 +41,8 @@ export const REPLAY_GAME_TITLES: Record<ReplayGameId, string> = {
   th10: "東方風神録 ～ Mountain of Faith.",
   th11: "東方地霊殿 ～ Subterranean Animism.",
   th12: "東方星蓮船 ～ Undefined Fantastic Object.",
-  th125: "ダブルスポイラー ～ 東方文花帖.",
-  th128: "妖精大戦争 ～ 東方三月精.",
+  th125: "ダブルスポイラー ～ 東方文花帖",
+  th128: "妖精大戦争 ～ 東方三月精",
   th13: "東方神霊廟 ～ Ten Desires.",
   th14: "東方輝針城 ～ Double Dealing Character.",
   th143: "弾幕アマノジャク ～ Impossible Spell Card.",
@@ -51,6 +51,7 @@ export const REPLAY_GAME_TITLES: Record<ReplayGameId, string> = {
   th165: "秘封ナイトメアダイアリー ～ Violet Detector.",
   th17: "東方鬼形獣 ～ Wily Beast and Weakest Creature.",
   th18: "東方虹龍洞 ～ Unconnected Marketeers.",
-  // th19 (東方獣王園) はリプレイ保存機能なし
+  // リプレイ保存機能が存在しない th19 (東方獣王園) は対象外
+  // th19: "東方獣王園 〜 Unfinished Dream of All Living Ghost.",
   th20: "東方錦上京 ～ Fossilized Wonders.",
 };
