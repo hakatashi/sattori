@@ -18,8 +18,10 @@ export const GAME_IDS = [
   "th143", // 弾幕アマノジャク
   "th15", // 東方紺珠伝
   "th16", // 東方天空璋
+  "th165", // 秘封ナイトメアダイアリー
   "th17", // 東方鬼形獣
   "th18", // 東方虹龍洞
+  "th20", // 東方錦上京（th19 = 獣王園はリプレイ保存機能がないため対象外）
 ] as const;
 
 export type GameId = (typeof GAME_IDS)[number];
@@ -41,8 +43,10 @@ export const GAME_TITLES: Record<GameId, string> = {
   th143: "弾幕アマノジャク ～ Impossible Spell Card",
   th15: "東方紺珠伝 ～ Legacy of Lunatic Kingdom",
   th16: "東方天空璋 ～ Hidden Star in Four Seasons",
+  th165: "秘封ナイトメアダイアリー ～ Violet Detector",
   th17: "東方鬼形獣 ～ Wily Beast and Weakest Creature",
   th18: "東方虹龍洞 ～ Unconnected Marketeers",
+  th20: "東方錦上京 ～ Fossilized Wonders",
 };
 
 /**
