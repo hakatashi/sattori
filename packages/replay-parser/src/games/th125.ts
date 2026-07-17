@@ -4,7 +4,7 @@ import { normalizeText, type ParsedReplay } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 
 /**
- * t125 (ダブルスポイラー ～ 東方文花帖) デコーダ。threplay の Read_t125 を移植。
+ * t125 (ダブルスポイラー ～ 東方文花帖, DS) decoder. Ported from Read_t125 in threplay.
  */
 export function parseTh125(original: Uint8Array): ParsedReplay {
   const reader = new ByteReader(original);

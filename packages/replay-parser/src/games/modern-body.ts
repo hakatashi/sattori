@@ -4,9 +4,10 @@ import { decompress, readBufferedUint32LE, xorBlockDecode } from "../lzss.js";
 const MODERN_HEADER_SIZE = 36;
 
 /**
- * th10 (風神録) 以降で共通の「本文」復号パイプライン。
- * ヘッダ36バイトを除去したのち、2段階のXORブロック復号 → LZSS展開を行う。
- * （threplay の各 Read_tNNr 冒頭で共通に行われている処理を集約）。
+ * The "body" decoding pipeline shared from th10 (東方風神録, MoF) onward.
+ * After stripping the 36-byte header, this runs two passes of XOR block
+ * decoding followed by LZSS decompression (consolidating the processing
+ * common to the start of each Read_tNNr in threplay).
  */
 export function decodeModernBody(
   original: Uint8Array,

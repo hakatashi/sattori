@@ -9,7 +9,7 @@ const HEADER_SIZE = 0x68;
 const SCORE_OFFSET_COUNT = 9;
 
 /**
- * T8RP (東方永夜抄) デコーダ。threplay の Read_T8RP を移植。
+ * T8RP (東方永夜抄, IN) decoder. Ported from Read_T8RP in threplay.
  */
 export function parseTh08(original: Uint8Array): ParsedReplay {
   const reader = new ByteReader(original);
@@ -48,8 +48,9 @@ export function parseTh08(original: Uint8Array): ParsedReplay {
   const decodeData = decompress(shifted, length - HEADER_SIZE, dlength);
 
   const splits: ReplayStageSplit[] = [];
-  // USER セクションの stage フィールドに "Clear" と明記される（真の最終戦到達を
-  // 示す score_offsets の最終スロットより、全ルート・エンディングを網羅できて信頼できる）。
+  // The USER section's stage field explicitly contains "Clear" — this is more
+  // reliable than the final score_offsets slot (which indicates reaching the
+  // true final battle) because it covers all routes and endings.
   const cleared = stage.includes("Clear");
   if (maxStage === SCORE_OFFSET_COUNT - 1) {
     const offset = scoreOffsets[SCORE_OFFSET_COUNT - 1]! - HEADER_SIZE;

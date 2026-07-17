@@ -35,12 +35,13 @@ const fixtures = collectFixtures();
 
 describe("golden replay fixtures (test-fixtures/**)", () => {
   it("found the expected number of checked-in fixtures", () => {
-    // フィクスチャの取得自体が失敗して 0 件になった場合、以降の it.each が
-    // silently 空になって「全部パスしたように見える」事故を防ぐためのガード。
+    // Guards against the case where fixture collection itself fails and
+    // returns 0 cases, which would silently make the subsequent it.each
+    // empty and look like "everything passed."
     expect(fixtures.length).toBe(24);
   });
 
-  it.each(fixtures)("$label: 全プロパティ(splits内訳含む)がゴールデンJSONと一致する", ({ rpyPath, expectedPath }) => {
+  it.each(fixtures)("$label: all properties (including splits breakdown) match the golden JSON", ({ rpyPath, expectedPath }) => {
     const data = new Uint8Array(readFileSync(rpyPath));
     const expected = JSON.parse(readFileSync(expectedPath, "utf8")) as ParsedReplay;
     const result = parseReplay(data);

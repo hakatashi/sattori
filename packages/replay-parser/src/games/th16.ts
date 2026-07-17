@@ -5,7 +5,7 @@ import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type Repla
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
-/** t16r (東方天空璋) デコーダ。threplay の Read_t16r を移植。 */
+/** t16r (東方天空璋, HSiFS) decoder. Ported from Read_t16r in threplay. */
 export function parseTh16(original: Uint8Array): ParsedReplay {
   const decodedata = decodeModernBody(
     original,

@@ -6,16 +6,18 @@ import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
 /**
- * t13r マジックは th13 (神霊廟/TD) と th14 (輝針城/DDC) の両方で使われ、
- * USER セクション内のバージョンバイト（144ならTD、それ以外はDDC）で判別する
- * （threplay の Read_t13r を移植。判別ロジックはコード内コメントに準拠）。
+ * The t13r magic is shared by th13 (東方神霊廟, TD) and th14 (東方輝針城, DDC),
+ * and is distinguished by the version byte in the USER section (144 means TD,
+ * anything else means DDC) (ported from Read_t13r in threplay; the
+ * distinguishing logic follows the in-code comments).
  *
- * 注: threplay の Read_t13r は関数末尾で `return Read_Userdata(ref replay)` を
- * 呼び、TD/DDC 判別用に読み進めた分（4バイトの「which game」マーカー + 1バイトの
- * バージョン）を考慮しない共通レイアウトで USER セクションを再度読み直しており、
- * 結果として name/date/character 等が正しい位置からズレて上書きされる（upstream の
- * バグと判断）。本移植では、TD/DDC 判別ロジックを反映した最初の読み取り結果を
- * そのまま採用し、この二重読み込みは行わない。
+ * Note: threplay's Read_t13r calls `return Read_Userdata(ref replay)` at the
+ * end of the function, re-reading the USER section from a common layout that
+ * does not account for the bytes already consumed for TD/DDC detection (a
+ * 4-byte "which game" marker + a 1-byte version), causing name/date/character
+ * etc. to be overwritten from the wrong offsets (judged to be an upstream
+ * bug). This port instead keeps the result of the first read, which already
+ * reflects the TD/DDC detection logic, and does not perform this duplicate read.
  */
 export function parseTh1314(original: Uint8Array): ParsedReplay {
   const reader = new ByteReader(original);
@@ -23,7 +25,7 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
 
   reader.readUint32LE();
   reader.skip(4);
-  reader.skip(4); // which game
+  reader.skip(4); // which-game marker
   const versionByte = reader.readUint8();
   const isTd = versionByte === 144;
 

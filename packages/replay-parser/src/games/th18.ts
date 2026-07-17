@@ -5,7 +5,7 @@ import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type Repla
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
-/** t18r (東方虹龍洞) デコーダ。threplay の Read_t18r を移植。 */
+/** t18r (東方虹龍洞, UM) decoder. Ported from Read_t18r in threplay. */
 export function parseTh18(original: Uint8Array): ParsedReplay {
   const decodedata = decodeModernBody(
     original,

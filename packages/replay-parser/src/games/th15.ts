@@ -5,7 +5,7 @@ import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type Repla
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
-/** t15r (東方紺珠伝) デコーダ。threplay の Read_t15r を移植。 */
+/** t15r (東方紺珠伝, LoLK) decoder. Ported from Read_t15r in threplay. */
 export function parseTh15(original: Uint8Array): ParsedReplay {
   const decodedata = decodeModernBody(
     original,

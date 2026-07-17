@@ -1,10 +1,11 @@
 /**
- * このパッケージが認識する東方Project本編のタイトル識別子。
- * `packages/shared` の `GameId` とは独立している（本パッケージは
- * 単体でOSS公開できることを目標にしており、Sattori固有の型に依存しない）。
+ * Title identifiers for Touhou Project main games recognized by this package.
+ * Independent of `GameId` in `packages/shared` (this package aims to be
+ * publishable standalone as OSS, so it does not depend on Sattori-specific types).
  *
- * th13 (神霊廟) と th14 (輝針城) は同一のマジックバイト `t13r` を使い、
- * ヘッダ内のバージョンバイトで判別する（threplay 由来、コード内コメント参照）。
+ * th13 (東方神霊廟, TD) and th14 (東方輝針城, DDC) share the same
+ * magic bytes `t13r` and are distinguished by a version byte in the header
+ * (inherited from threplay; see the in-code comments).
  */
 export const REPLAY_GAME_IDS = [
   "th06",
@@ -25,7 +26,7 @@ export const REPLAY_GAME_IDS = [
   "th165",
   "th17",
   "th18",
-  // リプレイ保存機能が存在しない th19 (東方獣王園) は対象外
+  // th19 (東方獣王園, UDoALG) is excluded because it has no replay-saving feature
   // "th19",
   "th20",
 ] as const;
@@ -51,7 +52,7 @@ export const REPLAY_GAME_TITLES: Record<ReplayGameId, string> = {
   th165: "秘封ナイトメアダイアリー ～ Violet Detector.",
   th17: "東方鬼形獣 ～ Wily Beast and Weakest Creature.",
   th18: "東方虹龍洞 ～ Unconnected Marketeers.",
-  // リプレイ保存機能が存在しない th19 (東方獣王園) は対象外
+  // th19 (東方獣王園, UDoALG) is excluded because it has no replay-saving feature
   // th19: "東方獣王園 〜 Unfinished Dream of All Living Ghost.",
   th20: "東方錦上京 ～ Fossilized Wonders.",
 };

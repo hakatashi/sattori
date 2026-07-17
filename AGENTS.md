@@ -52,7 +52,7 @@ pnpm workspaces + Turborepo。ルートに `pnpm-workspace.yaml` / `turbo.json` 
 | パッケージ | 役割 | 主なツール |
 | --- | --- | --- |
 | `packages/shared` | 型定義（ゲーム・リプレイ・ジョブ・API 契約） | tsc, vitest |
-| `packages/replay-parser` | `.rpy` デコーダ（**実装済み**。`@sattori/shared` 非依存でOSS公開可能な設計） | tsc, vitest |
+| `packages/replay-parser` | `.rpy` デコーダ（**実装済み**。npm パッケージ名は `@sattori/touhou-replay-parser`。`@sattori/shared` 非依存でOSS公開可能な設計） | tsc, vitest |
 | `apps/api` | Lambda ハンドラ・S3/DynamoDB/EC2 連携 | tsc(--noEmit), vitest |
 | `apps/web` | フロントエンド SPA | vite, vitest, jsdom |
 | `worker` | 録画パイプライン（Python） | python, docker |
@@ -148,6 +148,20 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 ワークスペースパッケージに一切依存しない**（単体でOSS公開できることを意識した設計）。
 Sattori向けの `ReplayInfo` への変換は `packages/shared/src/replay.ts` の
 `fromParsedReplay()` が担う（依存の向きは shared → replay-parser の一方向）。
+
+- **npm パッケージ名は `@sattori/touhou-replay-parser`**（ディレクトリ名
+  `packages/replay-parser` とは異なる）。単体OSS公開を前提としているため、
+  モノレポ内の他パッケージのような `@sattori/<ディレクトリ名>` 命名には揃えていない。
+- **コード内コメント・README・テストの記述（`describe`/`it` 文言等）は英語で書く**
+  （このパッケージのみの規約。モノレポの他パッケージは日本語で構わない）。
+  ただし以下は対象外・例外:
+  - `REPLAY_GAME_TITLES`（`src/game-ids.ts`）や `ParsedReplay.gameTitle` など、
+    ライブラリが実際に返す値（公開APIの出力データ）は原作準拠の日本語表記のまま。
+    ゴールデンテストの `test-fixtures/**/*.expected.json` にも同じ値が書き込まれている。
+  - Shift_JISデコードの検証用リテラル（例: `byte-reader.test.ts` の `"あい"`）等、
+    テスト対象のデータそのものである日本語文字列。
+  - 東方タイトルの日本語名に言及するコメントは、日本語名を残したまま
+    英語略称を併記する（例: `th07 (東方妖々夢, PCB)`）。
 
 - ゲーム判定: 先頭4バイトのマジック（`T6RP`/`T7RP`/`T8RP`/… `t10r`…）。
   th13(神霊廟)とth14(輝針城)は同一マジック`t13r`をヘッダ内バージョンバイトで判別。

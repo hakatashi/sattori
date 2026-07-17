@@ -1,107 +1,109 @@
 import type { ReplayGameId } from "./game-ids.js";
 
 /**
- * 残機・ボム等、「本体の個数」＋「次の1個までの欠片」で構成される資源の記録。
- * 欠片システムを持たないゲーム、またはそのゲームでデータが取得できない場合は
- * `pieces`/`maxPieces` が null になる。
+ * A resource count made up of a "whole unit count" plus "fragments toward the
+ * next unit," as used for lives, bombs, etc. `pieces`/`maxPieces` are null for
+ * games without a fragment system, or when the data cannot be obtained for
+ * that game.
  *
- * 例外: th128（妖精大戦争）はこのフィールドを百分率ゲージとして使っており、
- * `count` がパーセンテージ（0-100+）、`maxPieces` は常に100、`pieces` は
- * 常に null になる（該当ファイルのコメント参照）。
+ * Exception: th128 (妖精大戦争, GFW) uses this field as a percentage gauge —
+ * `count` holds the percentage (0-100+), `maxPieces` is always 100, and
+ * `pieces` is always null (see the comments in that file).
  */
 export interface ReplayResourceCount {
-  /** 本体の個数（またはth128に限りパーセンテージ）。 */
+  /** The whole unit count (or a percentage, for th128 only). */
   count: number;
-  /** 次の1個までに集めた欠片の数。 */
+  /** Number of fragments collected toward the next unit. */
   pieces: number | null;
-  /** 欠片の最大値（分母）。判別できなければ null。 */
+  /** The fragment maximum (denominator). Null if it cannot be determined. */
   maxPieces: number | null;
 }
 
 /**
- * ステージ（面）ごとの記録。ゲームによって記録される項目が異なるため、
- * 該当データを含まないゲームでは各フィールドが null になる。
+ * A per-stage record. Games track different fields, so fields not tracked by
+ * a given game are null.
  */
 export interface ReplayStageSplit {
   /**
-   * ステージ番号（判別できない場合は null）。多くのゲームでは
-   * 「そのステージを開始した時点」のスナップショットとして記録されるため、
-   * score 等は実質的に「1つ前のステージ終了時点」の値になる点に注意
-   * （原作リプレイ選択画面の "Stage N" 行が示す値と対応する）。
+   * Stage number (null if it cannot be determined). Most games record this
+   * as a snapshot taken "at the start of the stage," so fields like `score`
+   * effectively reflect the value "at the end of the previous stage"
+   * (this matches the value shown on the "Stage N" line of the original
+   * game's replay selection screen).
    */
   stage: number | null;
-  /** このスナップショット時点のスコア。 */
+  /** Score at the time of this snapshot. */
   score: number | null;
-  /** パワー（表記はゲームごとに異なるため文字列。例: "1.00", "128"）。 */
+  /** Power (kept as a string since notation differs by game, e.g. "1.00", "128"). */
   power: string | null;
-  /** PIV（Point of Item Value）等、ゲーム固有の得点指標。 */
+  /** Game-specific score metric such as PIV (Point of Item Value). */
   piv: number | null;
-  /** 残機。 */
+  /** Lives. */
   lives: ReplayResourceCount | null;
-  /** ボム数。 */
+  /** Bomb count. */
   bombs: ReplayResourceCount | null;
-  /** グレイズ数。 */
+  /** Graze count. */
   graze: number | null;
   /**
-   * UFOの色・トランス・季節等、ゲーム固有の付加情報。キー名・値の形はゲームごとに
-   * 異なる（各ゲームのデコーダ実装のコメントを参照）。該当データがない
-   * ゲームでは null。
+   * Game-specific extra info such as UFO color, trance, season, etc. Key
+   * names and value shapes differ by game (see the comments in each game's
+   * decoder implementation). Null for games without such data.
    */
   additional: Record<string, number | string | (number | string)[]> | null;
 }
 
 /**
- * `.rpy` ファイルから抽出できる情報の全体。`packages/shared` の
- * `ReplayInfo` はこの型のサブセット（Sattori の録画メタデータ表示に
- * 必要な項目のみ）に対応する。
+ * The full set of information extractable from a `.rpy` file. `ReplayInfo` in
+ * `packages/shared` corresponds to a subset of this type (only the fields
+ * needed for Sattori's recording metadata display).
  */
 export interface ParsedReplay {
   game: ReplayGameId;
   gameTitle: string;
   /**
-   * ヘッダから読み取れる生のフォーマット/バージョンバイト（ゲームごとに
-   * 意味・オフセットが異なる）。互換性のないゲーム本体バージョンで録画された
-   * リプレイを判別する手がかりとして利用できる（Sattori では #16 の
-   * 検知に使用）。判定できないゲームでは null。
+   * The raw format/version byte read from the header (its meaning and offset
+   * differ by game). Can be used as a clue to identify replays recorded with
+   * an incompatible version of the original game (used by Sattori for #16
+   * detection). Null for games where this cannot be determined.
    */
   formatVersion: number | null;
   player: string | null;
-  /** 記録日時。元データの表記をそのまま保持する（例: "25/12/31"）。 */
+  /** Recording date/time, kept verbatim as it appears in the source data (e.g. "25/12/31"). */
   date: string | null;
   character: string | null;
   difficulty: string | null;
-  /** 到達／記録ステージ・シーンの表記（例: "Stage 6", "Extra"）。 */
+  /** The reached/recorded stage or scene notation (e.g. "Stage 6", "Extra"). */
   stage: string | null;
   score: number | null;
   /**
-   * 全面クリア（Player Wins に相当する状態）を検出できた場合のみ true/false。
-   * 判定材料がないゲーム・リプレイ種別では null。
+   * True/false only when a full clear (equivalent to "Player Wins") could be
+   * detected. Null for games/replay types with no way to determine this.
    */
   cleared: boolean | null;
-  /** ステージごとの記録（判別できないゲームでは空配列）。 */
+  /** Per-stage records (empty array for games where this cannot be determined). */
   splits: ReplayStageSplit[];
 }
 
 export type ReplayParseErrorCode =
-  /** ファイルが短すぎてマジックバイトすら読めない。 */
+  /** The file is too short to even read the magic bytes. */
   | "too_short"
-  /** 先頭4バイトが既知のどの東方リプレイマジックとも一致しない。 */
+  /** The first 4 bytes don't match any known Touhou replay magic. */
   | "unknown_magic"
-  /** マジックは既知だが、このパッケージがまだデコーダを実装していない。 */
+  /** The magic is known, but this package doesn't implement a decoder for it yet. */
   | "unsupported_game"
-  /** マジックは既知の形式だが、以降のデータが不正で安全に読み進められない。 */
+  /** The magic is a known format, but the data that follows is invalid and cannot be safely parsed further. */
   | "corrupt";
 
 export interface ReplayParseError {
   code: ReplayParseErrorCode;
   message: string;
-  /** unsupported_game / corrupt の場合、マジックから判定できたゲームID。 */
+  /** The game ID identified from the magic, for unsupported_game / corrupt. */
   game?: ReplayGameId;
 }
 
 export type ReplayParseResult = { ok: true; replay: ParsedReplay } | { ok: false; error: ReplayParseError };
 
-/** 固定長フィールドのパディング空白を取り除く。空文字列は null として扱う。 */
+/** Strips padding whitespace from fixed-length fields. An empty string is treated as null. */
 export function normalizeText(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
