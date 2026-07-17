@@ -12,24 +12,26 @@
   "splits": [
     {
       "stage": 7,
-      "score": 1,
+      "score": 31173710,
       "power": "0",
-      "piv": 65,
+      "piv": 300000,
       "lives": {
-        "count": 0,
+        "count": 2,
         "pieces": null,
         "maxPieces": null
       },
       "bombs": {
-        "count": 65,
+        "count": 2,
         "pieces": null,
         "maxPieces": null
       },
-      "graze": 65,
+      "graze": 0,
       "additional": {
-        "pointItems": 65,
-        "cherryMax": 65
-      }
+        "pointItems": 0,
+        "cherryMax": 400000
+      },
+      "frameCount": 57669
     }
-  ]
+  ],
+  "frameCount": 57669
 }

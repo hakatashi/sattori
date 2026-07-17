@@ -44,15 +44,17 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
   const score = parseScoreWithTrailingZero(reader.readAnsiString());
 
   const splits: ReplayStageSplit[] = [];
+  let frameCount = 0;
   const decodedata = decodeModernBody(
     original,
     { blockSize: 0x400, base: 0x5c, add: 0xe1 },
     { blockSize: 0x100, base: 0x7d, add: 0x3a },
   );
 
+  let stageCount: number;
   if (isTd) {
     let stageOffset = 0x74;
-    const stageCount = Math.min(decodedata[0x58] ?? 0, 6);
+    stageCount = Math.min(decodedata[0x58] ?? 0, 6);
     for (let i = 0; i < stageCount; i++) {
       const split = emptySplit();
       split.stage = decodedata[stageOffset] ?? null;
@@ -68,12 +70,15 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
       split.lives = resourceCount(lives, livePieces, null);
       split.graze = readBufferedUint32LE(decodedata, stageOffset + 0x2c);
       split.bombs = resourceCount(bombs, bombPieces, 8);
+      const stageFrameCount = readBufferedUint32LE(decodedata, stageOffset + 0x4);
+      split.frameCount = stageFrameCount;
       splits.push(split);
+      frameCount += stageFrameCount;
       stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0xc4;
     }
   } else {
     let stageOffset = 0x94;
-    const stageCount = Math.min(decodedata[0x78] ?? 0, 6);
+    stageCount = Math.min(decodedata[0x78] ?? 0, 6);
     for (let i = 0; i < stageCount; i++) {
       const split = emptySplit();
       split.stage = decodedata[stageOffset] ?? null;
@@ -87,7 +92,10 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
       split.lives = resourceCount(lives, livePieces, 3);
       split.graze = readBufferedUint32LE(decodedata, stageOffset + 0x2c);
       split.bombs = resourceCount(bombs, bombPieces, 8);
+      const stageFrameCount = readBufferedUint32LE(decodedata, stageOffset + 0x4);
+      split.frameCount = stageFrameCount;
       splits.push(split);
+      frameCount += stageFrameCount;
       stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0xdc;
     }
   }
@@ -105,5 +113,6 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
     score,
     cleared: stage.includes("Clear"),
     splits,
+    frameCount: stageCount > 0 ? frameCount : null,
   };
 }

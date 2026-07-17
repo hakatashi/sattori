@@ -15,6 +15,7 @@ export function parseTh18(original: Uint8Array): ParsedReplay {
 
   const splits: ReplayStageSplit[] = [];
   let stageOffset = 0xc8;
+  let frameCount = 0;
   const stageCount = Math.min(decodedata[0xa8] ?? 0, 6);
   for (let i = 0; i < stageCount; i++) {
     const split = emptySplit();
@@ -38,7 +39,10 @@ export function parseTh18(original: Uint8Array): ParsedReplay {
     split.lives = resourceCount(lives, livePieces, 3);
     split.graze = 0;
     split.bombs = resourceCount(bombs, bombPieces, 3);
+    const stageFrameCount = readBufferedUint32LE(decodedata, stageOffset + 0x4);
+    split.frameCount = stageFrameCount;
     splits.push(split);
+    frameCount += stageFrameCount;
     stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0x126c;
   }
 
@@ -56,5 +60,6 @@ export function parseTh18(original: Uint8Array): ParsedReplay {
     score: userdata.score,
     cleared: userdata.stage.includes("Clear"),
     splits,
+    frameCount: stageCount > 0 ? frameCount : null,
   };
 }

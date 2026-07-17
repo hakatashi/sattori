@@ -15,6 +15,7 @@ function baseParsedReplay(overrides: Partial<ParsedReplay> = {}): ParsedReplay {
     score: 303766040,
     cleared: true,
     splits: [],
+    frameCount: 50812,
     ...overrides,
   };
 }
@@ -31,11 +32,17 @@ describe("fromParsedReplay", () => {
       stage: null,
       score: 303766040,
       cleared: true,
+      estimatedDurationSeconds: 847,
     });
   });
 
   it("falls back to an empty string when player is null", () => {
     const info = fromParsedReplay(baseParsedReplay({ player: null }));
     expect(info.player).toBe("");
+  });
+
+  it("returns null estimatedDurationSeconds when frameCount is unavailable", () => {
+    const info = fromParsedReplay(baseParsedReplay({ frameCount: null }));
+    expect(info.estimatedDurationSeconds).toBeNull();
   });
 });

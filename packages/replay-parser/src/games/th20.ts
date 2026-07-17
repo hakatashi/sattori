@@ -37,5 +37,6 @@ export function parseTh20(original: Uint8Array): ParsedReplay {
     score: userdata.score,
     cleared: userdata.stage.includes("Clear"),
     splits: [],
+    frameCount: null,
   };
 }

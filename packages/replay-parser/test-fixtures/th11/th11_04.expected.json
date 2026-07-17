@@ -22,7 +22,9 @@
       },
       "bombs": null,
       "graze": 0,
-      "additional": null
+      "additional": null,
+      "frameCount": 61130
     }
-  ]
+  ],
+  "frameCount": 61130
 }

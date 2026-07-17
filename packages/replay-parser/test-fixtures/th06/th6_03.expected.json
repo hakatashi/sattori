@@ -28,7 +28,9 @@
       "graze": null,
       "additional": {
         "rank": 16
-      }
+      },
+      "frameCount": null
     }
-  ]
+  ],
+  "frameCount": null
 }

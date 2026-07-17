@@ -105,6 +105,40 @@ see the comments in `src/games/th128.ts` for details). Likewise,
 season, spell cards, etc.) as an object with typed properties rather than
 strings (e.g. `{ ufoColors: ["Red", "None", "None"] }`).
 
+### `frameCount`
+
+`frameCount` is the total number of in-game frames the replay plays back.
+The main-series games run gameplay logic at a fixed 60 frames/sec, so
+`frameCount / 60` gives the playback duration in seconds — useful for
+estimating recording time before actually running the replay. It does not
+include any recording-pipeline overhead (menu automation, end-of-replay
+detection lag, etc.) layered on top by a consumer such as Sattori's worker.
+
+Currently populated for:
+
+- **th07**: derived by reverse-engineering the per-checkpoint input log
+  layout (not documented by threplay/threp, which don't parse this data at
+  all). Cross-validated against real recorded durations of a checked-in
+  fixture (`touhou-recorder` PoC reports: `th7_07.rpy` recorded at ~840-852s
+  end-to-end; the computed frame count lands within that range) — see the
+  comments on `STAGE_CHECKPOINT_HEADER_SIZE` in `src/games/th07.ts`.
+- **th10-th18** (all titles sharing the `decodeModernBody` pipeline: th10,
+  th11, th12, th13, th14, th15, th16, th17, th18): each stage's decompressed
+  header carries an explicit frame-count field, confirmed against
+  `Fluorohydride/threp`'s own C++ implementation (which reads this field to
+  reconstruct input logs for its own purposes) and independently against
+  `yiyuezhuo/touhou-replay-decoder`.
+
+`null` for every other supported title (th06, th08, th09, th095, th125,
+th128, th143/th165, th20) — the per-frame input log location for those has
+not been reverse-engineered yet.
+
+`splits[].frameCount` breaks the same total down per stage/segment (frames
+played from that checkpoint up to the next one, or to the end of the replay
+for the last split) for the same set of titles; `ParsedReplay.frameCount`
+is simply the sum of every `splits[].frameCount`. It is `null` per-split
+wherever the top-level `frameCount` is also `null`.
+
 ## Credits
 
 Most of the decoding logic was independently written from scratch in

@@ -23,6 +23,13 @@ export interface ReplayInfo {
   score: number | null;
   /** クリア（全面クリア）記録かどうか。判定できなければ null。 */
   cleared: boolean | null;
+  /**
+   * リプレイ本編の推定再生時間（秒）。`ParsedReplay.frameCount`（60fps前提）から算出。
+   * MODのメニュー自動操作や終了検知ラグなど、録画パイプライン側のオーバーヘッドは
+   * 含まないため、ジョブのタイムアウト設定等に使う場合はマージンを加算すること。
+   * 対応タイトルでのみ取得可能（現状 th07・th10〜th18）。それ以外は null。
+   */
+  estimatedDurationSeconds: number | null;
 }
 
 /**
@@ -41,5 +48,6 @@ export function fromParsedReplay(parsed: ParsedReplay): ReplayInfo {
     stage: parsed.stage,
     score: parsed.score,
     cleared: parsed.cleared,
+    estimatedDurationSeconds: parsed.frameCount === null ? null : Math.round(parsed.frameCount / 60),
   };
 }
