@@ -2,7 +2,7 @@ import { ByteReader } from "../byte-reader.js";
 import { ReplayCorruptError } from "../errors.js";
 import { additiveKeyDecode, decompress, readBufferedUint32LE } from "../lzss.js";
 import { jumpToUser, parseIntStrict } from "../userdata.js";
-import { emptySplit, normalizeText, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 
 const HEADER_SIZE = 0x68;
@@ -95,29 +95,29 @@ function stageNumberFor(index: number): number {
 function stageLabelFor(index: number): string | null {
   switch (index) {
     case 3:
-      return "Stage: 4A";
+      return "4A";
     case 4:
-      return "Stage: 4B";
+      return "4B";
     case 6:
-      return "Stage: 6A";
+      return "6A";
     case 7:
-      return "Stage: 6B";
+      return "6B";
     default:
       return null;
   }
 }
 
-function readSplit(decodeData: Uint8Array, offset: number, stage: number, extraLabel: string | null): ReplayStageSplit {
+function readSplit(decodeData: Uint8Array, offset: number, stage: number, route: string | null): ReplayStageSplit {
   const split = emptySplit();
   split.stage = stage;
   split.score = readBufferedUint32LE(decodeData, offset) * 10;
   const pointItems = readBufferedUint32LE(decodeData, offset + 0x4);
   const time = readBufferedUint32LE(decodeData, offset + 0xc);
-  split.additional = `Point Items: ${pointItems} | Time: ${time}${extraLabel ? ` | ${extraLabel}` : ""}`;
+  split.additional = route ? { pointItems, time, route } : { pointItems, time };
   split.graze = readBufferedUint32LE(decodeData, offset + 0x8);
   split.piv = readBufferedUint32LE(decodeData, offset + 0x14);
   split.power = String(decodeData[offset + 0x1c] ?? 0);
-  split.lives = String(decodeData[offset + 0x1d] ?? 0);
-  split.bombs = String(decodeData[offset + 0x1e] ?? 0);
+  split.lives = resourceCount(decodeData[offset + 0x1d] ?? 0);
+  split.bombs = resourceCount(decodeData[offset + 0x1e] ?? 0);
   return split;
 }

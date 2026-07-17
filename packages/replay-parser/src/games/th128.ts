@@ -2,7 +2,7 @@ import { ByteReader } from "../byte-reader.js";
 import { ReplayCorruptError } from "../errors.js";
 import { decompress, readBufferedUint32LE, xorBlockDecode } from "../lzss.js";
 import { jumpToUser, parseScoreWithTrailingZero } from "../userdata.js";
-import { emptySplit, normalizeText, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 
 const HEADER_SIZE = 36;
@@ -50,10 +50,12 @@ export function parseTh128(original: Uint8Array): ParsedReplay {
     const split = emptySplit();
     split.score = readBufferedUint32LE(decodedata, stageOffset + 0xc) * 10;
     split.power = String(readBufferedUint32LE(decodedata, stageOffset + 0x10) + 1);
-    split.lives = `${Math.trunc(readBufferedUint32LE(decodedata, stageOffset + 0x80) / 100)}%`;
-    split.bombs = `${Math.trunc(readBufferedUint32LE(decodedata, stageOffset + 0x84) / 100)}%`;
+    // th128 は lives/bombs を個数ではなく百分率ゲージとして記録する
+    // （ReplayResourceCount.count がパーセンテージ、maxPieces=100 固定）。
+    split.lives = resourceCount(Math.trunc(readBufferedUint32LE(decodedata, stageOffset + 0x80) / 100), null, 100);
+    split.bombs = resourceCount(Math.trunc(readBufferedUint32LE(decodedata, stageOffset + 0x84) / 100), null, 100);
     const freezeArea = readFloat32LE(decodedata, stageOffset + 0x88);
-    split.additional = `Freeze Area: ${Math.trunc(freezeArea)}%`;
+    split.additional = { freezeAreaPercent: Math.trunc(freezeArea) };
     splits.push(split);
     stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0x90;
   }

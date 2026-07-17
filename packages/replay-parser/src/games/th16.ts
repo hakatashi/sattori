@@ -1,7 +1,7 @@
 import { ByteReader } from "../byte-reader.js";
 import { readBufferedUint32LE } from "../lzss.js";
 import { readModernUserdata } from "../userdata.js";
-import { emptySplit, normalizeText, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
@@ -27,10 +27,10 @@ export function parseTh16(original: Uint8Array): ParsedReplay {
     const bombPieces = decodedata[stageOffset + 0x88] ?? 0;
     const season = readBufferedUint32LE(decodedata, stageOffset + 0x8c);
     const seasonMax = readBufferedUint32LE(decodedata, stageOffset + 0x90);
-    split.additional = `Season: ${season}/${seasonMax}`;
-    split.lives = String(lives);
+    split.additional = { season, seasonMax };
+    split.lives = resourceCount(lives);
     split.graze = readBufferedUint32LE(decodedata, stageOffset + 0x44);
-    split.bombs = `${bombs} (${bombPieces}/5)`;
+    split.bombs = resourceCount(bombs, bombPieces, 5);
     splits.push(split);
     stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0x294;
   }

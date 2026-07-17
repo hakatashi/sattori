@@ -1,0 +1,122 @@
+{
+  "game": "th14",
+  "gameTitle": "東方輝針城 ～ Double Dealing Character.",
+  "formatVersion": 139,
+  "player": "koyi",
+  "date": "26/03/21 14:15",
+  "character": "MarisaB",
+  "difficulty": "Lunatic",
+  "stage": "Stage All Clear",
+  "score": 595370420,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "1.00",
+      "piv": 10000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 0,
+      "additional": null
+    },
+    {
+      "stage": 2,
+      "score": 24160890,
+      "power": "4.00",
+      "piv": 18780,
+      "lives": {
+        "count": 4,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": 5,
+        "maxPieces": 8
+      },
+      "graze": 688,
+      "additional": null
+    },
+    {
+      "stage": 3,
+      "score": 89889890,
+      "power": "4.00",
+      "piv": 33710,
+      "lives": {
+        "count": 5,
+        "pieces": 2,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": 4,
+        "maxPieces": 8
+      },
+      "graze": 3055,
+      "additional": null
+    },
+    {
+      "stage": 4,
+      "score": 143346960,
+      "power": "4.00",
+      "piv": 44330,
+      "lives": {
+        "count": 4,
+        "pieces": 1,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": 4,
+        "maxPieces": 8
+      },
+      "graze": 3658,
+      "additional": null
+    },
+    {
+      "stage": 5,
+      "score": 298068530,
+      "power": "3.38",
+      "piv": 78490,
+      "lives": {
+        "count": 5,
+        "pieces": 1,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 5,
+        "maxPieces": 8
+      },
+      "graze": 5033,
+      "additional": null
+    },
+    {
+      "stage": 6,
+      "score": 460577630,
+      "power": "4.00",
+      "piv": 97710,
+      "lives": {
+        "count": 5,
+        "pieces": 2,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 1,
+        "maxPieces": 8
+      },
+      "graze": 6125,
+      "additional": null
+    }
+  ]
+}

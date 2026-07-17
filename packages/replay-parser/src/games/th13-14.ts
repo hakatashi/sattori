@@ -1,7 +1,7 @@
 import { ByteReader } from "../byte-reader.js";
 import { readBufferedUint32LE } from "../lzss.js";
 import { jumpToUser, parseScoreWithTrailingZero } from "../userdata.js";
-import { emptySplit, normalizeText, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
@@ -62,10 +62,10 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
       const bombs = decodedata[stageOffset + 0x5c] ?? 0;
       const bombPieces = decodedata[stageOffset + 0x60] ?? 0;
       const trance = decodedata[stageOffset + 0x64] ?? 0;
-      split.additional = `Trance: ${trance}/600`;
-      split.lives = `${lives} (${livePieces})`;
+      split.additional = { trance, tranceMax: 600 };
+      split.lives = resourceCount(lives, livePieces, null);
       split.graze = readBufferedUint32LE(decodedata, stageOffset + 0x2c);
-      split.bombs = `${bombs} (${bombPieces}/8)`;
+      split.bombs = resourceCount(bombs, bombPieces, 8);
       splits.push(split);
       stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0xc4;
     }
@@ -82,9 +82,9 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
       const livePieces = decodedata[stageOffset + 0x54] ?? 0;
       const bombs = decodedata[stageOffset + 0x5c] ?? 0;
       const bombPieces = decodedata[stageOffset + 0x60] ?? 0;
-      split.lives = `${lives} (${livePieces}/3)`;
+      split.lives = resourceCount(lives, livePieces, 3);
       split.graze = readBufferedUint32LE(decodedata, stageOffset + 0x2c);
-      split.bombs = `${bombs} (${bombPieces}/8)`;
+      split.bombs = resourceCount(bombs, bombPieces, 8);
       splits.push(split);
       stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0xdc;
     }

@@ -1,7 +1,7 @@
 import { ByteReader } from "../byte-reader.js";
 import { readBufferedUint32LE } from "../lzss.js";
 import { readModernUserdata } from "../userdata.js";
-import { emptySplit, normalizeText, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
@@ -22,9 +22,11 @@ export function parseTh10(original: Uint8Array): ParsedReplay {
     split.score = readBufferedUint32LE(decodedata, stageOffset + 0xc) * 10;
     split.power = (0.05 * readBufferedUint32LE(decodedata, stageOffset + 0x10)).toFixed(2);
     split.piv = readBufferedUint32LE(decodedata, stageOffset + 0x14);
-    split.lives = String(decodedata[stageOffset + 0x1c] ?? 0);
+    split.lives = resourceCount(decodedata[stageOffset + 0x1c] ?? 0);
     split.graze = 0;
-    split.bombs = "0";
+    // threplay の Read_t10r はボム数を抽出しておらず常に "0" を返していた。
+    // 実データではないため、このパッケージでは取得不能として null を返す。
+    split.bombs = null;
     splits.push(split);
     stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0x1c4;
   }

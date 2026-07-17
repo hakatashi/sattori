@@ -1,7 +1,7 @@
 import { ByteReader } from "../byte-reader.js";
 import { readBufferedUint32LE } from "../lzss.js";
 import { readModernUserdata } from "../userdata.js";
-import { emptySplit, normalizeText, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
@@ -36,9 +36,9 @@ export function parseTh12(original: Uint8Array): ParsedReplay {
       const colorIndex = decodedata[stageOffset + 0x20 + j * 4] ?? 0;
       ufos.push(UFO_COLORS[colorIndex] ?? "None");
     }
-    split.additional = `UFOs: ${ufos.join(" ")}`;
-    split.lives = `${lives} (${livePieces}/4)`;
-    split.bombs = `${bombs} (${bombPieces}/3)`;
+    split.additional = { ufoColors: ufos };
+    split.lives = resourceCount(lives, livePieces, 4);
+    split.bombs = resourceCount(bombs, bombPieces, 3);
     split.graze = readBufferedUint32LE(decodedata, stageOffset + 0x44);
     splits.push(split);
     stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0xa0;

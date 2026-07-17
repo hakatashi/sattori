@@ -1,7 +1,7 @@
 import { ByteReader } from "../byte-reader.js";
 import { readBufferedUint32LE } from "../lzss.js";
 import { readModernUserdata } from "../userdata.js";
-import { emptySplit, normalizeText, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
@@ -34,10 +34,10 @@ export function parseTh18(original: Uint8Array): ParsedReplay {
       cards.push(cardId);
     }
     const active = readBufferedUint32LE(decodedata, stageOffset + 2400);
-    split.additional = `Cards: ${cards.join(" ")} | Active: ${active}`;
-    split.lives = `${lives} (${livePieces}/3)`;
+    split.additional = { cards, active };
+    split.lives = resourceCount(lives, livePieces, 3);
     split.graze = 0;
-    split.bombs = `${bombs} (${bombPieces}/3)`;
+    split.bombs = resourceCount(bombs, bombPieces, 3);
     splits.push(split);
     stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0x126c;
   }

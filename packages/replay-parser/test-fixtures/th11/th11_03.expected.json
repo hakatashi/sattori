@@ -1,0 +1,98 @@
+{
+  "game": "th11",
+  "gameTitle": "東方地霊殿 ～ Subterranean Animism.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "14/12/09 23:02",
+  "character": "MarisaC",
+  "difficulty": "Hard",
+  "stage": "Stage 1 ～ 6",
+  "score": 182237970,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "0.00",
+      "piv": 100000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null
+    },
+    {
+      "stage": 2,
+      "score": 19498240,
+      "power": "2.15",
+      "piv": 107770,
+      "lives": {
+        "count": 3,
+        "pieces": 2,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 617,
+      "additional": null
+    },
+    {
+      "stage": 3,
+      "score": 37305090,
+      "power": "4.00",
+      "piv": 108100,
+      "lives": {
+        "count": 4,
+        "pieces": 4,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 1156,
+      "additional": null
+    },
+    {
+      "stage": 4,
+      "score": 64768400,
+      "power": "1.05",
+      "piv": 108640,
+      "lives": {
+        "count": 6,
+        "pieces": 2,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 2782,
+      "additional": null
+    },
+    {
+      "stage": 5,
+      "score": 109444420,
+      "power": "0.75",
+      "piv": 100110,
+      "lives": {
+        "count": 5,
+        "pieces": 4,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 6015,
+      "additional": null
+    },
+    {
+      "stage": 6,
+      "score": 153478790,
+      "power": "0.90",
+      "piv": 100070,
+      "lives": {
+        "count": 0,
+        "pieces": 4,
+        "maxPieces": 5
+      },
+      "bombs": null,
+      "graze": 8580,
+      "additional": null
+    }
+  ]
+}

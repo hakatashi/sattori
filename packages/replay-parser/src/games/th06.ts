@@ -1,7 +1,7 @@
 import { decodeAnsiText } from "../byte-reader.js";
 import { ReplayCorruptError } from "../errors.js";
 import { additiveKeyDecode, readBufferedUint32LE } from "../lzss.js";
-import { emptySplit, normalizeText, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 
 const CHARACTERS = ["ReimuA", "ReimuB", "MarisaA", "MarisaB"];
@@ -82,8 +82,8 @@ function readStageSplit(buffer: Uint8Array, offset: number, stage: number): Repl
   split.stage = stage;
   split.score = readBufferedUint32LE(buffer, offset);
   split.power = String(buffer[offset + 0x8] ?? 0);
-  split.lives = String(buffer[offset + 0x9] ?? 0);
-  split.bombs = String(buffer[offset + 0xa] ?? 0);
-  split.additional = `Rank: ${buffer[offset + 0xb] ?? 0}`;
+  split.lives = resourceCount(buffer[offset + 0x9] ?? 0);
+  split.bombs = resourceCount(buffer[offset + 0xa] ?? 0);
+  split.additional = { rank: buffer[offset + 0xb] ?? 0 };
   return split;
 }

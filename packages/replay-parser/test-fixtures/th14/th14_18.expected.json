@@ -1,0 +1,32 @@
+{
+  "game": "th14",
+  "gameTitle": "東方輝針城 ～ Double Dealing Character.",
+  "formatVersion": 139,
+  "player": "koyi",
+  "date": "25/12/06 23:41",
+  "character": "ReimuA",
+  "difficulty": "Extra",
+  "stage": "Extra Stage Clear",
+  "score": 84739820,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 7,
+      "score": 0,
+      "power": "4.00",
+      "piv": 10000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 0,
+      "additional": null
+    }
+  ]
+}

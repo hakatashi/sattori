@@ -1,7 +1,7 @@
 import { ByteReader } from "../byte-reader.js";
 import { readBufferedUint32LE } from "../lzss.js";
 import { readModernUserdata } from "../userdata.js";
-import { emptySplit, normalizeText, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
@@ -24,9 +24,11 @@ export function parseTh11(original: Uint8Array): ParsedReplay {
     split.piv = readBufferedUint32LE(decodedata, stageOffset + 0x14);
     const lives = decodedata[stageOffset + 0x18] ?? 0;
     const pieces = decodedata[stageOffset + 0x1a] ?? 0;
-    split.lives = `${lives} (${pieces}/5)`;
+    split.lives = resourceCount(lives, pieces, 5);
     split.graze = readBufferedUint32LE(decodedata, stageOffset + 0x34);
-    split.bombs = "0";
+    // threplay の Read_t11r はボム数を抽出しておらず常に "0" を返していた。
+    // 実データではないため、このパッケージでは取得不能として null を返す。
+    split.bombs = null;
     splits.push(split);
     stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0x90;
   }
