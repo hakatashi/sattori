@@ -172,11 +172,13 @@ export class SattoriStack extends Stack {
       });
 
     const createUploadFn = makeHandler("CreateUploadFn", "createUpload.ts");
+    const parseReplayFn = makeHandler("ParseReplayFn", "parseReplay.ts");
     const createJobFn = makeHandler("CreateJobFn", "createJob.ts");
     const getJobFn = makeHandler("GetJobFn", "getJob.ts");
 
     // 権限付与
     uploadBucket.grantPut(createUploadFn); // 署名付き PUT URL 発行のため
+    uploadBucket.grantRead(parseReplayFn); // アップロード済み .rpy を取得して解析するため
     jobsTable.grantReadWriteData(createJobFn);
     jobsTable.grantReadData(getJobFn);
 
@@ -205,6 +207,11 @@ export class SattoriStack extends Stack {
       path: "/uploads",
       methods: [apigw.HttpMethod.POST],
       integration: new HttpLambdaIntegration("CreateUploadInt", createUploadFn),
+    });
+    httpApi.addRoutes({
+      path: "/replays/parse",
+      methods: [apigw.HttpMethod.POST],
+      integration: new HttpLambdaIntegration("ParseReplayInt", parseReplayFn),
     });
     httpApi.addRoutes({
       path: "/jobs",

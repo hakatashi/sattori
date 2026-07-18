@@ -53,6 +53,10 @@ li.supportedTitle.supported {
   margin-bottom: 1rem;
 }
 
+.stepLabel.stepLabelSecondary {
+  margin-top: 1.5rem;
+}
+
 .stepNumber {
   display: inline-block;
   height: 1.5rem;
@@ -135,8 +139,14 @@ li.supportedTitle.supported {
   margin-top: 0.15rem;
 }
 
+.status {
+  margin: 0.75rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 .error {
-  margin: 0;
+  margin: 0.75rem 0 0;
   color: var(--danger);
   font-size: 0.9rem;
 }
