@@ -50,3 +50,6 @@ logs/
 .DS_Store
 .vscode/
 .idea/
+
+.claude/settings.local.json
+CLAUDE.local.md
