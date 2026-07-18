@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReplayInfo } from "@sattori/shared";
 import { UploadForm } from "./UploadForm.tsx";
 import * as client from "../api/client.ts";
@@ -32,9 +32,9 @@ const SAMPLE_REPLAY_INFO: ReplayInfo = {
   estimatedDurationSeconds: 847,
 };
 
-function selectFile(name: string) {
+function selectFile(name: string, size = 5) {
   const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-  const file = new File(["dummy"], name, { type: "application/octet-stream" });
+  const file = new File([new Uint8Array(size)], name, { type: "application/octet-stream" });
   Object.defineProperty(input, "files", { value: [file], configurable: true });
   fireEvent.change(input);
   return file;
@@ -52,6 +52,49 @@ describe("UploadForm", () => {
   it("ファイル未選択では次のステップボタンが無効", () => {
     render(<UploadForm onJobStarted={vi.fn()} />);
     expect(nextStepButton().disabled).toBe(true);
+  });
+
+  it("ファイル未選択でもSTEP2のプレースホルダーが表示される", () => {
+    render(<UploadForm onJobStarted={vi.fn()} />);
+    expect(screen.getByText("内容を確認")).toBeTruthy();
+    expect(screen.getByText("リプレイファイルを選択すると、ここに内容が表示されます")).toBeTruthy();
+  });
+
+  it("ファイル選択欄にファイル名とサイズが表示される", () => {
+    render(<UploadForm onJobStarted={vi.fn()} />);
+    selectFile("th7_02.rpy", 83866);
+    expect(screen.getByText("th7_02.rpy (81.90KB)")).toBeTruthy();
+  });
+
+  it("アップロード中・解析中はSTEP2にスピナーとラベルを表示する", async () => {
+    let resolveUpload!: (value: { replayKey: string; uploadUrl: string }) => void;
+    let resolveParse!: (value: ReplayInfo) => void;
+    mocked.createUpload.mockReturnValue(
+      new Promise((resolve) => {
+        resolveUpload = resolve;
+      }),
+    );
+    mocked.uploadReplay.mockResolvedValue(undefined);
+    mocked.parseReplay.mockReturnValue(
+      new Promise((resolve) => {
+        resolveParse = resolve;
+      }),
+    );
+
+    render(<UploadForm onJobStarted={vi.fn()} />);
+    selectFile("th7_07.rpy");
+
+    await waitFor(() => expect(screen.getByText("アップロード中…")).toBeTruthy());
+    expect(screen.getByRole("status", { name: "読み込み中" })).toBeTruthy();
+
+    await act(async () => resolveUpload({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" }));
+
+    await waitFor(() => expect(screen.getByText("リプレイを解析しています…")).toBeTruthy());
+    expect(screen.getByRole("status", { name: "読み込み中" })).toBeTruthy();
+
+    await act(async () => resolveParse(SAMPLE_REPLAY_INFO));
+
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
   });
 
   it(".rpy 以外を選ぶとエラー表示され、アップロードは行われない", () => {

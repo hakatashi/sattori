@@ -53,3 +53,32 @@
   font-weight: 600;
   text-align: right;
 }
+
+.placeholder {
+  align-items: center;
+  justify-content: center;
+  min-height: 6rem;
+  text-align: center;
+}
+
+.placeholderText {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.spinner {
+  display: inline-block;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 3px solid var(--panel-border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

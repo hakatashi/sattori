@@ -1,9 +1,14 @@
+import clsx from "clsx";
 import { GAME_TITLES, type ReplayInfo } from "@sattori/shared";
 import styles from "./ReplayPreview.module.css";
 
-interface Props {
-  info: ReplayInfo;
-}
+type Props =
+  /** ファイル未選択（STEP2はSTEP1と同時に表示するため、選択前もこの状態で表示する）。 */
+  | { status: "empty" }
+  /** アップロード中・解析中。 */
+  | { status: "loading"; label: string }
+  /** 解析成功。 */
+  | { status: "ready"; info: ReplayInfo };
 
 /** 秒数を「◯分◯◯秒」形式にする（推定収録時間の表示用）。 */
 export function formatDuration(seconds: number | null): string {
@@ -26,8 +31,29 @@ function formatCleared(cleared: boolean | null): string {
   return cleared ? "クリア" : "未クリア";
 }
 
-/** ページAの解析プレビュー（Issue #8）。アップロード直後に解析したリプレイの内容を表示する。 */
-export function ReplayPreview({ info }: Props) {
+/**
+ * ページAの解析プレビュー（Issue #8）。STEP1のファイル選択と同時にSTEP2として常に表示し、
+ * 状態に応じてプレースホルダー／読み込み中スピナー／解析結果を切り替える。
+ */
+export function ReplayPreview(props: Props) {
+  if (props.status === "empty") {
+    return (
+      <section className={clsx(styles.preview, styles.placeholder)} aria-label="リプレイ解析結果">
+        <p className={styles.placeholderText}>リプレイファイルを選択すると、ここに内容が表示されます</p>
+      </section>
+    );
+  }
+
+  if (props.status === "loading") {
+    return (
+      <section className={clsx(styles.preview, styles.placeholder)} aria-label="リプレイ解析結果">
+        <span className={styles.spinner} role="status" aria-label="読み込み中" />
+        <p className={styles.placeholderText}>{props.label}</p>
+      </section>
+    );
+  }
+
+  const { info } = props;
   return (
     <section className={styles.preview} aria-label="リプレイ解析結果">
       <div className={styles.headline}>

@@ -79,7 +79,7 @@ li.supportedTitle.supported {
   cursor: pointer;
   text-align: center;
   font-size: 1.2rem;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: min-height 0.25s ease, padding 0.25s ease, border-color 0.15s ease, background 0.15s ease;
 }
 
 .dropzone:hover {
@@ -87,6 +87,8 @@ li.supportedTitle.supported {
 }
 
 .dropzone[data-selected="true"] {
+  min-height: 3rem;
+  padding: 0.75rem 1.5rem;
   border-style: solid;
   border-color: var(--accent);
   background: rgba(179, 108, 240, 0.08);
@@ -137,12 +139,6 @@ li.supportedTitle.supported {
   display: block;
   color: var(--text-muted);
   margin-top: 0.15rem;
-}
-
-.status {
-  margin: 0.75rem 0 0;
-  color: var(--text-muted);
-  font-size: 0.9rem;
 }
 
 .error {
