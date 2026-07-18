@@ -15,20 +15,26 @@
   text-align: center;
 }
 
-.logo {
-  height: 72px;
-  width: auto;
-}
-
 .tagline {
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.95rem;
+  font-size: 1.2rem;
+}
+
+.icon {
+  width: 72px;
+  height: 72px;
+}
+
+.logo {
+  height: 72px;
+  width: auto;
+  max-width: 100%;
 }
 
 .main {
   width: 100%;
-  max-width: 560px;
+  max-width: 50rem;
 }
 
 .footer {

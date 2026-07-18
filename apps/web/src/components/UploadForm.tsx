@@ -51,8 +51,6 @@ export function UploadForm({ onJobStarted }: Props) {
 
   return (
     <section className={styles.card}>
-      <h1 className={styles.heading}>リプレイをアップロード</h1>
-
       <label className={styles.dropzone} data-selected={file !== null}>
         <input
           type="file"
