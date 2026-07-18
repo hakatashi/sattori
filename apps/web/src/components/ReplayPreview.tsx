@@ -62,6 +62,10 @@ export function ReplayPreview(props: Props) {
       </div>
       <dl className={styles.details}>
         <div className={styles.row}>
+          <dt>プレイヤー名</dt>
+          <dd>{info.player ?? "不明"}</dd>
+        </div>
+        <div className={styles.row}>
           <dt>使用キャラ</dt>
           <dd>{info.character ?? "不明"}</dd>
         </div>

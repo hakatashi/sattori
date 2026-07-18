@@ -74,7 +74,7 @@ li.supportedTitle.supported {
   justify-content: center;
   min-height: 12rem;
   padding: 1.5rem;
-  background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='14' ry='14' stroke='%23c0c0c0' stroke-width='5' stroke-dasharray='15%2c 25' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
+  background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='10' ry='10' stroke='%23c0c0c0' stroke-width='5' stroke-dasharray='15%2c 25' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
   border-radius: var(--radius);
   cursor: pointer;
   text-align: center;
