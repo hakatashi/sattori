@@ -1,0 +1,141 @@
+{
+  "game": "th06",
+  "gameTitle": "東方紅魔郷 ～ the Embodiment of Scarlet Devil.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "05/26/11",
+  "character": "ReimuA",
+  "difficulty": "Normal",
+  "stage": null,
+  "score": 66329830,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 5549530,
+      "power": "0",
+      "piv": null,
+      "lives": {
+        "count": 4,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": {
+        "rank": 16
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 2,
+      "score": 11532120,
+      "power": "71",
+      "piv": null,
+      "lives": {
+        "count": 4,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": {
+        "rank": 31
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 3,
+      "score": 25876790,
+      "power": "128",
+      "piv": null,
+      "lives": {
+        "count": 5,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": {
+        "rank": 32
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 4,
+      "score": 42862430,
+      "power": "128",
+      "piv": null,
+      "lives": {
+        "count": 7,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": {
+        "rank": 32
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 5,
+      "score": 50588480,
+      "power": "123",
+      "piv": null,
+      "lives": {
+        "count": 5,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": {
+        "rank": 16
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 6,
+      "score": 66329830,
+      "power": "128",
+      "piv": null,
+      "lives": {
+        "count": 4,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": {
+        "rank": 11
+      },
+      "frameCount": null
+    }
+  ],
+  "frameCount": null
+}

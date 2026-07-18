@@ -1,0 +1,149 @@
+{
+  "game": "th08",
+  "gameTitle": "東方永夜抄 ～ Imperishable Night.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "2026/01/24 16:18:16",
+  "character": "博麗　霊夢",
+  "difficulty": "Hard",
+  "stage": "最終ステージ\tStage 6-Kaguya",
+  "score": 1184636540,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 75487390,
+      "power": "0",
+      "piv": 200000,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 0,
+      "additional": {
+        "pointItems": 0,
+        "time": 0
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 2,
+      "score": 214157840,
+      "power": "115",
+      "piv": 230400,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 1449,
+      "additional": {
+        "pointItems": 59,
+        "time": 0
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 3,
+      "score": 394630650,
+      "power": "128",
+      "piv": 281180,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 2361,
+      "additional": {
+        "pointItems": 180,
+        "time": 1
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 4,
+      "score": 608901630,
+      "power": "126",
+      "piv": 338720,
+      "lives": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 3353,
+      "additional": {
+        "pointItems": 409,
+        "time": 2,
+        "route": "4B"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 5,
+      "score": 829406800,
+      "power": "125",
+      "piv": 382590,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 4235,
+      "additional": {
+        "pointItems": 664,
+        "time": 3
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 6,
+      "score": 1184636540,
+      "power": "128",
+      "piv": 422280,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 5740,
+      "additional": {
+        "pointItems": 820,
+        "time": 4,
+        "route": "6B"
+      },
+      "frameCount": null
+    }
+  ],
+  "frameCount": null
+}

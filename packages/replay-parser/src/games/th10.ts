@@ -1,0 +1,57 @@
+import { ByteReader } from "../byte-reader.js";
+import { readBufferedUint32LE } from "../lzss.js";
+import { readModernUserdata } from "../userdata.js";
+import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import { REPLAY_GAME_TITLES } from "../game-ids.js";
+import { decodeModernBody } from "./modern-body.js";
+
+/** t10r (東方風神録, MoF) decoder. Ported from Read_t10r in threplay. */
+export function parseTh10(original: Uint8Array): ParsedReplay {
+  const decodedata = decodeModernBody(
+    original,
+    { blockSize: 0x400, base: 0xaa, add: 0xe1 },
+    { blockSize: 0x80, base: 0x3d, add: 0x7a },
+  );
+
+  const splits: ReplayStageSplit[] = [];
+  let stageOffset = 0x64;
+  let frameCount = 0;
+  const stageCount = Math.min(decodedata[0x4c] ?? 0, 6);
+  for (let i = 0; i < stageCount; i++) {
+    const split = emptySplit();
+    split.stage = decodedata[stageOffset] ?? null;
+    split.score = readBufferedUint32LE(decodedata, stageOffset + 0xc) * 10;
+    split.power = (0.05 * readBufferedUint32LE(decodedata, stageOffset + 0x10)).toFixed(2);
+    split.piv = readBufferedUint32LE(decodedata, stageOffset + 0x14);
+    split.lives = resourceCount(decodedata[stageOffset + 0x1c] ?? 0);
+    split.graze = 0;
+    // threplay's Read_t10r did not extract the bomb count and always returned "0".
+    // Since that is not real data, this package returns null to indicate it cannot be obtained.
+    split.bombs = null;
+    // stageOffset+0x4 is the per-stage frame count (unused by threplay, but
+    // read by threp's own th10.cpp when it walks the same stage blocks).
+    const stageFrameCount = readBufferedUint32LE(decodedata, stageOffset + 0x4);
+    split.frameCount = stageFrameCount;
+    splits.push(split);
+    frameCount += stageFrameCount;
+    stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0x1c4;
+  }
+
+  const reader = new ByteReader(original);
+  const userdata = readModernUserdata(reader);
+
+  return {
+    game: "th10",
+    gameTitle: REPLAY_GAME_TITLES.th10,
+    formatVersion: null,
+    player: normalizeText(userdata.name),
+    date: normalizeText(userdata.date),
+    character: normalizeText(userdata.character),
+    difficulty: normalizeText(userdata.difficulty),
+    stage: normalizeText(userdata.stage),
+    score: userdata.score,
+    cleared: userdata.stage.includes("Clear"),
+    splits,
+    frameCount: stageCount > 0 ? frameCount : null,
+  };
+}

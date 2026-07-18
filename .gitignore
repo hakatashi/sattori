@@ -23,6 +23,9 @@ worker/runs/
 worker/assets/
 *.rpy
 *.mp4
+# 例外: replay-parser のゴールデンテスト用リプレイ（ユーザー自身がプレイして
+# 作成したファイルのみ。著作権上の懸念がないため明示的にチェックインする）
+!packages/replay-parser/test-fixtures/**/*.rpy
 
 # MODビルド成果物（ソース・ビルドスクリプトのみコミットする。Windows+MSVCでビルド）
 worker/mods/**/build/

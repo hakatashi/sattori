@@ -16,6 +16,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@sattori/touhou-replay-parser": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"

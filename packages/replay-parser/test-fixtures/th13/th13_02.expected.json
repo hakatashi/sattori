@@ -1,0 +1,147 @@
+{
+  "game": "th13",
+  "gameTitle": "東方神霊廟 ～ Ten Desires.",
+  "formatVersion": 144,
+  "player": "koyi",
+  "date": "24/05/11 22:37",
+  "character": "Reimu",
+  "difficulty": "Normal",
+  "stage": "Stage All Clear",
+  "score": 197749380,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "1.00",
+      "piv": 10000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 0,
+      "additional": {
+        "trance": 200,
+        "tranceMax": 600
+      },
+      "frameCount": 11003
+    },
+    {
+      "stage": 2,
+      "score": 7643080,
+      "power": "2.85",
+      "piv": 11300,
+      "lives": {
+        "count": 2,
+        "pieces": 3,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 3,
+        "maxPieces": 8
+      },
+      "graze": 100,
+      "additional": {
+        "trance": 81,
+        "tranceMax": 600
+      },
+      "frameCount": 16025
+    },
+    {
+      "stage": 3,
+      "score": 24418030,
+      "power": "4.00",
+      "piv": 14510,
+      "lives": {
+        "count": 3,
+        "pieces": 3,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 4,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 290,
+      "additional": {
+        "trance": 88,
+        "tranceMax": 600
+      },
+      "frameCount": 17262
+    },
+    {
+      "stage": 4,
+      "score": 41083870,
+      "power": "2.17",
+      "piv": 17970,
+      "lives": {
+        "count": 2,
+        "pieces": 1,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 4,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 643,
+      "additional": {
+        "trance": 84,
+        "tranceMax": 600
+      },
+      "frameCount": 17782
+    },
+    {
+      "stage": 5,
+      "score": 69329800,
+      "power": "4.00",
+      "piv": 21640,
+      "lives": {
+        "count": 2,
+        "pieces": 8,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 5,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 1265,
+      "additional": {
+        "trance": 88,
+        "tranceMax": 600
+      },
+      "frameCount": 19292
+    },
+    {
+      "stage": 6,
+      "score": 115459600,
+      "power": "4.00",
+      "piv": 33340,
+      "lives": {
+        "count": 2,
+        "pieces": 8,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 7,
+        "pieces": 4,
+        "maxPieces": 8
+      },
+      "graze": 2851,
+      "additional": {
+        "trance": 88,
+        "tranceMax": 600
+      },
+      "frameCount": 25345
+    }
+  ],
+  "frameCount": 106709
+}

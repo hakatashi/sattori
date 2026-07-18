@@ -1,0 +1,147 @@
+{
+  "game": "th07",
+  "gameTitle": "東方妖々夢 ～ Perfect Cherry Blossom.",
+  "formatVersion": 5,
+  "player": "koyi",
+  "date": "01/19",
+  "character": "ReimuA",
+  "difficulty": "Hard",
+  "stage": null,
+  "score": 430405880,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 1463153,
+      "power": "0",
+      "piv": 0,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 0,
+      "additional": {
+        "pointItems": 0,
+        "cherryMax": 250000
+      },
+      "frameCount": 11000
+    },
+    {
+      "stage": 2,
+      "score": 4849015,
+      "power": "109",
+      "piv": 82260,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 153,
+      "additional": {
+        "pointItems": 24,
+        "cherryMax": 250180
+      },
+      "frameCount": 14893
+    },
+    {
+      "stage": 3,
+      "score": 9509577,
+      "power": "128",
+      "piv": 215760,
+      "lives": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 476,
+      "additional": {
+        "pointItems": 77,
+        "cherryMax": 280750
+      },
+      "frameCount": 19571
+    },
+    {
+      "stage": 4,
+      "score": 19807727,
+      "power": "128",
+      "piv": 291470,
+      "lives": {
+        "count": 4,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 1002,
+      "additional": {
+        "pointItems": 171,
+        "cherryMax": 291470
+      },
+      "frameCount": 27552
+    },
+    {
+      "stage": 5,
+      "score": 25609086,
+      "power": "128",
+      "piv": 188460,
+      "lives": {
+        "count": 5,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 1652,
+      "additional": {
+        "pointItems": 468,
+        "cherryMax": 302940
+      },
+      "frameCount": 23173
+    },
+    {
+      "stage": 6,
+      "score": 43040588,
+      "power": "128",
+      "piv": 280600,
+      "lives": {
+        "count": 5,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 2353,
+      "additional": {
+        "pointItems": 621,
+        "cherryMax": 303450
+      },
+      "frameCount": 34326
+    }
+  ],
+  "frameCount": 130515
+}
