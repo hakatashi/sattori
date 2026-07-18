@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { UploadForm } from "./components/UploadForm.tsx";
 import { JobProgress } from "./components/JobProgress.tsx";
+import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
 import styles from "./App.module.css";
 
 /**
@@ -12,6 +13,12 @@ import styles from "./App.module.css";
  */
 export function App() {
   const [jobId, setJobId] = useState<string | null>(null);
+
+  // デザイン調整用: `pnpm dev` で `?preview=replay` を付けて開くとReplayPreviewの
+  // 各状態を実データ無しで確認できる（import.meta.env.DEVガードにより本番ビルドには含まれない）。
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("preview") === "replay") {
+    return <ReplayPreviewPlayground />;
+  }
 
   return (
     <div className={styles.page}>
