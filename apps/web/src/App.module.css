@@ -1,4 +1,5 @@
 .page {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -41,5 +42,18 @@
 .footer {
   margin-top: auto;
   color: var(--text-muted);
+  text-align: center;
+}
+
+.easterEgg {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 8rem;
+  padding: 2rem 0;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  font-style: italic;
   text-align: center;
 }
