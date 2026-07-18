@@ -36,6 +36,10 @@ export function App() {
           Sattori はファンメイドの非公式サービスです。東方Project © 上海アリス幻樂団
         </small>
       </footer>
+
+      <small className={styles.easterEgg}>
+        「10点満点中、11点のサービスです」――とある館の主
+      </small>
     </div>
   );
 }
