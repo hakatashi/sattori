@@ -1,0 +1,36 @@
+{
+  "game": "th06",
+  "gameTitle": "東方紅魔郷 ～ the Embodiment of Scarlet Devil.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "08/12/11",
+  "character": "ReimuA",
+  "difficulty": "Extra",
+  "stage": null,
+  "score": 38414340,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 7,
+      "score": 38414340,
+      "power": "0",
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": {
+        "rank": 16
+      },
+      "frameCount": null
+    }
+  ],
+  "frameCount": null
+}

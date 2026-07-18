@@ -1,0 +1,110 @@
+{
+  "game": "th14",
+  "gameTitle": "東方輝針城 ～ Double Dealing Character.",
+  "formatVersion": 139,
+  "player": "koyi",
+  "date": "23/02/14 17:21",
+  "character": "MarisaA",
+  "difficulty": "Hard",
+  "stage": "Stage 1 ～ 5",
+  "score": 140806290,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "1.00",
+      "piv": 10000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 0,
+      "additional": null,
+      "frameCount": 10327
+    },
+    {
+      "stage": 2,
+      "score": 20113360,
+      "power": "2.80",
+      "piv": 14150,
+      "lives": {
+        "count": 3,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 4,
+        "pieces": 6,
+        "maxPieces": 8
+      },
+      "graze": 503,
+      "additional": null,
+      "frameCount": 12673
+    },
+    {
+      "stage": 3,
+      "score": 40988820,
+      "power": "4.00",
+      "piv": 22450,
+      "lives": {
+        "count": 4,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 1,
+        "maxPieces": 8
+      },
+      "graze": 1632,
+      "additional": null,
+      "frameCount": 15272
+    },
+    {
+      "stage": 4,
+      "score": 82326610,
+      "power": "3.81",
+      "piv": 28570,
+      "lives": {
+        "count": 4,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 3,
+        "maxPieces": 8
+      },
+      "graze": 2468,
+      "additional": null,
+      "frameCount": 18694
+    },
+    {
+      "stage": 5,
+      "score": 118611960,
+      "power": "4.00",
+      "piv": 42480,
+      "lives": {
+        "count": 2,
+        "pieces": 1,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": 3,
+        "maxPieces": 8
+      },
+      "graze": 4302,
+      "additional": null,
+      "frameCount": 15786
+    }
+  ],
+  "frameCount": 72752
+}

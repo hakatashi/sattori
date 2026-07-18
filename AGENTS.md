@@ -52,7 +52,7 @@ pnpm workspaces + Turborepo。ルートに `pnpm-workspace.yaml` / `turbo.json` 
 | パッケージ | 役割 | 主なツール |
 | --- | --- | --- |
 | `packages/shared` | 型定義（ゲーム・リプレイ・ジョブ・API 契約） | tsc, vitest |
-| `packages/replay-parser` | `.rpy` デコーダ（**フェーズ2で実装**、ディレクトリ未作成） | tsc, vitest |
+| `packages/replay-parser` | `.rpy` デコーダ（**実装済み**。npm パッケージ名は `@sattori/touhou-replay-parser`。`@sattori/shared` 非依存でOSS公開可能な設計） | tsc, vitest |
 | `apps/api` | Lambda ハンドラ・S3/DynamoDB/EC2 連携 | tsc(--noEmit), vitest |
 | `apps/web` | フロントエンド SPA | vite, vitest, jsdom |
 | `worker` | 録画パイプライン（Python） | python, docker |
@@ -141,29 +141,77 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 3. **ページB**（リンク先）: クリックでジョブ起動、進捗ポーリング、完了で DL ＋完了メール再送。
    リンク＝ジョブの永続ビューとして何度でも戻れる。
 
-## 8. リプレイパーサー（`packages/replay-parser`, フェーズ2）
+## 8. リプレイパーサー（`packages/replay-parser`, 実装済み）
 
-`raviddog/threplay` の `ReplayDecoder.cs` を TypeScript へ移植する。
+`raviddog/threplay` の `ReplayDecoder.cs` を参考に独自にTypeScriptへ書き起こした
+（詳細は `packages/replay-parser/README.md`）。**`@sattori/shared` を含む他の
+ワークスペースパッケージに一切依存しない**（単体でOSS公開できることを意識した設計）。
+Sattori向けの `ReplayInfo` への変換は `packages/shared/src/replay.ts` の
+`fromParsedReplay()` が担う（依存の向きは shared → replay-parser の一方向）。
+
+- **npm パッケージ名は `@sattori/touhou-replay-parser`**（ディレクトリ名
+  `packages/replay-parser` とは異なる）。単体OSS公開を前提としているため、
+  モノレポ内の他パッケージのような `@sattori/<ディレクトリ名>` 命名には揃えていない。
+- **コード内コメント・README・テストの記述（`describe`/`it` 文言等）は英語で書く**
+  （このパッケージのみの規約。モノレポの他パッケージは日本語で構わない）。
+  ただし以下は対象外・例外:
+  - `REPLAY_GAME_TITLES`（`src/game-ids.ts`）や `ParsedReplay.gameTitle` など、
+    ライブラリが実際に返す値（公開APIの出力データ）は原作準拠の日本語表記のまま。
+    ゴールデンテストの `test-fixtures/**/*.expected.json` にも同じ値が書き込まれている。
+  - Shift_JISデコードの検証用リテラル（例: `byte-reader.test.ts` の `"あい"`）等、
+    テスト対象のデータそのものである日本語文字列。
+  - 東方タイトルの日本語名に言及するコメントは、日本語名を残したまま
+    英語略称を併記する（例: `th07 (東方妖々夢, PCB)`）。
+
 - ゲーム判定: 先頭4バイトのマジック（`T6RP`/`T7RP`/`T8RP`/… `t10r`…）。
-- 旧世代(TH06–09): offset 12 の USER セクションポインタから名前/日付/キャラ/難易度/
-  ステージ/スコアを抽出。
-- 新世代(TH10+): 36バイトヘッダ除去 → `decode()` 2パス（ブロックXOR: `(0x400,0xaa,0xe1)`
-  と `(0x80,0x3d,0x7a)`）→ LZSS系 `decompress()`（13bit辞書/4bit長）で展開後に抽出。
-- 出力は `ReplayInfo`（`packages/shared/src/replay.ts`）。不正/非対応ファイルの
-  ハンドリングを最初から実装し、既知 `.rpy` のゴールデンテストを置く。
+  th13(神霊廟)とth14(輝針城)は同一マジック`t13r`をヘッダ内バージョンバイトで判別。
+- 旧世代(TH06–09/095/125/128/143/165): offset 12 の USER セクションポインタから
+  名前/日付/キャラ/難易度/ステージ/スコアを抽出（一部はLZSS展開したステージ内訳も持つ）。
+- 新世代(TH10–18): 36バイトヘッダ除去 → `decode()` 2パス（ブロックXOR）→ LZSS系
+  `decompress()`（13bit辞書/4bit長）で展開後に抽出。
+- **対応タイトルと検証状況は `packages/replay-parser/README.md` の一覧を参照**。
+  th06/07/08/09/095/10/11/12/125/128/13/14/143/15/16/17/18/20 は実リプレイ
+  （`packages/replay-parser/test-fixtures/**` にチェックイン済みの作者本人プレイ分、
+  または Silent Selene から取得した検証用サンプル）で検証済み。th165のみテストデータ
+  未入手のため upstream 移植のみ（未検証）。
+  th20(錦上京)はUSERセクション（名前/日付/キャラ/難易度/ステージ/スコア）のみ対応
+  （ステージ内訳は未解析フォーマットのため非対応）。th19(獣王園)はリプレイ保存機能
+  自体が存在しないため対象外。
+- 残機・ボム(`splits[].lives`/`.bombs`)は文字列ではなく欠片数にも対応した構造化型
+  `ReplayResourceCount`、UFOの色やトランス等のゲーム固有付加情報(`splits[].additional`)も
+  文字列ではなく実プロパティを持つオブジェクトとして返す（`packages/replay-parser/README.md`
+  参照）。
+- 不正/破損/非対応ファイルは例外を投げず `ReplayParseResult`（判別可能なエラー種別）
+  を返す。
+- ゴールデンテストは `packages/replay-parser/src/golden.test.ts`。`test-fixtures/**`
+  にチェックイン済みの実リプレイ（著作権上問題のない作者本人プレイ分のみ）を動的に
+  列挙し、`splits` を含む全プロパティをゴールデンJSON(`*.expected.json`)と完全一致
+  比較する。リポジトリのクローンのみで完結し、外部リポジトリへの依存はない。
+- ライセンス注記: 移植元(threplay/threp)にOSSライセンスの明記がないため、
+  `packages/replay-parser/README.md`「クレジット」節にその経緯を記載した上で
+  MITとして公開している。
+
+### 版数非互換（旧 #16、解消済み）
+録画用 th07 バイナリのバージョンアップにより、以前は再生できなかった版の
+リプレイも認識できるようになった。そのため replay-parser・shared のいずれにも
+「録画可能バージョンかどうか」を判定するロジックは持たせていない
+（`ParsedReplay.formatVersion` はヘッダの生バイトとしてのみ公開）。
 
 ## 9. フェーズ計画（GitHub Project の kanban で管理）
 
 - **フェーズ1（実装済み）**: モノレポ雛形 / shared 型 / web 最小UI / api（署名URL・ジョブ起動・
   状態取得）/ worker（th07 録画・S3・DynamoDB）/ CDK 一式。認証・解析・複雑なキューは含まない。
-- **フェーズ2**: replay-parser（th07）、ページAのプレビュー、SES + マジックリンク認証、
+- **フェーズ2**: replay-parser（**実装済み**。§8参照。th06〜th20の大半に対応済みだが、
+  録画対応は引き続き th07 のみ）、ページAのプレビュー、SES + マジックリンク認証、
   ページB、Step Functions 化（Spot 中断リトライ・タイムアウト・taskToken 完了通知）、
   ウォーターマークUIの貫通。
-- **フェーズ3以降**: 対応タイトル拡大（th08→th06→th10+…、MOD 移植とパーサー拡張を並行）、
+- **フェーズ3以降**: 対応タイトル拡大（th08→th06→th10+…、MOD 移植と録画ワーカー拡張を
+  並行。パーサー側は既に多タイトル対応済みのため主にMOD移植が残作業）、
   レート制限・濫用対策強化、コスト監視、同時実行スケーリング検証。
 
 ## 10. 未解決・要検討
 - Spot 中断時のリトライ／レジューム（フェーズ2で Step Functions により担保予定）。
 - 録画がリプレイと一致しているかの自動デシンク検知は PoC でも未実装（目視のみ）。
 - 複数 EC2 同時起動の負荷検証は未実施（1インスタンス=1ジョブ分離で問題ないと推測）。
-- th07 以外のタイトルは MOD 移植・パーサー拡張ともに未着手。
+- th07 以外のタイトルは MOD 移植（録画対応）が未着手
+  （リプレイパーサー自体は th06〜th20 の大半に対応済み、§8参照）。

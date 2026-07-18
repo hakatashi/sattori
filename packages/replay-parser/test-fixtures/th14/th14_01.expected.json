@@ -1,0 +1,129 @@
+{
+  "game": "th14",
+  "gameTitle": "東方輝針城 ～ Double Dealing Character.",
+  "formatVersion": 139,
+  "player": "koyi",
+  "date": "23/01/26 00:02",
+  "character": "ReimuA",
+  "difficulty": "Normal",
+  "stage": "Stage All Clear",
+  "score": 331723050,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "1.00",
+      "piv": 10000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 0,
+      "additional": null,
+      "frameCount": 9978
+    },
+    {
+      "stage": 2,
+      "score": 13648870,
+      "power": "2.99",
+      "piv": 12810,
+      "lives": {
+        "count": 2,
+        "pieces": 2,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 4,
+        "pieces": 4,
+        "maxPieces": 8
+      },
+      "graze": 148,
+      "additional": null,
+      "frameCount": 13214
+    },
+    {
+      "stage": 3,
+      "score": 46152470,
+      "power": "4.00",
+      "piv": 20130,
+      "lives": {
+        "count": 4,
+        "pieces": 1,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 5,
+        "pieces": 2,
+        "maxPieces": 8
+      },
+      "graze": 450,
+      "additional": null,
+      "frameCount": 14824
+    },
+    {
+      "stage": 4,
+      "score": 93714800,
+      "power": "4.00",
+      "piv": 24970,
+      "lives": {
+        "count": 5,
+        "pieces": 2,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 4,
+        "pieces": 2,
+        "maxPieces": 8
+      },
+      "graze": 866,
+      "additional": null,
+      "frameCount": 18517
+    },
+    {
+      "stage": 5,
+      "score": 155775560,
+      "power": "3.82",
+      "piv": 37590,
+      "lives": {
+        "count": 4,
+        "pieces": 2,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 3,
+        "maxPieces": 8
+      },
+      "graze": 1588,
+      "additional": null,
+      "frameCount": 19166
+    },
+    {
+      "stage": 6,
+      "score": 233513380,
+      "power": "2.97",
+      "piv": 47320,
+      "lives": {
+        "count": 3,
+        "pieces": 2,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 6,
+        "maxPieces": 8
+      },
+      "graze": 2653,
+      "additional": null,
+      "frameCount": 25781
+    }
+  ],
+  "frameCount": 101480
+}
