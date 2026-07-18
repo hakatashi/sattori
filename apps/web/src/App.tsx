@@ -16,8 +16,11 @@ export function App() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <img className={styles.logo} src="/sattori-logo2.svg" alt="Sattori" />
-        <p className={styles.tagline}>東方リプレイを、アップロードするだけで録画動画に。</p>
+        <p className={styles.tagline}>東方リプレイ自動録画サービス</p>
+        <p>
+          <img className={styles.icon} src="/icon-transparent.png" alt="Sattori logo" />
+          <img className={styles.logo} src="/logo-black.svg" alt="TouhouSattori" />
+        </p>
       </header>
 
       <main className={styles.main}>

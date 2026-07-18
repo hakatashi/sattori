@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/web/public/sattori-logo2.svg" alt="Sattori" height="80">
+  <img src="apps/web/public/logo-black.svg" alt="Sattori" height="80">
 </p>
 
 # Sattori
