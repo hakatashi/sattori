@@ -1,5 +1,6 @@
 import type { GameId } from "./games.js";
 import type { JobStatus, RecordingOptions } from "./job.js";
+import type { ReplayInfo } from "./replay.js";
 
 /**
  * フロントエンド（apps/web）とバックエンド（apps/api）で共有するAPI契約。
@@ -21,6 +22,19 @@ export interface CreateUploadResponse {
   /** ブラウザからPUTする署名付きURL。 */
   uploadUrl: string;
 }
+
+/** POST /replays/parse : アップロード済みリプレイの解析要求（ページAのプレビュー用）。 */
+export interface ParseReplayRequest {
+  /** CreateUploadResponse.replayKey をそのまま渡す。 */
+  replayKey: string;
+}
+
+/**
+ * POST /replays/parse のレスポンス（解析成功時）。
+ * 非対応タイトル・非対応バージョン・破損ファイルは 422 + ApiError で返す
+ * （`code` は `ReplayParseErrorCode` のいずれか）。
+ */
+export type ParseReplayResponse = ReplayInfo;
 
 /** POST /jobs : 録画ジョブの起動要求。 */
 export interface CreateJobRequest {

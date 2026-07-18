@@ -1,23 +1,47 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReplayInfo } from "@sattori/shared";
 import { UploadForm } from "./UploadForm.tsx";
 import * as client from "../api/client.ts";
 
 vi.mock("../api/client.ts", () => ({
-  SattoriApiError: class extends Error {},
+  SattoriApiError: class extends Error {
+    code: string;
+    constructor(code: string, message: string) {
+      super(message);
+      this.code = code;
+    }
+  },
   createUpload: vi.fn(),
   uploadReplay: vi.fn(),
+  parseReplay: vi.fn(),
   createJob: vi.fn(),
 }));
 
 const mocked = vi.mocked(client);
 
+const SAMPLE_REPLAY_INFO: ReplayInfo = {
+  game: "th07",
+  player: "koyi",
+  date: "01/18",
+  character: "MarisaA",
+  difficulty: "Extra",
+  stage: null,
+  score: 303766040,
+  cleared: true,
+  estimatedDurationSeconds: 847,
+};
+
 function selectFile(name: string) {
   const input = document.querySelector('input[type="file"]') as HTMLInputElement;
   const file = new File(["dummy"], name, { type: "application/octet-stream" });
   Object.defineProperty(input, "files", { value: [file], configurable: true });
-  input.dispatchEvent(new Event("change", { bubbles: true }));
+  fireEvent.change(input);
   return file;
+}
+
+function nextStepButton() {
+  return screen.getByRole("button", { name: /次のステップ|録画を開始しています/ }) as HTMLButtonElement;
 }
 
 describe("UploadForm", () => {
@@ -25,31 +49,70 @@ describe("UploadForm", () => {
     vi.clearAllMocks();
   });
 
-  it("ファイル未選択では録画開始ボタンが無効", () => {
+  it("ファイル未選択では次のステップボタンが無効", () => {
     render(<UploadForm onJobStarted={vi.fn()} />);
-    const button = screen.getByRole("button", { name: "録画を開始する" }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    expect(nextStepButton().disabled).toBe(true);
   });
 
-  it(".rpy 以外を選ぶとエラー表示", () => {
+  it(".rpy 以外を選ぶとエラー表示され、アップロードは行われない", () => {
     render(<UploadForm onJobStarted={vi.fn()} />);
     selectFile("bad.txt");
     expect(screen.getByText("リプレイファイル（.rpy）を選択してください")).toBeTruthy();
+    expect(mocked.createUpload).not.toHaveBeenCalled();
+    expect(nextStepButton().disabled).toBe(true);
   });
 
-  it("アップロード→ジョブ起動が順に呼ばれ onJobStarted が発火する", async () => {
+  it("ファイル選択で自動アップロード＆解析され、プレビューが表示されボタンが活性化する", async () => {
     mocked.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
     mocked.uploadReplay.mockResolvedValue(undefined);
+    mocked.parseReplay.mockResolvedValue(SAMPLE_REPLAY_INFO);
+
+    render(<UploadForm onJobStarted={vi.fn()} />);
+    selectFile("th7_07.rpy");
+
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    expect(mocked.createUpload).toHaveBeenCalledWith({ filename: "th7_07.rpy", size: 5 });
+    expect(mocked.uploadReplay).toHaveBeenCalledWith("https://s3/put", expect.any(File));
+    expect(mocked.parseReplay).toHaveBeenCalledWith("replays/x.rpy");
+    // プレビュー内容(ReplayPreview)が表示されている
+    expect(screen.getByText("東方妖々夢 ～ Perfect Cherry Blossom.")).toBeTruthy();
+    expect(screen.getByText("MarisaA")).toBeTruthy();
+    expect(screen.getByText("Extra")).toBeTruthy();
+  });
+
+  it("解析失敗（非対応タイトル等）ではエラー表示され、次のステップは非活性のまま", async () => {
+    mocked.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
+    mocked.uploadReplay.mockResolvedValue(undefined);
+    mocked.parseReplay.mockRejectedValue(
+      new client.SattoriApiError("unsupported_game", "東方地霊殿 ～ Subterranean Animism. は現在録画に対応していません"),
+    );
+
+    render(<UploadForm onJobStarted={vi.fn()} />);
+    selectFile("th11.rpy");
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("東方地霊殿 ～ Subterranean Animism. は現在録画に対応していません"),
+      ).toBeTruthy(),
+    );
+    expect(nextStepButton().disabled).toBe(true);
+    expect(mocked.createJob).not.toHaveBeenCalled();
+  });
+
+  it("次のステップ押下でジョブが起動し onJobStarted が発火する", async () => {
+    mocked.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
+    mocked.uploadReplay.mockResolvedValue(undefined);
+    mocked.parseReplay.mockResolvedValue(SAMPLE_REPLAY_INFO);
     mocked.createJob.mockResolvedValue({ jobId: "job-42", status: "launching" });
     const onJobStarted = vi.fn();
 
     render(<UploadForm onJobStarted={onJobStarted} />);
     selectFile("th7_07.rpy");
-    screen.getByRole("button", { name: "録画を開始する" }).click();
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+
+    fireEvent.click(nextStepButton());
 
     await waitFor(() => expect(onJobStarted).toHaveBeenCalledWith("job-42"));
-    expect(mocked.createUpload).toHaveBeenCalledWith({ filename: "th7_07.rpy", size: 5 });
-    expect(mocked.uploadReplay).toHaveBeenCalledWith("https://s3/put", expect.any(File));
     expect(mocked.createJob).toHaveBeenCalledWith("replays/x.rpy", { watermark: true });
   });
 });
