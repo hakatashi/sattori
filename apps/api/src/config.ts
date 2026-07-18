@@ -21,21 +21,30 @@ export interface ApiConfig {
 }
 
 export interface Ec2LaunchConfig {
-  /** Docker 導入済みのベース AMI ID。 */
-  amiId: string;
-  /** 起動先サブネット（複数AZ対応は将来 Spot Fleet で拡張）。 */
-  subnetId: string;
-  /** ワーカーに付与するインスタンスプロファイル（ECR/S3/DynamoDB権限）。 */
-  instanceProfileArn: string;
-  /** セキュリティグループ ID。 */
-  securityGroupId: string;
-  /** インスタンスタイプ。PoC結果より c7i.xlarge を既定とする。 */
-  instanceType: string;
+  /** 起動先サブネット（複数AZ）。EC2 Fleet の Overrides に列挙し、AZ分散でSpot中断耐性を上げる。 */
+  subnetIds: string[];
   /** AWS リージョン。 */
   region: string;
+  /**
+   * ベースとなる EC2 Launch Template ID。AMI/インスタンスタイプ/IAMロール/SGは
+   * CDK側でこのLaunch Templateに設定済み。ジョブ起動時は
+   * `CreateLaunchTemplateVersion` でジョブ固有の UserData のみを持つバージョンを
+   * 作成し、`CreateFleet` からそのバージョンを参照する。
+   */
+  launchTemplateId: string;
 }
 
-function required(name: string): string {
+/**
+ * 必須の環境変数を読む。`loadConfig()` の内部専用ではなく `createJob.ts` からも
+ * `STATE_MACHINE_ARN` の読み取りに直接使うため export している。
+ *
+ * `STATE_MACHINE_ARN` を `ApiConfig`（＝全ハンドラ共通の `commonEnv`）に含めない理由:
+ * ステートマシンは Launch/HandleFailure Lambda を呼び出す（Lambda ARN に依存）ため、
+ * それらの Lambda の環境変数がステートマシンARNを参照すると CloudFormation の
+ * 循環依存になる。`STATE_MACHINE_ARN` は StartExecution を呼ぶ createJob.ts だけが
+ * 個別の環境変数として受け取る。
+ */
+export function required(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(`必須の環境変数 ${name} が設定されていません`);
@@ -53,12 +62,9 @@ export function loadConfig(): ApiConfig {
     logGroup: required("WORKER_LOG_GROUP"),
     maxReplayBytes: Number(process.env.MAX_REPLAY_BYTES ?? 5 * 1024 * 1024),
     ec2: {
-      amiId: required("WORKER_AMI_ID"),
-      subnetId: required("WORKER_SUBNET_ID"),
-      instanceProfileArn: required("WORKER_INSTANCE_PROFILE_ARN"),
-      securityGroupId: required("WORKER_SECURITY_GROUP_ID"),
-      instanceType: process.env.WORKER_INSTANCE_TYPE ?? "c7i.xlarge",
+      subnetIds: required("WORKER_SUBNET_IDS").split(","),
       region: process.env.AWS_REGION ?? "us-east-1",
+      launchTemplateId: required("WORKER_LAUNCH_TEMPLATE_ID"),
     },
   };
 }

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
+import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 import {
   isSupportedGame,
   type CreateJobRequest,
@@ -7,15 +8,19 @@ import {
   type GameId,
   type JobRecord,
 } from "@sattori/shared";
-import { loadConfig } from "../config.js";
-import { launchRecordingInstance } from "../ec2.js";
+import { loadConfig, required } from "../config.js";
 import { error, json, parseBody } from "../http.js";
 import { putJob, updateJobStatus } from "../jobs.js";
+import type { LaunchTaskEvent } from "./sfn/launch.js";
+
+const sfn = new SFNClient({});
 
 /**
  * POST /jobs
- * 録画ジョブを作成し、EC2 Spot ワーカーを起動する。
- * フェーズ1ではメール認証を挟まず、この呼び出しで即座に起動する
+ * 録画ジョブを作成し、Step Functions の実行を開始する。実際の EC2 起動は
+ * ステートマシンの `Launch` タスクが非同期に行う（Spot中断時の自動リトライ・
+ * 60分タイムアウトのオーケストレーションは Issue #11 参照）。
+ * フェーズ1ではメール認証を挟まず、この呼び出しで即座に実行を開始する
  * （認証・マジックリンクはフェーズ2で前段に追加する）。
  */
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
@@ -44,19 +49,29 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     createdAt: now,
     updatedAt: now,
     email: null,
+    instanceId: null,
+    estimatedDurationSeconds: body.estimatedDurationSeconds ?? null,
+    progress: null,
+    previewImagePath: null,
   };
 
   await putJob(config.jobsTable, job);
 
   try {
-    await launchRecordingInstance(config, job);
-    await updateJobStatus(config.jobsTable, job.jobId, "launching");
+    const input: Pick<LaunchTaskEvent, "jobId" | "attempt"> = { jobId: job.jobId, attempt: 1 };
+    await sfn.send(
+      new StartExecutionCommand({
+        stateMachineArn: required("STATE_MACHINE_ARN"),
+        name: job.jobId,
+        input: JSON.stringify(input),
+      }),
+    );
   } catch (err) {
-    // RunInstances 失敗の原因（Spotキャパシティ不足/IAM/AMI等）を切り分けられるよう、
-    // 例外の詳細を CloudWatch Logs に残す（DynamoDB の error は簡潔な文言のみ保持）。
+    // StartExecution 失敗の原因を切り分けられるよう、例外の詳細を CloudWatch Logs
+    // に残す（DynamoDB の error は簡潔な文言のみ保持）。
     console.error(
       JSON.stringify({
-        event: "launch_failed",
+        event: "start_execution_failed",
         jobId: job.jobId,
         name: err instanceof Error ? err.name : undefined,
         message: err instanceof Error ? err.message : String(err),
@@ -71,6 +86,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     return error(502, "launch_failed", "録画ワーカーの起動に失敗しました。時間をおいて再試行してください");
   }
 
-  const response: CreateJobResponse = { jobId: job.jobId, status: "launching" };
+  // 実際の "launching" への遷移は非同期に Launch タスクが行う。フロントは
+  // ポーリングで状態を追従するため、ここでは queued のまま返してよい。
+  const response: CreateJobResponse = { jobId: job.jobId, status: job.status };
   return json(202, response);
 };
