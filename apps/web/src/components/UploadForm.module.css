@@ -1,15 +1,55 @@
 .card {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
   padding: 0.5rem;
-  margin-top: 1.5rem;
+}
+
+.supportedTitlesLabel {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+ul.supportedTitles {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  columns: 4;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 768px) {
+  ul.supportedTitles {
+    columns: 3;
+  }
+}
+
+li.supportedTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  opacity: 0.2;
+  white-space: pre;
+}
+
+li.supportedTitle .supportedTitleIcon {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+li.supportedTitle.supported {
+  font-weight: 600;
+  opacity: 1;
 }
 
 .stepLabel {
   font-weight: 600;
   color: var(--text-muted);
   font-size: 0.9rem;
+  margin-top: 5rem;
+  margin-bottom: 1rem;
 }
 
 .stepNumber {
@@ -72,6 +112,7 @@
 
 .details {
   padding-top: 0.75rem;
+  margin: 1rem 0;
 }
 
 .summary {
