@@ -25,12 +25,17 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     job.status === "done" && job.outputPath
       ? `https://${config.cdnDomain}/${job.outputPath}`
       : null;
+  const downloadUrl720p =
+    job.status === "done" && job.outputPath720p
+      ? `https://${config.cdnDomain}/${job.outputPath720p}`
+      : null;
 
   const response: GetJobResponse = {
     jobId: job.jobId,
     game: job.game,
     status: job.status,
     downloadUrl,
+    downloadUrl720p,
     error: job.error,
     updatedAt: job.updatedAt,
   };

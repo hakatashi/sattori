@@ -39,6 +39,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     status: "queued",
     options: { watermark: body.options.watermark !== false },
     outputPath: null,
+    outputPath720p: null,
     error: null,
     createdAt: now,
     updatedAt: now,
