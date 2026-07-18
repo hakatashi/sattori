@@ -5,6 +5,8 @@ import type {
   CreateUploadRequest,
   CreateUploadResponse,
   GetJobResponse,
+  ParseReplayRequest,
+  ParseReplayResponse,
   RecordingOptions,
 } from "@sattori/shared";
 
@@ -52,6 +54,15 @@ export async function uploadReplay(uploadUrl: string, file: File): Promise<void>
   if (!res.ok) {
     throw new SattoriApiError("upload_failed", "リプレイファイルのアップロードに失敗しました");
   }
+}
+
+/** アップロード済みリプレイを解析し、ページAのプレビューに使う ReplayInfo を取得する。 */
+export function parseReplay(replayKey: string): Promise<ParseReplayResponse> {
+  const req: ParseReplayRequest = { replayKey };
+  return request<ParseReplayResponse>("/replays/parse", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 }
 
 /** 録画ジョブを起動する。 */

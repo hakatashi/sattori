@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { DEFAULT_RECORDING_OPTIONS } from "@sattori/shared";
-import { createJob, createUpload, SattoriApiError, uploadReplay } from "../api/client.ts";
+import { DEFAULT_RECORDING_OPTIONS, type ReplayInfo } from "@sattori/shared";
+import { createJob, createUpload, parseReplay, SattoriApiError, uploadReplay } from "../api/client.ts";
+import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
 
@@ -8,7 +9,13 @@ interface Props {
   onJobStarted: (jobId: string) => void;
 }
 
-type Phase = "idle" | "uploading" | "starting";
+/**
+ * idle: 未選択、または直前の選択がエラーで終わった状態。
+ * uploading/parsing: ファイル選択直後に自動で走る署名URL取得→PUT→解析。
+ * ready: 解析成功。プレビュー表示中で「次のステップ」が押せる。
+ * starting: 「次のステップ」押下後、録画ジョブを起動中。
+ */
+type Phase = "idle" | "uploading" | "parsing" | "ready" | "starting";
 
 const gameTitles = [
   {
@@ -43,7 +50,7 @@ const gameTitles = [
   },
   {
     japanese: "東方風神録",
-    english: "UFO",
+    english: "MoF",
     supported: false,
     icon: 'th10.png',
   },
@@ -127,23 +134,36 @@ const gameTitles = [
   },
 ];
 
+function formatFileSize(bytes: number): string {
+  return `${(bytes / 1024).toFixed(2)}KB`;
+}
+
 export function UploadForm({ onJobStarted }: Props) {
   const [file, setFile] = useState<File | null>(null);
+  const [replayKey, setReplayKey] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ReplayInfo | null>(null);
   const [watermark, setWatermark] = useState(DEFAULT_RECORDING_OPTIONS.watermark);
   const [phase, setPhase] = useState<Phase>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  const busy = phase !== "idle";
+  const busy = phase !== "idle" && phase !== "ready";
 
   function selectFile(selected: File | null) {
     setErrorMessage(null);
-    if (selected && !selected.name.toLowerCase().endsWith(".rpy")) {
+    setReplayKey(null);
+    setPreview(null);
+    if (!selected) {
+      setFile(null);
+      return;
+    }
+    if (!selected.name.toLowerCase().endsWith(".rpy")) {
       setFile(null);
       setErrorMessage("リプレイファイル（.rpy）を選択してください");
       return;
     }
     setFile(selected);
+    void uploadAndParse(selected);
   }
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -171,25 +191,56 @@ export function UploadForm({ onJobStarted }: Props) {
     selectFile(event.dataTransfer.files[0] ?? null);
   }
 
+  /** ファイル選択直後に自動でアップロード＆解析し、成功したらプレビューを表示する。 */
+  async function uploadAndParse(selected: File) {
+    try {
+      setPhase("uploading");
+      const upload = await createUpload({ filename: selected.name, size: selected.size });
+      await uploadReplay(upload.uploadUrl, selected);
+
+      setPhase("parsing");
+      const info = await parseReplay(upload.replayKey);
+
+      setReplayKey(upload.replayKey);
+      setPreview(info);
+      setPhase("ready");
+    } catch (err) {
+      const message =
+        err instanceof SattoriApiError ? err.message : "予期しないエラーが発生しました";
+      setErrorMessage(message);
+      setFile(null);
+      setPhase("idle");
+    }
+  }
+
   async function handleSubmit() {
-    if (!file) {
+    if (!replayKey || phase !== "ready") {
       return;
     }
     setErrorMessage(null);
     try {
-      setPhase("uploading");
-      const upload = await createUpload({ filename: file.name, size: file.size });
-      await uploadReplay(upload.uploadUrl, file);
-
       setPhase("starting");
-      const job = await createJob(upload.replayKey, { watermark });
+      const job = await createJob(replayKey, { watermark });
       onJobStarted(job.jobId);
     } catch (err) {
       const message =
         err instanceof SattoriApiError ? err.message : "予期しないエラーが発生しました";
       setErrorMessage(message);
-      setPhase("idle");
+      setPhase("ready");
     }
+  }
+
+  function renderPreview() {
+    if (phase === "uploading") {
+      return <ReplayPreview status="loading" label="アップロード中…" />;
+    }
+    if (phase === "parsing") {
+      return <ReplayPreview status="loading" label="リプレイを解析しています…" />;
+    }
+    if (preview) {
+      return <ReplayPreview status="ready" info={preview} />;
+    }
+    return <ReplayPreview status="empty" />;
   }
 
   return (
@@ -225,7 +276,7 @@ export function UploadForm({ onJobStarted }: Props) {
           disabled={busy}
         />
         <span className={styles.dropzoneLabel}>
-          {file ? file.name : <>
+          {file ? `${file.name} (${formatFileSize(file.size)})` : <>
             <span className={styles.emphasisDropzone}>ここをクリック</span>
             してリプレイファイル (.rpy) をアップロード
             <br/>
@@ -233,6 +284,14 @@ export function UploadForm({ onJobStarted }: Props) {
           </>}
         </span>
       </label>
+
+      {errorMessage && <p className={styles.error}>{errorMessage}</p>}
+
+      <p className={clsx(styles.stepLabel, styles.stepLabelSecondary)}>
+        <span className={styles.stepNumber}>STEP 2</span>
+        内容を確認
+      </p>
+      {renderPreview()}
 
       <details className={styles.details}>
         <summary className={styles.summary}>詳細設定</summary>
@@ -253,19 +312,13 @@ export function UploadForm({ onJobStarted }: Props) {
         </label>
       </details>
 
-      {errorMessage && <p className={styles.error}>{errorMessage}</p>}
-
       <button
         type="button"
         className={styles.submit}
         onClick={handleSubmit}
-        disabled={!file || busy}
+        disabled={phase !== "ready"}
       >
-        {phase === "uploading"
-          ? "アップロード中…"
-          : phase === "starting"
-            ? "録画を開始しています…"
-            : "録画を開始する"}
+        {phase === "starting" ? "録画を開始しています…" : "次のステップ"}
       </button>
     </section>
   );

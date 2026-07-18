@@ -1,5 +1,5 @@
-import type { ParsedReplay } from "@sattori/touhou-replay-parser";
-import type { GameId } from "./games.js";
+import { parseReplay, type ParsedReplay, type ReplayParseErrorCode } from "@sattori/touhou-replay-parser";
+import { GAME_TITLES, isSupportedGame, type GameId } from "./games.js";
 
 /**
  * リプレイファイル（.rpy）を解析して得られるプレイ内容の要約。
@@ -50,4 +50,46 @@ export function fromParsedReplay(parsed: ParsedReplay): ReplayInfo {
     cleared: parsed.cleared,
     estimatedDurationSeconds: parsed.frameCount === null ? null : Math.round(parsed.frameCount / 60),
   };
+}
+
+/** ページAのプレビューでそのまま表示できる、日本語の解析失敗メッセージ。 */
+export interface ReplayParseFailure {
+  code: ReplayParseErrorCode;
+  message: string;
+}
+
+export type ParseReplayInfoResult =
+  | { ok: true; info: ReplayInfo }
+  | { ok: false; error: ReplayParseFailure };
+
+const PARSE_ERROR_MESSAGES: Record<ReplayParseErrorCode, string> = {
+  too_short: "リプレイファイルが破損しています",
+  unknown_magic: "対応していないファイル形式です。東方Projectのリプレイファイル（.rpy）を指定してください",
+  unsupported_game: "対応していないタイトルのリプレイです",
+  corrupt: "リプレイファイルが破損しています（データが壊れている可能性があります）",
+};
+
+/**
+ * リプレイのバイト列から `ReplayInfo` を取得する（ページAのプレビュー用）。
+ * `parseReplay` によるフォーマット解析に加え、Sattoriが録画対応していないタイトル
+ * （`isSupportedGame`）も同じ `unsupported_game` エラーとして扱い、
+ * いずれもユーザーにそのまま表示できる日本語メッセージを返す。
+ */
+export function parseReplayInfo(data: Uint8Array): ParseReplayInfoResult {
+  const result = parseReplay(data);
+  if (!result.ok) {
+    return { ok: false, error: { code: result.error.code, message: PARSE_ERROR_MESSAGES[result.error.code] } };
+  }
+
+  if (!isSupportedGame(result.replay.game)) {
+    return {
+      ok: false,
+      error: {
+        code: "unsupported_game",
+        message: `${GAME_TITLES[result.replay.game]} は現在録画に対応していません`,
+      },
+    };
+  }
+
+  return { ok: true, info: fromParsedReplay(result.replay) };
 }
