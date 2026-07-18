@@ -57,9 +57,19 @@ export function JobProgress({ jobId, onReset }: Props) {
         </p>
       )}
 
-      {done && job?.downloadUrl && (
-        <a className={styles.download} href={job.downloadUrl} download>
+      {done && (job?.downloadUrl720p ?? job?.downloadUrl) && (
+        <a
+          className={styles.download}
+          href={job?.downloadUrl720p ?? job?.downloadUrl ?? undefined}
+          download
+        >
           動画をダウンロード
+        </a>
+      )}
+
+      {done && job?.downloadUrl720p && job?.downloadUrl && (
+        <a className={styles.secondaryDownload} href={job.downloadUrl} download>
+          元の解像度でダウンロード
         </a>
       )}
 

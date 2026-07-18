@@ -3,14 +3,15 @@
 東方妖々夢(th07)のリプレイを Wine + Xvfb + ffmpeg でヘッドレス録画し、S3 へ
 アップロードする Python ワーカー。AWS EC2 Spot インスタンス上で Docker コンテナ
 として実行される。技術的背景は `touhou-recorder` の PoC レポート
-(`reports/11`, `reports/13`, `reports/14`, `reports/16`, `reports/17`) を参照。
+(`reports/11`, `reports/13`, `reports/14`, `reports/16`, `reports/17`, `reports/21`) を参照。
 
 ## 構成
 
 | ファイル | 役割 |
 | --- | --- |
-| `entrypoint.py` | ジョブ全体の制御。S3 DL → 録画 → S3 UP → DynamoDB 状態更新 |
+| `entrypoint.py` | ジョブ全体の制御。S3 DL → 録画 → 720p変換 → S3 UP → DynamoDB 状態更新 |
 | `record_th07.py` | th07 録画パイプライン本体(任意ファイル名リプレイを正規スロットで再生) |
+| `upscale.py` | 録画動画をアスペクト比を保って720pへアップスケールする後処理(reports/21) |
 | `status.py` | DynamoDB へのジョブ状態反映 |
 | `Dockerfile` | 実行イメージ定義 |
 | `mods/common/` | DLL インジェクタ(`injector.exe`)・共通フック処理のソース(C++, MSVC) |
@@ -67,6 +68,19 @@ worker\mods\th07_replay_autoplay\build.bat
 | `JOBS_TABLE` | ジョブ状態の DynamoDB テーブル名 |
 | `WATERMARK` | `1` でウォーターマーク合成、`0` で無効 |
 
+## 出力ファイル
+
+録画完了後、`upscale.py` で720p(アスペクト比維持、th07なら960x720)へ変換した版を
+別ファイルとして追加生成し、元動画と合わせて2本を `OUTPUT_BUCKET` へアップロードする
+(同時録画中のアップスケールは4vCPU構成で重複フレーム率を悪化させるため採用しない、
+reports/21)。th07(640x480)のような低解像度録画はそのままだと YouTube 側で60fpsと
+認識されないため、ページBの主要ダウンロードボタンは既定で720p版を案内する。
+
+| S3キー | 内容 |
+| --- | --- |
+| `videos/{jobId}.mp4` | 録画そのままの解像度(DynamoDB `outputPath`) |
+| `videos/{jobId}_720p.mp4` | 720pアップスケール版(DynamoDB `outputPath720p`) |
+
 ## ローカルでの録画単体テスト(ネットワーク不要)
 
 ゲーム資産を配置済みであれば、S3/DynamoDB を介さず録画本体だけを試せる:
@@ -74,6 +88,12 @@ worker\mods\th07_replay_autoplay\build.bat
 ```bash
 python3 record_th07.py --replay-path /path/to/any.rpy --output /tmp/out.mp4 \
   --watermark assets/watermark/watermark-60fps.webm
+```
+
+720pアップスケール変換だけを試す場合(ffmpeg/ffprobeがあれば動作する):
+
+```bash
+python3 -c "from upscale import upscale_to_720p; upscale_to_720p('/tmp/out.mp4', '/tmp/out_720p.mp4')"
 ```
 
 ## ビルド
