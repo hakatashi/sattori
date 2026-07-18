@@ -66,8 +66,12 @@ export function parseReplay(replayKey: string): Promise<ParseReplayResponse> {
 }
 
 /** 録画ジョブを起動する。 */
-export function createJob(replayKey: string, options: RecordingOptions): Promise<CreateJobResponse> {
-  const req: CreateJobRequest = { replayKey, options };
+export function createJob(
+  replayKey: string,
+  options: RecordingOptions,
+  estimatedDurationSeconds?: number | null,
+): Promise<CreateJobResponse> {
+  const req: CreateJobRequest = { replayKey, options, estimatedDurationSeconds };
   return request<CreateJobResponse>("/jobs", {
     method: "POST",
     body: JSON.stringify(req),

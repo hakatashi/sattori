@@ -220,7 +220,7 @@ export function UploadForm({ onJobStarted }: Props) {
     setErrorMessage(null);
     try {
       setPhase("starting");
-      const job = await createJob(replayKey, { watermark });
+      const job = await createJob(replayKey, { watermark }, preview?.estimatedDurationSeconds);
       onJobStarted(job.jobId);
     } catch (err) {
       const message =

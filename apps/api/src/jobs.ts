@@ -61,3 +61,26 @@ export async function updateJobStatus(
     }),
   );
 }
+
+/**
+ * ジョブに紐づく実行中の EC2 インスタンスIDを記録する。
+ * Step Functions の失敗ハンドラ（handleFailure）がリトライ/タイムアウト時に
+ * どのインスタンスを terminate すべきか判定するために使う。
+ */
+export async function updateJobInstanceId(
+  table: string,
+  jobId: string,
+  instanceId: string,
+): Promise<void> {
+  await client.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { jobId },
+      UpdateExpression: "SET instanceId = :i, updatedAt = :u",
+      ExpressionAttributeValues: {
+        ":i": instanceId,
+        ":u": new Date().toISOString(),
+      },
+    }),
+  );
+}

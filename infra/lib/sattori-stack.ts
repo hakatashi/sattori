@@ -23,6 +23,8 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import * as sfn from "aws-cdk-lib/aws-stepfunctions";
+import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
 import type { Construct } from "constructs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -124,11 +126,22 @@ export class SattoriStack extends Stack {
       assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
     });
     uploadBucket.grantRead(workerRole);
-    outputBucket.grantWrite(workerRole);
+    // 書き込み(録画・進捗スクリーンショットのアップロード)に加え、変換フェーズ再開時に
+    // 生動画チェックポイントを読み戻すため読み取りも必要。
+    outputBucket.grantReadWrite(workerRole);
     jobsTable.grantReadWriteData(workerRole);
     workerRepo.grantPull(workerRole);
     // awslogs ドライバはストリーム作成とイベント送出を行う。
     workerLogGroup.grantWrite(workerRole);
+    // taskToken 経由で Step Functions へ成功/失敗(Spot中断の早期通知含む)を通知する。
+    // これらのアクションはリソースレベル権限に対応していないため Resource: "*" が必要
+    // (AWS公式ドキュメント上の制約)。
+    workerRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["states:SendTaskSuccess", "states:SendTaskFailure", "states:SendTaskHeartbeat"],
+        resources: ["*"],
+      }),
+    );
 
     const workerInstanceProfile = new iam.InstanceProfile(this, "WorkerInstanceProfile", {
       role: workerRole,
@@ -140,6 +153,21 @@ export class SattoriStack extends Stack {
       "/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id",
     );
 
+    // ワーカー起動の基点となる Launch Template。AMI/インスタンスタイプ/IAM/SGはここで
+    // 固定し、ジョブ毎に変わる UserData のみ実行時(apps/api の launchRecordingInstance)
+    // が `CreateLaunchTemplateVersion` で上書きした新バージョンを作る。
+    // UserData はプレースホルダ(実際に使われることはない)。
+    const workerLaunchTemplate = new ec2.CfnLaunchTemplate(this, "WorkerLaunchTemplate", {
+      launchTemplateData: {
+        imageId: workerAmiId,
+        instanceType: "c7i.xlarge",
+        iamInstanceProfile: { arn: workerInstanceProfile.instanceProfileArn },
+        securityGroupIds: [workerSg.securityGroupId],
+        instanceInitiatedShutdownBehavior: "terminate",
+        userData: Buffer.from("#!/bin/bash\nexit 0\n", "utf-8").toString("base64"),
+      },
+    });
+
     // --- API(Lambda + HTTP API) -------------------------------------------
 
     const commonEnv: Record<string, string> = {
@@ -149,11 +177,8 @@ export class SattoriStack extends Stack {
       JOBS_TABLE: jobsTable.tableName,
       WORKER_IMAGE: `${workerRepo.repositoryUri}:latest`,
       WORKER_LOG_GROUP: workerLogGroup.logGroupName,
-      WORKER_AMI_ID: workerAmiId,
-      WORKER_SUBNET_ID: vpc.publicSubnets[0]!.subnetId,
-      WORKER_INSTANCE_PROFILE_ARN: workerInstanceProfile.instanceProfileArn,
-      WORKER_SECURITY_GROUP_ID: workerSg.securityGroupId,
-      WORKER_INSTANCE_TYPE: "c7i.xlarge",
+      WORKER_SUBNET_IDS: vpc.publicSubnets.map((subnet) => subnet.subnetId).join(","),
+      WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
     };
 
     const makeHandler = (name: string, entry: string) =>
@@ -173,28 +198,107 @@ export class SattoriStack extends Stack {
 
     const createUploadFn = makeHandler("CreateUploadFn", "createUpload.ts");
     const parseReplayFn = makeHandler("ParseReplayFn", "parseReplay.ts");
-    const createJobFn = makeHandler("CreateJobFn", "createJob.ts");
     const getJobFn = makeHandler("GetJobFn", "getJob.ts");
 
     // 権限付与
     uploadBucket.grantPut(createUploadFn); // 署名付き PUT URL 発行のため
     uploadBucket.grantRead(parseReplayFn); // アップロード済み .rpy を取得して解析するため
-    jobsTable.grantReadWriteData(createJobFn);
     jobsTable.grantReadData(getJobFn);
 
-    // createJob は EC2 Spot を起動し、ワーカーロールを PassRole する。
-    createJobFn.addToRolePolicy(
+    // --- 録画ジョブのオーケストレーション(Step Functions) -------------------
+    // 1ジョブ = 1 Standard実行。Launch タスクが EC2 Fleet でワーカーを起動し、
+    // ワーカー自身が taskToken 経由で成否を通知する(waitForTaskTokenパターン)。
+    // Spot中断/タイムアウト時は HandleFailure が孤児インスタンスをterminateしつつ
+    // リトライ可否を判定する(Issue #11)。
+
+    const launchFn = makeHandler("LaunchFn", "sfn/launch.ts");
+    const handleFailureFn = makeHandler("HandleFailureFn", "sfn/handleFailure.ts");
+
+    jobsTable.grantReadWriteData(launchFn);
+    // launchFn は EC2 Fleet を起動し、ワーカーロールを PassRole する。
+    launchFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["ec2:RunInstances", "ec2:CreateTags"],
+        actions: [
+          "ec2:CreateFleet",
+          "ec2:CreateLaunchTemplateVersion",
+          "ec2:RunInstances",
+          "ec2:CreateTags",
+        ],
         resources: ["*"],
       }),
     );
-    createJobFn.addToRolePolicy(
+    launchFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["iam:PassRole"],
         resources: [workerRole.roleArn],
       }),
     );
+
+    jobsTable.grantReadWriteData(handleFailureFn);
+    handleFailureFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ec2:TerminateInstances"],
+        resources: ["*"],
+      }),
+    );
+
+    const launchTask = new tasks.LambdaInvoke(this, "Launch", {
+      lambdaFunction: launchFn,
+      integrationPattern: sfn.IntegrationPattern.WAIT_FOR_TASK_TOKEN,
+      payload: sfn.TaskInput.fromObject({
+        taskToken: sfn.JsonPath.taskToken,
+        jobId: sfn.JsonPath.stringAt("$.jobId"),
+        attempt: sfn.JsonPath.numberAt("$.attempt"),
+      }),
+      // 録画ジョブ全体のフェイルセーフタイムアウト。60分を超えてもワーカーから
+      // taskTokenの応答が無ければ強制的に失敗させ、HandleFailureで後始末する。
+      taskTimeout: sfn.Timeout.duration(Duration.minutes(60)),
+      resultPath: sfn.JsonPath.DISCARD,
+    });
+
+    const handleFailureTask = new tasks.LambdaInvoke(this, "HandleFailure", {
+      lambdaFunction: handleFailureFn,
+      payload: sfn.TaskInput.fromObject({
+        jobId: sfn.JsonPath.stringAt("$.jobId"),
+        attempt: sfn.JsonPath.numberAt("$.attempt"),
+      }),
+      payloadResponseOnly: true,
+      resultPath: "$.handleFailureResult",
+    });
+
+    const incrementAttempt = new sfn.Pass(this, "IncrementAttempt", {
+      parameters: {
+        jobId: sfn.JsonPath.stringAt("$.jobId"),
+        attempt: sfn.JsonPath.mathAdd(sfn.JsonPath.numberAt("$.attempt"), 1),
+      },
+    });
+
+    const retryChoice = new sfn.Choice(this, "ShouldRetry?")
+      .when(
+        sfn.Condition.booleanEquals("$.handleFailureResult.shouldRetry", true),
+        new sfn.Wait(this, "WaitBeforeRetry", {
+          time: sfn.WaitTime.duration(Duration.seconds(10)),
+        })
+          .next(incrementAttempt)
+          .next(launchTask),
+      )
+      .otherwise(new sfn.Fail(this, "JobFailed"));
+
+    launchTask.addCatch(handleFailureTask.next(retryChoice), { resultPath: "$.error" });
+    launchTask.next(new sfn.Succeed(this, "JobSucceeded"));
+
+    const stateMachine = new sfn.StateMachine(this, "RecordingStateMachine", {
+      definitionBody: sfn.DefinitionBody.fromChainable(launchTask),
+      stateMachineType: sfn.StateMachineType.STANDARD,
+    });
+
+    const createJobFn = makeHandler("CreateJobFn", "createJob.ts");
+    jobsTable.grantReadWriteData(createJobFn);
+    stateMachine.grantStartExecution(createJobFn);
+    // STATE_MACHINE_ARN は createJobFn だけに付与する(commonEnv には含めない)。
+    // ステートマシンは launchFn/handleFailureFn を呼び出す(Lambda ARN に依存)ため、
+    // それらの環境変数がステートマシンARNを参照すると CloudFormation の循環依存になる。
+    createJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
 
     const httpApi = new apigw.HttpApi(this, "HttpApi", {
       corsPreflight: {

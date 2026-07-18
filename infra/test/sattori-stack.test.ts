@@ -41,15 +41,53 @@ describe("SattoriStack", () => {
     expect(Object.keys(buckets).length).toBeGreaterThanOrEqual(3);
   });
 
-  it("createJob Lambda に EC2 起動権限が付与されている", () => {
+  it("Launch Lambda に EC2 Fleet 起動権限が付与されている", () => {
     template.hasResourceProperties("AWS::IAM::Policy", {
       PolicyDocument: {
         Statement: Match.arrayWith([
           Match.objectLike({
-            Action: Match.arrayWith(["ec2:RunInstances"]),
+            Action: Match.arrayWith(["ec2:CreateFleet", "ec2:RunInstances"]),
           }),
         ]),
       },
+    });
+  });
+
+  it("HandleFailure Lambda に EC2 terminate 権限が付与されている", () => {
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: "ec2:TerminateInstances",
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("録画ジョブをオーケストレーションする Standard タイプの Step Functions ステートマシンが存在する", () => {
+    template.hasResourceProperties("AWS::StepFunctions::StateMachine", {
+      StateMachineType: "STANDARD",
+    });
+  });
+
+  it("ワーカーロールに SendTaskSuccess/SendTaskFailure 権限が付与されている", () => {
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith(["states:SendTaskSuccess", "states:SendTaskFailure"]),
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("ワーカー起動用の EC2 Launch Template が存在する", () => {
+    template.hasResourceProperties("AWS::EC2::LaunchTemplate", {
+      LaunchTemplateData: Match.objectLike({
+        InstanceInitiatedShutdownBehavior: "terminate",
+      }),
     });
   });
 });
