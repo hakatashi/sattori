@@ -14,18 +14,43 @@ export function UploadForm({ onJobStarted }: Props) {
   const [watermark, setWatermark] = useState(DEFAULT_RECORDING_OPTIONS.watermark);
   const [phase, setPhase] = useState<Phase>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const busy = phase !== "idle";
 
-  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+  function selectFile(selected: File | null) {
     setErrorMessage(null);
-    const selected = event.target.files?.[0] ?? null;
     if (selected && !selected.name.toLowerCase().endsWith(".rpy")) {
       setFile(null);
       setErrorMessage("リプレイファイル（.rpy）を選択してください");
       return;
     }
     setFile(selected);
+  }
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    selectFile(event.target.files?.[0] ?? null);
+  }
+
+  function handleDragOver(event: React.DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    if (!busy) {
+      setDragging(true);
+    }
+  }
+
+  function handleDragLeave(event: React.DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    setDragging(false);
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    setDragging(false);
+    if (busy) {
+      return;
+    }
+    selectFile(event.dataTransfer.files[0] ?? null);
   }
 
   async function handleSubmit() {
@@ -51,7 +76,18 @@ export function UploadForm({ onJobStarted }: Props) {
 
   return (
     <section className={styles.card}>
-      <label className={styles.dropzone} data-selected={file !== null}>
+      <p className={styles.stepLabel}>
+        <span className={styles.stepNumber}>STEP 1</span>
+        リプレイファイルを選択
+      </p>
+      <label
+        className={styles.dropzone}
+        data-selected={file !== null}
+        data-dragging={dragging}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <input
           type="file"
           accept=".rpy"
@@ -60,7 +96,12 @@ export function UploadForm({ onJobStarted }: Props) {
           disabled={busy}
         />
         <span className={styles.dropzoneLabel}>
-          {file ? file.name : "ここをクリックして .rpy ファイルを選択"}
+          {file ? file.name : <>
+            <span className={styles.emphasisDropzone}>ここをクリック</span>
+            してリプレイファイル (.rpy) をアップロード
+            <br/>
+            もしくはドラッグ&ドロップ
+          </>}
         </span>
       </label>
 
@@ -76,7 +117,8 @@ export function UploadForm({ onJobStarted }: Props) {
           <span>
             ウォーターマークを合成する
             <small className={styles.optionHint}>
-              動画右下に Sattori のロゴを表示します（推奨）
+              リプレイ本編が始まるまでの数秒間、動画右下に「TouhouSattori」のロゴが表示されます。<br/>
+              リプレイ再生中の画面には表示されません。
             </small>
           </span>
         </label>

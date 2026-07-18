@@ -28,6 +28,10 @@ a {
   color: var(--accent);
 }
 
+p {
+  margin: 0;
+}
+
 button {
   font-family: inherit;
 }
