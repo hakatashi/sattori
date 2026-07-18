@@ -1,16 +1,66 @@
 .card {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  padding: 2rem;
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
+  padding: 0.5rem;
 }
 
-.heading {
+.supportedTitlesLabel {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  letter-spacing: 0.1em;
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+ul.supportedTitles {
   margin: 0;
-  font-size: 1.35rem;
+  padding: 0;
+  list-style: none;
+  columns: 4;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 768px) {
+  ul.supportedTitles {
+    columns: 3;
+  }
+}
+
+li.supportedTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  opacity: 0.2;
+  white-space: pre;
+}
+
+li.supportedTitle .supportedTitleIcon {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+li.supportedTitle.supported {
+  font-weight: 600;
+  opacity: 1;
+}
+
+.stepLabel {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-top: 5rem;
+  margin-bottom: 1rem;
+}
+
+.stepNumber {
+  display: inline-block;
+  height: 1.5rem;
+  padding: 0 0.5rem;
+  margin-right: 0.5rem;
+  background: color-mix(in hsl, var(--accent), #eee 80%);
+  color: color-mix(in hsl, var(--accent), #999 70%);
+  font-size: 0.9rem;
 }
 
 .dropzone {
@@ -18,12 +68,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 120px;
+  min-height: 12rem;
   padding: 1.5rem;
-  border: 2px dashed var(--panel-border);
+  background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='14' ry='14' stroke='%23c0c0c0' stroke-width='5' stroke-dasharray='15%2c 25' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
   border-radius: var(--radius);
   cursor: pointer;
   text-align: center;
+  font-size: 1.2rem;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
@@ -35,6 +86,12 @@
   border-style: solid;
   border-color: var(--accent);
   background: rgba(179, 108, 240, 0.08);
+}
+
+.dropzone[data-dragging="true"] {
+  border-style: solid;
+  border-color: var(--accent);
+  background: rgba(179, 108, 240, 0.16);
 }
 
 .fileInput {
@@ -49,9 +106,14 @@
   word-break: break-all;
 }
 
+.emphasisDropzone {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .details {
-  border-top: 1px solid var(--panel-border);
   padding-top: 0.75rem;
+  margin: 1rem 0;
 }
 
 .summary {
