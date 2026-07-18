@@ -25,8 +25,8 @@ def _now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
-def update_status(job_id, status, *, output_path=None, error=None):
-    """ジョブの status(と任意で outputPath / error)を更新する。"""
+def update_status(job_id, status, *, output_path=None, output_path_720p=None, error=None):
+    """ジョブの status(と任意で outputPath / outputPath720p / error)を更新する。"""
     table_name = os.environ.get("JOBS_TABLE")
     if not table_name:
         # ローカル検証等でテーブル未設定なら DynamoDB 更新はスキップする。
@@ -40,6 +40,9 @@ def update_status(job_id, status, *, output_path=None, error=None):
     if output_path is not None:
         expr += ", outputPath = :o"
         values[":o"] = output_path
+    if output_path_720p is not None:
+        expr += ", outputPath720p = :o720"
+        values[":o720"] = output_path_720p
     if error is not None:
         expr += ", #e = :e"
         names["#e"] = "error"

@@ -8,7 +8,7 @@ export const JOB_STATUSES = [
   "queued", // ジョブ登録済み・起動待ち
   "launching", // EC2 Spot インスタンス起動中
   "recording", // ゲーム起動〜リプレイ録画中
-  "uploading", // 録画完了・S3へアップロード中
+  "uploading", // 録画完了・720pアップスケール変換とS3アップロード中
   "done", // 完了（動画DL可能）
   "failed", // 失敗（要リトライ or エラー表示）
 ] as const;
@@ -41,8 +41,15 @@ export interface JobRecord {
   replayKey: string;
   status: JobStatus;
   options: RecordingOptions;
-  /** 完了時の出力動画の CloudFront 配信パス（未完了なら null）。 */
+  /** 完了時の出力動画（録画そのままの解像度）の CloudFront 配信パス（未完了なら null）。 */
   outputPath: string | null;
+  /**
+   * 完了時の720pアップスケール版動画の CloudFront 配信パス（未完了なら null）。
+   * th07(640x480)等の低解像度録画はそのままだと YouTube 側で60fpsとして
+   * 認識されないため（touhou-recorder reports/21）、アスペクト比を保ったまま
+   * 高さ720pxへ変換した版を別ファイルとして併せて提供する。
+   */
+  outputPath720p: string | null;
   /** 失敗時のエラー概要（ユーザー表示用の簡潔な文言）。 */
   error: string | null;
   /** ISO 8601。 */

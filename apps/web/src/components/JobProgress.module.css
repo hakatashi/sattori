@@ -81,6 +81,16 @@
   background: var(--accent-hover);
 }
 
+.secondaryDownload {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+
+.secondaryDownload:hover {
+  color: var(--text);
+}
+
 .reset {
   align-self: center;
   padding: 0.5rem 1rem;

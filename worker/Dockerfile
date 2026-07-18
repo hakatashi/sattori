@@ -41,7 +41,7 @@ COPY mods/th07_replay_autoplay/build/th07_hook.dll /app/mods/th07_replay_autopla
 COPY assets/watermark/watermark-60fps.webm /app/assets/watermark/watermark-60fps.webm
 
 # ワーカーのソース(リポジトリ管理)
-COPY record_th07.py entrypoint.py status.py /app/
+COPY record_th07.py entrypoint.py status.py upscale.py /app/
 
 RUN mkdir -p /app/instances /app/runs
 
