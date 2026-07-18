@@ -56,8 +56,13 @@ export interface GetJobResponse {
   jobId: string;
   game: GameId;
   status: JobStatus;
-  /** 完了時のダウンロードURL（CloudFront配信、未完了なら null）。 */
+  /** 完了時のダウンロードURL（録画そのままの解像度、CloudFront配信、未完了なら null）。 */
   downloadUrl: string | null;
+  /**
+   * 完了時の720pアップスケール版ダウンロードURL（CloudFront配信、未完了なら null）。
+   * YouTube等での60fps認識のため、ページBの主要ダウンロードボタンはこちらを既定とする。
+   */
+  downloadUrl720p: string | null;
   error: string | null;
   updatedAt: string;
 }
