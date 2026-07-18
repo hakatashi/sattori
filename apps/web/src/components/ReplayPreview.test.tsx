@@ -16,8 +16,8 @@ const SAMPLE_REPLAY_INFO: ReplayInfo = {
 };
 
 describe("ReplayPreview", () => {
-  it("解析結果の主要項目を表示する", () => {
-    render(<ReplayPreview info={SAMPLE_REPLAY_INFO} />);
+  it("status=ready で解析結果の主要項目を表示する", () => {
+    render(<ReplayPreview status="ready" info={SAMPLE_REPLAY_INFO} />);
     expect(screen.getByText("東方妖々夢 ～ Perfect Cherry Blossom.")).toBeTruthy();
     expect(screen.getByText("MarisaA")).toBeTruthy();
     expect(screen.getByText("Extra")).toBeTruthy();
@@ -27,14 +27,26 @@ describe("ReplayPreview", () => {
     expect(screen.getByText("14分07秒")).toBeTruthy();
   });
 
-  it("null の項目は「不明」と表示する", () => {
+  it("status=ready で null の項目は「不明」と表示する", () => {
     render(
       <ReplayPreview
+        status="ready"
         info={{ ...SAMPLE_REPLAY_INFO, stage: null, cleared: null, estimatedDurationSeconds: null }}
       />,
     );
     const unknowns = screen.getAllByText("不明");
     expect(unknowns.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("status=empty ではファイル未選択のプレースホルダーを表示する", () => {
+    render(<ReplayPreview status="empty" />);
+    expect(screen.getByText("リプレイファイルを選択すると、ここに内容が表示されます")).toBeTruthy();
+  });
+
+  it("status=loading ではスピナーとラベルを表示する", () => {
+    render(<ReplayPreview status="loading" label="リプレイを解析しています…" />);
+    expect(screen.getByRole("status", { name: "読み込み中" })).toBeTruthy();
+    expect(screen.getByText("リプレイを解析しています…")).toBeTruthy();
   });
 });
 

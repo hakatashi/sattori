@@ -134,6 +134,10 @@ const gameTitles = [
   },
 ];
 
+function formatFileSize(bytes: number): string {
+  return `${(bytes / 1024).toFixed(2)}KB`;
+}
+
 export function UploadForm({ onJobStarted }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [replayKey, setReplayKey] = useState<string | null>(null);
@@ -226,6 +230,19 @@ export function UploadForm({ onJobStarted }: Props) {
     }
   }
 
+  function renderPreview() {
+    if (phase === "uploading") {
+      return <ReplayPreview status="loading" label="アップロード中…" />;
+    }
+    if (phase === "parsing") {
+      return <ReplayPreview status="loading" label="リプレイを解析しています…" />;
+    }
+    if (preview) {
+      return <ReplayPreview status="ready" info={preview} />;
+    }
+    return <ReplayPreview status="empty" />;
+  }
+
   return (
     <section className={styles.card}>
       <p className={styles.supportedTitlesLabel}>
@@ -259,7 +276,7 @@ export function UploadForm({ onJobStarted }: Props) {
           disabled={busy}
         />
         <span className={styles.dropzoneLabel}>
-          {file ? file.name : <>
+          {file ? `${file.name} (${formatFileSize(file.size)})` : <>
             <span className={styles.emphasisDropzone}>ここをクリック</span>
             してリプレイファイル (.rpy) をアップロード
             <br/>
@@ -268,23 +285,13 @@ export function UploadForm({ onJobStarted }: Props) {
         </span>
       </label>
 
-      {(phase === "uploading" || phase === "parsing") && (
-        <p className={styles.status}>
-          {phase === "uploading" ? "アップロード中…" : "リプレイを解析しています…"}
-        </p>
-      )}
-
       {errorMessage && <p className={styles.error}>{errorMessage}</p>}
 
-      {preview && (
-        <>
-          <p className={clsx(styles.stepLabel, styles.stepLabelSecondary)}>
-            <span className={styles.stepNumber}>STEP 2</span>
-            内容を確認
-          </p>
-          <ReplayPreview info={preview} />
-        </>
-      )}
+      <p className={clsx(styles.stepLabel, styles.stepLabelSecondary)}>
+        <span className={styles.stepNumber}>STEP 2</span>
+        内容を確認
+      </p>
+      {renderPreview()}
 
       <details className={styles.details}>
         <summary className={styles.summary}>詳細設定</summary>
