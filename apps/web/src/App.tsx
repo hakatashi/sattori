@@ -1,18 +1,34 @@
 import { useState } from "react";
 import { UploadForm } from "./components/UploadForm.tsx";
+import { MagicLinkSent } from "./components/MagicLinkSent.tsx";
+import { ConfirmMagicLink } from "./components/ConfirmMagicLink.tsx";
 import { JobProgress } from "./components/JobProgress.tsx";
 import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
 import styles from "./App.module.css";
 
 /**
- * フェーズ1の最小フロー。
- * 1. リプレイをアップロードして録画ジョブを起動（UploadForm）
- * 2. ジョブの進捗を表示し、完了後にダウンロード（JobProgress）
- *
- * メール認証・リプレイ解析プレビュー・ページA/Bのメール分離はフェーズ2で追加する。
+ * ページAの初期状態。マジックリンクのメール（`?jobId=...&token=...`）から開いた場合は
+ * "confirming" から始まり、確認が成功すると "progress" へ遷移する（Issue #9）。
+ * リッチなページB体験（完了メール再送・エラー導線の作り込み等）はIssue #10で拡張する。
  */
+function initialViewFromLocation(): View {
+  const params = new URLSearchParams(window.location.search);
+  const jobId = params.get("jobId");
+  const token = params.get("token");
+  if (jobId && token) {
+    return { kind: "confirming", jobId, token };
+  }
+  return { kind: "upload" };
+}
+
+type View =
+  | { kind: "upload" }
+  | { kind: "confirming"; jobId: string; token: string }
+  | { kind: "sent"; email: string }
+  | { kind: "progress"; jobId: string };
+
 export function App() {
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [view, setView] = useState<View>(initialViewFromLocation);
 
   // デザイン調整用: `pnpm dev` で `?preview=replay` を付けて開くとReplayPreviewの
   // 各状態を実データ無しで確認できる（import.meta.env.DEVガードにより本番ビルドには含まれない）。
@@ -31,10 +47,21 @@ export function App() {
       </header>
 
       <main className={styles.main}>
-        {jobId === null ? (
-          <UploadForm onJobStarted={setJobId} />
-        ) : (
-          <JobProgress jobId={jobId} onReset={() => setJobId(null)} />
+        {view.kind === "upload" && (
+          <UploadForm onMagicLinkSent={(email) => setView({ kind: "sent", email })} />
+        )}
+        {view.kind === "sent" && (
+          <MagicLinkSent email={view.email} onReset={() => setView({ kind: "upload" })} />
+        )}
+        {view.kind === "confirming" && (
+          <ConfirmMagicLink
+            jobId={view.jobId}
+            token={view.token}
+            onConfirmed={(jobId) => setView({ kind: "progress", jobId })}
+          />
+        )}
+        {view.kind === "progress" && (
+          <JobProgress jobId={view.jobId} onReset={() => setView({ kind: "upload" })} />
         )}
       </main>
 

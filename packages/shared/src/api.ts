@@ -36,8 +36,13 @@ export interface ParseReplayRequest {
  */
 export type ParseReplayResponse = ReplayInfo;
 
-/** POST /jobs : 録画ジョブの起動要求。 */
-export interface CreateJobRequest {
+/**
+ * POST /magic-links : マジックリンクメールの送信要求（ページAの「次のステップ」）。
+ * この時点ではジョブ（DynamoDBレコード）はまだ作らず、Step Functionsも起動しない。
+ * メール内のリンクをクリックして `POST /jobs/{jobId}/confirm` を呼ぶまでジョブは実体化しない
+ * （Issue #9）。
+ */
+export interface RequestMagicLinkRequest {
   /** CreateUploadResponse.replayKey をそのまま渡す。 */
   replayKey: string;
   /** フェーズ1では省略可（クライアント判定 or 既定 th07）。フェーズ2でパーサー結果を渡す。 */
@@ -48,13 +53,39 @@ export interface CreateJobRequest {
    * ワーカーの録画進捗率表示にのみ使う参考値（省略・null なら進捗率は算出されない）。
    */
   estimatedDurationSeconds?: number | null;
+  /** マジックリンクの送信先。同一メール（`+`エイリアス正規化後）は24時間5件までのレート制限対象。 */
+  email: string;
 }
 
-/** POST /jobs のレスポンス。 */
-export interface CreateJobResponse {
+/** POST /magic-links のレスポンス（送信成功、bodyは空でよい）。 */
+export type RequestMagicLinkResponse = Record<string, never>;
+
+/**
+ * POST /jobs/{jobId}/confirm : マジックリンクの確認・ジョブ起動要求（ページBの初回表示）。
+ * トークンが有効（未使用・期限内）であれば、送信要求時の内容からジョブを作成し
+ * Step Functions実行を開始する。トークンは単回使用。
+ */
+export interface ConfirmJobRequest {
+  token: string;
+}
+
+/** POST /jobs/{jobId}/confirm のレスポンス。 */
+export interface ConfirmJobResponse {
   jobId: string;
   status: JobStatus;
 }
+
+/**
+ * POST /jobs/{jobId}/resend : マジックリンクの再送要求
+ * （期限切れ・メール未着時の再送導線）。未使用トークンのみ再送可能、送信は
+ * レート制限の対象。
+ */
+export interface ResendMagicLinkRequest {
+  token: string;
+}
+
+/** POST /jobs/{jobId}/resend のレスポンス（送信成功、bodyは空でよい）。 */
+export type ResendMagicLinkResponse = Record<string, never>;
 
 /** GET /jobs/{jobId} のレスポンス（ページBのポーリング）。 */
 export interface GetJobResponse {

@@ -18,6 +18,14 @@ export interface ApiConfig {
   ec2: Ec2LaunchConfig;
   /** アップロード可能な .rpy の最大サイズ（バイト）。 */
   maxReplayBytes: number;
+  /** マジックリンクを保持する DynamoDB テーブル名。 */
+  magicLinksTable: string;
+  /** メール送信のレート制限カウンタを保持する DynamoDB テーブル名。 */
+  emailRateLimitTable: string;
+  /** マジックリンクメールの送信元アドレス（SESで検証済みのドメイン配下）。 */
+  sesFromAddress: string;
+  /** マジックリンクURLを組み立てる際のWebフロントエンドのベースURL（末尾スラッシュなし）。 */
+  webBaseUrl: string;
 }
 
 export interface Ec2LaunchConfig {
@@ -61,6 +69,10 @@ export function loadConfig(): ApiConfig {
     workerImage: required("WORKER_IMAGE"),
     logGroup: required("WORKER_LOG_GROUP"),
     maxReplayBytes: Number(process.env.MAX_REPLAY_BYTES ?? 5 * 1024 * 1024),
+    magicLinksTable: required("MAGIC_LINKS_TABLE"),
+    emailRateLimitTable: required("EMAIL_RATE_LIMIT_TABLE"),
+    sesFromAddress: required("SES_FROM_ADDRESS"),
+    webBaseUrl: required("WEB_BASE_URL"),
     ec2: {
       subnetIds: required("WORKER_SUBNET_IDS").split(","),
       region: process.env.AWS_REGION ?? "us-east-1",

@@ -147,6 +147,26 @@ li.supportedTitle.supported {
   font-size: 0.9rem;
 }
 
+.emailInput {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: inherit;
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.emailInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.emailInput:disabled {
+  opacity: 0.5;
+}
+
 .submit {
   padding: 0.85rem 1.5rem;
   border: none;

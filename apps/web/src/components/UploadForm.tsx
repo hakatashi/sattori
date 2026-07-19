@@ -1,12 +1,20 @@
 import { useState } from "react";
 import { DEFAULT_RECORDING_OPTIONS, type ReplayInfo } from "@sattori/shared";
-import { createJob, createUpload, parseReplay, SattoriApiError, uploadReplay } from "../api/client.ts";
+import {
+  createUpload,
+  parseReplay,
+  requestMagicLink,
+  SattoriApiError,
+  uploadReplay,
+} from "../api/client.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 interface Props {
-  onJobStarted: (jobId: string) => void;
+  onMagicLinkSent: (email: string) => void;
 }
 
 /**
@@ -138,16 +146,18 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / 1024).toFixed(2)}KB`;
 }
 
-export function UploadForm({ onJobStarted }: Props) {
+export function UploadForm({ onMagicLinkSent }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [replayKey, setReplayKey] = useState<string | null>(null);
   const [preview, setPreview] = useState<ReplayInfo | null>(null);
   const [watermark, setWatermark] = useState(DEFAULT_RECORDING_OPTIONS.watermark);
+  const [email, setEmail] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
   const busy = phase !== "idle" && phase !== "ready";
+  const emailValid = EMAIL_PATTERN.test(email);
 
   function selectFile(selected: File | null) {
     setErrorMessage(null);
@@ -214,14 +224,14 @@ export function UploadForm({ onJobStarted }: Props) {
   }
 
   async function handleSubmit() {
-    if (!replayKey || phase !== "ready") {
+    if (!replayKey || phase !== "ready" || !emailValid) {
       return;
     }
     setErrorMessage(null);
     try {
       setPhase("starting");
-      const job = await createJob(replayKey, { watermark }, preview?.estimatedDurationSeconds);
-      onJobStarted(job.jobId);
+      await requestMagicLink(replayKey, { watermark }, email, preview?.estimatedDurationSeconds);
+      onMagicLinkSent(email);
     } catch (err) {
       const message =
         err instanceof SattoriApiError ? err.message : "予期しないエラーが発生しました";
@@ -312,13 +322,29 @@ export function UploadForm({ onJobStarted }: Props) {
         </label>
       </details>
 
+      <p className={clsx(styles.stepLabel, styles.stepLabelSecondary)}>
+        <span className={styles.stepNumber}>STEP 3</span>
+        メールアドレスを入力
+      </p>
+      <input
+        type="email"
+        className={styles.emailInput}
+        placeholder="you@example.com"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        disabled={busy}
+      />
+      <small className={styles.optionHint}>
+        録画を開始するためのリンクをこのアドレスに送信します。
+      </small>
+
       <button
         type="button"
         className={styles.submit}
         onClick={handleSubmit}
-        disabled={phase !== "ready"}
+        disabled={phase !== "ready" || !emailValid}
       >
-        {phase === "starting" ? "録画を開始しています…" : "次のステップ"}
+        {phase === "starting" ? "メールを送信しています…" : "次のステップ"}
       </button>
     </section>
   );
