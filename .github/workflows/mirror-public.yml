@@ -1,0 +1,49 @@
+name: Sync public mirror
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-public
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install git-filter-repo
+        run: pip install git-filter-repo
+
+      - name: Strip AI attribution trailers from commit messages
+        run: |
+          git filter-repo --force --message-callback '
+          import re
+          text = message.decode("utf-8", "replace")
+          text = re.sub(r"\n?^Co-Authored-By:\s*Claude.*$", "", text, flags=re.MULTILINE)
+          text = re.sub(r"\n?^Claude-Session:.*$", "", text, flags=re.MULTILINE)
+          text = re.sub(r"\n{3,}", "\n\n", text)
+          return text.rstrip("\n").encode("utf-8") + b"\n"
+          '
+
+      - name: Push filtered history to public mirror
+        env:
+          MIRROR_TOKEN: ${{ secrets.PUBLIC_MIRROR_TOKEN }}
+        run: |
+          git remote add public "https://x-access-token:${MIRROR_TOKEN}@github.com/hakatashi/sattori.git"
+          git push --force public HEAD:main
