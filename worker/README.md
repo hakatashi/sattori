@@ -25,6 +25,23 @@
 `mods/` 配下はソース・ビルドスクリプトのみリポジトリで管理する
 (元は `touhou-recorder` の PoC で作成したもの)。ビルド方法は後述。
 
+## テスト(`tests/`)
+
+Wine/Xvfb/実ゲームに依存する録画本体(`record_th07.py` の `main()`)以外の、
+純粋なロジック部分(MAD計算・ffmpegコマンド組み立て・720pアップスケールの
+解像度/進捗計算・DynamoDB更新式の組み立て・Spot中断/リバランス判定・進捗
+レポートの重複排除等)を pytest でユニットテストする。boto3 呼び出しは
+`unittest.mock` でモックし、実際の AWS リソースには接続しない(moto 等の
+追加依存は導入していない)。
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+GitHub Actions の `Test` ワークフロー(`.github/workflows/test.yml`)の
+`worker-test` ジョブで push・PR 毎に自動実行される。
+
 ## リポジトリに含まれない資産(ビルド前に配置が必要)
 
 以下はゲーム本体(著作権物)・ビルド成果物・素材であり `.gitignore` 済み。
