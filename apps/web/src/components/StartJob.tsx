@@ -5,6 +5,7 @@ import styles from "./StartJob.module.css";
 interface Props {
   jobId: string;
   onStarted: (jobId: string) => void;
+  onReset: () => void;
 }
 
 type State = { phase: "starting" } | { phase: "error"; message: string };
@@ -15,7 +16,7 @@ type State = { phase: "starting" } | { phase: "error"; message: string };
  * 既に起動済みのジョブへ再アクセスした場合も冪等に成功として扱われ、そのまま
  * 進捗表示へ進む（ページBそのものの作り込みはIssue #10）。
  */
-export function StartJob({ jobId, onStarted }: Props) {
+export function StartJob({ jobId, onStarted, onReset }: Props) {
   const [state, setState] = useState<State>({ phase: "starting" });
 
   useEffect(() => {
@@ -50,6 +51,9 @@ export function StartJob({ jobId, onStarted }: Props) {
   return (
     <section className={styles.card}>
       <p className={styles.error}>{state.message}</p>
+      <button type="button" className={styles.reset} onClick={onReset}>
+        最初からやり直す
+      </button>
     </section>
   );
 }
