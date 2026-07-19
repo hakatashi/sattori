@@ -12,7 +12,7 @@ const STATUS_META: Record<JobStatus, { label: string; step: number }> = {
   queued: { label: "録画の順番を待っています", step: 0 },
   launching: { label: "録画用サーバーを起動しています", step: 1 },
   recording: { label: "リプレイを録画しています", step: 2 },
-  uploading: { label: "録画データを準備しています", step: 3 },
+  converting: { label: "動画を変換しています", step: 3 },
   done: { label: "録画が完了しました", step: 4 },
   failed: { label: "録画に失敗しました", step: 4 },
 };
@@ -48,6 +48,22 @@ export function JobProgress({ jobId, onReset }: Props) {
           );
         })}
       </ol>
+
+      {!done && !failed && job?.previewImageUrl && (
+        <img className={styles.previewImage} src={job.previewImageUrl} alt="録画中のプレビュー" />
+      )}
+
+      {!done && !failed && typeof job?.progress === "number" && (
+        <div>
+          <div className={styles.progressBar}>
+            <div
+              className={styles.progressBarFill}
+              style={{ width: `${Math.min(100, Math.max(0, job.progress))}%` }}
+            />
+          </div>
+          <p className={styles.progressText}>{Math.round(job.progress)}%</p>
+        </div>
+      )}
 
       {!done && !failed && <p className={styles.hint}>このページは自動で更新されます。</p>}
       {loadError && <p className={styles.hint}>{loadError}</p>}

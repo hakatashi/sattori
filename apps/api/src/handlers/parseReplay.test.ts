@@ -23,10 +23,8 @@ const REQUIRED_ENV: Record<string, string> = {
   JOBS_TABLE: "sattori-jobs",
   WORKER_IMAGE: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker:latest",
   WORKER_LOG_GROUP: "/sattori/worker",
-  WORKER_AMI_ID: "ami-xxxx",
-  WORKER_SUBNET_ID: "subnet-xxxx",
-  WORKER_INSTANCE_PROFILE_ARN: "arn:aws:iam::123456789012:instance-profile/sattori-worker",
-  WORKER_SECURITY_GROUP_ID: "sg-xxxx",
+  WORKER_SUBNET_IDS: "subnet-xxxx,subnet-yyyy",
+  WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
 };
 
 function makeEvent(body: unknown): APIGatewayProxyEventV2 {

@@ -12,7 +12,8 @@
     "dev": "turbo run dev",
     "test": "turbo run test",
     "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "deploy": "pnpm --filter @sattori/infra run deploy"
   },
   "devDependencies": {
     "esbuild": "^0.24.0",

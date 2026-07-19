@@ -18,6 +18,7 @@ touhou-recorder の PoC スクリプト
 """
 import argparse
 import io
+import json
 import os
 import signal
 import subprocess
@@ -53,6 +54,11 @@ STILL_CONSECUTIVE_REQUIRED = 8  # 8 * POLL_INTERVAL_SEC = 16秒
 POLL_INTERVAL_SEC = 2.0
 POST_START_GRACE_SEC = 15.0
 TIMEOUT_SEC = 40 * 60
+
+# 進捗スクリーンショットの書き出し間隔。POLL_INTERVAL_SEC(2秒)毎に取得している
+# フレームのうち5回に1回だけ保存する(=約10秒毎)。既存のMAD差分検知用のffmpeg
+# キャプチャを流用するため、追加のffmpeg呼び出しは発生しない。
+PROGRESS_SNAPSHOT_EVERY_N_POLLS = 5
 
 env = os.environ.copy()
 env["WINEPREFIX"] = WINEPREFIX
@@ -151,17 +157,38 @@ def wait_for_log_marker(marker, timeout, poll_interval=0.1, log_all=False, seen_
 
 
 def grab_frame(x, y, w, h):
+    """終了検知用のグレースケール縮小画像と、進捗スクリーンショット用のカラー画像を
+    同じffmpegキャプチャから作る(1回のキャプチャで両方をまかない、追加コストを出さない)。"""
     cmd = [
         "ffmpeg", "-y", "-f", "x11grab", "-draw_mouse", "0", "-video_size", f"{w}x{h}",
         "-i", f"{DISPLAY}+{x},{y}", "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-",
     ]
     result = subprocess.run(cmd, env=env, capture_output=True)
-    img = Image.open(io.BytesIO(result.stdout)).convert("L").resize((160, 120))
-    return np.asarray(img, dtype=np.float32)
+    color = Image.open(io.BytesIO(result.stdout)).convert("RGB")
+    gray = np.asarray(color.convert("L").resize((160, 120)), dtype=np.float32)
+    return gray, color
 
 
 def mad(a, b):
     return float(np.mean(np.abs(a - b)))
+
+
+def save_progress_snapshot(progress_dir, color_frame, elapsed_seconds, expected_duration_seconds):
+    """録画中の画面プレビュー(frame.jpg)と進捗算出用の状態(state.json)を書き出す。
+    entrypoint.py側のバックグラウンドスレッドがこれをポーリングしてS3へアップロードする。
+    一時ファイル→os.replaceでアトミックに上書きし、読み手が書きかけファイルを掴まないようにする。
+    """
+    thumb = color_frame.copy()
+    thumb.thumbnail((480, 480))
+    tmp_frame_path = f"{progress_dir}/frame.jpg.tmp"
+    thumb.save(tmp_frame_path, "JPEG", quality=80)
+    os.replace(tmp_frame_path, f"{progress_dir}/frame.jpg")
+
+    state = {"elapsedSeconds": elapsed_seconds, "expectedDurationSeconds": expected_duration_seconds}
+    tmp_state_path = f"{progress_dir}/state.json.tmp"
+    with open(tmp_state_path, "w") as f:
+        json.dump(state, f)
+    os.replace(tmp_state_path, f"{progress_dir}/state.json")
 
 
 def build_ffmpeg_cmd(x, y, w, h, output, watermark_path, watermark_width):
@@ -195,9 +222,19 @@ def main():
     parser.add_argument("--output", required=True, help="出力する mp4 のパス")
     parser.add_argument("--watermark", default=None, help="ウォーターマーク動画(webm, VP9アルファ)のパス。未指定なら合成しない")
     parser.add_argument("--watermark-width", type=int, default=285)
+    parser.add_argument(
+        "--progress-dir", default=None,
+        help="進捗スクリーンショット(frame.jpg)/状態(state.json)の書き出し先。未指定なら無効(ローカル単体実行との後方互換)",
+    )
+    parser.add_argument(
+        "--expected-duration-seconds", type=float, default=None,
+        help="リプレイの推定再生時間(進捗率算出用の参考値、未指定なら進捗率は算出しない)",
+    )
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    if args.progress_dir:
+        os.makedirs(args.progress_dir, exist_ok=True)
 
     ensure_xvfb()
     prepare_instance(args.replay_path)
@@ -269,6 +306,7 @@ def main():
     prev_frame = None
     consecutive_still = 0
     detected = False
+    poll_count = 0
     while True:
         elapsed = time.time() - gameplay_start
         if elapsed > TIMEOUT_SEC:
@@ -278,7 +316,10 @@ def main():
             time.sleep(POLL_INTERVAL_SEC)
             continue
 
-        frame = grab_frame(x, y, w, h)
+        frame, color_frame = grab_frame(x, y, w, h)
+        poll_count += 1
+        if args.progress_dir and poll_count % PROGRESS_SNAPSHOT_EVERY_N_POLLS == 0:
+            save_progress_snapshot(args.progress_dir, color_frame, elapsed, args.expected_duration_seconds)
         if prev_frame is not None:
             d = mad(prev_frame, frame)
             if d < STILL_MAD_THRESHOLD:
