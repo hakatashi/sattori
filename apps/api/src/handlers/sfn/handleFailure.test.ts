@@ -3,6 +3,7 @@ import { EC2Client, TerminateInstancesCommand } from "@aws-sdk/client-ec2";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import type { JobRecord } from "@sattori/shared";
+import { MAX_ATTEMPTS } from "../../retryPolicy.js";
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -65,19 +66,30 @@ describe("sfn/handleFailure handler", () => {
     ddbMock.on(UpdateCommand).resolves({});
 
     const { handler } = await import("./handleFailure.js");
-    const result = await handler({ jobId: "job-1", attempt: 3 });
+    const result = await handler({ jobId: "job-1", attempt: MAX_ATTEMPTS });
 
     expect(result).toEqual({ shouldRetry: false });
     const updateCall = ddbMock.commandCalls(UpdateCommand)[0];
     expect(updateCall?.args[0].input.ExpressionAttributeValues).toMatchObject({ ":s": "failed" });
   });
 
-  it("既に終端状態(done/failed)のジョブは上書きしない", async () => {
+  it("既に完了(done)しているジョブは待機中の完走とみなしterminateもfailed更新もしない", async () => {
     ddbMock.on(GetCommand).resolves({ Item: { ...baseJob, status: "done" } });
+
+    const { handler } = await import("./handleFailure.js");
+    const result = await handler({ jobId: "job-1", attempt: MAX_ATTEMPTS });
+
+    expect(result).toEqual({ shouldRetry: false });
+    expect(ec2Mock.commandCalls(TerminateInstancesCommand)).toHaveLength(0);
+    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);
+  });
+
+  it("既に終端状態(failed)のジョブは上書きしない", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...baseJob, status: "failed" } });
     ec2Mock.on(TerminateInstancesCommand).resolves({});
 
     const { handler } = await import("./handleFailure.js");
-    const result = await handler({ jobId: "job-1", attempt: 3 });
+    const result = await handler({ jobId: "job-1", attempt: MAX_ATTEMPTS });
 
     expect(result).toEqual({ shouldRetry: false });
     expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);

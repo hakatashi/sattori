@@ -39,8 +39,8 @@ def get_job(job_id):
     return result.get("Item")
 
 
-def update_status(job_id, status, *, output_path=None, output_path_720p=None, error=None, progress=None):
-    """ジョブの status(と任意で outputPath / outputPath720p / error / progress)を更新する。"""
+def update_status(job_id, status, *, output_path=None, output_path_720p=None, error=None):
+    """ジョブの status(と任意で outputPath / outputPath720p / error)を更新する。"""
     table_name = os.environ.get("JOBS_TABLE")
     if not table_name:
         # ローカル検証等でテーブル未設定なら DynamoDB 更新はスキップする。
@@ -61,9 +61,6 @@ def update_status(job_id, status, *, output_path=None, output_path_720p=None, er
         expr += ", #e = :e"
         names["#e"] = "error"
         values[":e"] = error
-    if progress is not None:
-        expr += ", progress = :p"
-        values[":p"] = progress
 
     table.update_item(
         Key={"jobId": job_id},
@@ -71,7 +68,7 @@ def update_status(job_id, status, *, output_path=None, output_path_720p=None, er
         ExpressionAttributeNames=names,
         ExpressionAttributeValues=values,
     )
-    print(f"[status] {job_id} -> {status}" + (f" ({progress}%)" if progress is not None else ""), flush=True)
+    print(f"[status] {job_id} -> {status}", flush=True)
 
 
 def update_progress(job_id, progress, preview_image_path=None):

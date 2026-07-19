@@ -11,6 +11,7 @@ import {
 import { loadConfig, required } from "../config.js";
 import { error, json, parseBody } from "../http.js";
 import { putJob, updateJobStatus } from "../jobs.js";
+import { INITIAL_ATTEMPT } from "../retryPolicy.js";
 import type { LaunchTaskEvent } from "./sfn/launch.js";
 
 const sfn = new SFNClient({});
@@ -58,7 +59,10 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   await putJob(config.jobsTable, job);
 
   try {
-    const input: Pick<LaunchTaskEvent, "jobId" | "attempt"> = { jobId: job.jobId, attempt: 1 };
+    const input: Pick<LaunchTaskEvent, "jobId" | "attempt"> = {
+      jobId: job.jobId,
+      attempt: INITIAL_ATTEMPT,
+    };
     await sfn.send(
       new StartExecutionCommand({
         stateMachineArn: required("STATE_MACHINE_ARN"),

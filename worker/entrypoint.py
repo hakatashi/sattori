@@ -172,11 +172,13 @@ def record(s3):
 
 def convert_and_upload(s3):
     log("720pへアップスケール変換します")
+    # 録画フェーズ末尾の進捗値(最大99%)が変換フェーズ開始直後も表示され続けるのを防ぐ。
+    update_progress(JOB_ID, 0)
 
     def on_convert_progress(percent):
         update_progress(JOB_ID, round(percent))
 
-    upscale_to_720p(OUTPUT_VIDEO, OUTPUT_VIDEO_720P, on_progress=on_convert_progress)
+    upscale_to_720p(OUTPUT_VIDEO, OUTPUT_VIDEO_720P, on_progress=on_convert_progress, log=log)
     upload_video(s3, OUTPUT_VIDEO_720P, OUTPUT_KEY_720P)
     update_status(JOB_ID, "done", output_path=OUTPUT_KEY, output_path_720p=OUTPUT_KEY_720P)
 
