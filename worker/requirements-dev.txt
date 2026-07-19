@@ -1,0 +1,4 @@
+# テスト実行用の追加依存(requirements.txt に加えて導入する)。
+# AWS呼び出しはunittest.mock標準ライブラリでモックするため、moto等は不要。
+-r requirements.txt
+pytest>=8.0
