@@ -52,9 +52,17 @@ export function fromParsedReplay(parsed: ParsedReplay): ReplayInfo {
   };
 }
 
+/**
+ * `ReplayParseErrorCode` に、Sattoriが録画対応していないタイトルを表す
+ * `unsupported_game` を加えたコード。replay-parser自体はフォーマットの
+ * 解析可否のみを扱い「録画対応しているか」は関知しないため、この区別は
+ * replay-parser側の型ではなくSattori固有のものとしてここで定義する。
+ */
+export type ReplayParseFailureCode = ReplayParseErrorCode | "unsupported_game";
+
 /** ページAのプレビューでそのまま表示できる、日本語の解析失敗メッセージ。 */
 export interface ReplayParseFailure {
-  code: ReplayParseErrorCode;
+  code: ReplayParseFailureCode;
   message: string;
 }
 
@@ -65,7 +73,6 @@ export type ParseReplayInfoResult =
 const PARSE_ERROR_MESSAGES: Record<ReplayParseErrorCode, string> = {
   too_short: "リプレイファイルが破損しています",
   unknown_magic: "対応していないファイル形式です。東方Projectのリプレイファイル（.rpy）を指定してください",
-  unsupported_game: "対応していないタイトルのリプレイです",
   corrupt: "リプレイファイルが破損しています（データが壊れている可能性があります）",
 };
 
