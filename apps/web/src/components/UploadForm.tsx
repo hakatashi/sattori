@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DEFAULT_RECORDING_OPTIONS, type ReplayInfo } from "@sattori/shared";
+import { DEFAULT_RECORDING_OPTIONS, EMAIL_PATTERN, type ReplayInfo } from "@sattori/shared";
 import {
   createUpload,
   parseReplay,
@@ -10,8 +10,6 @@ import {
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface Props {
   onMagicLinkSent: (email: string) => void;
@@ -230,7 +228,13 @@ export function UploadForm({ onMagicLinkSent }: Props) {
     setErrorMessage(null);
     try {
       setPhase("starting");
-      await requestMagicLink(replayKey, { watermark }, email, preview?.estimatedDurationSeconds);
+      await requestMagicLink(
+        replayKey,
+        { watermark },
+        email,
+        preview?.game,
+        preview?.estimatedDurationSeconds,
+      );
       onMagicLinkSent(email);
     } catch (err) {
       const message =

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { marshall } from "@aws-sdk/util-dynamodb";
 import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
@@ -75,6 +76,7 @@ describe("POST /jobs/{jobId}/start", () => {
 
     const updateCall = ddbMock.commandCalls(UpdateCommand)[0];
     expect(updateCall?.args[0].input.ConditionExpression).toBe("#s = :pending");
+    expect(updateCall?.args[0].input.ReturnValuesOnConditionCheckFailure).toBe("ALL_OLD");
     expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(1);
   });
 
@@ -111,12 +113,13 @@ describe("POST /jobs/{jobId}/start", () => {
   });
 
   it("並行リクエストで既に起動済みになっていれば、再起動せず最新状態を返す", async () => {
-    ddbMock
-      .on(GetCommand)
-      .resolvesOnce({ Item: pendingJob })
-      .resolvesOnce({ Item: { ...pendingJob, status: "queued" } });
+    ddbMock.on(GetCommand).resolvesOnce({ Item: pendingJob });
     ddbMock.on(UpdateCommand).rejects(
-      new ConditionalCheckFailedException({ message: "failed", $metadata: {} }),
+      new ConditionalCheckFailedException({
+        message: "failed",
+        $metadata: {},
+        Item: marshall({ ...pendingJob, status: "queued" }),
+      }),
     );
 
     const { handler } = await import("./startJob.js");
@@ -126,6 +129,9 @@ describe("POST /jobs/{jobId}/start", () => {
     expect(result.statusCode).toBe(200);
     expect(parseBody(result)).toEqual({ jobId: "job-1", status: "queued" });
     expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(0);
+    // ReturnValuesOnConditionCheckFailureで取得した既存itemを使うため、
+    // 追加のGetItem往復は発生しない(最初の1回のみ)。
+    expect(ddbMock.commandCalls(GetCommand)).toHaveLength(1);
   });
 
   it("StartExecution失敗時はジョブをfailedにし502を返す", async () => {

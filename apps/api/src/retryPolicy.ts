@@ -1,6 +1,6 @@
 /**
  * 録画ジョブの Launch タスク（Step Functions）のリトライ回数に関する定数。
- * createJob.ts（初回実行時の attempt シード）と sfn/handleFailure.ts
+ * startJob.ts（初回実行時の attempt シード）と sfn/handleFailure.ts
  * （リトライ可否判定）の両方から参照し、値が2ファイル間でズレないようにする。
  */
 export const INITIAL_ATTEMPT = 1;

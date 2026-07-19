@@ -17,7 +17,7 @@ export function MagicLinkSent({ email, onReset }: Props) {
         <strong>{email}</strong> 宛に、録画を開始するためのリンクを送信しました。
       </p>
       <p className={styles.hint}>
-        メール内のリンクをクリックすると録画が始まります（リンクの有効期限は24時間・1回のみ使用できます）。
+        メール内のリンクをクリックすると録画が始まります（受付期限は24時間です。リンクは何度でも開けるので、進捗確認やダウンロードにもお使いいただけます）。
       </p>
       <button type="button" className={styles.reset} onClick={onReset}>
         別のリプレイを録画する

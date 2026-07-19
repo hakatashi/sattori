@@ -23,6 +23,13 @@ export interface CreateUploadResponse {
   uploadUrl: string;
 }
 
+/**
+ * メールアドレスの簡易形式チェック用パターン。フロントエンド（入力時の活性化制御）と
+ * バックエンド（`POST /magic-links`）の両方で使う。片方だけ変更されて判定基準が
+ * ズレることを防ぐため、ここに一本化する。
+ */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /** POST /replays/parse : アップロード済みリプレイの解析要求（ページAのプレビュー用）。 */
 export interface ParseReplayRequest {
   /** CreateUploadResponse.replayKey をそのまま渡す。 */

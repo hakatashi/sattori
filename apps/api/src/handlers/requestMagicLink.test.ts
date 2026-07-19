@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import {
+  DeleteCommand,
+  DynamoDBDocumentClient,
+  PutCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
@@ -38,8 +43,9 @@ describe("POST /magic-links", () => {
     for (const [key, value] of Object.entries(REQUIRED_ENV)) {
       vi.stubEnv(key, value);
     }
-    ddbMock.on(QueryCommand).resolves({ Count: 0 });
+    ddbMock.on(UpdateCommand).resolves({}); // レート制限カウンタの記録
     ddbMock.on(PutCommand).resolves({});
+    ddbMock.on(DeleteCommand).resolves({});
     sesMock.on(SendEmailCommand).resolves({});
   });
 
@@ -59,8 +65,8 @@ describe("POST /magic-links", () => {
     // jobIdはレスポンスに含めない(メールを確認しないと分からない秘密値のため)。
     expect(parseBody(result)).toEqual({});
 
-    const putCalls = ddbMock.commandCalls(PutCommand); // rate limit + job(pending)
-    expect(putCalls).toHaveLength(2);
+    const putCalls = ddbMock.commandCalls(PutCommand); // job(pending)
+    expect(putCalls).toHaveLength(1);
     const jobPut = putCalls.find((call) => call.args[0].input.Item?.status === "pending");
     expect(jobPut?.args[0].input.Item).toMatchObject({
       status: "pending",
@@ -118,7 +124,9 @@ describe("POST /magic-links", () => {
   });
 
   it("レート制限に達していれば429を返しメールを送らない", async () => {
-    ddbMock.on(QueryCommand).resolves({ Count: 5 });
+    ddbMock.on(UpdateCommand).rejects(
+      new ConditionalCheckFailedException({ message: "condition failed", $metadata: {} }),
+    );
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
@@ -132,5 +140,45 @@ describe("POST /magic-links", () => {
     const result = res as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(429);
     expect(sesMock.commandCalls(SendEmailCommand)).toHaveLength(0);
+  });
+
+  it("ジョブレコードの作成に失敗すれば500を返しメールを送らない", async () => {
+    ddbMock.on(PutCommand).rejects(new Error("DynamoDB unavailable"));
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: "replays/abc.rpy",
+        options: { watermark: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const result = res as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(500);
+    expect(sesMock.commandCalls(SendEmailCommand)).toHaveLength(0);
+  });
+
+  it("メール送信に失敗すれば502を返し、作成済みのジョブを削除する", async () => {
+    sesMock.on(SendEmailCommand).rejects(new Error("SES unavailable"));
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: "replays/abc.rpy",
+        options: { watermark: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const result = res as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(502);
+
+    const putCalls = ddbMock.commandCalls(PutCommand);
+    const deleteCalls = ddbMock.commandCalls(DeleteCommand);
+    expect(deleteCalls).toHaveLength(1);
+    expect(deleteCalls[0]?.args[0].input.Key).toEqual({
+      jobId: putCalls[0]?.args[0].input.Item?.jobId,
+    });
   });
 });

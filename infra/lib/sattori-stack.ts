@@ -94,11 +94,11 @@ export class SattoriStack extends Stack {
     });
 
     // メール送信のレート制限(同一メール24時間5件まで、Issue #9)用カウンタ。
-    // PK: 正規化後のメールアドレス、SK: 送信時刻を含む一意なID(範囲クエリで
-    // 直近24時間分を数える)。TTL属性で自動削除する。
+    // PK: 正規化後のメールアドレスのみ(1メール1item)。件数チェックと記録を
+    // 条件付きUpdateItem1回に一本化して原子的に行うため、Query対象のログitemは
+    // 持たない(apps/api/src/rateLimit.ts)。TTL属性で自動削除する。
     const emailRateLimitTable = new dynamodb.Table(this, "EmailRateLimitTable", {
       partitionKey: { name: "normalizedEmail", type: dynamodb.AttributeType.STRING },
-      sortKey: { name: "requestId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
       timeToLiveAttribute: "ttl",

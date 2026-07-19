@@ -47,10 +47,11 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     await startPendingJob(config.jobsTable, jobId);
   } catch (err) {
     if (err instanceof JobAlreadyStartedError) {
-      // 並行リクエスト（多重クリック等）が先に起動を確定させた。最新の状態を
-      // 取得して冪等に返す（ここでStep Functionsを再度起動してはならない）。
-      const latest = await getJob(config.jobsTable, jobId);
-      const response: StartJobResponse = { jobId, status: latest?.status ?? "queued" };
+      // 並行リクエスト（多重クリック等）が先に起動を確定させた。
+      // `startPendingJob` が条件チェック失敗時点の状態を返してくれるため、
+      // 追加の GetItem 往復なしで冪等に返せる（ここでStep Functionsを
+      // 再度起動してはならない）。
+      const response: StartJobResponse = { jobId, status: err.currentStatus ?? "queued" };
       return json(200, response);
     }
     throw err;

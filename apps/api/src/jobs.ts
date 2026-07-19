@@ -1,10 +1,12 @@
 import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
+  DeleteCommand,
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
+import { unmarshall } from "@aws-sdk/util-dynamodb";
 import type { JobRecord, JobStatus } from "@sattori/shared";
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -25,6 +27,14 @@ export async function putJob(table: string, job: JobRecord): Promise<void> {
       ConditionExpression: "attribute_not_exists(jobId)",
     }),
   );
+}
+
+/**
+ * ジョブレコードを削除する。マジックリンク送信要求でジョブを作成した後、
+ * メール送信自体が失敗した場合のロールバック用（requestMagicLink.ts）。
+ */
+export async function deleteJob(table: string, jobId: string): Promise<void> {
+  await client.send(new DeleteCommand({ TableName: table, Key: { jobId } }));
 }
 
 /** ジョブレコードを取得する。存在しなければ null。 */
@@ -70,8 +80,12 @@ export async function updateJobStatus(
 }
 
 export class JobAlreadyStartedError extends Error {
-  constructor() {
+  /** 条件チェック失敗時点での既存ジョブの状態（取得できた場合のみ）。 */
+  readonly currentStatus: JobStatus | undefined;
+
+  constructor(currentStatus: JobStatus | undefined) {
     super("job already started");
+    this.currentStatus = currentStatus;
   }
 }
 
@@ -81,7 +95,9 @@ export class JobAlreadyStartedError extends Error {
  * DynamoDBの`ConditionExpression`で「まだpendingであること」を保証する
  * （並行アクセス・二重クリックへの対策。Issue #9）。既にpendingでなければ
  * （＝起動済みなら）`JobAlreadyStartedError`を投げるので、呼び出し側は
- * それを「エラーではなく起動済み」として扱ってよい。
+ * それを「エラーではなく起動済み」として扱ってよい。`ReturnValuesOnConditionCheckFailure`
+ * で条件チェック失敗時点の既存itemを一緒に取得し、呼び出し側が改めて`getJob`を
+ * 呼ばずに済むようにする。
  */
 export async function startPendingJob(table: string, jobId: string): Promise<void> {
   try {
@@ -97,11 +113,13 @@ export async function startPendingJob(table: string, jobId: string): Promise<voi
           ":pending": "pending" satisfies JobStatus,
           ":u": new Date().toISOString(),
         },
+        ReturnValuesOnConditionCheckFailure: "ALL_OLD",
       }),
     );
   } catch (err) {
     if (err instanceof ConditionalCheckFailedException) {
-      throw new JobAlreadyStartedError();
+      const currentStatus = err.Item ? (unmarshall(err.Item).status as JobStatus) : undefined;
+      throw new JobAlreadyStartedError(currentStatus);
     }
     throw err;
   }
