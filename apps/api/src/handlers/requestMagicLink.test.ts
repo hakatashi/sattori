@@ -14,7 +14,6 @@ const REQUIRED_ENV: Record<string, string> = {
   WORKER_LOG_GROUP: "/sattori/worker",
   WORKER_SUBNET_IDS: "subnet-xxxx,subnet-yyyy",
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
-  MAGIC_LINKS_TABLE: "magic-links",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
   SES_FROM_ADDRESS: "no-reply@sattori.hakatashi.com",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
@@ -44,7 +43,7 @@ describe("POST /magic-links", () => {
     sesMock.on(SendEmailCommand).resolves({});
   });
 
-  it("有効な要求ならマジックリンクを保存しメールを送信して202を返す", async () => {
+  it("有効な要求ならstatus:pendingのジョブを作成しメールを送信して202を返す", async () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
@@ -57,11 +56,26 @@ describe("POST /magic-links", () => {
     );
     const result = res as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(202);
+    // jobIdはレスポンスに含めない(メールを確認しないと分からない秘密値のため)。
+    expect(parseBody(result)).toEqual({});
 
-    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(2); // rate limit + magic link
+    const putCalls = ddbMock.commandCalls(PutCommand); // rate limit + job(pending)
+    expect(putCalls).toHaveLength(2);
+    const jobPut = putCalls.find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item).toMatchObject({
+      status: "pending",
+      email: "user@example.com",
+      replayKey: "replays/abc.rpy",
+    });
+    expect(jobPut?.args[0].input.ConditionExpression).toBe("attribute_not_exists(jobId)");
+
     const sendCalls = sesMock.commandCalls(SendEmailCommand);
     expect(sendCalls).toHaveLength(1);
     expect(sendCalls[0]?.args[0].input.Destination?.ToAddresses).toEqual(["user@example.com"]);
+    // メール本文にjobIdへのリンクは含むが、token相当のパラメータは含まない。
+    const emailBody = sendCalls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
+    expect(emailBody).toContain(`jobId=${jobPut?.args[0].input.Item?.jobId}`);
+    expect(emailBody).not.toContain("token=");
   });
 
   it("email の形式が不正なら400を返しメールを送らない", async () => {

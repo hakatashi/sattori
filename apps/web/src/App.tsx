@@ -1,29 +1,30 @@
 import { useState } from "react";
 import { UploadForm } from "./components/UploadForm.tsx";
 import { MagicLinkSent } from "./components/MagicLinkSent.tsx";
-import { ConfirmMagicLink } from "./components/ConfirmMagicLink.tsx";
+import { StartJob } from "./components/StartJob.tsx";
 import { JobProgress } from "./components/JobProgress.tsx";
 import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
 import styles from "./App.module.css";
 
 /**
- * ページAの初期状態。マジックリンクのメール（`?jobId=...&token=...`）から開いた場合は
- * "confirming" から始まり、確認が成功すると "progress" へ遷移する（Issue #9）。
+ * ページAの初期状態。マジックリンクのメール（`?jobId=...`）から開いた場合は
+ * "starting" から始まり、起動が成功すると "progress" へ遷移する（Issue #9）。
+ * jobIdはメールを確認しないと分からない秘密値として機能するため、URLには
+ * jobId以外の認可情報（token等）は含まない。
  * リッチなページB体験（完了メール再送・エラー導線の作り込み等）はIssue #10で拡張する。
  */
 function initialViewFromLocation(): View {
   const params = new URLSearchParams(window.location.search);
   const jobId = params.get("jobId");
-  const token = params.get("token");
-  if (jobId && token) {
-    return { kind: "confirming", jobId, token };
+  if (jobId) {
+    return { kind: "starting", jobId };
   }
   return { kind: "upload" };
 }
 
 type View =
   | { kind: "upload" }
-  | { kind: "confirming"; jobId: string; token: string }
+  | { kind: "starting"; jobId: string }
   | { kind: "sent"; email: string }
   | { kind: "progress"; jobId: string };
 
@@ -53,11 +54,10 @@ export function App() {
         {view.kind === "sent" && (
           <MagicLinkSent email={view.email} onReset={() => setView({ kind: "upload" })} />
         )}
-        {view.kind === "confirming" && (
-          <ConfirmMagicLink
+        {view.kind === "starting" && (
+          <StartJob
             jobId={view.jobId}
-            token={view.token}
-            onConfirmed={(jobId) => setView({ kind: "progress", jobId })}
+            onStarted={(jobId) => setView({ kind: "progress", jobId })}
           />
         )}
         {view.kind === "progress" && (

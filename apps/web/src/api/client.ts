@@ -1,7 +1,5 @@
 import type {
   ApiError,
-  ConfirmJobRequest,
-  ConfirmJobResponse,
   CreateUploadRequest,
   CreateUploadResponse,
   GetJobResponse,
@@ -10,8 +8,7 @@ import type {
   RecordingOptions,
   RequestMagicLinkRequest,
   RequestMagicLinkResponse,
-  ResendMagicLinkRequest,
-  ResendMagicLinkResponse,
+  StartJobResponse,
 } from "@sattori/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
@@ -83,21 +80,14 @@ export function requestMagicLink(
   });
 }
 
-/** マジックリンクを確認し、ジョブを起動する（メールのリンク先ページの初回表示）。 */
-export function confirmJob(jobId: string, token: string): Promise<ConfirmJobResponse> {
-  const req: ConfirmJobRequest = { token };
-  return request<ConfirmJobResponse>(`/jobs/${encodeURIComponent(jobId)}/confirm`, {
+/**
+ * ジョブページ（メールのリンク先）へのアクセスで録画を起動する。jobIdのみで認可する
+ * （tokenは廃止済み。jobId自体がメールを確認しないと分からない秘密値。Issue #9）。
+ * 起動済みの場合も冪等に現在の状態を返す。
+ */
+export function startJob(jobId: string): Promise<StartJobResponse> {
+  return request<StartJobResponse>(`/jobs/${encodeURIComponent(jobId)}/start`, {
     method: "POST",
-    body: JSON.stringify(req),
-  });
-}
-
-/** マジックリンクを再送する（期限切れ・メール未着時の再送導線）。 */
-export function resendMagicLink(jobId: string, token: string): Promise<ResendMagicLinkResponse> {
-  const req: ResendMagicLinkRequest = { token };
-  return request<ResendMagicLinkResponse>(`/jobs/${encodeURIComponent(jobId)}/resend`, {
-    method: "POST",
-    body: JSON.stringify(req),
   });
 }
 

@@ -6,25 +6,27 @@ const ses = new SESv2Client({});
 const MAGIC_LINK_EMAIL_SUBJECT = "【Sattori】録画を開始するリンク";
 const MAGIC_LINK_EMAIL_BODY = (link: string): string =>
   `Sattoriへのリクエストを受け付けました。\n\n` +
-  `以下のリンクをクリックすると録画を開始します（24時間有効・1回のみ使用できます）。\n${link}\n\n` +
+  `以下のリンクをクリックすると録画を開始します（受付期限は24時間です）。\n${link}\n\n` +
   `このメールに心当たりがない場合は、このメールを無視してください。`;
 
-export function buildMagicLinkUrl(webBaseUrl: string, jobId: string, token: string): string {
+/**
+ * ジョブページのURLを組み立てる。jobId自体がこのメールを確認しないと分からない
+ * 秘密値として機能するため、URLにはjobId以外のパラメータを含めない（Issue #9）。
+ */
+export function buildJobPageUrl(webBaseUrl: string, jobId: string): string {
   const url = new URL(webBaseUrl);
   url.searchParams.set("jobId", jobId);
-  url.searchParams.set("token", token);
   return url.toString();
 }
 
-/** マジックリンクメールを送信する（新規送信・再送の両方から呼ばれる）。 */
+/** マジックリンクメールを送信する。 */
 export async function sendMagicLinkEmail(params: {
   from: string;
   to: string;
   webBaseUrl: string;
   jobId: string;
-  token: string;
 }): Promise<void> {
-  const link = buildMagicLinkUrl(params.webBaseUrl, params.jobId, params.token);
+  const link = buildJobPageUrl(params.webBaseUrl, params.jobId);
   await ses.send(
     new SendEmailCommand({
       FromEmailAddress: params.from,

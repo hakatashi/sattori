@@ -9,6 +9,7 @@ interface Props {
 
 /** 各ステータスのユーザー向け表示文言と進捗段階（0..4）。 */
 const STATUS_META: Record<JobStatus, { label: string; step: number }> = {
+  pending: { label: "録画の準備をしています", step: 0 },
   queued: { label: "録画の順番を待っています", step: 0 },
   launching: { label: "録画用サーバーを起動しています", step: 1 },
   recording: { label: "リプレイを録画しています", step: 2 },

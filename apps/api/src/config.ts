@@ -18,8 +18,6 @@ export interface ApiConfig {
   ec2: Ec2LaunchConfig;
   /** アップロード可能な .rpy の最大サイズ（バイト）。 */
   maxReplayBytes: number;
-  /** マジックリンクを保持する DynamoDB テーブル名。 */
-  magicLinksTable: string;
   /** メール送信のレート制限カウンタを保持する DynamoDB テーブル名。 */
   emailRateLimitTable: string;
   /** マジックリンクメールの送信元アドレス（SESで検証済みのドメイン配下）。 */
@@ -43,13 +41,13 @@ export interface Ec2LaunchConfig {
 }
 
 /**
- * 必須の環境変数を読む。`loadConfig()` の内部専用ではなく `createJob.ts` からも
+ * 必須の環境変数を読む。`loadConfig()` の内部専用ではなく `startJob.ts` からも
  * `STATE_MACHINE_ARN` の読み取りに直接使うため export している。
  *
  * `STATE_MACHINE_ARN` を `ApiConfig`（＝全ハンドラ共通の `commonEnv`）に含めない理由:
  * ステートマシンは Launch/HandleFailure Lambda を呼び出す（Lambda ARN に依存）ため、
  * それらの Lambda の環境変数がステートマシンARNを参照すると CloudFormation の
- * 循環依存になる。`STATE_MACHINE_ARN` は StartExecution を呼ぶ createJob.ts だけが
+ * 循環依存になる。`STATE_MACHINE_ARN` は StartExecution を呼ぶ startJob.ts だけが
  * 個別の環境変数として受け取る。
  */
 export function required(name: string): string {
@@ -69,7 +67,6 @@ export function loadConfig(): ApiConfig {
     workerImage: required("WORKER_IMAGE"),
     logGroup: required("WORKER_LOG_GROUP"),
     maxReplayBytes: Number(process.env.MAX_REPLAY_BYTES ?? 5 * 1024 * 1024),
-    magicLinksTable: required("MAGIC_LINKS_TABLE"),
     emailRateLimitTable: required("EMAIL_RATE_LIMIT_TABLE"),
     sesFromAddress: required("SES_FROM_ADDRESS"),
     webBaseUrl: required("WEB_BASE_URL"),
