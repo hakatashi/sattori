@@ -252,11 +252,17 @@ export class SattoriStack extends Stack {
     for (const fn of [requestMagicLinkFn, resendMagicLinkFn]) {
       magicLinksTable.grantReadWriteData(fn);
       emailRateLimitTable.grantReadWriteData(fn);
-      // 検証済みIDからの送信のみ許可する(Resourceを絞ることで他IDへのなりすまし送信を防ぐ)。
+      // SESアカウントがサンドボックス中は、送信元IDだけでなく送信先(受信者)の
+      // メールアドレスも「検証済みID」としてIAMの権限チェック対象になる
+      // (受信者ごとに個別の identity ARN が動的に検査される)。宛先はユーザー入力の
+      // 任意アドレスでデプロイ時に特定できないため、Resourceはこのアカウント配下の
+      // SES identity 全体(送信元ドメイン・任意の受信者アドレスの両方を含む)に絞る。
+      // サンドボックス解除後は受信者側のチェックは行われなくなるが、Resourceを
+      // 変更する必要はない。
       fn.addToRolePolicy(
         new iam.PolicyStatement({
           actions: ["ses:SendEmail"],
-          resources: [sesIdentity.emailIdentityArn],
+          resources: [`arn:aws:ses:${this.region}:${this.account}:identity/*`],
         }),
       );
     }
