@@ -119,10 +119,7 @@ describe("SattoriStack", () => {
   it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {
     template.resourceCountIs("AWS::DynamoDB::Table", 2); // Jobs/EmailRateLimit
     template.hasResourceProperties("AWS::DynamoDB::Table", {
-      KeySchema: [
-        { AttributeName: "normalizedEmail", KeyType: "HASH" },
-        { AttributeName: "requestId", KeyType: "RANGE" },
-      ],
+      KeySchema: [{ AttributeName: "normalizedEmail", KeyType: "HASH" }],
       TimeToLiveSpecification: { AttributeName: "ttl", Enabled: true },
     });
   });

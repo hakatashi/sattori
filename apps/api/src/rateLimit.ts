@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -8,8 +7,11 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 export const RATE_LIMIT_MAX_REQUESTS_PER_DAY = 5;
 
 const RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
-/** レコードのTTL。ウィンドウ経過後もクエリの範囲外になるが、念のため少し余裕を持たせて自動削除する。 */
+/** レコードのTTL。ウィンドウ経過後もリセット対象になるが、念のため少し余裕を持たせて自動削除する。 */
 const RATE_LIMIT_TTL_BUFFER_SEC = 60 * 60;
+
+/** 際限のない再試行を避けるための上限。呼び出しごとの実際の同時アクセス数はごく小さいため十分な余裕。 */
+const MAX_CONTENTION_RETRIES = 5;
 
 /**
  * レート制限判定用にメールアドレスを正規化する。
@@ -31,46 +33,83 @@ export function normalizeEmailForRateLimit(email: string): string {
 }
 
 /**
- * 直近24時間の送信回数が上限に達しているか判定する。
- * 上限未満であれば、この呼び出し自体を1件としてカウンタに記録する
- * （呼び出し側は判定がtrueを返した後に実際のメール送信へ進んでよい）。
+ * 直近24時間の送信回数が上限に達しているか判定し、達していなければこの呼び出し
+ * 自体を1件としてカウンタに記録する。
+ *
+ * メールアドレスごとに1件のカウンタitem（`requestCount`/`windowStart`）を持ち、
+ * 「件数チェック」と「記録」をDynamoDBの条件付き`UpdateCommand`1回に一本化する
+ * ことで原子的に行う（旧実装はQuery→Putの2段階で、間隙に同時到着したリクエスト
+ * 同士が互いのカウントを見落として上限を超えて許可してしまう競合状態があった）。
+ *
+ * ウィンドウは「そのメールで最初にカウントされた時刻から24時間」で、経過後は
+ * 次のリクエストで自動的にリセットされる（固定ウィンドウ方式。「直近24時間の
+ * 送信数を都度数え直す」厳密なスライディングウィンドウではないが、この規模の
+ * サービスでは十分）。
  */
 export async function checkAndRecordRateLimit(
   table: string,
   email: string,
 ): Promise<{ allowed: boolean }> {
   const normalizedEmail = normalizeEmailForRateLimit(email);
-  const now = Date.now();
-  const windowStart = new Date(now - RATE_LIMIT_WINDOW_MS).toISOString();
 
-  const result = await client.send(
-    new QueryCommand({
-      TableName: table,
-      KeyConditionExpression: "normalizedEmail = :e AND requestId >= :windowStart",
-      ExpressionAttributeValues: {
-        ":e": normalizedEmail,
-        ":windowStart": windowStart,
-      },
-      Select: "COUNT",
-    }),
-  );
+  for (let attempt = 0; attempt < MAX_CONTENTION_RETRIES; attempt++) {
+    const now = Date.now();
+    const windowFloor = new Date(now - RATE_LIMIT_WINDOW_MS).toISOString();
+    const ttl = Math.floor(now / 1000) + RATE_LIMIT_WINDOW_MS / 1000 + RATE_LIMIT_TTL_BUFFER_SEC;
 
-  if ((result.Count ?? 0) >= RATE_LIMIT_MAX_REQUESTS_PER_DAY) {
-    return { allowed: false };
+    // 有効なウィンドウが既にあり、かつ件数が上限未満の場合のみインクリメントする。
+    try {
+      await client.send(
+        new UpdateCommand({
+          TableName: table,
+          Key: { normalizedEmail },
+          UpdateExpression: "SET requestCount = requestCount + :one, ttl = :ttl",
+          ConditionExpression: "windowStart > :windowFloor AND requestCount < :max",
+          ExpressionAttributeValues: {
+            ":one": 1,
+            ":ttl": ttl,
+            ":windowFloor": windowFloor,
+            ":max": RATE_LIMIT_MAX_REQUESTS_PER_DAY,
+          },
+        }),
+      );
+      return { allowed: true };
+    } catch (err) {
+      if (!(err instanceof ConditionalCheckFailedException)) {
+        throw err;
+      }
+    }
+
+    // 上のインクリメントは条件不成立だった。itemが存在しないか、ウィンドウが
+    // 失効しているなら、新しいウィンドウの1件目として作り直す。
+    try {
+      await client.send(
+        new UpdateCommand({
+          TableName: table,
+          Key: { normalizedEmail },
+          UpdateExpression: "SET requestCount = :one, windowStart = :now, ttl = :ttl",
+          ConditionExpression: "attribute_not_exists(windowStart) OR windowStart <= :windowFloor",
+          ExpressionAttributeValues: {
+            ":one": 1,
+            ":now": new Date(now).toISOString(),
+            ":ttl": ttl,
+            ":windowFloor": windowFloor,
+          },
+        }),
+      );
+      return { allowed: true };
+    } catch (err) {
+      if (!(err instanceof ConditionalCheckFailedException)) {
+        throw err;
+      }
+      // ウィンドウのリセットも条件不成立 = 有効なウィンドウが存在するのに
+      // 上のインクリメントには失敗した、ということは件数が既に上限に達している
+      // か、他の並行リクエストが今まさにウィンドウを作り直した直後のいずれか。
+      // 前者なら次のループのインクリメントも失敗して最終的に拒否される。
+      // 後者なら次のループのインクリメントが成功する。
+    }
   }
 
-  await client.send(
-    new PutCommand({
-      TableName: table,
-      Item: {
-        normalizedEmail,
-        // ISO時刻を先頭に持つことで requestId のソート順がそのまま時系列になり、
-        // 上記クエリの範囲指定（>= windowStart）が機能する。
-        requestId: `${new Date(now).toISOString()}#${randomUUID()}`,
-        ttl: Math.floor(now / 1000) + RATE_LIMIT_WINDOW_MS / 1000 + RATE_LIMIT_TTL_BUFFER_SEC,
-      },
-    }),
-  );
-
-  return { allowed: true };
+  // 同時アクセスが続き規定回数内で決着しなかった。フェイルクローズで拒否する。
+  return { allowed: false };
 }

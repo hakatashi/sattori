@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import {
+  EMAIL_PATTERN,
   isSupportedGame,
   type GameId,
   type JobRecord,
@@ -9,11 +10,9 @@ import {
 } from "@sattori/shared";
 import { loadConfig } from "../config.js";
 import { error, json, parseBody } from "../http.js";
-import { PENDING_JOB_TTL_MS, putJob } from "../jobs.js";
+import { deleteJob, PENDING_JOB_TTL_MS, putJob } from "../jobs.js";
 import { checkAndRecordRateLimit } from "../rateLimit.js";
 import { sendMagicLinkEmail } from "../ses.js";
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * POST /magic-links
@@ -38,7 +37,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     return error(400, "invalid_email", "メールアドレスの形式が正しくありません");
   }
 
-  // フェーズ1はリプレイ解析未実装のため、game 未指定なら th07 を既定とする。
+  // ページAはリプレイ解析結果（ReplayInfo.game）を渡してくるが、念のため
+  // 未指定なら th07 を既定とする。
   const game: GameId = body.game ?? "th07";
   if (!isSupportedGame(game)) {
     return error(422, "unsupported_game", "現在このタイトルの録画には対応していません");
@@ -74,14 +74,54 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     pendingExpiresAt: new Date(now.getTime() + PENDING_JOB_TTL_MS).toISOString(),
   };
 
-  await putJob(config.jobsTable, job);
+  try {
+    await putJob(config.jobsTable, job);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "put_job_failed",
+        jobId,
+        name: err instanceof Error ? err.name : undefined,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    return error(500, "internal_error", "処理に失敗しました。時間をおいて再試行してください");
+  }
 
-  await sendMagicLinkEmail({
-    from: config.sesFromAddress,
-    to: job.email as string,
-    webBaseUrl: config.webBaseUrl,
-    jobId: job.jobId,
-  });
+  try {
+    await sendMagicLinkEmail({
+      from: config.sesFromAddress,
+      to: job.email as string,
+      webBaseUrl: config.webBaseUrl,
+      jobId: job.jobId,
+    });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "send_magic_link_email_failed",
+        jobId,
+        name: err instanceof Error ? err.name : undefined,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    // メールが届かない以上このジョブには誰もアクセスできないため、pendingのまま
+    // 残さず削除する（ユーザーは再度「次のステップ」からやり直すことになる）。
+    await deleteJob(config.jobsTable, jobId).catch((cleanupErr) => {
+      console.error(
+        JSON.stringify({
+          event: "delete_job_after_email_failure_failed",
+          jobId,
+          name: cleanupErr instanceof Error ? cleanupErr.name : undefined,
+          message: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+        }),
+      );
+    });
+    return error(
+      502,
+      "email_send_failed",
+      "メールの送信に失敗しました。時間をおいて再試行してください",
+    );
+  }
 
   const response: RequestMagicLinkResponse = {};
   return json(202, response);

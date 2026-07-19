@@ -2,6 +2,7 @@ import type {
   ApiError,
   CreateUploadRequest,
   CreateUploadResponse,
+  GameId,
   GetJobResponse,
   ParseReplayRequest,
   ParseReplayResponse,
@@ -71,9 +72,16 @@ export function requestMagicLink(
   replayKey: string,
   options: RecordingOptions,
   email: string,
+  game?: GameId,
   estimatedDurationSeconds?: number | null,
 ): Promise<RequestMagicLinkResponse> {
-  const req: RequestMagicLinkRequest = { replayKey, options, email, estimatedDurationSeconds };
+  const req: RequestMagicLinkRequest = {
+    replayKey,
+    options,
+    email,
+    game,
+    estimatedDurationSeconds,
+  };
   return request<RequestMagicLinkResponse>("/magic-links", {
     method: "POST",
     body: JSON.stringify(req),
