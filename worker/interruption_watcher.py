@@ -1,10 +1,18 @@
-"""EC2 Spot中断通知(2分前)とインスタンスリバランス推奨をインスタンスメタデータ
-(IMDSv2)経由で監視し、検知したら即座にコールバックを呼ぶ(Issue #11)。
+"""EC2 Spot中断通知(2分前、実際に発効が確定した通知)とインスタンスリバランス推奨
+(発効するとは限らない予測的シグナル)をインスタンスメタデータ(IMDSv2)経由で監視する
+(Issue #11)。
 
-60分のtaskTokenタイムアウトを待たずに検知した時点でStep Functionsへ失敗通知する
-ことで、後続のリトライ(新インスタンス起動)を早めに開始させるのが狙い。検知しても
-このインスタンス自体の録画処理は止めない(中断が実際に発効するまで録画を続け、
-できるところまで進める)。
+Spot中断通知(`spot/instance-action`)を検知した場合のみ、60分のtaskTokenタイムアウトを
+待たずに即座にコールバックを呼び、Step Functionsへ早期失敗通知して後続のリトライ
+(新インスタンス起動)を早める。検知してもこのインスタンス自体の録画処理は止めない
+(中断が実際に発効するまで録画を続け、できるところまで進める)。
+
+リバランス推奨(`events/recommendations/rebalance`)は実際の中断を伴わないことが多い
+予測的シグナルであるため、検知してもコールバックは呼ばない(ジョブを失敗扱いにしない)。
+ログにのみ記録し、実際のSpot中断通知が来ないか監視を継続する。EC2 Fleetの
+AllocationStrategyを`lowest-price`に固定している(コスト優先)ため、リバランス推奨自体は
+比較的発生しやすい前提。これをそのまま早期失敗の合図にすると、実際には最後まで
+完走できたはずのジョブまで不要にリトライしてしまう。
 """
 import json
 import threading
@@ -24,6 +32,7 @@ class InterruptionWatcher:
         self._log = log
         self._stop = threading.Event()
         self._fired = threading.Event()
+        self._rebalance_logged = False
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
@@ -63,9 +72,12 @@ class InterruptionWatcher:
                     self._fire("spot_interruption", interruption)
                     return
                 rebalance = self._check(token, "events/recommendations/rebalance")
-                if rebalance is not None:
-                    self._fire("rebalance_recommendation", rebalance)
-                    return
+                if rebalance is not None and not self._rebalance_logged:
+                    self._rebalance_logged = True
+                    self._log(
+                        f"[interruption_watcher] リバランス推奨を検知(発効するとは限らないため"
+                        f"失敗扱いにせず処理を継続、実中断の監視は継続): {rebalance}"
+                    )
             except Exception as err:  # noqa: BLE001 - IMDS一時応答不能等でも録画は継続する
                 self._log(f"[interruption_watcher] 確認に失敗(継続): {err}")
             self._stop.wait(POLL_INTERVAL_SEC)
