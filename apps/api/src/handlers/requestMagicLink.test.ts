@@ -78,9 +78,9 @@ describe("POST /magic-links", () => {
     const sendCalls = sesMock.commandCalls(SendEmailCommand);
     expect(sendCalls).toHaveLength(1);
     expect(sendCalls[0]?.args[0].input.Destination?.ToAddresses).toEqual(["user@example.com"]);
-    // メール本文にjobIdへのリンクは含むが、token相当のパラメータは含まない。
+    // メール本文にジョブページ(/jobs/{jobId})へのリンクは含むが、token相当のパラメータは含まない。
     const emailBody = sendCalls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
-    expect(emailBody).toContain(`jobId=${jobPut?.args[0].input.Item?.jobId}`);
+    expect(emailBody).toContain(`/jobs/${jobPut?.args[0].input.Item?.jobId}`);
     expect(emailBody).not.toContain("token=");
   });
 

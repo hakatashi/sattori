@@ -154,4 +154,28 @@ describe("SattoriStack", () => {
       },
     });
   });
+
+  it("JobsTableのDynamoDB Streamsが有効になっている(Issue #10、完了メール送信のトリガー用)", () => {
+    template.hasResourceProperties("AWS::DynamoDB::Table", {
+      KeySchema: [{ AttributeName: "jobId", KeyType: "HASH" }],
+      StreamSpecification: { StreamViewType: "NEW_AND_OLD_IMAGES" },
+    });
+  });
+
+  it("SendCompletionEmail LambdaがJobsTableのStreamsをイベントソースとし、statusがdoneへの変更だけに絞り込まれている(Issue #10)", () => {
+    template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
+      FilterCriteria: {
+        Filters: Match.arrayWith([
+          Match.objectLike({
+            Pattern: Match.serializedJson(
+              Match.objectLike({
+                eventName: ["MODIFY"],
+                dynamodb: { NewImage: { status: { S: ["done"] } } },
+              }),
+            ),
+          }),
+        ]),
+      },
+    });
+  });
 });

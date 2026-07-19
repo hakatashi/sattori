@@ -25,7 +25,7 @@ describe("StartJob", () => {
     mocked.startJob.mockResolvedValue({ jobId: "job-1", status: "queued" });
     const onStarted = vi.fn();
 
-    render(<StartJob jobId="job-1" onStarted={onStarted} />);
+    render(<StartJob jobId="job-1" onStarted={onStarted} onReset={vi.fn()} />);
 
     expect(screen.getByText("録画を開始しています…")).toBeTruthy();
     expect(mocked.startJob).toHaveBeenCalledWith("job-1");
@@ -36,20 +36,24 @@ describe("StartJob", () => {
     mocked.startJob.mockResolvedValue({ jobId: "job-1", status: "recording" });
     const onStarted = vi.fn();
 
-    render(<StartJob jobId="job-1" onStarted={onStarted} />);
+    render(<StartJob jobId="job-1" onStarted={onStarted} onReset={vi.fn()} />);
 
     await waitFor(() => expect(onStarted).toHaveBeenCalledWith("job-1"));
   });
 
-  it("失敗時はエラーメッセージを表示する", async () => {
+  it("失敗時はエラーメッセージと再試行導線を表示する", async () => {
     mocked.startJob.mockRejectedValue(
       new client.SattoriApiError("job_expired", "受付期限が切れています"),
     );
     const onStarted = vi.fn();
+    const onReset = vi.fn();
 
-    render(<StartJob jobId="job-1" onStarted={onStarted} />);
+    render(<StartJob jobId="job-1" onStarted={onStarted} onReset={onReset} />);
 
     await waitFor(() => expect(screen.getByText("受付期限が切れています")).toBeTruthy());
     expect(onStarted).not.toHaveBeenCalled();
+
+    screen.getByText("最初からやり直す").click();
+    expect(onReset).toHaveBeenCalled();
   });
 });
