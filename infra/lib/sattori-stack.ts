@@ -93,16 +93,6 @@ export class SattoriStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
-    // マジックリンク(Issue #9)。トークンをキーに、確認(confirm)されるまでの
-    // 送信要求内容(replayKey/options等)を保持する。JobRecordはこの時点では作らない。
-    // TTL属性で有効期限切れ後に自動削除する。
-    const magicLinksTable = new dynamodb.Table(this, "MagicLinksTable", {
-      partitionKey: { name: "token", type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.DESTROY,
-      timeToLiveAttribute: "ttl",
-    });
-
     // メール送信のレート制限(同一メール24時間5件まで、Issue #9)用カウンタ。
     // PK: 正規化後のメールアドレス、SK: 送信時刻を含む一意なID(範囲クエリで
     // 直近24時間分を数える)。TTL属性で自動削除する。
@@ -215,7 +205,6 @@ export class SattoriStack extends Stack {
       WORKER_LOG_GROUP: workerLogGroup.logGroupName,
       WORKER_SUBNET_IDS: vpc.publicSubnets.map((subnet) => subnet.subnetId).join(","),
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
-      MAGIC_LINKS_TABLE: magicLinksTable.tableName,
       EMAIL_RATE_LIMIT_TABLE: emailRateLimitTable.tableName,
       SES_FROM_ADDRESS: sesFromAddress,
       WEB_BASE_URL: `https://${webDomainName}`,
@@ -240,32 +229,29 @@ export class SattoriStack extends Stack {
     const parseReplayFn = makeHandler("ParseReplayFn", "parseReplay.ts");
     const getJobFn = makeHandler("GetJobFn", "getJob.ts");
     const requestMagicLinkFn = makeHandler("RequestMagicLinkFn", "requestMagicLink.ts");
-    const resendMagicLinkFn = makeHandler("ResendMagicLinkFn", "resendMagicLink.ts");
 
     // 権限付与
     uploadBucket.grantPut(createUploadFn); // 署名付き PUT URL 発行のため
     uploadBucket.grantRead(parseReplayFn); // アップロード済み .rpy を取得して解析するため
     jobsTable.grantReadData(getJobFn);
 
-    // マジックリンクの送信要求(request)・再送(resend)は、トークンの読み書きと
+    // マジックリンクの送信要求は、status:pending の JobRecord 作成(jobsTable書き込み)、
     // レート制限カウンタの読み書き、SESでの送信権限が必要。
-    for (const fn of [requestMagicLinkFn, resendMagicLinkFn]) {
-      magicLinksTable.grantReadWriteData(fn);
-      emailRateLimitTable.grantReadWriteData(fn);
-      // SESアカウントがサンドボックス中は、送信元IDだけでなく送信先(受信者)の
-      // メールアドレスも「検証済みID」としてIAMの権限チェック対象になる
-      // (受信者ごとに個別の identity ARN が動的に検査される)。宛先はユーザー入力の
-      // 任意アドレスでデプロイ時に特定できないため、Resourceはこのアカウント配下の
-      // SES identity 全体(送信元ドメイン・任意の受信者アドレスの両方を含む)に絞る。
-      // サンドボックス解除後は受信者側のチェックは行われなくなるが、Resourceを
-      // 変更する必要はない。
-      fn.addToRolePolicy(
-        new iam.PolicyStatement({
-          actions: ["ses:SendEmail"],
-          resources: [`arn:aws:ses:${this.region}:${this.account}:identity/*`],
-        }),
-      );
-    }
+    jobsTable.grantReadWriteData(requestMagicLinkFn);
+    emailRateLimitTable.grantReadWriteData(requestMagicLinkFn);
+    // SESアカウントがサンドボックス中は、送信元IDだけでなく送信先(受信者)の
+    // メールアドレスも「検証済みID」としてIAMの権限チェック対象になる
+    // (受信者ごとに個別の identity ARN が動的に検査される)。宛先はユーザー入力の
+    // 任意アドレスでデプロイ時に特定できないため、Resourceはこのアカウント配下の
+    // SES identity 全体(送信元ドメイン・任意の受信者アドレスの両方を含む)に絞る。
+    // サンドボックス解除後は受信者側のチェックは行われなくなるが、Resourceを
+    // 変更する必要はない。
+    requestMagicLinkFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ses:SendEmail"],
+        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/*`],
+      }),
+    );
 
     // --- 録画ジョブのオーケストレーション(Step Functions) -------------------
     // 1ジョブ = 1 Standard実行。Launch タスクが EC2 Fleet でワーカーを起動し、
@@ -375,16 +361,16 @@ export class SattoriStack extends Stack {
       stateMachineType: sfn.StateMachineType.STANDARD,
     });
 
-    // マジックリンク確認(confirm)がジョブを作成しStep Functionsを起動する
-    // (フェーズ1で createJobFn が担っていた即時起動をIssue #9で置き換えた)。
-    const confirmJobFn = makeHandler("ConfirmJobFn", "confirmJob.ts");
-    jobsTable.grantReadWriteData(confirmJobFn);
-    magicLinksTable.grantReadWriteData(confirmJobFn);
-    stateMachine.grantStartExecution(confirmJobFn);
-    // STATE_MACHINE_ARN は confirmJobFn だけに付与する(commonEnv には含めない)。
+    // ジョブページへのアクセス(jobIdのみで認可)がジョブをqueuedへ遷移させ
+    // Step Functionsを起動する(フェーズ1で createJobFn が担っていた即時起動を
+    // Issue #9で置き換えた。tokenは廃止し、jobId自体を秘密値として扱う設計)。
+    const startJobFn = makeHandler("StartJobFn", "startJob.ts");
+    jobsTable.grantReadWriteData(startJobFn);
+    stateMachine.grantStartExecution(startJobFn);
+    // STATE_MACHINE_ARN は startJobFn だけに付与する(commonEnv には含めない)。
     // ステートマシンは launchFn/handleFailureFn を呼び出す(Lambda ARN に依存)ため、
     // それらの環境変数がステートマシンARNを参照すると CloudFormation の循環依存になる。
-    confirmJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
+    startJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
 
     const httpApi = new apigw.HttpApi(this, "HttpApi", {
       corsPreflight: {
@@ -414,14 +400,9 @@ export class SattoriStack extends Stack {
       integration: new HttpLambdaIntegration("GetJobInt", getJobFn),
     });
     httpApi.addRoutes({
-      path: "/jobs/{jobId}/confirm",
+      path: "/jobs/{jobId}/start",
       methods: [apigw.HttpMethod.POST],
-      integration: new HttpLambdaIntegration("ConfirmJobInt", confirmJobFn),
-    });
-    httpApi.addRoutes({
-      path: "/jobs/{jobId}/resend",
-      methods: [apigw.HttpMethod.POST],
-      integration: new HttpLambdaIntegration("ResendMagicLinkInt", resendMagicLinkFn),
+      integration: new HttpLambdaIntegration("StartJobInt", startJobFn),
     });
 
     // --- 静的フロントエンド(S3 + CloudFront) ------------------------------

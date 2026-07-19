@@ -1,4 +1,4 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
   GetCommand,
@@ -8,6 +8,13 @@ import {
 import type { JobRecord, JobStatus } from "@sattori/shared";
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+
+/**
+ * "pending"状態のジョブが録画開始("POST /jobs/{jobId}/start")を受け付ける期限。
+ * アップロード用S3バケットが1日でオブジェクトを自動削除する(infra/lib/sattori-stack.ts)
+ * ため、それに合わせて24時間としている。
+ */
+export const PENDING_JOB_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** ジョブレコードを新規作成する。 */
 export async function putJob(table: string, job: JobRecord): Promise<void> {
@@ -60,6 +67,44 @@ export async function updateJobStatus(
       ExpressionAttributeValues: expressionAttributeValues,
     }),
   );
+}
+
+export class JobAlreadyStartedError extends Error {
+  constructor() {
+    super("job already started");
+  }
+}
+
+/**
+ * "pending"(マジックリンク送信済み・未起動)から"queued"(起動)へ原子的に遷移させる。
+ * 同一jobIdに対して複数回呼ばれても録画が起動するのは最初の1回だけになるよう、
+ * DynamoDBの`ConditionExpression`で「まだpendingであること」を保証する
+ * （並行アクセス・二重クリックへの対策。Issue #9）。既にpendingでなければ
+ * （＝起動済みなら）`JobAlreadyStartedError`を投げるので、呼び出し側は
+ * それを「エラーではなく起動済み」として扱ってよい。
+ */
+export async function startPendingJob(table: string, jobId: string): Promise<void> {
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: table,
+        Key: { jobId },
+        UpdateExpression: "SET #s = :queued, updatedAt = :u",
+        ConditionExpression: "#s = :pending",
+        ExpressionAttributeNames: { "#s": "status" },
+        ExpressionAttributeValues: {
+          ":queued": "queued" satisfies JobStatus,
+          ":pending": "pending" satisfies JobStatus,
+          ":u": new Date().toISOString(),
+        },
+      }),
+    );
+  } catch (err) {
+    if (err instanceof ConditionalCheckFailedException) {
+      throw new JobAlreadyStartedError();
+    }
+    throw err;
+  }
 }
 
 /**

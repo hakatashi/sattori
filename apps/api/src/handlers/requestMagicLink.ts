@@ -1,28 +1,27 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import {
   isSupportedGame,
   type GameId,
+  type JobRecord,
   type RequestMagicLinkRequest,
   type RequestMagicLinkResponse,
 } from "@sattori/shared";
 import { loadConfig } from "../config.js";
 import { error, json, parseBody } from "../http.js";
-import { putMagicLink } from "../magicLinks.js";
+import { PENDING_JOB_TTL_MS, putJob } from "../jobs.js";
 import { checkAndRecordRateLimit } from "../rateLimit.js";
 import { sendMagicLinkEmail } from "../ses.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function generateToken(): string {
-  return randomBytes(32).toString("base64url");
-}
-
 /**
  * POST /magic-links
  * マジックリンクメールの送信要求（ページAの「次のステップ」）。
- * この時点ではジョブ（DynamoDBレコード）は作らず、Step Functionsも起動しない。
- * `POST /jobs/{jobId}/confirm` でトークンが確認されて初めてジョブが実体化する（Issue #9）。
+ * この時点で status: "pending" の JobRecord を作成するが、Step Functionsは
+ * まだ起動しない。払い出した jobId はレスポンスに含めず、メール本文のリンクとして
+ * のみ通知する（jobId自体がメールを確認しないと分からない、録画起動の実質的な
+ * 秘密として機能する。`POST /jobs/{jobId}/start` で実際に起動する。Issue #9）。
  */
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const config = loadConfig();
@@ -54,22 +53,34 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     );
   }
 
-  const magicLink = await putMagicLink(config.magicLinksTable, {
-    token: generateToken(),
-    jobId: randomUUID(),
-    email: body.email,
-    replayKey: body.replayKey,
+  const now = new Date();
+  const jobId = randomUUID();
+  const job: JobRecord = {
+    jobId,
     game,
+    replayKey: body.replayKey,
+    status: "pending",
     options: { watermark: body.options.watermark !== false },
+    outputPath: null,
+    outputPath720p: null,
+    error: null,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    email: body.email,
+    instanceId: null,
     estimatedDurationSeconds: body.estimatedDurationSeconds ?? null,
-  });
+    progress: null,
+    previewImagePath: null,
+    pendingExpiresAt: new Date(now.getTime() + PENDING_JOB_TTL_MS).toISOString(),
+  };
+
+  await putJob(config.jobsTable, job);
 
   await sendMagicLinkEmail({
     from: config.sesFromAddress,
-    to: magicLink.email,
+    to: job.email as string,
     webBaseUrl: config.webBaseUrl,
-    jobId: magicLink.jobId,
-    token: magicLink.token,
+    jobId: job.jobId,
   });
 
   const response: RequestMagicLinkResponse = {};
