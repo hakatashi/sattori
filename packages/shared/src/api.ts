@@ -43,6 +43,11 @@ export interface CreateJobRequest {
   /** フェーズ1では省略可（クライアント判定 or 既定 th07）。フェーズ2でパーサー結果を渡す。 */
   game?: GameId;
   options: RecordingOptions;
+  /**
+   * `POST /replays/parse` の `ReplayInfo.estimatedDurationSeconds` をそのまま渡す。
+   * ワーカーの録画進捗率表示にのみ使う参考値（省略・null なら進捗率は算出されない）。
+   */
+  estimatedDurationSeconds?: number | null;
 }
 
 /** POST /jobs のレスポンス。 */
@@ -65,6 +70,13 @@ export interface GetJobResponse {
   downloadUrl720p: string | null;
   error: string | null;
   updatedAt: string;
+  /** 現在のフェーズ（recording/converting）内での処理進捗率（0-100）。不明なら null。 */
+  progress: number | null;
+  /**
+   * 録画中の画面プレビュー画像URL（CloudFront配信）。
+   * status が recording/converting の間のみ値を持ち、それ以外（完了・失敗後）は null。
+   */
+  previewImageUrl: string | null;
 }
 
 /** APIエラーの統一形。 */

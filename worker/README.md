@@ -9,10 +9,15 @@
 
 | ファイル | 役割 |
 | --- | --- |
-| `entrypoint.py` | ジョブ全体の制御。S3 DL → 録画 → 720p変換 → S3 UP → DynamoDB 状態更新 |
-| `record_th07.py` | th07 録画パイプライン本体(任意ファイル名リプレイを正規スロットで再生) |
-| `upscale.py` | 録画動画をアスペクト比を保って720pへアップスケールする後処理(reports/21) |
-| `status.py` | DynamoDB へのジョブ状態反映 |
+| `entrypoint.py` | ジョブ全体の制御。DynamoDBのチェックポイント確認 → (再開でなければ)S3 DL →
+  録画 → 生動画をS3へチェックポイントUP → 720p変換 → S3 UP → DynamoDB/taskToken 通知 |
+| `record_th07.py` | th07 録画パイプライン本体(任意ファイル名リプレイを正規スロットで再生)。
+  進捗スクリーンショット/状態も書き出す |
+| `upscale.py` | 録画動画をアスペクト比を保って720pへアップスケールする後処理(reports/21)。
+  進捗コールバック対応 |
+| `status.py` | DynamoDB へのジョブ状態・進捗反映、チェックポイント確認用のジョブ取得 |
+| `interruption_watcher.py` | Spot中断通知/リバランス推奨をIMDS経由で監視するバックグラウンドスレッド |
+| `progress_reporter.py` | 録画中の進捗スクリーンショットをS3へアップロードするバックグラウンドスレッド |
 | `Dockerfile` | 実行イメージ定義 |
 | `mods/common/` | DLL インジェクタ(`injector.exe`)・共通フック処理のソース(C++, MSVC) |
 | `mods/th07_replay_autoplay/` | th07 自動再生フック DLL(`th07_hook.dll`)のソース(C++, MSVC) |
@@ -67,6 +72,8 @@ worker\mods\th07_replay_autoplay\build.bat
 | `OUTPUT_BUCKET` | 録画動画の出力先バケット(CloudFront オリジン) |
 | `JOBS_TABLE` | ジョブ状態の DynamoDB テーブル名 |
 | `WATERMARK` | `1` でウォーターマーク合成、`0` で無効 |
+| `TASK_TOKEN` | Step Functions の `waitForTaskToken` トークン(省略時は通知をスキップ、ローカル検証用) |
+| `EXPECTED_DURATION_SECONDS` | リプレイの推定再生時間(進捗率算出の参考値、省略可) |
 
 ## 出力ファイル
 
@@ -78,8 +85,25 @@ reports/21)。th07(640x480)のような低解像度録画はそのままだと Y
 
 | S3キー | 内容 |
 | --- | --- |
-| `videos/{jobId}.mp4` | 録画そのままの解像度(DynamoDB `outputPath`) |
+| `videos/{jobId}.mp4` | 録画そのままの解像度(DynamoDB `outputPath`)。録画完了直後、
+  変換前にチェックポイントとしてアップロードされる(Issue #11) |
 | `videos/{jobId}_720p.mp4` | 720pアップスケール版(DynamoDB `outputPath720p`) |
+| `progress/{jobId}/{unixMillis}.jpg` | 録画中の進捗スクリーンショット(DynamoDB
+  `previewImagePath`)。スナップショット毎にユニークなキーを使う(CloudFrontの
+  長期キャッシュで古い画像が返り続けるのを避けるため) |
+
+## Spot中断時のリトライと再開(Issue #11)
+
+`entrypoint.py` は起動直後にDynamoDBのジョブレコードを確認し、`outputPath`
+(上記の生動画チェックポイント)が既に設定済みなら「変換から再開」する(S3から
+生動画をダウンロードし、録画をスキップして720p変換から実行する)。Step Functions
+がSpot中断/タイムアウトを検知して新しいワーカーインスタンスでリトライした場合、
+このチェックポイントにより録画をやり直さずに済む(録画フェーズ自体の途中再開は
+非対応で、中断時はそのフェーズを最初からやり直す)。
+
+`interruption_watcher.py` がIMDS経由でSpot中断通知/リバランス推奨(いずれも2分前
+通知)を監視し、検知次第 taskToken 経由で Step Functions に早期失敗通知する
+(60分のタスクタイムアウトを待たずに新インスタンスでのリトライを開始させるため)。
 
 ## ローカルでの録画単体テスト(ネットワーク不要)
 

@@ -1,4 +1,9 @@
-import { RunInstancesCommand, EC2Client } from "@aws-sdk/client-ec2";
+import {
+  CreateFleetCommand,
+  CreateLaunchTemplateVersionCommand,
+  EC2Client,
+  TerminateInstancesCommand,
+} from "@aws-sdk/client-ec2";
 import type { JobRecord } from "@sattori/shared";
 import type { ApiConfig } from "./config.js";
 
@@ -9,11 +14,31 @@ const ec2 = new EC2Client({});
  * ECR ログイン → 録画ワーカーコンテナ実行 → 完了後に自動シャットダウン（=Spot終了）。
  * ジョブ固有の値は環境変数でコンテナに渡す。ワーカー本体は S3/DynamoDB を直接更新する。
  *
- * 注: フェーズ1は単一 RunInstances（Spot）での最小起動。複数AZ Spot Fleet と
- * Step Functions によるリトライ制御はフェーズ2で導入する（reports/17 の知見）。
+ * `taskToken` は Step Functions の `waitForTaskToken` パターンのトークン。ワーカーが
+ * 録画/変換の成功・失敗を `SendTaskSuccess`/`SendTaskFailure` で直接通知するために渡す。
  */
-export function buildUserData(config: ApiConfig, job: JobRecord): string {
+export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: string): string {
   const registry = config.workerImage.split("/")[0] ?? "";
+
+  const envFlags = [
+    `-e AWS_DEFAULT_REGION=${config.ec2.region}`,
+    `-e AWS_REGION=${config.ec2.region}`,
+    `-e JOB_ID=${job.jobId}`,
+    `-e GAME=${job.game}`,
+    `-e REPLAY_BUCKET=${config.uploadBucket}`,
+    `-e REPLAY_KEY=${job.replayKey}`,
+    `-e OUTPUT_BUCKET=${config.outputBucket}`,
+    `-e JOBS_TABLE=${config.jobsTable}`,
+    `-e WATERMARK=${job.options.watermark ? "1" : "0"}`,
+    // taskToken は Step Functions が発行する不透明な文字列（AWS生成、ユーザー入力ではない）。
+    // シェル展開を避けるためシングルクォートで囲む。
+    `-e TASK_TOKEN='${taskToken}'`,
+  ];
+  if (job.estimatedDurationSeconds !== null) {
+    // ワーカーの録画進捗率算出用の参考値（取得できていなければ付与しない）。
+    envFlags.push(`-e EXPECTED_DURATION_SECONDS=${job.estimatedDurationSeconds}`);
+  }
+
   // trap EXIT で必ず shutdown する（Spot 終了 = 課金停止）。ECR ログインや
   // docker 実行が失敗しても、インスタンスを起動したまま残さない（孤児防止）。
   // set -e は付けない（途中失敗でも trap を通って確実に停止させるため）。
@@ -35,39 +60,62 @@ docker run --rm \\
   --log-opt awslogs-region=${config.ec2.region} \\
   --log-opt awslogs-group=${config.logGroup} \\
   --log-opt awslogs-stream=${job.jobId} \\
-  -e AWS_DEFAULT_REGION=${config.ec2.region} \\
-  -e AWS_REGION=${config.ec2.region} \\
-  -e JOB_ID=${job.jobId} \\
-  -e GAME=${job.game} \\
-  -e REPLAY_BUCKET=${config.uploadBucket} \\
-  -e REPLAY_KEY=${job.replayKey} \\
-  -e OUTPUT_BUCKET=${config.outputBucket} \\
-  -e JOBS_TABLE=${config.jobsTable} \\
-  -e WATERMARK=${job.options.watermark ? "1" : "0"} \\
+  ${envFlags.join(" \\\n  ")} \\
   ${config.workerImage}
 `;
   return Buffer.from(script, "utf-8").toString("base64");
 }
 
-/** Spot インスタンスを1台起動して録画ジョブを実行する。起動したインスタンスIDを返す。 */
+/**
+ * EC2 Fleet でワーカーインスタンスを1台起動して録画ジョブを実行する。
+ * 起動したインスタンスIDを返す。
+ *
+ * ベースの Launch Template（AMI/インスタンスタイプ/IAM/SGはCDK側で設定済み）に対し、
+ * ジョブ固有の UserData のみを持つ新しいバージョンを作成し、そのバージョンを参照する
+ * `CreateFleet`（`Type: "instant"`）で即時に1台起動する。複数サブネット（=複数AZ）を
+ * Overrides に渡し `lowest-price` 戦略で配置することで、単一AZでのSpot枯渇に対する
+ * 耐性を持たせる（PoC reports/17）。
+ */
 export async function launchRecordingInstance(
   config: ApiConfig,
   job: JobRecord,
+  taskToken: string,
 ): Promise<string> {
+  const userData = buildUserData(config, job, taskToken);
+
+  const version = await ec2.send(
+    new CreateLaunchTemplateVersionCommand({
+      LaunchTemplateId: config.ec2.launchTemplateId,
+      SourceVersion: "$Default",
+      LaunchTemplateData: { UserData: userData },
+    }),
+  );
+  const versionNumber = version.LaunchTemplateVersion?.VersionNumber;
+  if (versionNumber === undefined) {
+    throw new Error("Launch Template バージョンの作成に失敗しました（VersionNumber 不明）");
+  }
+
   const result = await ec2.send(
-    new RunInstancesCommand({
-      ImageId: config.ec2.amiId,
-      InstanceType: config.ec2.instanceType as never,
-      MinCount: 1,
-      MaxCount: 1,
-      SubnetId: config.ec2.subnetId,
-      SecurityGroupIds: [config.ec2.securityGroupId],
-      IamInstanceProfile: { Arn: config.ec2.instanceProfileArn },
-      UserData: buildUserData(config, job),
-      InstanceInitiatedShutdownBehavior: "terminate",
-      InstanceMarketOptions: {
-        MarketType: "spot",
-        SpotOptions: { SpotInstanceType: "one-time" },
+    new CreateFleetCommand({
+      Type: "instant",
+      LaunchTemplateConfigs: [
+        {
+          LaunchTemplateSpecification: {
+            LaunchTemplateId: config.ec2.launchTemplateId,
+            Version: String(versionNumber),
+          },
+          Overrides: config.ec2.subnetIds.map((subnetId) => ({ SubnetId: subnetId })),
+        },
+      ],
+      TargetCapacitySpecification: {
+        TotalTargetCapacity: 1,
+        DefaultTargetCapacityType: "spot",
+      },
+      SpotOptions: {
+        AllocationStrategy: "lowest-price",
+        SingleInstanceType: true,
+        SingleAvailabilityZone: false,
+        InstanceInterruptionBehavior: "terminate",
       },
       TagSpecifications: [
         {
@@ -80,9 +128,30 @@ export async function launchRecordingInstance(
       ],
     }),
   );
-  const instanceId = result.Instances?.[0]?.InstanceId;
+
+  const instanceId = result.Instances?.[0]?.InstanceIds?.[0];
   if (!instanceId) {
-    throw new Error("EC2 インスタンスの起動に失敗しました（InstanceId 不明）");
+    const reason = result.Errors?.map((e) => `${e.ErrorCode}: ${e.ErrorMessage}`).join("; ");
+    throw new Error(
+      `EC2 Fleet でのインスタンス起動に失敗しました（InstanceId 不明）${reason ? `: ${reason}` : ""}`,
+    );
   }
   return instanceId;
+}
+
+/**
+ * ジョブ失敗（Spot中断・タイムアウト等）時に、孤児化した可能性のあるインスタンスを
+ * terminate する。既に終了済み・存在しない場合も冪等に成功扱いとする
+ * （リトライの度に毎回呼ばれるため）。
+ */
+export async function terminateInstance(instanceId: string): Promise<void> {
+  try {
+    await ec2.send(new TerminateInstancesCommand({ InstanceIds: [instanceId] }));
+  } catch (err) {
+    const name = err instanceof Error ? err.name : undefined;
+    if (name === "InvalidInstanceID.NotFound") {
+      return;
+    }
+    throw err;
+  }
 }

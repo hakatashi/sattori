@@ -8,7 +8,7 @@ export const JOB_STATUSES = [
   "queued", // ジョブ登録済み・起動待ち
   "launching", // EC2 Spot インスタンス起動中
   "recording", // ゲーム起動〜リプレイ録画中
-  "uploading", // 録画完了・720pアップスケール変換とS3アップロード中
+  "converting", // 録画完了(生動画チェックポイントアップロード済み)〜720pアップスケール変換〜出力アップロード中
   "done", // 完了（動画DL可能）
   "failed", // 失敗（要リトライ or エラー表示）
 ] as const;
@@ -41,7 +41,13 @@ export interface JobRecord {
   replayKey: string;
   status: JobStatus;
   options: RecordingOptions;
-  /** 完了時の出力動画（録画そのままの解像度）の CloudFront 配信パス（未完了なら null）。 */
+  /**
+   * 出力動画（録画そのままの解像度）の CloudFront 配信パス。
+   * 録画完了直後、720p変換の前にチェックポイントとして先行して設定される
+   * （変換中にSpot中断が起きても、次のリトライ時にワーカーがこのパスから
+   * 生動画をダウンロードして録画をやり直さずに変換から再開できるようにするため）。
+   * 未設定（録画未完了）なら null。
+   */
   outputPath: string | null;
   /**
    * 完了時の720pアップスケール版動画の CloudFront 配信パス（未完了なら null）。
@@ -57,4 +63,24 @@ export interface JobRecord {
   updatedAt: string;
   /** フェーズ2以降: 認証メール送信先。フェーズ1では null。 */
   email: string | null;
+  /**
+   * ジョブ実行中の EC2 インスタンスID。Step Functions の失敗ハンドラが
+   * リトライ/タイムアウト時に孤児インスタンスを terminate するために使う。
+   * 未起動または完了後は null。
+   */
+  instanceId: string | null;
+  /**
+   * リプレイの推定再生時間（秒）。`ReplayInfo.estimatedDurationSeconds` の値を
+   * ジョブ作成時に転記したもの。ワーカーが録画フェーズの進捗率算出に使う
+   * （取得できなければ null）。
+   */
+  estimatedDurationSeconds: number | null;
+  /** 現在のフェーズ内での処理進捗率（0-100）。フェーズ開始直後や不明時は null。 */
+  progress: number | null;
+  /**
+   * 録画中の画面プレビュー画像の S3 オブジェクトキー（出力バケット内）。
+   * スナップショット毎にユニークなキーを発行する（CloudFrontの長期キャッシュで
+   * 古い画像が返り続けるのを避けるため）。未取得なら null。
+   */
+  previewImagePath: string | null;
 }

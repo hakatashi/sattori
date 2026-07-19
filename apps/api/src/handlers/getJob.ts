@@ -29,6 +29,12 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     job.status === "done" && job.outputPath720p
       ? `https://${config.cdnDomain}/${job.outputPath720p}`
       : null;
+  // プレビュー画像は録画・変換の進行中のみ意味を持つ(完了・失敗後は最新のダウンロード
+  // 導線を優先し、古いスクリーンショットは表示しない)。
+  const previewImageUrl =
+    (job.status === "recording" || job.status === "converting") && job.previewImagePath
+      ? `https://${config.cdnDomain}/${job.previewImagePath}`
+      : null;
 
   const response: GetJobResponse = {
     jobId: job.jobId,
@@ -38,6 +44,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     downloadUrl720p,
     error: job.error,
     updatedAt: job.updatedAt,
+    progress: job.progress,
+    previewImageUrl,
   };
   return json(200, response);
 };

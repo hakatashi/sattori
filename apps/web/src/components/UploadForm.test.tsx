@@ -156,6 +156,6 @@ describe("UploadForm", () => {
     fireEvent.click(nextStepButton());
 
     await waitFor(() => expect(onJobStarted).toHaveBeenCalledWith("job-42"));
-    expect(mocked.createJob).toHaveBeenCalledWith("replays/x.rpy", { watermark: true });
+    expect(mocked.createJob).toHaveBeenCalledWith("replays/x.rpy", { watermark: true }, 847);
   });
 });
