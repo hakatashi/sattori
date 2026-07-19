@@ -48,11 +48,11 @@ export class SattoriStack extends Stack {
 
     // --- ストレージ ---------------------------------------------------------
 
-    // アップロードされた .rpy を一時保管するバケット(1日で自動削除)。
+    // アップロードされた .rpy を一時保管するバケット。
+    // .rpy はサイズが小さく保管コストが無視できるため、自動削除は行わない。
     const uploadBucket = new s3.Bucket(this, "UploadBucket", {
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      lifecycleRules: [{ expiration: Duration.days(1) }],
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       cors: [

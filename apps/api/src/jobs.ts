@@ -13,8 +13,8 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 /**
  * "pending"状態のジョブが録画開始("POST /jobs/{jobId}/start")を受け付ける期限。
- * アップロード用S3バケットが1日でオブジェクトを自動削除する(infra/lib/sattori-stack.ts)
- * ため、それに合わせて24時間としている。
+ * メール未確認のジョブを無期限に残さないための、bot/濫用対策としての期限
+ * （アップロード用S3バケットの自動削除とは現在は独立）。
  */
 export const PENDING_JOB_TTL_MS = 24 * 60 * 60 * 1000;
 
