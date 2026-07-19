@@ -273,18 +273,39 @@ export class SattoriStack extends Stack {
       },
     });
 
+    // Spot中断の早期失敗通知はワーカーの処理継続中に送られるため、失敗直後に
+    // 即terminate/リトライすると完走できたはずのジョブまで潰してしまう。3分待って
+    // からHandleFailureがジョブの最終状態を確認するため、この待機がリトライ間隔も兼ねる。
+    const waitBeforeCheck = new sfn.Wait(this, "WaitBeforeCheck", {
+      time: sfn.WaitTime.duration(Duration.minutes(3)),
+    });
+
     const retryChoice = new sfn.Choice(this, "ShouldRetry?")
       .when(
         sfn.Condition.booleanEquals("$.handleFailureResult.shouldRetry", true),
-        new sfn.Wait(this, "WaitBeforeRetry", {
-          time: sfn.WaitTime.duration(Duration.seconds(10)),
-        })
-          .next(incrementAttempt)
-          .next(launchTask),
+        incrementAttempt.next(launchTask),
       )
       .otherwise(new sfn.Fail(this, "JobFailed"));
 
-    launchTask.addCatch(handleFailureTask.next(retryChoice), { resultPath: "$.error" });
+    // HandleFailure Lambda 自体が例外を投げても（DynamoDB/EC2 API の一時的な
+    // スロットリング等）、再試行判定を経ずに実行全体が失敗してジョブが非終端状態の
+    // まま固まらないようにする。数回のリトライでも解消しない場合は明示的にFailへ
+    // 倒し、実行自体は必ず終端させる。
+    handleFailureTask.addRetry({
+      errors: ["States.ALL"],
+      maxAttempts: 3,
+      interval: Duration.seconds(5),
+      backoffRate: 2,
+    });
+    const handleFailureCrashed = new sfn.Fail(this, "HandleFailureCrashed", {
+      error: "HandleFailureCrashed",
+      cause: "HandleFailure Lambda が例外を送出したため実行を終了します。孤児インスタンスが残っている可能性があります",
+    });
+    handleFailureTask.addCatch(handleFailureCrashed, { resultPath: "$.handleFailureError" });
+
+    launchTask.addCatch(waitBeforeCheck.next(handleFailureTask).next(retryChoice), {
+      resultPath: "$.error",
+    });
     launchTask.next(new sfn.Succeed(this, "JobSucceeded"));
 
     const stateMachine = new sfn.StateMachine(this, "RecordingStateMachine", {

@@ -90,4 +90,29 @@ describe("SattoriStack", () => {
       }),
     });
   });
+
+  it("CreateJob Lambda に Step Functions 実行開始権限が付与されている", () => {
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: "states:StartExecution",
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("CreateJob Lambda に STATE_MACHINE_ARN 環境変数が設定されている", () => {
+    const createJobResources = template.findResources("AWS::Lambda::Function", {
+      Properties: {
+        Environment: {
+          Variables: Match.objectLike({
+            STATE_MACHINE_ARN: Match.anyValue(),
+          }),
+        },
+      },
+    });
+    expect(Object.keys(createJobResources).length).toBe(1);
+  });
 });

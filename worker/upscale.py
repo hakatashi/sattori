@@ -47,7 +47,7 @@ def probe_duration(input_path):
     return float(duration) if duration is not None else None
 
 
-def upscale_to_720p(input_path, output_path, on_progress=None):
+def upscale_to_720p(input_path, output_path, on_progress=None, log=print):
     """input_path の動画をアスペクト比を保ったまま高さ720pxへ変換する。
 
     on_progress が指定されていれば、変換の進捗率(0-100のfloat、完了直前まで)を
@@ -68,14 +68,19 @@ def upscale_to_720p(input_path, output_path, on_progress=None):
         subprocess.run(cmd, check=True)
         return
 
+    # stderr を stdout にマージしてログへ流す(進捗追跡のため stdout をパイプで
+    # 読む必要があるが、変換失敗時の診断情報(ffmpegのエラー出力)を捨てないため)。
     proc = subprocess.Popen(
         [*cmd[:-1], "-progress", "pipe:1", "-nostats", cmd[-1]],
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     last_reported = 0.0
     for line in proc.stdout:
         line = line.strip()
+        if not line:
+            continue
         if not line.startswith("out_time_ms="):
+            log(f"[ffmpeg] {line}")
             continue
         try:
             # ffmpeg の `-progress` 出力は `out_time_ms` という名前だが、実体は

@@ -64,9 +64,14 @@ class InterruptionWatcher:
             raise
 
     def _run(self):
+        # トークンのTTL(6時間)はジョブのタイムアウト(60分)より十分長いため、
+        # ポーリング(5秒間隔)毎に取得し直さず最初の1回のみ取得してキャッシュする。
+        # 取得・利用時にエラーが起きた場合のみ次回ループで再取得する。
+        token = None
         while not self._stop.is_set():
             try:
-                token = self._get_token()
+                if token is None:
+                    token = self._get_token()
                 interruption = self._check(token, "spot/instance-action")
                 if interruption is not None:
                     self._fire("spot_interruption", interruption)
@@ -80,6 +85,7 @@ class InterruptionWatcher:
                     )
             except Exception as err:  # noqa: BLE001 - IMDS一時応答不能等でも録画は継続する
                 self._log(f"[interruption_watcher] 確認に失敗(継続): {err}")
+                token = None
             self._stop.wait(POLL_INTERVAL_SEC)
 
     def _fire(self, reason, detail):
