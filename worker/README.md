@@ -18,6 +18,10 @@
 | `status.py` | DynamoDB へのジョブ状態・進捗反映、チェックポイント確認用のジョブ取得 |
 | `interruption_watcher.py` | Spot中断通知/リバランス推奨をIMDS経由で監視するバックグラウンドスレッド |
 | `progress_reporter.py` | 録画中の進捗スクリーンショットをS3へアップロードするバックグラウンドスレッド |
+| `title_assets.py` | GAME環境変数に応じたタイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)を
+  S3からダウンロード・展開する(Issue #22)。ECRストレージコストがタイトル数に比例して
+  増大する問題への対応として、ワーカーイメージ自体はタイトル数に依存しない共通部分
+  のみで構成する |
 | `Dockerfile` | 実行イメージ定義 |
 | `mods/common/` | DLL インジェクタ(`injector.exe`)・共通フック処理のソース(C++, MSVC) |
 | `mods/th07_replay_autoplay/` | th07 自動再生フック DLL(`th07_hook.dll`)のソース(C++, MSVC) |
@@ -45,16 +49,50 @@ GitHub Actions の `Test` ワークフロー(`.github/workflows/test.yml`)の
 ## リポジトリに含まれない資産(ビルド前に配置が必要)
 
 以下はゲーム本体(著作権物)・ビルド成果物・素材であり `.gitignore` 済み。
-`docker build` の前に `worker/` 配下へ配置する(touhou-recorder のチェックアウトや
-プライベートなアセットストアからコピーする):
+
+`worker/assets/watermark/watermark-60fps.webm`(ウォーターマーク素材、VP9アルファ)
+のみ、タイトル非依存の共通素材として `docker build` の前に `worker/` 配下へ配置し、
+イメージに含める。
+
+一方、ゲーム本体(`worker/games/{title}/`)・WINEPREFIX(`worker/prefixes/{title}-*/`)・
+MODビルド成果物(`worker/mods/**/build/*`)は **イメージには含めない**。ECRストレージ
+コストがタイトル数に比例して増大する問題(Issue #22)への対応として、これらは
+タイトルごとに1本のアーカイブへまとめてS3へアップロードし、ワーカーが `GAME`
+環境変数に応じて起動時にダウンロード・展開する(`title_assets.py`)。手順は次節
+「タイトル資産のS3アップロード手順」を参照。
+
+## タイトル資産のS3アップロード手順(Issue #22)
+
+新タイトル追加時(#13)や既存タイトルのゲーム本体・MOD更新時は、以下の3点を
+1本の tar.gz にまとめて `s3://${TITLE_ASSETS_BUCKET}/titles/{title}/assets.tar.gz`
+へアップロードする(`TITLE_ASSETS_BUCKET` は `cdk deploy` 後の `TitleAssetsBucketName`
+出力を参照)。アーカイブ内のパスは `worker/` 配下への展開先と一致させること
+(`title_assets.py` が `/app`(`REPO`)直下へ相対パスのまま展開するため):
 
 ```
-worker/games/th07/                                     # th07 本体一式(.cfg はウィンドウモード)
-worker/prefixes/th07-wined3d-gl/                       # 日本語ロケール初期化済み WINEPREFIX
-worker/mods/common/build/injector.exe                  # DLL インジェクタ(下記手順でビルド)
-worker/mods/th07_replay_autoplay/build/th07_hook.dll   # 自動再生 MOD(下記手順でビルド)
-worker/assets/watermark/watermark-60fps.webm           # ウォーターマーク素材(VP9 アルファ)
+games/{title}/                                  # ゲーム本体一式(.cfg はウィンドウモード必須)
+prefixes/{title}-wined3d-gl/                    # 日本語ロケール初期化済み WINEPREFIX
+mods/common/build/injector.exe                  # DLL インジェクタ(共通。下記手順でビルド)
+mods/{title}_replay_autoplay/build/{title}_hook.dll  # 自動再生 MOD(タイトル毎。下記手順でビルド)
 ```
+
+例(th07。ビルドマシンが `worker/` チェックアウトで各資産を配置済みの前提):
+
+```bash
+cd worker
+tar -czf /tmp/th07-assets.tar.gz \
+  games/th07 \
+  prefixes/th07-wined3d-gl \
+  mods/common/build/injector.exe \
+  mods/th07_replay_autoplay/build/th07_hook.dll
+aws s3 cp /tmp/th07-assets.tar.gz "s3://${TITLE_ASSETS_BUCKET}/titles/th07/assets.tar.gz"
+```
+
+`title_assets.py` はインスタンス起動時に `worker/games/{title}/` が既に存在するかを
+確認し、無ければこのアーカイブをダウンロード・展開する(存在すればスキップ、
+Spot中断リトライ時の同一インスタンス再利用等を想定)。展開先はワーカーイメージ内の
+`/app` 直下で、`record_th07.py` が既定で参照するパス(`/app/games/th07`、
+`/app/prefixes/th07-wined3d-gl` 等)と一致する。
 
 ## MOD (DLL インジェクタ / 自動再生フック) のビルド
 
@@ -74,8 +112,9 @@ worker\mods\th07_replay_autoplay\build.bat
 - `th07_replay_autoplay/build.bat` は `dllmain.cpp` と `common/` の
   `dinput_hook.cpp` / `window_wait.cpp` / `logging.cpp` を静的にまとめて
   `worker/mods/th07_replay_autoplay/build/th07_hook.dll` を生成する。
-- ビルドしたら上記2ファイルを `docker build` 前に配置する(ビルドマシンが
-  そのまま `worker/` チェックアウトなら追加コピーは不要)。
+- ビルドしたら上記2ファイルはゲーム本体・WINEPREFIXと合わせてタイトル資産の
+  tar.gz へまとめ、S3へアップロードする(`docker build` には含めない。前節
+  「タイトル資産のS3アップロード手順」参照)。
 
 ## 実行時の環境変数
 
@@ -87,6 +126,8 @@ worker\mods\th07_replay_autoplay\build.bat
 | `GAME` | タイトル(フェーズ1は `th07`) |
 | `REPLAY_BUCKET` / `REPLAY_KEY` | アップロード済みリプレイの S3 位置 |
 | `OUTPUT_BUCKET` | 録画動画の出力先バケット(CloudFront オリジン) |
+| `TITLE_ASSETS_BUCKET` | タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)のバケット
+  (Issue #22。`title_assets.py` が `GAME` に応じてダウンロード・展開する) |
 | `JOBS_TABLE` | ジョブ状態の DynamoDB テーブル名 |
 | `WATERMARK` | `1` でウォーターマーク合成、`0` で無効 |
 | `TASK_TOKEN` | Step Functions の `waitForTaskToken` トークン(省略時は通知をスキップ、ローカル検証用) |

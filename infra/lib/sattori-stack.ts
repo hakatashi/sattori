@@ -120,11 +120,25 @@ export class SattoriStack extends Stack {
 
     // --- 録画ワーカー(ECR / VPC / IAM) -------------------------------------
 
+    // ワーカーイメージはタイトル数に依存しない共通部分のみで構成する(Issue #22)ため、
+    // 世代数を抑えても運用上問題ない。ECRはS3の4倍以上高い($0.10/GB/mo vs $0.023/GB/mo)
+    // ため、世代数を絞ってストレージコストをさらに下げる。
     const workerRepo = new ecr.Repository(this, "WorkerRepo", {
       repositoryName: "sattori-worker",
       removalPolicy: RemovalPolicy.DESTROY,
       emptyOnDelete: true,
-      lifecycleRules: [{ maxImageCount: 5 }],
+      lifecycleRules: [{ maxImageCount: 2 }],
+    });
+
+    // タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD、`titles/{game}/assets.tar.gz`)を
+    // 保管するバケット。ECRストレージコストがタイトル数に比例して増大する問題への対応
+    // として、これらをワーカーイメージから分離しS3へ移した(Issue #22、S3StandardはECR
+    // より4倍以上安い)。ワーカーが起動時にGAME環境変数に応じてダウンロード・展開する。
+    const titleAssetsBucket = new s3.Bucket(this, "TitleAssetsBucket", {
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
     });
 
     // NAT を持たない公開サブネット構成(ワーカーは外向き通信のみ必要 = 最小コスト)。
@@ -159,6 +173,8 @@ export class SattoriStack extends Stack {
     // 書き込み(録画・進捗スクリーンショットのアップロード)に加え、変換フェーズ再開時に
     // 生動画チェックポイントを読み戻すため読み取りも必要。
     outputBucket.grantReadWrite(workerRole);
+    // タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)のダウンロード用(Issue #22)。
+    titleAssetsBucket.grantRead(workerRole);
     jobsTable.grantReadWriteData(workerRole);
     workerRepo.grantPull(workerRole);
     // awslogs ドライバはストリーム作成とイベント送出を行う。
@@ -206,6 +222,7 @@ export class SattoriStack extends Stack {
       CDN_DOMAIN: mediaDistribution.distributionDomainName,
       JOBS_TABLE: jobsTable.tableName,
       WORKER_IMAGE: `${workerRepo.repositoryUri}:latest`,
+      TITLE_ASSETS_BUCKET: titleAssetsBucket.bucketName,
       WORKER_LOG_GROUP: workerLogGroup.logGroupName,
       WORKER_SUBNET_IDS: vpc.publicSubnets.map((subnet) => subnet.subnetId).join(","),
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
@@ -495,6 +512,8 @@ export class SattoriStack extends Stack {
     new CfnOutput(this, "WebCdnDomain", { value: webDistribution.distributionDomainName });
     new CfnOutput(this, "MediaCdnDomain", { value: mediaDistribution.distributionDomainName });
     new CfnOutput(this, "WorkerRepoUri", { value: workerRepo.repositoryUri });
+    // タイトル資産アップロード先(worker/README.md「タイトル資産のS3アップロード手順」参照)。
+    new CfnOutput(this, "TitleAssetsBucketName", { value: titleAssetsBucket.bucketName });
     // ACM証明書のDNS検証と同様、SESのDKIM用CNAMEも外部DNSへ手動追加が必要
     // (`cdk deploy` 完了後にこの出力を確認して追加する)。
     sesIdentity.dkimRecords.forEach((record, index) => {
