@@ -12,6 +12,12 @@ export interface ApiConfig {
   jobsTable: string;
   /** 録画ワーカーの ECR イメージ URI。 */
   workerImage: string;
+  /**
+   * タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)を保管するバケット。ワーカーが
+   * GAME環境変数に応じて起動時にダウンロード・展開する（`titles/{game}/assets.tar.gz`、
+   * Issue #22）。ECRイメージ自体をタイトル数に依存しない共通部分のみにするための分離。
+   */
+  titleAssetsBucket: string;
   /** ワーカーコンテナのログを送出する CloudWatch Logs ロググループ名。 */
   logGroup: string;
   /** 録画 EC2 の起動パラメータ。 */
@@ -65,6 +71,7 @@ export function loadConfig(): ApiConfig {
     cdnDomain: required("CDN_DOMAIN"),
     jobsTable: required("JOBS_TABLE"),
     workerImage: required("WORKER_IMAGE"),
+    titleAssetsBucket: required("TITLE_ASSETS_BUCKET"),
     logGroup: required("WORKER_LOG_GROUP"),
     maxReplayBytes: Number(process.env.MAX_REPLAY_BYTES ?? 5 * 1024 * 1024),
     emailRateLimitTable: required("EMAIL_RATE_LIMIT_TABLE"),
