@@ -17,6 +17,12 @@ files, and support for titles that threplay did not cover.
 npm install @sattori/touhou-replay-parser
 ```
 
+Requires Node.js >= 14 (or a modern browser). Player names and dates are
+decoded as Shift_JIS via the global `TextDecoder`, which needs a full-ICU
+build — the default for official Node.js binaries since Node.js 13. On a
+runtime without Shift_JIS support, decoding silently falls back to Latin1
+(mojibake for Japanese text, not an error) rather than failing outright.
+
 ## Usage
 
 ```ts
