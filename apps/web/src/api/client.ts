@@ -1,13 +1,15 @@
 import type {
   ApiError,
-  CreateJobRequest,
-  CreateJobResponse,
   CreateUploadRequest,
   CreateUploadResponse,
+  GameId,
   GetJobResponse,
   ParseReplayRequest,
   ParseReplayResponse,
   RecordingOptions,
+  RequestMagicLinkRequest,
+  RequestMagicLinkResponse,
+  StartJobResponse,
 } from "@sattori/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
@@ -65,16 +67,35 @@ export function parseReplay(replayKey: string): Promise<ParseReplayResponse> {
   });
 }
 
-/** 録画ジョブを起動する。 */
-export function createJob(
+/** マジックリンクメールの送信を要求する（ページAの「次のステップ」）。 */
+export function requestMagicLink(
   replayKey: string,
   options: RecordingOptions,
+  email: string,
+  game?: GameId,
   estimatedDurationSeconds?: number | null,
-): Promise<CreateJobResponse> {
-  const req: CreateJobRequest = { replayKey, options, estimatedDurationSeconds };
-  return request<CreateJobResponse>("/jobs", {
+): Promise<RequestMagicLinkResponse> {
+  const req: RequestMagicLinkRequest = {
+    replayKey,
+    options,
+    email,
+    game,
+    estimatedDurationSeconds,
+  };
+  return request<RequestMagicLinkResponse>("/magic-links", {
     method: "POST",
     body: JSON.stringify(req),
+  });
+}
+
+/**
+ * ジョブページ（メールのリンク先）へのアクセスで録画を起動する。jobIdのみで認可する
+ * （tokenは廃止済み。jobId自体がメールを確認しないと分からない秘密値。Issue #9）。
+ * 起動済みの場合も冪等に現在の状態を返す。
+ */
+export function startJob(jobId: string): Promise<StartJobResponse> {
+  return request<StartJobResponse>(`/jobs/${encodeURIComponent(jobId)}/start`, {
+    method: "POST",
   });
 }
 

@@ -23,6 +23,13 @@ export interface CreateUploadResponse {
   uploadUrl: string;
 }
 
+/**
+ * メールアドレスの簡易形式チェック用パターン。フロントエンド（入力時の活性化制御）と
+ * バックエンド（`POST /magic-links`）の両方で使う。片方だけ変更されて判定基準が
+ * ズレることを防ぐため、ここに一本化する。
+ */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /** POST /replays/parse : アップロード済みリプレイの解析要求（ページAのプレビュー用）。 */
 export interface ParseReplayRequest {
   /** CreateUploadResponse.replayKey をそのまま渡す。 */
@@ -36,8 +43,14 @@ export interface ParseReplayRequest {
  */
 export type ParseReplayResponse = ReplayInfo;
 
-/** POST /jobs : 録画ジョブの起動要求。 */
-export interface CreateJobRequest {
+/**
+ * POST /magic-links : マジックリンクメールの送信要求（ページAの「次のステップ」）。
+ * この時点で `JobRecord` は作成される（status: "pending"）が、Step Functionsは
+ * まだ起動しない。払い出された `jobId` はAPIレスポンスには含めず、メール本文の
+ * リンクとしてのみ通知する（jobIdはメールを確認しないと分からない、録画起動の
+ * 実質的な秘密として機能する。Issue #9）。
+ */
+export interface RequestMagicLinkRequest {
   /** CreateUploadResponse.replayKey をそのまま渡す。 */
   replayKey: string;
   /** フェーズ1では省略可（クライアント判定 or 既定 th07）。フェーズ2でパーサー結果を渡す。 */
@@ -48,10 +61,20 @@ export interface CreateJobRequest {
    * ワーカーの録画進捗率表示にのみ使う参考値（省略・null なら進捗率は算出されない）。
    */
   estimatedDurationSeconds?: number | null;
+  /** マジックリンクの送信先。同一メール（`+`エイリアス正規化後）は24時間5件までのレート制限対象。 */
+  email: string;
 }
 
-/** POST /jobs のレスポンス。 */
-export interface CreateJobResponse {
+/** POST /magic-links のレスポンス（送信成功、bodyは空でよい。jobIdは含めない）。 */
+export type RequestMagicLinkResponse = Record<string, never>;
+
+/**
+ * POST /jobs/{jobId}/start : ジョブページ（メールのリンク先）を開いた際に呼ぶ、
+ * 録画起動要求。jobIdのみで認可する（jobId自体がメールを確認しないと分からない
+ * 秘密値）。同一jobIdに対して複数回呼ばれても録画が起動するのは最初の1回のみで、
+ * 2回目以降は起動済みの現在のステータスをそのまま返す（冪等。Issue #9）。
+ */
+export interface StartJobResponse {
   jobId: string;
   status: JobStatus;
 }

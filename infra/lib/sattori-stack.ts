@@ -17,6 +17,7 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as ses from "aws-cdk-lib/aws-ses";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
@@ -40,6 +41,10 @@ const WEB_DIST = join(HERE, "../../apps/web/dist");
 export class SattoriStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
+
+    // Web/メールで共通して使うカスタムドメイン。CloudFront(WebCdn)とSES送信元アドレス
+    // (no-reply@<このドメイン>)の両方で使うため、コンストラクタ先頭で定義しておく。
+    const webDomainName = "sattori.hakatashi.com";
 
     // --- ストレージ ---------------------------------------------------------
 
@@ -86,6 +91,27 @@ export class SattoriStack extends Stack {
       partitionKey: { name: "jobId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    // メール送信のレート制限(同一メール24時間5件まで、Issue #9)用カウンタ。
+    // PK: 正規化後のメールアドレスのみ(1メール1item)。件数チェックと記録を
+    // 条件付きUpdateItem1回に一本化して原子的に行うため、Query対象のログitemは
+    // 持たない(apps/api/src/rateLimit.ts)。TTL属性で自動削除する。
+    const emailRateLimitTable = new dynamodb.Table(this, "EmailRateLimitTable", {
+      partitionKey: { name: "normalizedEmail", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+      timeToLiveAttribute: "ttl",
+    });
+
+    // --- メール送信(SES, マジックリンク認証 Issue #9) -----------------------
+    // webDomainName配下から送信する(no-reply@<webDomainName>)。DKIM用のCNAMEは
+    // ACM証明書のDNS検証と同様、`cdk deploy`実行後にCfnOutputの値を外部DNSへ
+    // 手動追加する必要がある。また実際にサンドボックス外へ送信するには、別途
+    // AWSへサンドボックス解除を申請する必要がある(コードでは自動化できない)。
+    const sesFromAddress = `no-reply@${webDomainName}`;
+    const sesIdentity = new ses.EmailIdentity(this, "SesIdentity", {
+      identity: ses.Identity.domain(webDomainName),
     });
 
     // --- 録画ワーカー(ECR / VPC / IAM) -------------------------------------
@@ -179,6 +205,9 @@ export class SattoriStack extends Stack {
       WORKER_LOG_GROUP: workerLogGroup.logGroupName,
       WORKER_SUBNET_IDS: vpc.publicSubnets.map((subnet) => subnet.subnetId).join(","),
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
+      EMAIL_RATE_LIMIT_TABLE: emailRateLimitTable.tableName,
+      SES_FROM_ADDRESS: sesFromAddress,
+      WEB_BASE_URL: `https://${webDomainName}`,
     };
 
     const makeHandler = (name: string, entry: string) =>
@@ -199,11 +228,30 @@ export class SattoriStack extends Stack {
     const createUploadFn = makeHandler("CreateUploadFn", "createUpload.ts");
     const parseReplayFn = makeHandler("ParseReplayFn", "parseReplay.ts");
     const getJobFn = makeHandler("GetJobFn", "getJob.ts");
+    const requestMagicLinkFn = makeHandler("RequestMagicLinkFn", "requestMagicLink.ts");
 
     // 権限付与
     uploadBucket.grantPut(createUploadFn); // 署名付き PUT URL 発行のため
     uploadBucket.grantRead(parseReplayFn); // アップロード済み .rpy を取得して解析するため
     jobsTable.grantReadData(getJobFn);
+
+    // マジックリンクの送信要求は、status:pending の JobRecord 作成(jobsTable書き込み)、
+    // レート制限カウンタの読み書き、SESでの送信権限が必要。
+    jobsTable.grantReadWriteData(requestMagicLinkFn);
+    emailRateLimitTable.grantReadWriteData(requestMagicLinkFn);
+    // SESアカウントがサンドボックス中は、送信元IDだけでなく送信先(受信者)の
+    // メールアドレスも「検証済みID」としてIAMの権限チェック対象になる
+    // (受信者ごとに個別の identity ARN が動的に検査される)。宛先はユーザー入力の
+    // 任意アドレスでデプロイ時に特定できないため、Resourceはこのアカウント配下の
+    // SES identity 全体(送信元ドメイン・任意の受信者アドレスの両方を含む)に絞る。
+    // サンドボックス解除後は受信者側のチェックは行われなくなるが、Resourceを
+    // 変更する必要はない。
+    requestMagicLinkFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ses:SendEmail"],
+        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/*`],
+      }),
+    );
 
     // --- 録画ジョブのオーケストレーション(Step Functions) -------------------
     // 1ジョブ = 1 Standard実行。Launch タスクが EC2 Fleet でワーカーを起動し、
@@ -313,13 +361,16 @@ export class SattoriStack extends Stack {
       stateMachineType: sfn.StateMachineType.STANDARD,
     });
 
-    const createJobFn = makeHandler("CreateJobFn", "createJob.ts");
-    jobsTable.grantReadWriteData(createJobFn);
-    stateMachine.grantStartExecution(createJobFn);
-    // STATE_MACHINE_ARN は createJobFn だけに付与する(commonEnv には含めない)。
+    // ジョブページへのアクセス(jobIdのみで認可)がジョブをqueuedへ遷移させ
+    // Step Functionsを起動する(フェーズ1で createJobFn が担っていた即時起動を
+    // Issue #9で置き換えた。tokenは廃止し、jobId自体を秘密値として扱う設計)。
+    const startJobFn = makeHandler("StartJobFn", "startJob.ts");
+    jobsTable.grantReadWriteData(startJobFn);
+    stateMachine.grantStartExecution(startJobFn);
+    // STATE_MACHINE_ARN は startJobFn だけに付与する(commonEnv には含めない)。
     // ステートマシンは launchFn/handleFailureFn を呼び出す(Lambda ARN に依存)ため、
     // それらの環境変数がステートマシンARNを参照すると CloudFormation の循環依存になる。
-    createJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
+    startJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
 
     const httpApi = new apigw.HttpApi(this, "HttpApi", {
       corsPreflight: {
@@ -339,14 +390,19 @@ export class SattoriStack extends Stack {
       integration: new HttpLambdaIntegration("ParseReplayInt", parseReplayFn),
     });
     httpApi.addRoutes({
-      path: "/jobs",
+      path: "/magic-links",
       methods: [apigw.HttpMethod.POST],
-      integration: new HttpLambdaIntegration("CreateJobInt", createJobFn),
+      integration: new HttpLambdaIntegration("RequestMagicLinkInt", requestMagicLinkFn),
     });
     httpApi.addRoutes({
       path: "/jobs/{jobId}",
       methods: [apigw.HttpMethod.GET],
       integration: new HttpLambdaIntegration("GetJobInt", getJobFn),
+    });
+    httpApi.addRoutes({
+      path: "/jobs/{jobId}/start",
+      methods: [apigw.HttpMethod.POST],
+      integration: new HttpLambdaIntegration("StartJobInt", startJobFn),
     });
 
     // --- 静的フロントエンド(S3 + CloudFront) ------------------------------
@@ -363,7 +419,6 @@ export class SattoriStack extends Stack {
     // hakatashi.com は Route 53 以外の DNS で管理しているため、hostedZone による
     // 自動検証はできない。DNS 検証用 CNAME は `cdk deploy` 実行中に ACM コンソール
     // (us-east-1)で確認し、外部 DNS へ手動追加する。
-    const webDomainName = "sattori.hakatashi.com";
     const webCertificate = new acm.Certificate(this, "WebCertificate", {
       domainName: webDomainName,
       validation: acm.CertificateValidation.fromDns(),
@@ -403,5 +458,12 @@ export class SattoriStack extends Stack {
     new CfnOutput(this, "WebCdnDomain", { value: webDistribution.distributionDomainName });
     new CfnOutput(this, "MediaCdnDomain", { value: mediaDistribution.distributionDomainName });
     new CfnOutput(this, "WorkerRepoUri", { value: workerRepo.repositoryUri });
+    // ACM証明書のDNS検証と同様、SESのDKIM用CNAMEも外部DNSへ手動追加が必要
+    // (`cdk deploy` 完了後にこの出力を確認して追加する)。
+    sesIdentity.dkimRecords.forEach((record, index) => {
+      new CfnOutput(this, `SesDkimRecord${index}`, {
+        value: `${record.name} CNAME ${record.value}`,
+      });
+    });
   }
 }
