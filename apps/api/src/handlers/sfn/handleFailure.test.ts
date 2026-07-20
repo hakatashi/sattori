@@ -14,6 +14,9 @@ const REQUIRED_ENV: Record<string, string> = {
   WORKER_LOG_GROUP: "/sattori/worker",
   WORKER_SUBNET_IDS: "subnet-aaaa,subnet-bbbb",
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
+  EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
+  SES_FROM_ADDRESS: "no-reply@sattori.hakatashi.com",
+  WEB_BASE_URL: "https://sattori.hakatashi.com",
 };
 
 const ec2Mock = mockClient(EC2Client);
@@ -35,6 +38,7 @@ const baseJob: JobRecord = {
   estimatedDurationSeconds: null,
   progress: null,
   previewImagePath: null,
+  pendingExpiresAt: null,
 };
 
 beforeEach(() => {

@@ -5,6 +5,7 @@ import type { GameId } from "./games.js";
  * ページBがポーリングで表示する。
  */
 export const JOB_STATUSES = [
+  "pending", // マジックリンク送信済み・ジョブページへのアクセス(録画起動)待ち(Issue #9)
   "queued", // ジョブ登録済み・起動待ち
   "launching", // EC2 Spot インスタンス起動中
   "recording", // ゲーム起動〜リプレイ録画中
@@ -32,7 +33,9 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
 
 /**
  * ジョブレコード（DynamoDBの1アイテムに対応）。
- * フェーズ1では email/認証関連フィールドは未使用（null）。
+ * `POST /magic-links`の時点で status: "pending" として作成され（Issue #9）、
+ * `POST /jobs/{jobId}/start`（ジョブページへのアクセス）で "queued" に遷移して
+ * Step Functionsの実行が始まる。
  */
 export interface JobRecord {
   jobId: string;
@@ -61,8 +64,16 @@ export interface JobRecord {
   /** ISO 8601。 */
   createdAt: string;
   updatedAt: string;
-  /** フェーズ2以降: 認証メール送信先。フェーズ1では null。 */
+  /** マジックリンクの送信先メールアドレス。 */
   email: string | null;
+  /**
+   * status が "pending" の間のみ意味を持つ、録画開始(`POST /jobs/{jobId}/start`)の
+   * 受付期限（ISO 8601）。アップロード用S3バケットが1日でオブジェクトを自動削除する
+   * ため、それに合わせて作成から24時間としている（それ以降に起動してもリプレイ
+   * ファイルが既に削除されており録画が失敗するだけなので、事前に弾く）。
+   * pending以外の状態では参照しない。
+   */
+  pendingExpiresAt: string | null;
   /**
    * ジョブ実行中の EC2 インスタンスID。Step Functions の失敗ハンドラが
    * リトライ/タイムアウト時に孤児インスタンスを terminate するために使う。

@@ -20,6 +20,9 @@ const config: ApiConfig = {
   workerImage: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker:latest",
   logGroup: "/sattori/worker",
   maxReplayBytes: 5 * 1024 * 1024,
+  emailRateLimitTable: "email-rate-limit",
+  sesFromAddress: "no-reply@sattori.hakatashi.com",
+  webBaseUrl: "https://sattori.hakatashi.com",
   ec2: {
     subnetIds: ["subnet-aaaa", "subnet-bbbb"],
     region: "ap-northeast-1",
@@ -43,6 +46,7 @@ const job: JobRecord = {
   estimatedDurationSeconds: 900,
   progress: null,
   previewImagePath: null,
+  pendingExpiresAt: null,
 };
 
 describe("buildUserData", () => {

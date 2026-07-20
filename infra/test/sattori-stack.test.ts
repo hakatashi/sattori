@@ -91,7 +91,7 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("CreateJob Lambda に Step Functions 実行開始権限が付与されている", () => {
+  it("StartJob Lambda に Step Functions 実行開始権限が付与されている", () => {
     template.hasResourceProperties("AWS::IAM::Policy", {
       PolicyDocument: {
         Statement: Match.arrayWith([
@@ -103,8 +103,8 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("CreateJob Lambda に STATE_MACHINE_ARN 環境変数が設定されている", () => {
-    const createJobResources = template.findResources("AWS::Lambda::Function", {
+  it("StartJob Lambda に STATE_MACHINE_ARN 環境変数が設定されている", () => {
+    const startJobResources = template.findResources("AWS::Lambda::Function", {
       Properties: {
         Environment: {
           Variables: Match.objectLike({
@@ -113,6 +113,45 @@ describe("SattoriStack", () => {
         },
       },
     });
-    expect(Object.keys(createJobResources).length).toBe(1);
+    expect(Object.keys(startJobResources).length).toBe(1);
+  });
+
+  it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {
+    template.resourceCountIs("AWS::DynamoDB::Table", 2); // Jobs/EmailRateLimit
+    template.hasResourceProperties("AWS::DynamoDB::Table", {
+      KeySchema: [{ AttributeName: "normalizedEmail", KeyType: "HASH" }],
+      TimeToLiveSpecification: { AttributeName: "ttl", Enabled: true },
+    });
+  });
+
+  it("SESのメールIDが検証済みドメイン向けに存在する(Issue #9)", () => {
+    template.hasResourceProperties("AWS::SES::EmailIdentity", {
+      EmailIdentity: "sattori.hakatashi.com",
+    });
+  });
+
+  it("マジックリンク関連のHTTP APIルートが定義されている(tokenを使わないjobId単独の起動方式)", () => {
+    const routes = template.findResources("AWS::ApiGatewayV2::Route");
+    const routeKeys = Object.values(routes).map(
+      (route) => (route as { Properties: { RouteKey: string } }).Properties.RouteKey,
+    );
+    expect(routeKeys).toEqual(
+      expect.arrayContaining(["POST /magic-links", "POST /jobs/{jobId}/start"]),
+    );
+    expect(routeKeys).not.toContain("POST /jobs");
+    expect(routeKeys).not.toContain("POST /jobs/{jobId}/confirm");
+    expect(routeKeys).not.toContain("POST /jobs/{jobId}/resend");
+  });
+
+  it("マジックリンク送信Lambdaに ses:SendEmail 権限が付与されている", () => {
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: "ses:SendEmail",
+          }),
+        ]),
+      },
+    });
   });
 });

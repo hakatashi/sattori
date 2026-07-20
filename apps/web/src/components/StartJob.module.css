@@ -1,0 +1,15 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 2rem;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+}
