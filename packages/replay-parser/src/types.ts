@@ -109,16 +109,12 @@ export type ReplayParseErrorCode =
   | "too_short"
   /** The first 4 bytes don't match any known Touhou replay magic. */
   | "unknown_magic"
-  /** The magic is known, but this package doesn't implement a decoder for it yet. */
-  | "unsupported_game"
   /** The magic is a known format, but the data that follows is invalid and cannot be safely parsed further. */
   | "corrupt";
 
 export interface ReplayParseError {
   code: ReplayParseErrorCode;
   message: string;
-  /** The game ID identified from the magic, for unsupported_game / corrupt. */
-  game?: ReplayGameId;
 }
 
 export type ReplayParseResult = { ok: true; replay: ParsedReplay } | { ok: false; error: ReplayParseError };
