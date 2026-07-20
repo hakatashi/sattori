@@ -73,7 +73,14 @@ export function parseTh06(original: Uint8Array): ParsedReplay {
     difficulty,
     stage: null,
     score,
-    cleared: maxStage === 6,
+    // th07 (games/th07.ts) has the identical scoreOffsets/maxStage layout and
+    // it turned out maxStage only indicates which stage was *reached*, not
+    // cleared — th07 has a separate 1-byte clear flag found empirically via
+    // a game-over fixture, but no equivalent has been verified for th06 (no
+    // "reached the final stage without clearing" th06 fixture exists yet, and
+    // the byte immediately after th06's score field, unlike th07's, isn't a
+    // clean 0/1 value). Left null rather than guessing.
+    cleared: null,
     splits,
     frameCount: null,
   };

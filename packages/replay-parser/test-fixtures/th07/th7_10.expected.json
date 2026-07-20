@@ -3,16 +3,16 @@
   "gameTitle": "東方妖々夢 ～ Perfect Cherry Blossom.",
   "formatVersion": 5,
   "player": "koyi",
-  "date": "01/19",
-  "character": "ReimuA",
-  "difficulty": "Hard",
+  "date": "07/21",
+  "character": "MarisaB",
+  "difficulty": "Normal",
   "stage": null,
-  "score": 430405880,
-  "cleared": true,
+  "score": 352851660,
+  "cleared": false,
   "splits": [
     {
       "stage": 1,
-      "score": 1463153,
+      "score": 1324301,
       "power": "0",
       "piv": 0,
       "lives": {
@@ -21,22 +21,44 @@
         "maxPieces": null
       },
       "bombs": {
-        "count": 3,
+        "count": 2,
         "pieces": null,
         "maxPieces": null
       },
       "graze": 0,
       "additional": {
         "pointItems": 0,
-        "cherryMax": 250000
+        "cherryMax": 200000
       },
-      "frameCount": 11000
+      "frameCount": 10193
     },
     {
       "stage": 2,
-      "score": 4849015,
-      "power": "109",
-      "piv": 82260,
+      "score": 4146488,
+      "power": "103",
+      "piv": 91840,
+      "lives": {
+        "count": 1,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 58,
+      "additional": {
+        "pointItems": 28,
+        "cherryMax": 210000
+      },
+      "frameCount": 14480
+    },
+    {
+      "stage": 3,
+      "score": 9792418,
+      "power": "128",
+      "piv": 230000,
       "lives": {
         "count": 2,
         "pieces": null,
@@ -47,101 +69,79 @@
         "pieces": null,
         "maxPieces": null
       },
-      "graze": 153,
+      "graze": 233,
       "additional": {
-        "pointItems": 24,
-        "cherryMax": 250180
+        "pointItems": 89,
+        "cherryMax": 230000
       },
-      "frameCount": 14893
+      "frameCount": 14029
     },
     {
-      "stage": 3,
-      "score": 9509577,
+      "stage": 4,
+      "score": 22095246,
       "power": "128",
-      "piv": 215760,
+      "piv": 260760,
+      "lives": {
+        "count": 5,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 507,
+      "additional": {
+        "pointItems": 201,
+        "cherryMax": 260760
+      },
+      "frameCount": 24940
+    },
+    {
+      "stage": 5,
+      "score": 27997992,
+      "power": "122",
+      "piv": 136370,
       "lives": {
         "count": 3,
         "pieces": null,
         "maxPieces": null
       },
       "bombs": {
-        "count": 1,
+        "count": 2,
         "pieces": null,
         "maxPieces": null
       },
-      "graze": 476,
+      "graze": 1585,
       "additional": {
-        "pointItems": 77,
-        "cherryMax": 280750
+        "pointItems": 540,
+        "cherryMax": 322980
       },
-      "frameCount": 19571
-    },
-    {
-      "stage": 4,
-      "score": 19807727,
-      "power": "128",
-      "piv": 291470,
-      "lives": {
-        "count": 4,
-        "pieces": null,
-        "maxPieces": null
-      },
-      "bombs": {
-        "count": 1,
-        "pieces": null,
-        "maxPieces": null
-      },
-      "graze": 1002,
-      "additional": {
-        "pointItems": 171,
-        "cherryMax": 291470
-      },
-      "frameCount": 27552
-    },
-    {
-      "stage": 5,
-      "score": 25609086,
-      "power": "128",
-      "piv": 188460,
-      "lives": {
-        "count": 5,
-        "pieces": null,
-        "maxPieces": null
-      },
-      "bombs": {
-        "count": 1,
-        "pieces": null,
-        "maxPieces": null
-      },
-      "graze": 1652,
-      "additional": {
-        "pointItems": 468,
-        "cherryMax": 302940
-      },
-      "frameCount": 23173
+      "frameCount": 22893
     },
     {
       "stage": 6,
-      "score": 43040588,
+      "score": 35285166,
       "power": "128",
-      "piv": 280600,
+      "piv": 129250,
       "lives": {
-        "count": 5,
+        "count": 2,
         "pieces": null,
         "maxPieces": null
       },
       "bombs": {
-        "count": 0,
+        "count": 1,
         "pieces": null,
         "maxPieces": null
       },
-      "graze": 2353,
+      "graze": 2384,
       "additional": {
-        "pointItems": 621,
-        "cherryMax": 303450
+        "pointItems": 698,
+        "cherryMax": 353550
       },
-      "frameCount": 34326
+      "frameCount": 26443
     }
   ],
-  "frameCount": 130515
+  "frameCount": 112978
 }
