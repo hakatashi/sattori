@@ -26,6 +26,7 @@ import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
+import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import type { Construct } from "constructs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -91,6 +92,9 @@ export class SattoriStack extends Stack {
       partitionKey: { name: "jobId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
+      // 完了メール送信(SendCompletionEmailFn)がstatus:doneへの遷移を検知するために使う
+      // (Issue #10)。新旧両方の値が要る(遷移の判定に旧statusが必要)ためNEW_AND_OLD_IMAGES。
+      stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
     });
 
     // メール送信のレート制限(同一メール24時間5件まで、Issue #9)用カウンタ。
@@ -250,6 +254,39 @@ export class SattoriStack extends Stack {
       new iam.PolicyStatement({
         actions: ["ses:SendEmail"],
         resources: [`arn:aws:ses:${this.region}:${this.account}:identity/*`],
+      }),
+    );
+
+    // ジョブが status:done に遷移した瞬間に完了メールを送る(Issue #10)。
+    // ワーカー(worker/, Python)ではなくJobsTableのDynamoDB Streamsを起点にする
+    // ことで、ワーカー側にSESの権限・文面知識を持たせずに済む。
+    const sendCompletionEmailFn = makeHandler(
+      "SendCompletionEmailFn",
+      "sendCompletionEmail.ts",
+    );
+    sendCompletionEmailFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ses:SendEmail"],
+        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/*`],
+      }),
+    );
+    sendCompletionEmailFn.addEventSource(
+      new DynamoEventSource(jobsTable, {
+        startingPosition: lambda.StartingPosition.TRIM_HORIZON,
+        // "done"へのMODIFYイベントのみに絞り込み、無関係な更新(進捗率等)での
+        // 無駄な起動を避ける。フィルタをすり抜けたレコード(旧状態が既にdoneだった場合等)
+        // に対する最終防衛はハンドラ内(sendCompletionEmail.ts)でも行う。
+        filters: [
+          lambda.FilterCriteria.filter({
+            eventName: lambda.FilterRule.isEqual("MODIFY"),
+            dynamodb: {
+              NewImage: {
+                status: { S: lambda.FilterRule.isEqual("done") },
+              },
+            },
+          }),
+        ],
+        retryAttempts: 3,
       }),
     );
 
