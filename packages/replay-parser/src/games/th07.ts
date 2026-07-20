@@ -29,6 +29,19 @@ const STAGE_CHECKPOINT_HEADER_SIZE = 40;
 const BYTES_PER_FRAME = 4;
 
 /**
+ * Offset (within the decompressed body) of a 1-byte flag that is `1` when the
+ * run ended in a full clear and `0` otherwise (game over, or a practice-mode
+ * recording that can never count as a clear). Reverse-engineered from
+ * `test-fixtures/th07/*.rpy`: the per-stage `scoreOffsets` checkpoints
+ * (see below) only indicate which stage was *reached*, not whether the last
+ * one reached was actually cleared — `th7_10.rpy` (game over during stage 6)
+ * and `th7_11.rpy` (stage-6 practice, never clearable) both populate the same
+ * checkpoint slots as a genuine stage-6 clear (`th7_09.rpy`) but differ only
+ * in this byte (0 vs 1). Not documented by threplay/threp.
+ */
+const CLEAR_FLAG_OFFSET = 28;
+
+/**
  * T7RP (東方妖々夢, PCB) decoder. Ported from Read_T7RP in threplay.
  *
  * Header offset 0x07 was the clue that surfaced in production when it turned
@@ -62,7 +75,7 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
   }
   const shifted = buffer.slice(HEADER_SIZE);
   const decodeData = decompress(shifted, length, dlength);
-  if (decodeData.length < 25) {
+  if (decodeData.length < CLEAR_FLAG_OFFSET + 1) {
     throw new ReplayCorruptError("T7RP decompressed body too short");
   }
 
@@ -72,31 +85,42 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
   const name = decodeAnsiText(decodeData.subarray(10, 18));
   const score = readBufferedUint32LE(decodeData, 24) * 10;
 
-  // checkpointOffsets are decodeData-relative offsets to each stage's score
-  // snapshot header, in the same order the stages were played. The original
-  // C# (threplay) used score_offsets[6] directly (without the -HEADER_SIZE
-  // adjustment applied to every other index) for the max_stage===6 "cleared
-  // in one recorded checkpoint" case (e.g. an Extra-stage clear) — an
-  // inconsistency that this port initially carried over as well. That bug
-  // caused readSplitCommon to read 0x54 bytes too far into the body, landing
-  // inside the raw per-frame input log instead of the checkpoint header
-  // (visible in the old golden fixtures as suspiciously uniform values like
-  // score=97/piv=97/graze=97). Applying the same -HEADER_SIZE adjustment
-  // uniformly here fixes that.
-  const checkpointOffsets: number[] = [];
-  const splits: ReplayStageSplit[] = [];
+  // checkpoints are decodeData-relative offsets to each stage's score
+  // snapshot header, paired with the 1-based stage number that slot
+  // corresponds to (index i in scoreOffsets means stage i+1, except slot 6
+  // which is the single Extra/Phantasm stage and is reported as stage 7).
+  // Each slot holds the last state recorded while that stage was being
+  // played — reached, not necessarily cleared (see `CLEAR_FLAG_OFFSET`).
+  // The original C# (threplay) used score_offsets[6] directly (without the
+  // -HEADER_SIZE adjustment applied to every other index) for the
+  // max_stage===6 case — an inconsistency that this port initially carried
+  // over as well. That bug caused readSplitCommon to read 0x54 bytes too far
+  // into the body, landing inside the raw per-frame input log instead of the
+  // checkpoint header (visible in the old golden fixtures as suspiciously
+  // uniform values like score=97/piv=97/graze=97). Applying the same
+  // -HEADER_SIZE adjustment uniformly here fixes that.
+  //
+  // Slots are only populated for stages actually reached, in order, so a
+  // practice-mode recording of a single stage (e.g. stage 6) leaves earlier
+  // slots at 0 and populates only its own slot — the stage number must come
+  // from that slot's index, not from its position among the populated slots.
+  const checkpoints: { offset: number; stage: number }[] = [];
   if (maxStage === 6) {
-    checkpointOffsets.push(scoreOffsets[6]! - HEADER_SIZE);
+    checkpoints.push({ offset: scoreOffsets[6]! - HEADER_SIZE, stage: 7 });
   } else {
     for (let i = 0; i <= maxStage; i++) {
       const raw = scoreOffsets[i]!;
       if (raw === 0) continue;
-      checkpointOffsets.push(raw - HEADER_SIZE);
+      checkpoints.push({ offset: raw - HEADER_SIZE, stage: i + 1 });
     }
   }
-  const stageFrameCounts = perCheckpointFrameCounts(decodeData, checkpointOffsets);
-  checkpointOffsets.forEach((offset, i) => {
-    const split = readSplitCommon(decodeData, offset, maxStage === 6 ? 7 : i + 1);
+  const splits: ReplayStageSplit[] = [];
+  const stageFrameCounts = perCheckpointFrameCounts(
+    decodeData,
+    checkpoints.map((c) => c.offset),
+  );
+  checkpoints.forEach(({ offset, stage }, i) => {
+    const split = readSplitCommon(decodeData, offset, stage);
     split.frameCount = stageFrameCounts[i]!;
     splits.push(split);
   });
@@ -111,7 +135,7 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
     difficulty,
     stage: null,
     score,
-    cleared: maxStage === 6,
+    cleared: decodeData[CLEAR_FLAG_OFFSET] === 1,
     splits,
     frameCount: stageFrameCounts.length === 0 ? null : stageFrameCounts.reduce((a, b) => a + b, 0),
   };

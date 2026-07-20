@@ -1,0 +1,37 @@
+{
+  "game": "th07",
+  "gameTitle": "東方妖々夢 ～ Perfect Cherry Blossom.",
+  "formatVersion": 5,
+  "player": "koyi",
+  "date": "07/21",
+  "character": "ReimuA",
+  "difficulty": "Lunatic",
+  "stage": null,
+  "score": 33488400,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 6,
+      "score": 3348840,
+      "power": "128",
+      "piv": 500000,
+      "lives": {
+        "count": 8,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 0,
+      "additional": {
+        "pointItems": 0,
+        "cherryMax": 500000
+      },
+      "frameCount": 22883
+    }
+  ],
+  "frameCount": 22883
+}
