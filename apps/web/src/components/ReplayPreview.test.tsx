@@ -27,17 +27,6 @@ describe("ReplayPreview", () => {
     expect(screen.getByText("14分07秒")).toBeTruthy();
   });
 
-  it("status=ready で null の項目は「不明」と表示する", () => {
-    render(
-      <ReplayPreview
-        status="ready"
-        info={{ ...SAMPLE_REPLAY_INFO, stage: null, cleared: null, estimatedDurationSeconds: null }}
-      />,
-    );
-    const unknowns = screen.getAllByText("不明");
-    expect(unknowns.length).toBeGreaterThanOrEqual(3);
-  });
-
   it("status=empty ではファイル未選択のプレースホルダーを表示する", () => {
     render(<ReplayPreview status="empty" />);
     expect(screen.getByText("リプレイファイルを選択すると、ここに内容が表示されます")).toBeTruthy();

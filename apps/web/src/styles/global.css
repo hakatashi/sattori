@@ -1,13 +1,19 @@
 :root {
   --bg: #fff;
-  --panel: #f0f0f0;
+  --panel: #fff;
   --panel-border: #c0c0c0;
   --text: #333;
   --text-muted: #666;
-  --accent: #b36cf0;
-  --accent-hover: #c688ff;
+  --accent: #da6cf0;
+  --accent-hover: #e388ff;
   --danger: #ff6b8a;
-  --radius: 10px;
+  --difficulty-easy: #43A047;
+  --difficulty-normal: #0288D1;
+  --difficulty-hard: #3F51B5;
+  --difficulty-lunatic: #9C27B0;
+  --difficulty-extra: #E53935;
+  --difficulty-phantasm: #F06292;
+  --radius: 6px;
   font-family: "Noto Sans JP", Meiryo, sans-serif;
 }
 

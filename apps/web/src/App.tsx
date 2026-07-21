@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom
 import { HomePage } from "./pages/HomePage.tsx";
 import { JobPage } from "./pages/JobPage.tsx";
 import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
+import { JobProgressPlayground } from "./dev/JobProgressPlayground.tsx";
 import styles from "./App.module.css";
 
 /** 共通のヘッダー・フッター。ルートごとの画面は `<Outlet />` に差し込まれる。 */
@@ -34,10 +35,15 @@ function Layout() {
 }
 
 export function App() {
-  // デザイン調整用: `pnpm dev` で `?preview=replay` を付けて開くとReplayPreviewの
-  // 各状態を実データ無しで確認できる（import.meta.env.DEVガードにより本番ビルドには含まれない）。
-  if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("preview") === "replay") {
+  // デザイン調整用: `pnpm dev` で `?preview=replay`（ReplayPreview）/`?preview=job`
+  // （JobProgress）を付けて開くと各状態を実データ無しで確認できる
+  // （import.meta.env.DEVガードにより本番ビルドには含まれない）。
+  const previewParam = import.meta.env.DEV ? new URLSearchParams(window.location.search).get("preview") : null;
+  if (previewParam === "replay") {
     return <ReplayPreviewPlayground />;
+  }
+  if (previewParam === "job") {
+    return <JobProgressPlayground />;
   }
 
   return (

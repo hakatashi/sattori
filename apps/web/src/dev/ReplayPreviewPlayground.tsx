@@ -6,7 +6,7 @@ const SAMPLE_REPLAY_INFO: ReplayInfo = {
   player: "koyi",
   date: "01/18",
   character: "MarisaA",
-  difficulty: "Extra",
+  difficulty: "Phantasm",
   stage: null,
   score: 303766040,
   cleared: true,

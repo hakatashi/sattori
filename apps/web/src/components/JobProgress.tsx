@@ -1,10 +1,14 @@
-import type { JobStatus } from "@sattori/shared";
+import type { GetJobResponse, JobStatus } from "@sattori/shared";
 import { useJobPolling } from "../hooks/useJobPolling.ts";
 import styles from "./JobProgress.module.css";
 
 interface Props {
   jobId: string;
-  onReset: () => void;
+}
+
+interface ViewProps {
+  job: GetJobResponse | null;
+  loadError: string | null;
 }
 
 /** 各ステータスのユーザー向け表示文言と進捗段階（0..4）。 */
@@ -20,8 +24,16 @@ const STATUS_META: Record<JobStatus, { label: string; step: number }> = {
 
 const STEPS = ["待機", "起動", "録画", "変換", "完了"];
 
-export function JobProgress({ jobId, onReset }: Props) {
+export function JobProgress({ jobId }: Props) {
   const { job, loadError } = useJobPolling(jobId);
+  return <JobProgressView job={job} loadError={loadError} />;
+}
+
+/**
+ * ジョブ状態表示の純粋表示部分（ポーリングを持たない）。
+ * `dev/JobProgressPlayground.tsx` から実データ無しで各状態を確認するために分離。
+ */
+export function JobProgressView({ job, loadError }: ViewProps) {
   const status = job?.status ?? "queued";
   const meta = STATUS_META[status];
   const failed = status === "failed";
@@ -89,10 +101,6 @@ export function JobProgress({ jobId, onReset }: Props) {
           元の解像度でダウンロード
         </a>
       )}
-
-      <button type="button" className={styles.reset} onClick={onReset}>
-        別のリプレイを録画する
-      </button>
     </section>
   );
 }
