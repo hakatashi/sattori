@@ -28,6 +28,7 @@ export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: stri
     `-e REPLAY_BUCKET=${config.uploadBucket}`,
     `-e REPLAY_KEY=${job.replayKey}`,
     `-e OUTPUT_BUCKET=${config.outputBucket}`,
+    `-e TITLE_ASSETS_BUCKET=${config.titleAssetsBucket}`,
     `-e JOBS_TABLE=${config.jobsTable}`,
     `-e WATERMARK=${job.options.watermark ? "1" : "0"}`,
     // taskToken は Step Functions が発行する不透明な文字列（AWS生成、ユーザー入力ではない）。
