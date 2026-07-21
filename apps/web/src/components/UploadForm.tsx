@@ -307,6 +307,22 @@ export function UploadForm({ onMagicLinkSent }: Props) {
       </p>
       {renderPreview()}
 
+      <p className={clsx(styles.stepLabel, styles.stepLabelSecondary)}>
+        <span className={styles.stepNumber}>STEP 3</span>
+        メールアドレスを入力
+      </p>
+      <input
+        type="email"
+        className={styles.emailInput}
+        placeholder="komeiji@example.com"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        disabled={busy}
+      />
+      <small className={styles.optionHint}>
+        録画した動画をダウンロードするためのリンクがメールで送信されます。
+      </small>
+
       <details className={styles.details}>
         <summary className={styles.summary}>詳細設定</summary>
         <label className={styles.option}>
@@ -326,29 +342,13 @@ export function UploadForm({ onMagicLinkSent }: Props) {
         </label>
       </details>
 
-      <p className={clsx(styles.stepLabel, styles.stepLabelSecondary)}>
-        <span className={styles.stepNumber}>STEP 3</span>
-        メールアドレスを入力
-      </p>
-      <input
-        type="email"
-        className={styles.emailInput}
-        placeholder="you@example.com"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        disabled={busy}
-      />
-      <small className={styles.optionHint}>
-        録画を開始するためのリンクをこのアドレスに送信します。
-      </small>
-
       <button
         type="button"
         className={styles.submit}
         onClick={handleSubmit}
         disabled={phase !== "ready" || !emailValid}
       >
-        {phase === "starting" ? "メールを送信しています…" : "次のステップ"}
+        {phase === "starting" ? "少女祈祷中⋯" : "次へ"}
       </button>
     </section>
   );

@@ -42,12 +42,12 @@ function selectFile(name: string, size = 5) {
 
 function nextStepButton() {
   return screen.getByRole("button", {
-    name: /次のステップ|メールを送信しています/,
+    name: /次へ|少女祈祷中/,
   }) as HTMLButtonElement;
 }
 
 function emailInput() {
-  return screen.getByPlaceholderText("you@example.com") as HTMLInputElement;
+  return screen.getByPlaceholderText("komeiji@example.com") as HTMLInputElement;
 }
 
 function fillEmail(email: string) {

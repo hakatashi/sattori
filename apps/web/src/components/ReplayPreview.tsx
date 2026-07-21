@@ -59,38 +59,41 @@ export function ReplayPreview(props: Props) {
       <div className={styles.headline}>
         <img className={styles.icon} src={`/icons/${info.game}.png`} alt="" />
         <p className={styles.title}>{GAME_TITLES[info.game]}</p>
+        <div className={clsx(styles.difficultyBadge, info.difficulty ? styles[info.difficulty.toLowerCase()] : undefined)}>
+          {info.difficulty ?? "不明"}
+        </div>
+      </div>
+      <div className={styles.basicInfo}>
+        <div className={styles.character}>
+          {info.character ?? "不明"}
+        </div>
+        <div className={styles.score}>
+          {formatScore(info.score)}
+        </div>
       </div>
       <dl className={styles.details}>
         <div className={styles.row}>
           <dt>プレイヤー名</dt>
           <dd>{info.player ?? "不明"}</dd>
         </div>
-        <div className={styles.row}>
-          <dt>使用キャラ</dt>
-          <dd>{info.character ?? "不明"}</dd>
-        </div>
-        <div className={styles.row}>
-          <dt>難易度</dt>
-          <dd>{info.difficulty ?? "不明"}</dd>
-        </div>
-        <div className={styles.row}>
-          <dt>到達ステージ</dt>
-          <dd>{info.stage ?? "不明"}</dd>
-        </div>
-        <div className={styles.row}>
-          <dt>スコア</dt>
-          <dd>{formatScore(info.score)}</dd>
-        </div>
+        {info.stage !== null && (
+          <div className={styles.row}>
+            <dt>到達ステージ</dt>
+            <dd>{info.stage}</dd>
+          </div>
+        )}
         <div className={styles.row}>
           <dt>記録日時</dt>
           <dd>{info.date ?? "不明"}</dd>
         </div>
+        {info.cleared !== null && (
+          <div className={styles.row}>
+            <dt>クリア</dt>
+            <dd>{formatCleared(info.cleared)}</dd>
+          </div>
+        )}
         <div className={styles.row}>
-          <dt>クリア</dt>
-          <dd>{formatCleared(info.cleared)}</dd>
-        </div>
-        <div className={styles.row}>
-          <dt>収録時間（目安）</dt>
+          <dt>プレイ時間（目安）</dt>
           <dd>{formatDuration(info.estimatedDurationSeconds)}</dd>
         </div>
       </dl>

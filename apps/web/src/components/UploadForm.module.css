@@ -54,7 +54,7 @@ li.supportedTitle.supported {
 }
 
 .stepLabel.stepLabelSecondary {
-  margin-top: 1.5rem;
+  margin-top: 3rem;
 }
 
 .stepNumber {
@@ -74,8 +74,8 @@ li.supportedTitle.supported {
   justify-content: center;
   min-height: 12rem;
   padding: 1.5rem;
-  background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='10' ry='10' stroke='%23c0c0c0' stroke-width='5' stroke-dasharray='15%2c 25' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
-  border-radius: var(--radius);
+  background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='12' ry='12' stroke='%23c0c0c0' stroke-width='5' stroke-dasharray='15%2c 25' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
+  border-radius: 12px;
   cursor: pointer;
   text-align: center;
   font-size: 1.2rem;

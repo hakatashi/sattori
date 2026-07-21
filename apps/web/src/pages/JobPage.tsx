@@ -22,7 +22,7 @@ export function JobPage() {
   }
 
   if (started) {
-    return <JobProgress jobId={jobId} onReset={resetToUpload} />;
+    return <JobProgress jobId={jobId} />;
   }
 
   return (
