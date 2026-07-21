@@ -26,6 +26,53 @@ describe("SattoriStack", () => {
     });
   });
 
+  it("ECRリポジトリのライフサイクルポリシーは最大2世代保持(Issue #22、タイトル追加に伴うストレージコスト対策)", () => {
+    template.hasResourceProperties("AWS::ECR::Repository", {
+      LifecyclePolicy: {
+        LifecyclePolicyText: Match.serializedJson(
+          Match.objectLike({
+            rules: Match.arrayWith([
+              Match.objectLike({
+                selection: Match.objectLike({ countType: "imageCountMoreThan", countNumber: 2 }),
+              }),
+            ]),
+          }),
+        ),
+      },
+    });
+  });
+
+  it("タイトル固有アセット用バケットが存在し、ワーカーロールに読み取り権限が付与されている(Issue #22)", () => {
+    const buckets = template.findResources("AWS::S3::Bucket");
+    expect(Object.keys(buckets).length).toBeGreaterThanOrEqual(4);
+
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith(["s3:GetObject*"]),
+          }),
+        ]),
+      },
+      Roles: Match.arrayWith([Match.objectLike({ Ref: Match.stringLikeRegexp("^WorkerRole") })]),
+    });
+  });
+
+  it("全ハンドラの共通環境変数に TITLE_ASSETS_BUCKET が設定されている(Issue #22)", () => {
+    const resources = template.findResources("AWS::Lambda::Function", {
+      Properties: {
+        Environment: {
+          Variables: Match.objectLike({
+            TITLE_ASSETS_BUCKET: Match.anyValue(),
+          }),
+        },
+      },
+    });
+    // commonEnv を使う全ハンドラ数(createUpload/parseReplay/requestMagicLink/getJob/
+    // sendCompletionEmail/launch/handleFailure/startJob)分だけ存在するはず。
+    expect(Object.keys(resources).length).toBeGreaterThanOrEqual(8);
+  });
+
   it("CloudFront は配信用と Web 用の2つ", () => {
     template.resourceCountIs("AWS::CloudFront::Distribution", 2);
   });

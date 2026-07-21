@@ -18,6 +18,7 @@ const config: ApiConfig = {
   cdnDomain: "cdn.example.net",
   jobsTable: "sattori-jobs",
   workerImage: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker:latest",
+  titleAssetsBucket: "title-assets-bucket",
   logGroup: "/sattori/worker",
   maxReplayBytes: 5 * 1024 * 1024,
   emailRateLimitTable: "email-rate-limit",
@@ -57,6 +58,7 @@ describe("buildUserData", () => {
     expect(decoded).toContain("JOB_ID=job-1");
     expect(decoded).toContain("REPLAY_KEY=replays/abc.rpy");
     expect(decoded).toContain("OUTPUT_BUCKET=out-bucket");
+    expect(decoded).toContain("TITLE_ASSETS_BUCKET=title-assets-bucket");
     expect(decoded).toContain("WATERMARK=1");
     expect(decoded).toContain(config.workerImage);
     // ECR ログイン先レジストリが正しく抽出されている

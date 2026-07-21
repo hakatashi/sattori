@@ -16,6 +16,7 @@ const REQUIRED_ENV: Record<string, string> = {
   CDN_DOMAIN: "cdn.example.net",
   JOBS_TABLE: "sattori-jobs",
   WORKER_IMAGE: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker:latest",
+  TITLE_ASSETS_BUCKET: "title-assets-bucket",
   WORKER_LOG_GROUP: "/sattori/worker",
   WORKER_SUBNET_IDS: "subnet-xxxx,subnet-yyyy",
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
