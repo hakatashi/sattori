@@ -29,15 +29,22 @@ const STAGE_CHECKPOINT_HEADER_SIZE = 40;
 const BYTES_PER_FRAME = 4;
 
 /**
- * Offset (within the decompressed body) of a 1-byte flag that is `1` when the
- * run ended in a full clear and `0` otherwise (game over, or a practice-mode
- * recording that can never count as a clear). Reverse-engineered from
- * `test-fixtures/th07/*.rpy`: the per-stage `scoreOffsets` checkpoints
+ * Offset (within the decompressed body) of a 1-byte flag that is non-zero
+ * when the run ended in a full clear and `0` otherwise (game over, or a
+ * practice-mode recording that can never count as a clear). Reverse-engineered
+ * from `test-fixtures/th07/*.rpy`: the per-stage `scoreOffsets` checkpoints
  * (see below) only indicate which stage was *reached*, not whether the last
  * one reached was actually cleared — `th7_10.rpy` (game over during stage 6)
  * and `th7_11.rpy` (stage-6 practice, never clearable) both populate the same
  * checkpoint slots as a genuine stage-6 clear (`th7_09.rpy`) but differ only
  * in this byte (0 vs 1). Not documented by threplay/threp.
+ *
+ * The byte isn't strictly boolean: a replay recorded by a different game
+ * version (`formatVersion` 3 vs the `5` of the checked-in fixtures), and
+ * confirmed by its player to be a continue-free clear, had `2` here instead
+ * of `1`. Treat any non-zero value as cleared rather than assuming `1` is the
+ * only clear value; what distinguishes `1` from `2` (continue usage?) is
+ * unconfirmed and not exposed since `ParsedReplay.cleared` is a boolean.
  */
 const CLEAR_FLAG_OFFSET = 28;
 
@@ -135,7 +142,7 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
     difficulty,
     stage: null,
     score,
-    cleared: decodeData[CLEAR_FLAG_OFFSET] === 1,
+    cleared: decodeData[CLEAR_FLAG_OFFSET] !== 0,
     splits,
     frameCount: stageFrameCounts.length === 0 ? null : stageFrameCounts.reduce((a, b) => a + b, 0),
   };
