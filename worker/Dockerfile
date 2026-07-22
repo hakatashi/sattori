@@ -40,7 +40,7 @@ WORKDIR /app
 COPY assets/watermark/watermark-60fps.webm /app/assets/watermark/watermark-60fps.webm
 
 # ワーカーのソース(リポジトリ管理)
-COPY record_th07.py entrypoint.py status.py upscale.py interruption_watcher.py progress_reporter.py title_assets.py /app/
+COPY recording_common.py record_th07.py record_th08.py entrypoint.py status.py upscale.py interruption_watcher.py progress_reporter.py title_assets.py /app/
 
 RUN mkdir -p /app/instances /app/runs
 
