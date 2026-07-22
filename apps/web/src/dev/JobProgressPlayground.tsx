@@ -1,10 +1,23 @@
-import type { GetJobResponse, JobStatus } from "@sattori/shared";
+import type { GetJobResponse, JobStatus, ReplayInfo } from "@sattori/shared";
 import { JobProgressView } from "../components/JobProgress.tsx";
+
+const SAMPLE_REPLAY_INFO: ReplayInfo = {
+  game: "th07",
+  player: "博麗霊夢",
+  date: "2026/07/23 12:34:56",
+  character: "霊夢A",
+  difficulty: "Hard",
+  stage: "Stage 6",
+  score: 123456780,
+  cleared: true,
+  estimatedDurationSeconds: 1800,
+};
 
 const BASE: Omit<GetJobResponse, "status" | "downloadUrl" | "downloadUrl720p" | "error" | "progress" | "previewImageUrl"> = {
   jobId: "sample-job-id",
   game: "th07",
   updatedAt: new Date().toISOString(),
+  replayInfo: SAMPLE_REPLAY_INFO,
 };
 
 function buildJob(overrides: Partial<GetJobResponse> & { status: JobStatus }): GetJobResponse {

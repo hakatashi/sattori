@@ -228,13 +228,7 @@ export function UploadForm({ onMagicLinkSent }: Props) {
     setErrorMessage(null);
     try {
       setPhase("starting");
-      await requestMagicLink(
-        replayKey,
-        { watermark },
-        email,
-        preview?.game,
-        preview?.estimatedDurationSeconds,
-      );
+      await requestMagicLink(replayKey, { watermark }, email, preview);
       onMagicLinkSent(email);
     } catch (err) {
       const message =

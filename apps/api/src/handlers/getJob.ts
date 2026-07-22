@@ -46,6 +46,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     updatedAt: job.updatedAt,
     progress: job.progress,
     previewImageUrl,
+    replayInfo: job.replayInfo ?? null,
   };
   return json(200, response);
 };

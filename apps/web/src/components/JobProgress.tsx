@@ -1,5 +1,6 @@
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
 import { useJobPolling } from "../hooks/useJobPolling.ts";
+import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./JobProgress.module.css";
 
 interface Props {
@@ -61,6 +62,8 @@ export function JobProgressView({ job, loadError }: ViewProps) {
           );
         })}
       </ol>
+
+      {job?.replayInfo && <ReplayPreview status="ready" info={job.replayInfo} />}
 
       {!done && !failed && job?.previewImageUrl && (
         <img className={styles.previewImage} src={job.previewImageUrl} alt="録画中のプレビュー" />

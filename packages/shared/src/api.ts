@@ -63,6 +63,12 @@ export interface RequestMagicLinkRequest {
   estimatedDurationSeconds?: number | null;
   /** マジックリンクの送信先。同一メール（`+`エイリアス正規化後）は24時間5件までのレート制限対象。 */
   email: string;
+  /**
+   * `POST /replays/parse` の結果をそのまま渡す。ページBでページAのSTEP2と同じ
+   * リプレイ内容プレビューを表示するために `JobRecord` へ転記して保持する
+   * （省略・null なら表示しない）。
+   */
+  replayInfo?: ReplayInfo | null;
 }
 
 /** POST /magic-links のレスポンス（送信成功、bodyは空でよい。jobIdは含めない）。 */
@@ -100,6 +106,11 @@ export interface GetJobResponse {
    * status が recording/converting の間のみ値を持ち、それ以外（完了・失敗後）は null。
    */
   previewImageUrl: string | null;
+  /**
+   * ページAで解析済みのリプレイ内容（STEP2と同じ表示に使う）。
+   * `POST /magic-links` 時点で `replayInfo` が渡されていなかった旧ジョブでは null。
+   */
+  replayInfo: ReplayInfo | null;
 }
 
 /** APIエラーの統一形。 */
