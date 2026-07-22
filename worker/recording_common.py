@@ -107,7 +107,19 @@ class GameConfig:
     canonical_slot: str  # アップロードされた任意ファイル名リプレイを配置する正規スロット名
     injector_path: str
     hook_dll_path: str
-    game_exe: str = field(init=False)
+    # 実行ファイル名。未指定(None)ならf"{game_id}.exe"を使う(th07/th08)。
+    # th06はVsyncPatch(vpatch_th06.dll)が対象プロセスの実行ファイル名を検証している
+    # らしく、`th06.exe`へリネームすると白画面ハング(reports/30)が再発することを
+    # 実機検証で確認した(WaitForStableWindowが`stable`に到達せずCPU使用率100%で
+    # 張り付き続ける)。そのためth06は元のファイル名`東方紅魔郷.exe`をそのまま
+    # game_exeに指定する。
+    game_exe: str | None = None
+    # pgrep/pkillでのプロセス検索に使う名前。未指定ならgame_exeを使う。
+    # Linuxの`/proc/PID/comm`は15バイトで切り詰められるため、UTF-8で18バイトの
+    # `東方紅魔郷.exe`は末尾の`.exe`が欠落した`東方紅魔郷`(15バイトちょうど)という
+    # 値になり、`pgrep -x "東方紅魔郷.exe"`は一致しない(touhou-recorder reports/31)。
+    # th06はこのフィールドに`"東方紅魔郷"`(拡張子なし)を指定する。
+    process_name: str | None = None
     hook_dll: str = field(init=False)
     log_path: str = field(init=False)
     injector: str = "injector.exe"
@@ -120,7 +132,10 @@ class GameConfig:
     extra_dlls: tuple[str, ...] = ()
 
     def __post_init__(self):
-        object.__setattr__(self, "game_exe", f"{self.game_id}.exe")
+        if self.game_exe is None:
+            object.__setattr__(self, "game_exe", f"{self.game_id}.exe")
+        if self.process_name is None:
+            object.__setattr__(self, "process_name", self.game_exe)
         object.__setattr__(self, "hook_dll", f"{self.game_id}_hook.dll")
         object.__setattr__(self, "log_path", f"{self.instance_dir}/{self.game_id}_autoplay.log")
 
@@ -210,14 +225,16 @@ def find_window(config, env, pid):
     return None
 
 
-def find_live_game_pid(game_exe):
-    """game_exeのPIDのうち、zombie(状態Z)ではないものを1つ返す(なければNone)。
+def find_live_game_pid(process_name):
+    """process_nameのPIDのうち、zombie(状態Z)ではないものを1つ返す(なければNone)。
     コンテナ内ではPID 1(entrypoint.py)がinitのように孤児プロセスをreapする仕組みを
     持たないため、前の試行でSIGKILLしたプロセスがzombieのまま残り続けることがある。
     `pgrep -x`はzombieもマッチしてしまうため、2回目以降の試行で新しいプロセスでは
     なく前回のzombieのPIDを掴んでしまい、ウィンドウが永遠に見つからない原因になって
-    いた(reports/24)。"""
-    out = subprocess.run(["pgrep", "-x", game_exe], capture_output=True, text=True).stdout.split()
+    いた(reports/24)。呼び出し側は`config.game_exe`(実際に起動するファイル名)ではなく
+    `config.process_name`(pgrep/pkill専用。`/proc/PID/comm`の15バイト切り詰め対策、
+    th06の`東方紅魔郷.exe`→`東方紅魔郷`、touhou-recorder reports/31参照)を渡すこと。"""
+    out = subprocess.run(["pgrep", "-x", process_name], capture_output=True, text=True).stdout.split()
     for pid in out:
         try:
             with open(f"/proc/{pid}/stat") as f:
@@ -230,14 +247,14 @@ def find_live_game_pid(game_exe):
     return None
 
 
-def kill_wine_and_wait(config, env, game_exe):
+def kill_wine_and_wait(config, env, process_name):
     """ゲーム本体とwineserverを終了させ、実際にwineserverが終了するまで待つ。
     固定sleepで待っていたところ、AWSのようにCPUが逼迫した環境ではwineserverの
     終了処理自体に2秒以上かかることがあり、終了前に次の試行のinjectorを起動して
     ウィンドウ検出に失敗する事象が確認された(reports/24)。`wineserver -w`は
     現在起動中のwineserverが実際に終了するまでブロックするため、固定時間の
-    推測より確実。"""
-    subprocess.run(["pkill", "-9", "-x", game_exe])
+    推測より確実。呼び出し側は`config.process_name`を渡すこと(find_live_game_pid()参照)。"""
+    subprocess.run(["pkill", "-9", "-x", process_name])
     subprocess.run(["wineserver", "-k"], env=env)
     subprocess.run(["wineserver", "-w"], env=env, timeout=60)
 
@@ -467,7 +484,7 @@ def _failure_result(config, env, log):
     output_exists=Falseにしておけばrecord_with_retry()の失敗判定がそのまま効く
     (reports/24で、以前はsys.exit(1)によりリトライループごとプロセスが終了して
     しまう不具合があった教訓を踏まえた設計)。"""
-    kill_wine_and_wait(config, env, config.game_exe)
+    kill_wine_and_wait(config, env, config.process_name)
     return {
         "output_exists": False,
         "classification": "setup_error",
@@ -495,12 +512,12 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     game_pid = None
     t0 = time.time()
     while time.time() - t0 < 20:
-        game_pid = find_live_game_pid(config.game_exe)
+        game_pid = find_live_game_pid(config.process_name)
         if game_pid:
             break
         time.sleep(0.1)
     if not game_pid:
-        log(f"ERROR: {config.game_exe} プロセスが検出できませんでした")
+        log(f"ERROR: {config.process_name} プロセスが検出できませんでした")
         return _failure_result(config, env, log)
     log(f"game_pid={game_pid} ({time.time()-t0:.1f}s)")
 
@@ -665,7 +682,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         stop_reason = "タイムアウト"
     log(f"録画終了。総録画時間 {total_record_sec:.1f}秒 検知方式: {stop_reason}")
 
-    kill_wine_and_wait(config, env, config.game_exe)
+    kill_wine_and_wait(config, env, config.process_name)
 
     return {
         "output_exists": output_exists,

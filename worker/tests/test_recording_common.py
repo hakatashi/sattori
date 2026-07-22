@@ -36,6 +36,25 @@ def test_game_config_extra_dlls_defaults_to_empty():
     assert config.extra_dlls == ()
 
 
+def test_game_config_process_name_defaults_to_game_exe():
+    config = make_config()
+
+    assert config.process_name == config.game_exe == "th08.exe"
+
+
+def test_game_config_allows_overriding_game_exe_and_process_name():
+    # th06はVsyncPatchが実行ファイル名を検証しているらしく、th{N}.exeへリネームすると
+    # 白画面ハングが再発するため元のファイル名のまま使う(record_th06.pyのモジュール
+    # docstring参照)。/proc/PID/commは15バイトで切り詰められるため、pgrep/pkill専用の
+    # process_nameは拡張子なしの別の値を指定する(touhou-recorder reports/31)。
+    config = make_config(
+        game_id="th06", game_exe="東方紅魔郷.exe", process_name="東方紅魔郷",
+    )
+
+    assert config.game_exe == "東方紅魔郷.exe"
+    assert config.process_name == "東方紅魔郷"
+
+
 def test_build_injector_cmd_without_extra_dlls():
     config = make_config()
 
