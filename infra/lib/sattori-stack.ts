@@ -142,8 +142,12 @@ export class SattoriStack extends Stack {
     });
 
     // NAT を持たない公開サブネット構成(ワーカーは外向き通信のみ必要 = 最小コスト)。
+    // maxAzs は us-east-1 の全AZ数(a-fの6つ)に合わせている。EC2 Fleet の起動時に
+    // 全AZへスポットリクエストを送ることで、単一AZでのキャパシティ枯渇
+    // (InsufficientInstanceCapacity)への耐性を高める(NATを使わないため
+    // AZ追加によるコスト増はない)。
     const vpc = new ec2.Vpc(this, "WorkerVpc", {
-      maxAzs: 2,
+      maxAzs: 6,
       natGateways: 0,
       subnetConfiguration: [
         { name: "public", subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
