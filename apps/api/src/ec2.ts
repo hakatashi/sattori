@@ -31,9 +31,9 @@ export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: stri
     `-e TITLE_ASSETS_BUCKET=${config.titleAssetsBucket}`,
     `-e JOBS_TABLE=${config.jobsTable}`,
     `-e WATERMARK=${job.options.watermark ? "1" : "0"}`,
-    // taskToken は Step Functions が発行する不透明な文字列（AWS生成、ユーザー入力ではない）。
-    // シェル展開を避けるためシングルクォートで囲む。
-    `-e TASK_TOKEN='${taskToken}'`,
+    // taskToken はスクリプト冒頭で $TASK_TOKEN に格納済み（bootstrap 失敗時の
+    // SendTaskFailure 通知と共有するため）。ここでは二重埋め込みを避けそれを参照する。
+    `-e TASK_TOKEN="$TASK_TOKEN"`,
   ];
   if (job.estimatedDurationSeconds !== null) {
     // ワーカーの録画進捗率算出用の参考値（取得できていなければ付与しない）。
@@ -46,6 +46,19 @@ export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: stri
   const script = `#!/bin/bash
 export AWS_DEFAULT_REGION=${config.ec2.region}
 trap 'shutdown -h now' EXIT
+TASK_TOKEN='${taskToken}'
+
+# コンテナが一度も起動できないまま(ECR ログイン/pull 失敗等)shutdown すると、
+# ワーカー内部(entrypoint.py)の taskToken 通知が一切実行されず、Step Functions が
+# 60分タイムアウトするまでジョブが「起動中」のまま停滞する事故が発生したため、
+# コンテナ起動前段階の失敗はここで即座に SendTaskFailure する。
+notify_bootstrap_failure() {
+  aws stepfunctions send-task-failure \\
+    --task-token "$TASK_TOKEN" \\
+    --error "WorkerBootstrapFailure" \\
+    --cause "$1" >/dev/null 2>&1 || true
+}
+
 # ECS 最適化 AMI は docker を含むが、プレーンな docker ホストとして使う。常駐する
 # ECS エージェントが 4vCPU を消費し、高負荷区間(弾幕)で ffmpeg の x11grab キャプチャと
 # CPU コンテンションを起こしてフレーム取りこぼし(処理落ち)を増やすため停止する。
@@ -55,7 +68,35 @@ systemctl disable --now ecs >/dev/null 2>&1 || true
 systemctl enable --now docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true
 # aws CLI が無い環境向けのフォールバック導入。
 command -v aws >/dev/null 2>&1 || dnf install -y awscli >/dev/null 2>&1 || dnf install -y aws-cli >/dev/null 2>&1 || true
-aws ecr get-login-password --region ${config.ec2.region} | docker login --username AWS --password-stdin ${registry}
+
+login_ok=0
+for attempt in 1 2 3; do
+  if aws ecr get-login-password --region ${config.ec2.region} | docker login --username AWS --password-stdin ${registry}; then
+    login_ok=1
+    break
+  fi
+  echo "ECR ログイン失敗(試行\${attempt}回目)、リトライします" >&2
+  sleep 5
+done
+if [ "$login_ok" -ne 1 ]; then
+  notify_bootstrap_failure "ECR login failed after 3 attempts"
+  exit 1
+fi
+
+pull_ok=0
+for attempt in 1 2 3; do
+  if docker pull ${config.workerImage}; then
+    pull_ok=1
+    break
+  fi
+  echo "docker pull 失敗(試行\${attempt}回目)、リトライします" >&2
+  sleep 5
+done
+if [ "$pull_ok" -ne 1 ]; then
+  notify_bootstrap_failure "docker pull failed after 3 attempts"
+  exit 1
+fi
+
 docker run --rm \\
   --log-driver awslogs \\
   --log-opt awslogs-region=${config.ec2.region} \\
