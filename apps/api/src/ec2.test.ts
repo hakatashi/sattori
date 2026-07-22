@@ -72,7 +72,11 @@ describe("buildUserData", () => {
     expect(decoded).toContain("awslogs-stream=job-1");
     // taskToken と進捗算出用の推定再生時間を渡す
     expect(decoded).toContain("TASK_TOKEN='task-token-abc'");
+    expect(decoded).toContain('-e TASK_TOKEN="$TASK_TOKEN"');
     expect(decoded).toContain("EXPECTED_DURATION_SECONDS=900");
+    // コンテナ起動前(ECR ログイン/pull)の失敗は bash から直接 SendTaskFailure する
+    expect(decoded).toContain("send-task-failure");
+    expect(decoded).toContain("docker pull");
   });
 
   it("ウォーターマーク無効時は WATERMARK=0", () => {
