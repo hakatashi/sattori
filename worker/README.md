@@ -96,12 +96,25 @@ touhou-recorderでの事前検証(reports/30〜32)を踏まえた設計:
   `fps_monitor.cpp`を組み込んでいないため`scan_fps_runaway()`は実質的に発火しない
   (th07と同様)。処理落ちの早期検知・自動リトライ・音声/映像の別プロセス録画は
   th07/th08と共通の実装をそのまま使う。
-- **リプレイの正規スロット名(`th6_ud0000.rpy`)は未検証**: th07/th08の命名則
-  (`th{N}_ud####.rpy`)を踏襲しているが、touhou-recorderの検証(reports/30〜32)は
-  既存の numbered replay ファイル名(`th6_02.rpy`等)でのみ行われており、任意ファイル名
-  →正規スロット名の置き換え自体が「1件目のリプレイ」として実際に認識・選択される
-  ことは実ゲームデータで未検証(AGENTS.md §10参照)。本番投入前に実リプレイでの
-  スモークテストを推奨する。
+- **実行ファイル名は元の`東方紅魔郷.exe`のまま使う(th07/th08のような`th{N}.exe`への
+  リネームはしない)**: 当初th07/th08の慣習に合わせて`th06.exe`へリネームしていたが、
+  2026-07-23のsattori側での実機検証で、VsyncPatchが対象プロセスの実行ファイル名を
+  検証しているらしいことが判明した。`th06.exe`へリネームすると`WaitForStableWindow`
+  が`stable`に到達せずCPU使用率100%で張り付く白画面ハングが再発し、`東方紅魔郷.exe`
+  のままなら約3.5秒で正常に安定する。このため`GameConfig`に`game_exe`/
+  `process_name`の明示オーバーライドを追加した(`recording_common.py`。未指定時は
+  従来通り`f"{game_id}.exe"`を自動導出、th07/th08は無指定のまま)。Linuxの
+  `/proc/PID/comm`は15バイトで切り詰められ、UTF-8で18バイトの`東方紅魔郷.exe`は
+  末尾の`.exe`が欠落した`東方紅魔郷`(15バイトちょうど)になるため、`pgrep -x`/
+  `pkill -x`用に`process_name="東方紅魔郷"`を別途指定する(touhou-recorder
+  reports/31)。
+- **リプレイの正規スロット名(`th6_ud0000.rpy`)は2026-07-23にローカル実機
+  スモークテストで検証済み**: th07/th08の命名則(`th{N}_ud####.rpy`)を踏襲したもの。
+  touhou-recorderの検証(reports/30〜32)は既存の numbered replay ファイル名
+  (`th6_02.rpy`等)でのみ行われていたが、sattori側で任意ファイル名のリプレイを
+  `th6_ud0000.rpy`として配置し`record_th06.py`をそのまま実行したところ、MODが
+  「1件目のリプレイ」として正しく選択・再生し、60fps安定・重複フレームなしで
+  ゲームプレイ画面(スコア進行・日本語表示すべて正常)を確認できた。
 
 ## テスト(`tests/`)
 
@@ -212,13 +225,17 @@ tar -czf /tmp/th08-assets.tar.gz \
 aws s3 cp /tmp/th08-assets.tar.gz "s3://${TITLE_ASSETS_BUCKET}/titles/th08/assets.tar.gz"
 ```
 
-th06の場合、`GameConfig.game_exe`(`recording_common.py`)が`th06.exe`という
-ASCIIファイル名を前提とするため、`games/th06/`配下ではゲーム本体の実行ファイルを
-元の`東方紅魔郷.exe`から`th06.exe`へリネームして配置すること(th07/th08も同様の
-リネーム済みファイル名を前提としている)。また、wined3dの白画面ハング回避に必須の
-`vpatch_th06.dll`・`vpatch.ini`(VsyncPatch本体、`mods/th06_replay_autoplay/`配下では
-なく`games/th06/`直下に同梱する。`recording_common.prepare_instance()`のrsyncで
-自動コピーされるため個別の`mods/{title}_replay_autoplay/build/`配置は不要):
+th06の場合、`games/th06/`配下ではゲーム本体の実行ファイルを**元の`東方紅魔郷.exe`の
+まま配置する(th07/th08と異なりリネームしないこと)**。VsyncPatch(`vpatch_th06.dll`)が
+対象プロセスの実行ファイル名を検証しているらしく、`th06.exe`へリネームすると
+`WaitForStableWindow`が`stable`に到達せずCPU使用率100%で張り付く白画面ハングが
+再発することを実機検証で確認した(2026-07-23、元のファイル名のままなら約3.5秒で
+正常に安定)。`record_th06.py`は`GameConfig`に`game_exe="東方紅魔郷.exe"`を明示
+指定している(未指定時のth07/th08は従来通り`f"{game_id}.exe"`を自動導出)。また、
+wined3dの白画面ハング回避に必須の`vpatch_th06.dll`・`vpatch.ini`(VsyncPatch本体、
+`mods/th06_replay_autoplay/`配下ではなく`games/th06/`直下に同梱する。
+`recording_common.prepare_instance()`のrsyncで自動コピーされるため個別の
+`mods/{title}_replay_autoplay/build/`配置は不要):
 
 ```bash
 cd worker

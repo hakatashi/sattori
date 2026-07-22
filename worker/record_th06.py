@@ -17,6 +17,16 @@ touhou-recorder での事前検証(reports/30〜32)を踏まえた実装:
   早期検知・自動リトライ・音声/映像の別プロセス録画は th07/th08 と共通の実装
   (`recording_common.py`)をそのまま使う(touhou-recorderの検証ではth06にfps暴走の
   兆候は見られなかったが、検知ロジック自体はth07同様に保険として残す)。
+- **実行ファイル名は元の`東方紅魔郷.exe`のまま使う(th07/th08のような`th{N}.exe`への
+  リネームはしない)**。VsyncPatch(`vpatch_th06.dll`)は対象プロセスの実行ファイル名を
+  検証しているらしく、`th06.exe`へリネームすると白画面ハング(reports/30)が再発する
+  ことを実機検証で確認した(`WaitForStableWindow`が`stable`に到達せずCPU使用率100%で
+  張り付き続けたが、`東方紅魔郷.exe`のままだと約3.5秒で正常に安定した)。このため
+  `GameConfig.game_exe`を明示的に`"東方紅魔郷.exe"`に指定する。ただしLinuxの
+  `/proc/PID/comm`は15バイトで切り詰められ、UTF-8で18バイトの`東方紅魔郷.exe`は
+  末尾の`.exe`が欠落した`東方紅魔郷`(15バイトちょうど)になるため、`pgrep -x`/
+  `pkill -x`用に`GameConfig.process_name`を別途`"東方紅魔郷"`(拡張子なし)に指定する
+  (touhou-recorder reports/31)。
 
 未検証事項: 録画対象リプレイを正規スロット名(`th6_ud0000.rpy`)として配置する方式は
 th07/th08の命名則(`th{N}_ud####.rpy`)を踏襲したものだが、th08の時のようにこの名前が
@@ -52,6 +62,11 @@ def build_config():
         hook_dll_path=f"{mod_dir}/th06_replay_autoplay/build/th06_hook.dll",
         # wined3dの白画面ハング回避に必須(reports/30)。hook_dllより前に注入する。
         extra_dlls=("vpatch_th06.dll",),
+        # th07/th08と異なりリネームしない(VsyncPatchが実行ファイル名を検証している
+        # らしく、リネームすると白画面ハングが再発するため。モジュールdocstring参照)。
+        game_exe="東方紅魔郷.exe",
+        # pgrep/pkill専用。/proc/PID/commの15バイト切り詰め対策(モジュールdocstring参照)。
+        process_name="東方紅魔郷",
     )
 
 

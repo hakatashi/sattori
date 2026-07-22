@@ -166,14 +166,22 @@ DynamoDB に書き込む。`converting` は録画完了(生動画チェックポ
   `th8_ud0000.rpy`)として配置**することで、MOD の「リプレイ一覧の1件目を固定選択」
   ロジックを改修せずに任意リプレイを再生する。th08の命名則(`th{N}_ud####.rpy`を
   th07から踏襲)は touhou-recorderの検証レポート(22〜26)では未検証だったため、
-  Issue #13対応時に実ゲームデータ(ver1.00d)で別途実機検証した。**th06の命名則は
-  同様に未検証**（§10参照）。
+  Issue #13対応時に実ゲームデータ(ver1.00d)で別途実機検証した。**th06の命名則も
+  2026-07-23にローカル実機スモークテストで検証済み**（§10参照）。
 - **th06はwined3dの白画面ハング(既知のvsync/タイミングバグ)を起こすため、
   ファン製パッチ「VsyncPatch」(`vpatch_th06.dll`)をMOD本体(`th06_hook.dll`)より
   前に同一プロセスへ注入する必要がある**(`reports/30`)。th06のタイトル画面は
   最初からアトラクトモードのデモプレイを表示しておりメニュー自体がまだ出ていない
   ため、MOD(`th06_replay_autoplay/dllmain.cpp`)はDown連打の前にメニュー表示の
   ためのEnter押下を1回余分に行う(`reports/31`)。
+- **th06は実行ファイル名を元の`東方紅魔郷.exe`のまま使う**(th07/th08のような
+  `th{N}.exe`へのリネームはしない)。VsyncPatchが対象プロセスの実行ファイル名を
+  検証しているらしく、リネームすると白画面ハングが再発することを実機検証で
+  確認した。このため`GameConfig`に`game_exe`/`process_name`の明示オーバーライドを
+  追加した(未指定時は従来通り`f"{game_id}.exe"`を自動導出、th07/th08は無指定の
+  まま)。`process_name`はLinuxの`/proc/PID/comm`が15バイトで切り詰められるため
+  `pgrep -x`/`pkill -x`専用に別途必要(`東方紅魔郷.exe`→`東方紅魔郷`、
+  touhou-recorder reports/31)。
 - **映像/音声を別プロセスで録画し後でmux**(既定、th06・th07・th08共通)。単一ffmpegで
   x11grab(映像)とpulse(音声)を同時取り込みすると、内部のA/V同期がth08の描画
   タイミングを律速し、AWS環境で重複フレーム率が85%超まで悪化することが判明した
@@ -258,6 +266,14 @@ DynamoDB に書き込む。`converting` は録画完了(生動画チェックポ
 - **th06のタイトル画面は最初からアトラクトモードのデモプレイを表示しており、
   th07/th08と異なりメニュー自体がまだ出ていない**（`reports/31`）。MODはDown連打の
   前にメニュー表示のためのEnter押下を1回余分に行う。
+- **th06の実行ファイルをth07/th08のように`th{N}.exe`へリネームしてはいけない**
+  （2026-07-23、sattori側での実機検証で判明。touhou-recorderのreports/30〜32では
+  未検証だった）。VsyncPatch(`vpatch_th06.dll`)が対象プロセスの実行ファイル名を
+  検証しているらしく、`th06.exe`へリネームすると`WaitForStableWindow`が`stable`に
+  到達せずCPU使用率100%で張り付く白画面ハングが再発する（元の`東方紅魔郷.exe`の
+  ままなら約3.5秒で正常に安定）。Linuxの`/proc/PID/comm`は15バイトで切り詰められる
+  ため、`pgrep -x`/`pkill -x`には別途拡張子なしの`process_name`（`東方紅魔郷`）が
+  必要（`GameConfig.game_exe`/`process_name`、touhou-recorder reports/31）。
 
 ## 6. インフラ（`infra/`, CDK）
 
@@ -413,15 +429,21 @@ Sattori向けの `ReplayInfo` への変換は `packages/shared/src/replay.ts` �
   本番のS3タイトル資産アーカイブ(実際にアップロードするth08データ)そのものでの
   検証はまだ済んでいない。本番投入前に実リプレイでのスモークテストを推奨する。
 - **th06の「任意ファイル名リプレイ→正規スロット名」命名則(`th6_ud0000.rpy`)は
-  実ゲームデータでの実機検証が未実施**（th08の時と異なり、touhou-recorderでの
-  検証(reports/30〜32)は既存の numbered replay ファイル名(`th6_02.rpy`等)でのみ
-  行われており、任意ファイル名の置き換え自体を検証していない）。本番投入前に
-  実リプレイでのスモークテストを推奨する。
-- th06のゲーム本体実行ファイルは`worker`のGameConfig慣習(`th{N}.exe`)に合わせて
-  `東方紅魔郷.exe`から`th06.exe`へリネームして配置する必要がある（`worker/README.md`
-  「タイトル資産のS3アップロード手順」参照）。このリネーム自体はth07/th08でも
-  前提としている。本番用th06ゲームデータ・WINEPREFIX(`prefixes/th06-wined3d-gl`、
-  `worker/setup_wineprefix.sh`で新規作成)のS3タイトル資産アップロードは
-  2026-07-23に完了済み（手順は`CLAUDE.local.md`参照）。ただし上記の通り正規
-  スロット名の実機検証はまだ済んでいないため、本番投入前のスモークテストは
-  引き続き必要。
+  2026-07-23にローカル実機スモークテストで検証済み**。`worker/games/th06`の
+  `replay/`に任意ファイル名のリプレイ(`test-fixtures/th06/th6_02.rpy`)を
+  `th6_ud0000.rpy`として配置し、`record_th06.py`をそのまま実行したところ、
+  MODが「1件目のリプレイ」として正しく選択・再生し、60fps安定・重複フレームなし
+  でゲームプレイ画面(スコア進行・ReimuA・日本語表示すべて正常)を確認できた。
+- **th06のゲーム本体実行ファイルは元の`東方紅魔郷.exe`のまま使う(th07/th08のような
+  `th{N}.exe`へのリネームはしない)**。当初th07/th08のGameConfig慣習に合わせて
+  `th06.exe`へリネームしていたが、2026-07-23の実機検証でVsyncPatch(`vpatch_th06.dll`)
+  が対象プロセスの実行ファイル名を検証しているらしいことが判明し、リネームすると
+  `WaitForStableWindow`が`stable`に到達せずCPU使用率100%で張り付く白画面ハングが
+  再発することを確認した(`東方紅魔郷.exe`のままだと約3.5秒で正常に安定)。このため
+  `GameConfig.game_exe`/`process_name`に明示的なオーバーライドの仕組みを追加し
+  (`worker/recording_common.py`)、th06は`game_exe="東方紅魔郷.exe"`・
+  `process_name="東方紅魔郷"`(Linuxの`/proc/PID/comm`が15バイトで切り詰められる
+  ため、`pgrep -x`/`pkill -x`用に拡張子なしの別名が必要、touhou-recorder
+  reports/31)を指定する(§5参照)。本番用th06ゲームデータ・WINEPREFIX
+  (`prefixes/th06-wined3d-gl`、`worker/setup_wineprefix.sh`で新規作成)の
+  S3タイトル資産アップロードは2026-07-23に完了済み（手順は`CLAUDE.local.md`参照）。
