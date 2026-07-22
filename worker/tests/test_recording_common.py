@@ -52,9 +52,12 @@ def test_mad_computes_mean_absolute_difference():
     assert rc.mad(a, b) == pytest.approx(2.0)
 
 
-def test_build_video_ffmpeg_cmd_without_watermark():
+def test_build_video_ffmpeg_cmd_captures_without_watermark():
+    # ウォーターマークはmux_audio_video()側で合成するため、build_video_ffmpeg_cmd()は
+    # 常にウォーターマークなしの生キャプチャコマンドを返す(-copytsとoverlayの
+    # フレーム同期不具合を避けるため、reports/28参照)。
     config = make_config()
-    cmd = rc.build_video_ffmpeg_cmd(config, 0, 0, 640, 480, "out.video.mp4", None, 285)
+    cmd = rc.build_video_ffmpeg_cmd(config, 0, 0, 640, 480, "out.video.mp4")
 
     assert cmd[0] == "ffmpeg"
     assert "-filter_complex" not in cmd
@@ -63,26 +66,6 @@ def test_build_video_ffmpeg_cmd_without_watermark():
     assert "libx264" in cmd
     assert "640x480" in cmd
     assert "-copyts" in cmd  # A/V同期補正用の絶対start_time保持(reports/28)
-
-
-def test_build_video_ffmpeg_cmd_with_watermark_caps_width_at_half_frame_width():
-    config = make_config()
-    # ウォーターマーク幅は既定285pxでも、画面の半分より広くはしない
-    # (狭いウィンドウで画面の大半を覆ってしまうのを防ぐ)。
-    cmd = rc.build_video_ffmpeg_cmd(config, 0, 0, 200, 480, "out.video.mp4", "watermark.webm", 285)
-
-    assert "-filter_complex" in cmd
-    filter_expr = cmd[cmd.index("-filter_complex") + 1]
-    assert "scale=100:-1" in filter_expr  # min(285, 200 // 2) == 100
-    assert "libvpx-vp9" in cmd  # VP9アルファはlibvpx経由デコーダでないと不透明扱いになる(reports/18)
-
-
-def test_build_video_ffmpeg_cmd_with_watermark_keeps_requested_width_when_frame_is_wide():
-    config = make_config()
-    cmd = rc.build_video_ffmpeg_cmd(config, 0, 0, 1920, 1080, "out.video.mp4", "watermark.webm", 285)
-
-    filter_expr = cmd[cmd.index("-filter_complex") + 1]
-    assert "scale=285:-1" in filter_expr
 
 
 def test_build_audio_ffmpeg_cmd_uses_pulse_source():
@@ -179,6 +162,27 @@ def test_mux_audio_video_skips_offset_when_start_time_unavailable(monkeypatch):
     rc.mux_audio_video("video.mp4", "audio.m4a", "out.mp4", {}, log=lambda msg: None)
 
     assert "-itsoffset" not in captured["cmd"]
+
+
+def test_mux_audio_video_uses_stream_copy(monkeypatch):
+    # ウォーターマークはこの関数(録画直後のmux)では合成しない。x11grabの生ptsが
+    # wallclockベース(実epoch秒)のまま`-copyts`でfiltergraphに渡ると、ほぼ0起点の
+    # ウォーターマーク動画とoverlayのフレーム同期が噛み合わず不発になる不具合が
+    # あったため、ウォーターマーク合成はupscale.py側(720p変換と同時)に移した。
+    monkeypatch.setattr(rc, "ffprobe_start_time", lambda path, env: None)
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return type("Result", (), {"returncode": 0, "stderr": b""})()
+
+    monkeypatch.setattr(rc.subprocess, "run", fake_run)
+
+    rc.mux_audio_video("video.mp4", "audio.m4a", "out.mp4", {}, log=lambda msg: None)
+
+    cmd = captured["cmd"]
+    assert "-filter_complex" not in cmd
+    assert "copy" in cmd
 
 
 def test_save_progress_snapshot_writes_frame_and_state_atomically(tmp_path):
