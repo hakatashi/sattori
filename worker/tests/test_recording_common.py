@@ -30,6 +30,30 @@ def test_game_config_derives_exe_dll_and_log_path_from_game_id():
     assert config.log_path == "/instance/th08_autoplay.log"
 
 
+def test_game_config_extra_dlls_defaults_to_empty():
+    config = make_config()
+
+    assert config.extra_dlls == ()
+
+
+def test_build_injector_cmd_without_extra_dlls():
+    config = make_config()
+
+    cmd = rc.build_injector_cmd(config)
+
+    assert cmd == ["wine", "injector.exe", "th08.exe", "th08_hook.dll"]
+
+
+def test_build_injector_cmd_injects_extra_dlls_before_hook_dll():
+    # th06のVsyncPatch(vpatch_th06.dll)はwined3dの白画面ハングを避けるため、
+    # MOD本体(hook_dll)より前に注入されなければならない(touhou-recorder reports/30)。
+    config = make_config(game_id="th06", extra_dlls=("vpatch_th06.dll",))
+
+    cmd = rc.build_injector_cmd(config)
+
+    assert cmd == ["wine", "injector.exe", "th06.exe", "vpatch_th06.dll", "th06_hook.dll"]
+
+
 def test_game_config_build_env_sets_wine_and_locale_vars():
     config = make_config()
 

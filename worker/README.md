@@ -1,10 +1,10 @@
 # worker — Sattori 録画ワーカー
 
-東方妖々夢(th07)・東方永夜抄(th08)のリプレイを Wine + Xvfb + ffmpeg でヘッドレス
-録画し、S3 へアップロードする Python ワーカー。AWS EC2 Spot インスタンス上で Docker
-コンテナとして実行される。技術的背景は `touhou-recorder` の PoC レポート
+東方紅魔郷(th06)・東方妖々夢(th07)・東方永夜抄(th08)のリプレイを Wine + Xvfb + ffmpeg
+でヘッドレス録画し、S3 へアップロードする Python ワーカー。AWS EC2 Spot インスタンス上で
+Docker コンテナとして実行される。技術的背景は `touhou-recorder` の PoC レポート
 (th07: `reports/11`, `reports/13`, `reports/14`, `reports/16`, `reports/17`, `reports/21`。
-th08: `reports/22`〜`reports/26`、Issue #13)を参照。
+th08: `reports/22`〜`reports/26`、Issue #13。th06: `reports/30`〜`reports/32`)を参照。
 
 ## 構成
 
@@ -12,13 +12,15 @@ th08: `reports/22`〜`reports/26`、Issue #13)を参照。
 | --- | --- |
 | `entrypoint.py` | ジョブ全体の制御。DynamoDBのチェックポイント確認 → (再開でなければ)S3 DL →
   録画 → 生動画をS3へチェックポイントUP → 720p変換 → S3 UP → DynamoDB/taskToken 通知。
-  GAME環境変数に応じて `record_th07.py` / `record_th08.py` を呼び分ける |
-| `recording_common.py` | th07・th08共通の録画パイプライン本体(Issue #13でth08対応時に
+  GAME環境変数に応じて `record_th06.py` / `record_th07.py` / `record_th08.py` を呼び分ける |
+| `recording_common.py` | th06・th07・th08共通の録画パイプライン本体(Issue #13でth08対応時に
   共通化)。Xvfb起動・ウィンドウ検出・録画・終了検知(画面静止のMAD判定)・fps暴走/
   処理落ちの早期検知・自動リトライ(既定3回)・映像/音声を別プロセスで録画し後でmuxする
-  処理(reports/26)を担う。進捗スクリーンショット/状態も書き出す |
-| `record_th07.py` / `record_th08.py` | タイトル固有のパス設定(`GameConfig`)を組み立てて
-  `recording_common.record_with_retry()` を呼ぶだけの薄いラッパー |
+  処理(reports/26)・フックDLLより前に追加DLLを注入する処理(`GameConfig.extra_dlls`、
+  th06のVsyncPatch用)を担う。進捗スクリーンショット/状態も書き出す |
+| `record_th06.py` / `record_th07.py` / `record_th08.py` | タイトル固有のパス設定
+  (`GameConfig`)を組み立てて `recording_common.record_with_retry()` を呼ぶだけの薄い
+  ラッパー |
 | `upscale.py` | 録画動画をアスペクト比を保って720pへアップスケールする後処理(reports/21)。
   進捗コールバック対応 |
 | `status.py` | DynamoDB へのジョブ状態・進捗反映、チェックポイント確認用のジョブ取得 |
@@ -29,8 +31,10 @@ th08: `reports/22`〜`reports/26`、Issue #13)を参照。
   増大する問題への対応として、ワーカーイメージ自体はタイトル数に依存しない共通部分
   のみで構成する |
 | `Dockerfile` | 実行イメージ定義 |
-| `mods/common/` | DLL インジェクタ(`injector.exe`)・共通フック処理・fps計測スレッド
-  (`fps_monitor.*`、th08のfps暴走検知用、reports/22)のソース(C++, MSVC) |
+| `mods/common/` | DLL インジェクタ(`injector.exe`。複数DLLの順次注入に対応、th06の
+  VsyncPatch+MOD本体の共存に使う)・共通フック処理・fps計測スレッド(`fps_monitor.*`、
+  th08のfps暴走検知用、reports/22)のソース(C++, MSVC) |
+| `mods/th06_replay_autoplay/` | th06 自動再生フック DLL(`th06_hook.dll`)のソース(C++, MSVC) |
 | `mods/th07_replay_autoplay/` | th07 自動再生フック DLL(`th07_hook.dll`)のソース(C++, MSVC) |
 | `mods/th08_replay_autoplay/` | th08 自動再生フック DLL(`th08_hook.dll`)のソース(C++, MSVC) |
 
@@ -68,6 +72,36 @@ touhou-recorderでの事前検証(reports/22〜26)を踏まえた設計:
   不安定性はver1.00d更新+音声分離修正でおおむね解消された前提のため、旧検証時に
   th08向けに推奨されていた8〜15回のような大きな値は採用せず、th07を含む両タイトル
   共通の既定値としている。
+
+## th06対応の技術的背景
+
+touhou-recorderでの事前検証(reports/30〜32)を踏まえた設計:
+
+- **wined3dの白画面ハング回避にVsyncPatchが必須**: th06はWine/最新Windows環境で
+  頻発する既知の互換性バグ(D3D8のvsync検出関連)により、そのままでは画面が白一色の
+  まま固まる(reports/30)。ファン製パッチ「VsyncPatch」(`vpatch_th06.dll`)をMOD本体
+  (`th06_hook.dll`)より前に同一プロセスへ注入することで解消する。このため
+  `mods/common/injector.cpp` は複数DLLを指定順に注入してからメインスレッドを再開する
+  方式に拡張されている(`injector.exe <target.exe> <hook1.dll> [hook2.dll ...]`、th07/th08
+  はDLL1個のみの従来通りの呼び出しのままで後方互換)。`GameConfig.extra_dlls`に
+  `("vpatch_th06.dll",)`を指定すると、`recording_common.build_injector_cmd()`がhook_dll
+  より前にこれを注入するコマンドを組み立てる。`vpatch_th06.dll`自体はタイトル資産
+  アーカイブの`games/th06`に同梱しておけば、`prepare_instance()`のrsyncで自動的に
+  instance_dirへコピーされる(個別コピー不要)。
+- **タイトル画面の構造がth07/th08と異なる**: th06はタイトル画面が最初からアトラクト
+  モードのデモプレイ("DEMO PLAY")を表示しており、メニュー自体がまだ出ていない。
+  `mods/th06_replay_autoplay/dllmain.cpp`はDown連打の前にメニュー表示のためのEnter
+  押下を1回余分に行う(reports/31)。
+- **fps暴走の兆候は見られなかった**が、`mods/th06_replay_autoplay/`は
+  `fps_monitor.cpp`を組み込んでいないため`scan_fps_runaway()`は実質的に発火しない
+  (th07と同様)。処理落ちの早期検知・自動リトライ・音声/映像の別プロセス録画は
+  th07/th08と共通の実装をそのまま使う。
+- **リプレイの正規スロット名(`th6_ud0000.rpy`)は未検証**: th07/th08の命名則
+  (`th{N}_ud####.rpy`)を踏襲しているが、touhou-recorderの検証(reports/30〜32)は
+  既存の numbered replay ファイル名(`th6_02.rpy`等)でのみ行われており、任意ファイル名
+  →正規スロット名の置き換え自体が「1件目のリプレイ」として実際に認識・選択される
+  ことは実ゲームデータで未検証(AGENTS.md §10参照)。本番投入前に実リプレイでの
+  スモークテストを推奨する。
 
 ## テスト(`tests/`)
 
@@ -178,6 +212,24 @@ tar -czf /tmp/th08-assets.tar.gz \
 aws s3 cp /tmp/th08-assets.tar.gz "s3://${TITLE_ASSETS_BUCKET}/titles/th08/assets.tar.gz"
 ```
 
+th06の場合、`GameConfig.game_exe`(`recording_common.py`)が`th06.exe`という
+ASCIIファイル名を前提とするため、`games/th06/`配下ではゲーム本体の実行ファイルを
+元の`東方紅魔郷.exe`から`th06.exe`へリネームして配置すること(th07/th08も同様の
+リネーム済みファイル名を前提としている)。また、wined3dの白画面ハング回避に必須の
+`vpatch_th06.dll`・`vpatch.ini`(VsyncPatch本体、`mods/th06_replay_autoplay/`配下では
+なく`games/th06/`直下に同梱する。`recording_common.prepare_instance()`のrsyncで
+自動コピーされるため個別の`mods/{title}_replay_autoplay/build/`配置は不要):
+
+```bash
+cd worker
+tar -czf /tmp/th06-assets.tar.gz \
+  games/th06 \
+  prefixes/th06-wined3d-gl \
+  mods/common/build/injector.exe \
+  mods/th06_replay_autoplay/build/th06_hook.dll
+aws s3 cp /tmp/th06-assets.tar.gz "s3://${TITLE_ASSETS_BUCKET}/titles/th06/assets.tar.gz"
+```
+
 `title_assets.py` はインスタンス起動時に `worker/games/{title}/` が既に存在するかを
 確認し、無ければこのアーカイブをダウンロード・展開する(存在すればスキップ、
 Spot中断リトライ時の同一インスタンス再利用等を想定)。展開先はワーカーイメージ内の
@@ -186,22 +238,26 @@ Spot中断リトライ時の同一インスタンス再利用等を想定)。展
 
 ## MOD (DLL インジェクタ / 自動再生フック) のビルド
 
-`mods/` はソースのみ管理しており、`injector.exe` / `th07_hook.dll` / `th08_hook.dll`
-自体は `.gitignore` 済みのビルド成果物。**Windows + Visual Studio (C++ x86/x64 tools)**
-が必要(ゲームが 32bit ネイティブ Win32 バイナリのため MSVC の x86 ツールチェーンで
-ビルドする)。x86 Native Tools Command Prompt for VS、または通常のコマンドプロンプトから:
+`mods/` はソースのみ管理しており、`injector.exe` / `th06_hook.dll` / `th07_hook.dll` /
+`th08_hook.dll` 自体は `.gitignore` 済みのビルド成果物。
+**Windows + Visual Studio (C++ x86/x64 tools)** が必要(ゲームが 32bit ネイティブ
+Win32 バイナリのため MSVC の x86 ツールチェーンでビルドする)。x86 Native Tools
+Command Prompt for VS、または通常のコマンドプロンプトから:
 
 ```bat
 worker\mods\common\build_injector.bat
+worker\mods\th06_replay_autoplay\build.bat
 worker\mods\th07_replay_autoplay\build.bat
 worker\mods\th08_replay_autoplay\build.bat
 ```
 
 - `build_injector.bat` は `setup_vcvars.bat`(vswhere.exe で VS を検出し
   `vcvars32.bat` を呼ぶ)経由で環境を整えてから `cl.exe` で
-  `worker/mods/common/build/injector.exe` を生成する(タイトル非依存の共通バイナリ)。
-- `th07_replay_autoplay/build.bat` は `dllmain.cpp` と `common/` の
-  `dinput_hook.cpp` / `window_wait.cpp` / `logging.cpp` を静的にまとめて
+  `worker/mods/common/build/injector.exe` を生成する(タイトル非依存の共通バイナリ。
+  複数DLLの順次注入に対応、th06のVsyncPatch+MOD本体の共存に使う)。
+- `th06_replay_autoplay/build.bat` / `th07_replay_autoplay/build.bat` は `dllmain.cpp` と
+  `common/` の `dinput_hook.cpp` / `window_wait.cpp` / `logging.cpp` を静的にまとめて
+  それぞれ `worker/mods/th06_replay_autoplay/build/th06_hook.dll` /
   `worker/mods/th07_replay_autoplay/build/th07_hook.dll` を生成する。
 - `th08_replay_autoplay/build.bat` も同様に `fps_monitor.cpp`(th08のfps暴走検知用、
   reports/22)を加えて `worker/mods/th08_replay_autoplay/build/th08_hook.dll` を生成する。
@@ -226,8 +282,8 @@ worker\mods\th08_replay_autoplay\build.bat
 | 変数 | 説明 |
 | --- | --- |
 | `JOB_ID` | ジョブ ID(DynamoDB キー・出力キーに使用) |
-| `GAME` | タイトル(`th07` / `th08`。`entrypoint.py` がこの値に応じて
-  `record_th07.py` / `record_th08.py` を呼び分ける) |
+| `GAME` | タイトル(`th06` / `th07` / `th08`。`entrypoint.py` がこの値に応じて
+  `record_th06.py` / `record_th07.py` / `record_th08.py` を呼び分ける) |
 | `REPLAY_BUCKET` / `REPLAY_KEY` | アップロード済みリプレイの S3 位置 |
 | `OUTPUT_BUCKET` | 録画動画の出力先バケット(CloudFront オリジン) |
 | `TITLE_ASSETS_BUCKET` | タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)のバケット
@@ -239,10 +295,10 @@ worker\mods\th08_replay_autoplay\build.bat
 
 ## 出力ファイル
 
-録画完了後、`upscale.py` で720p(アスペクト比維持、th07なら960x720)へ変換した版を
+録画完了後、`upscale.py` で720p(アスペクト比維持、th06・th07なら960x720)へ変換した版を
 別ファイルとして追加生成し、元動画と合わせて2本を `OUTPUT_BUCKET` へアップロードする
 (同時録画中のアップスケールは4vCPU構成で重複フレーム率を悪化させるため採用しない、
-reports/21)。th07(640x480)のような低解像度録画はそのままだと YouTube 側で60fpsと
+reports/21)。th06・th07(640x480)のような低解像度録画はそのままだと YouTube 側で60fpsと
 認識されないため、ページBの主要ダウンロードボタンは既定で720p版を案内する。
 
 | S3キー | 内容 |

@@ -145,24 +145,36 @@ DynamoDB に書き込む。`converting` は録画完了(生動画チェックポ
   S3・DynamoDBへ反映）を動かす。taskToken経由で
   Step Functionsへ成否を通知する（`SendTaskSuccess`/`SendTaskFailure`）。
   UserData から `docker run`。
-- `recording_common.py`: th07・th08 共通の録画パイプライン本体(Issue #13でth08対応
-  時に共通化)。PoC `scripts/11_...`(th07)・`scripts/23_...`(th08)の刷新版。
+- `recording_common.py`: th06・th07・th08 共通の録画パイプライン本体(Issue #13で
+  th08対応時に共通化、続けてth06対応で拡張)。PoC `scripts/11_...`(th07)・
+  `scripts/23_...`(th08)・`scripts/25_...`(th06、複数タイトル対応版)の刷新版。
   Xvfb起動・ウィンドウ検出・録画・終了検知(MAD差分)に加え、**fps暴走の残存ケース
   検知**(`mods/common/fps_monitor.cpp`が5秒毎に出力するHzログを閾値100Hz・2回連続
   超過で異常判定、`touhou-recorder reports/22・23`)・**処理落ちの早期検知**
   (0.15秒間隔の短時間サンプリングで重複フレーム率70%以上を検知、録画開始5分以内
-  限定、`reports/12・13・22`)・**自動リトライ**(既定3回、`record_th07.py` /
-  `record_th08.py` 共通)を持つ。2秒毎の画面キャプチャのうち5回に1回(約10秒毎)を
-  `--progress-dir`へスクリーンショット(`frame.jpg`)と経過時間(`state.json`)として
-  書き出す（追加のffmpeg呼び出しは発生しない。既存のMAD差分検知用キャプチャを流用）。
-- `record_th07.py` / `record_th08.py`: タイトル固有のパス設定(`GameConfig`)を
-  組み立てて`recording_common.record_with_retry()`を呼ぶだけの薄いラッパー。
-- **任意ファイル名のリプレイを正規スロット名(`th7_ud0000.rpy` / `th8_ud0000.rpy`)
-  として配置**することで、MOD の「リプレイ一覧の1件目を固定選択」ロジックを改修
-  せずに任意リプレイを再生する。th08の命名則(`th{N}_ud####.rpy`をth07から踏襲)は
-  touhou-recorderの検証レポート(22〜26)では未検証だったため、Issue #13対応時に
-  実ゲームデータ(ver1.00d)で別途実機検証した。
-- **映像/音声を別プロセスで録画し後でmux**(既定、th07・th08共通)。単一ffmpegで
+  限定、`reports/12・13・22`)・**自動リトライ**(既定3回、`record_th06.py` /
+  `record_th07.py` / `record_th08.py` 共通)・**フックDLLより前に追加DLLを注入する
+  仕組み**(`GameConfig.extra_dlls`、th06のVsyncPatch(`vpatch_th06.dll`)用。
+  `mods/common/injector.cpp`は複数DLLの順次注入に対応済み)を持つ。2秒毎の画面
+  キャプチャのうち5回に1回(約10秒毎)を`--progress-dir`へスクリーンショット
+  (`frame.jpg`)と経過時間(`state.json`)として書き出す（追加のffmpeg呼び出しは
+  発生しない。既存のMAD差分検知用キャプチャを流用）。
+- `record_th06.py` / `record_th07.py` / `record_th08.py`: タイトル固有のパス設定
+  (`GameConfig`)を組み立てて`recording_common.record_with_retry()`を呼ぶだけの
+  薄いラッパー。
+- **任意ファイル名のリプレイを正規スロット名(`th6_ud0000.rpy` / `th7_ud0000.rpy` /
+  `th8_ud0000.rpy`)として配置**することで、MOD の「リプレイ一覧の1件目を固定選択」
+  ロジックを改修せずに任意リプレイを再生する。th08の命名則(`th{N}_ud####.rpy`を
+  th07から踏襲)は touhou-recorderの検証レポート(22〜26)では未検証だったため、
+  Issue #13対応時に実ゲームデータ(ver1.00d)で別途実機検証した。**th06の命名則は
+  同様に未検証**（§10参照）。
+- **th06はwined3dの白画面ハング(既知のvsync/タイミングバグ)を起こすため、
+  ファン製パッチ「VsyncPatch」(`vpatch_th06.dll`)をMOD本体(`th06_hook.dll`)より
+  前に同一プロセスへ注入する必要がある**(`reports/30`)。th06のタイトル画面は
+  最初からアトラクトモードのデモプレイを表示しておりメニュー自体がまだ出ていない
+  ため、MOD(`th06_replay_autoplay/dllmain.cpp`)はDown連打の前にメニュー表示の
+  ためのEnter押下を1回余分に行う(`reports/31`)。
+- **映像/音声を別プロセスで録画し後でmux**(既定、th06・th07・th08共通)。単一ffmpegで
   x11grab(映像)とpulse(音声)を同時取り込みすると、内部のA/V同期がth08の描画
   タイミングを律速し、AWS環境で重複フレーム率が85%超まで悪化することが判明した
   (`reports/26`)。th07はこの問題の影響を受けないが、安全側に倒して両タイトル
@@ -197,14 +209,17 @@ DynamoDB に書き込む。`converting` は録画完了(生動画チェックポ
 - `interruption_watcher.py` / `progress_reporter.py`: IMDSv2ポーリングによる
   Spot中断監視、および進捗スクリーンショットのS3アップロードを行うバックグラウンド
   スレッド（Issue #11、標準ライブラリのみで実装・新規依存なし）。
-- `worker/mods/`: DLL インジェクタ（`common/injector.cpp`）、th07/th08 自動再生フック
-  （`th07_replay_autoplay/dllmain.cpp` / `th08_replay_autoplay/dllmain.cpp`）、
+- `worker/mods/`: DLL インジェクタ（`common/injector.cpp`。複数DLLを指定順に注入して
+  からメインスレッドを再開する方式に対応しており、th06のVsyncPatch(`vpatch_th06.dll`)
+  とMOD本体(`th06_hook.dll`)の共存に使う。th07/th08はDLL1個のみの従来通りの呼び出し
+  のままで後方互換）、th06/th07/th08 自動再生フック（`th06_replay_autoplay/dllmain.cpp` /
+  `th07_replay_autoplay/dllmain.cpp` / `th08_replay_autoplay/dllmain.cpp`）、
   fps計測スレッド（`common/fps_monitor.cpp`、th08のfps暴走検知用）の**ソースはこの
   リポジトリで管理**（元は `touhou-recorder` PoC）。C++/MSVC（Windows + VS C++ x86
   tools）でビルドが必要（ビルド手順は `worker/README.md`。mingw-w64での代替ビルドも
   検証済み）。
-- ゲーム本体・WINEPREFIX・MOD **ビルド成果物**（`injector.exe`/`th07_hook.dll`/
-  `th08_hook.dll` 等）・ウォーターマーク素材は**リポジトリに含めない**
+- ゲーム本体・WINEPREFIX・MOD **ビルド成果物**（`injector.exe`/`th06_hook.dll`/
+  `th07_hook.dll`/`th08_hook.dll` 等）・ウォーターマーク素材は**リポジトリに含めない**
   （`.gitignore` 済み）。ビルド/配置は `worker/` 配下へ（`worker/README.md` 参照）。
 
 ### PoC 由来の必修ハマりどころ（`touhou-recorder/reports/` 由来）
@@ -215,7 +230,7 @@ DynamoDB に書き込む。`converting` は録画完了(生動画チェックポ
 - ウォーターマーク webm のデコードは `-c:v libvpx-vp9` を明示（VP9アルファの罠）。
 - **4 vCPU が実用下限**、インスタンスは `c7i.xlarge` 推奨。高クロック特化(z1d)は逆効果。
 - `.cfg` はウィンドウモード必須（フルスクリーンだと Xvfb でハング）。
-- 対応タイトルは th07・th08(Issue #13)。フェーズ3以降で他タイトルのMOD移植を進める。
+- 対応タイトルは th06・th07・th08。フェーズ3以降で他タイトルのMOD移植を進める。
 - 720pアップスケールは**幅を1280に固定しない**（`reports/21`）。th07は640x480(4:3)
   であり、1280x720(16:9)に固定すると横方向だけ引き伸ばされて歪む。入力解像度から
   `round(w * 720 / h / 2) * 2` で幅を算出し、アスペクト比を保つ（th07なら960x720）。
@@ -235,6 +250,14 @@ DynamoDB に書き込む。`converting` は録画完了(生動画チェックポ
   initのように孤児プロセスをreapしないため、`pkill`されたゲームプロセスがzombieの
   まま残り、次のリトライ試行で`pgrep`がzombieのPIDを誤って掴んでウィンドウ検出が
   永遠に失敗する。zombie（状態`Z`）を除外してPIDを取得すること。
+- **th06はwined3dの白画面ハングを起こす既知のvsync/タイミングバグを持つ**
+  （`reports/30`）。ファン製パッチ「VsyncPatch」(`vpatch_th06.dll`)をMOD本体より前に
+  同一プロセスへ注入することで解消する（`GameConfig.extra_dlls`、`injector.exe`は
+  複数DLLの順次注入に対応済み）。Direct3Dレジストリの特殊設定（`OffscreenRenderingMode`
+  等）は不要と確認済み。
+- **th06のタイトル画面は最初からアトラクトモードのデモプレイを表示しており、
+  th07/th08と異なりメニュー自体がまだ出ていない**（`reports/31`）。MODはDown連打の
+  前にメニュー表示のためのEnter押下を1回余分に行う。
 
 ## 6. インフラ（`infra/`, CDK）
 
@@ -368,8 +391,12 @@ Sattori向けの `ReplayInfo` への変換は `packages/shared/src/replay.ts` �
   の貫通（実装済み）。
 - **フェーズ3**: th08 録画対応（**実装済み**。§5参照、Issue #13。ver1.00d相当の
   ゲームデータ・fps暴走/処理落ちの検知とリトライ・映像音声分離録画をth07と共通の
-  パイプラインとして実装）。
-- **フェーズ3以降(継続)**: 対応タイトル拡大(th06→th10+…、MOD 移植と録画ワーカー拡張を
+  パイプラインとして実装）。続けてth06 録画対応（**実装済み**。§5参照。
+  wined3d白画面ハングをファン製VsyncPatch(`vpatch_th06.dll`)併用の複数DLL注入で
+  回避し、th07/th08と共通のパイプラインに組み込んだ。touhou-recorderでの検証
+  (reports/30〜32)ではローカル・Docker・AWS実機いずれも重複フレーム率0.1%程度と
+  良好）。
+- **フェーズ3以降(継続)**: 対応タイトル拡大(th09→th10+…、MOD 移植と録画ワーカー拡張を
   並行。パーサー側は既に多タイトル対応済みのため主にMOD移植が残作業)、
   レート制限・濫用対策強化、コスト監視、同時実行スケーリング検証。
 
@@ -379,9 +406,19 @@ Sattori向けの `ReplayInfo` への変換は `packages/shared/src/replay.ts` �
   自体の途中再開は対象外で、中断時はそのフェーズを最初からやり直す）。
 - 録画がリプレイと一致しているかの自動デシンク検知は PoC でも未実装（目視のみ）。
 - 複数 EC2 同時起動の負荷検証は未実施（1インスタンス=1ジョブ分離で問題ないと推測）。
-- th07・th08 以外のタイトルは MOD 移植（録画対応）が未着手
+- th06・th07・th08 以外のタイトルは MOD 移植（録画対応）が未着手
   （リプレイパーサー自体は th06〜th20 の大半に対応済み、§8参照）。
 - th08の「任意ファイル名リプレイ→正規スロット名」命名則(`th8_ud0000.rpy`)は
   Issue #13対応時にtouhou-recorderの実ゲームデータ(ver1.00d)で実機検証済みだが、
   本番のS3タイトル資産アーカイブ(実際にアップロードするth08データ)そのものでの
   検証はまだ済んでいない。本番投入前に実リプレイでのスモークテストを推奨する。
+- **th06の「任意ファイル名リプレイ→正規スロット名」命名則(`th6_ud0000.rpy`)は
+  実ゲームデータでの実機検証が未実施**（th08の時と異なり、touhou-recorderでの
+  検証(reports/30〜32)は既存の numbered replay ファイル名(`th6_02.rpy`等)でのみ
+  行われており、任意ファイル名の置き換え自体を検証していない）。本番投入前に
+  実リプレイでのスモークテストを推奨する。
+- th06のゲーム本体実行ファイルは`worker`のGameConfig慣習(`th{N}.exe`)に合わせて
+  `東方紅魔郷.exe`から`th06.exe`へリネームして配置する必要がある（`worker/README.md`
+  「タイトル資産のS3アップロード手順」参照）。このリネーム自体はth07/th08でも
+  前提としているが、実際に本番のth06ゲームデータ・WINEPREFIX(`prefixes/th06-wined3d-gl`)
+  を用意してS3へアップロードする作業はこのPRの対象外（別途実施が必要）。

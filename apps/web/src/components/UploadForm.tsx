@@ -27,7 +27,7 @@ const gameTitles = [
   {
     japanese: "東方紅魔郷",
     english: "EoSD",
-    supported: false,
+    supported: true,
     icon: 'th06.png',
   },
   {
