@@ -420,5 +420,8 @@ Sattori向けの `ReplayInfo` への変換は `packages/shared/src/replay.ts` �
 - th06のゲーム本体実行ファイルは`worker`のGameConfig慣習(`th{N}.exe`)に合わせて
   `東方紅魔郷.exe`から`th06.exe`へリネームして配置する必要がある（`worker/README.md`
   「タイトル資産のS3アップロード手順」参照）。このリネーム自体はth07/th08でも
-  前提としているが、実際に本番のth06ゲームデータ・WINEPREFIX(`prefixes/th06-wined3d-gl`)
-  を用意してS3へアップロードする作業はこのPRの対象外（別途実施が必要）。
+  前提としている。本番用th06ゲームデータ・WINEPREFIX(`prefixes/th06-wined3d-gl`、
+  `worker/setup_wineprefix.sh`で新規作成)のS3タイトル資産アップロードは
+  2026-07-23に完了済み（手順は`CLAUDE.local.md`参照）。ただし上記の通り正規
+  スロット名の実機検証はまだ済んでいないため、本番投入前のスモークテストは
+  引き続き必要。
