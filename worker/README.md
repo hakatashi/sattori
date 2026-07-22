@@ -101,6 +101,43 @@ MODビルド成果物(`worker/mods/**/build/*`)は **イメージには含めな
 環境変数に応じて起動時にダウンロード・展開する(`title_assets.py`)。手順は次節
 「タイトル資産のS3アップロード手順」を参照。
 
+## WINEPREFIXの作成・フォント修正(`setup_wineprefix.sh`)
+
+`worker/prefixes/{title}-wined3d-gl/`(WINEPREFIX)自体は`.gitignore`済みのビルド
+成果物だが、その生成手順(`wineboot`初期化・MS Gothicフォントの配置・レジストリ
+登録)は`worker/setup_wineprefix.sh`としてコード化してある。th07・th08の
+`th{N}.exe`はGDIのフォント名指定にShift_JISで`ＭＳ ゴシック`をハードコードして
+おり、これに対応するフォントファイル・レジストリがWINEPREFIXに無いと、
+タイトル画面やスペルカード名等の動的描画テキストが文字化けする
+(touhou-recorder reports/13, reports/29)。th07には元から適用されていたが
+th08には未適用だったため、本番で文字化けが発生していた(2026-07-23に修正・
+再アップロード済み)。
+
+```bash
+cd worker
+# 新規WINEPREFIXを作る場合(wineboot初期化から)
+./setup_wineprefix.sh prefixes/th08-wined3d-gl /path/to/msgothic.ttc
+# 既存WINEPREFIXにフォント修正のみ適用する場合(ディレクトリが存在すればwineboot初期化はスキップされる)
+./setup_wineprefix.sh prefixes/th08-wined3d-gl /path/to/msgothic.ttc
+```
+
+`msgothic.ttc`(実際のMS Gothic/MS PGothic/MS UI Gothicを含むTrueTypeコレクション)
+はWindowsのライセンスフォントであり、著作権上リポジトリにもS3にも単体では置いて
+いない。Windows実機等から別途用意すること。
+
+日本語ロケール(`LANG=ja_JP.UTF-8`/`LC_ALL=ja_JP.UTF-8`)はWINEPREFIX作成時ではなく
+`recording_common.py`が起動時に毎回設定するため、このスクリプトでは扱わない
+(reports/13で「WINEPREFIXが英語ロケールで初期化されているとANSI文字列の変換が
+壊れる」問題が見つかったが、対策はプレフィックス再作成ではなく実行時の環境変数で
+足りると判明した)。
+
+このスクリプトが対応するのはtouhou-recorderのレポートで実際に文書化・検証された
+範囲(プレフィックス初期化+フォント修正)のみ。それ以外にWINEPREFIXへ手作業で
+加えた変更があった場合、このスクリプトでは再現されない可能性がある。
+
+WINEPREFIXを新規作成・更新した後は、次節の手順でタイトル資産アーカイブに含めて
+S3へアップロードすること。
+
 ## タイトル資産のS3アップロード手順(Issue #22)
 
 新タイトル追加時(#13)や既存タイトルのゲーム本体・MOD更新時は、以下の3点を
