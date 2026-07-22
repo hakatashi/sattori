@@ -32,7 +32,13 @@ def ensure_title_assets(s3, bucket, game, *, log=print):
     try:
         log(f"タイトル資産を展開します: {archive_path} -> {REPO}")
         with tarfile.open(archive_path, "r:gz") as tar:
-            tar.extractall(REPO, filter="data")
+            # WINEPREFIXは`dosdevices/z:`->`/`等、絶対パスへのシンボリックリンクを
+            # 内部に含むのが正常な構造(Wineのドライブマッピングの仕組み)。
+            # Python 3.12+の既定的な安全フィルタ`filter="data"`はそうした絶対リンクを
+            # 一律拒否してしまい展開に失敗する。このアーカイブは自分たちがビルドして
+            # 自分たちの非公開S3バケットへ置いた信頼済み成果物であり未検証の外部入力
+            # ではないため、`filter="fully_trusted"`(3.12未満相当の無制限展開)を使う。
+            tar.extractall(REPO, filter="fully_trusted")
     finally:
         os.remove(archive_path)
     log(f"タイトル資産の展開が完了しました: game={game}")
