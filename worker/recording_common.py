@@ -99,7 +99,7 @@ MAX_DUPLICATE_RATE_DEFAULT = 30.0
 class GameConfig:
     """タイトルごとに異なる値をまとめたもの(record_th07.py / record_th08.py が組み立てる)。"""
 
-    game_id: str  # "th07" / "th08"(ログメッセージ・自動再生ログのファイル名接頭辞に使う)
+    game_id: str  # "th06" / "th07" / "th08"(ログメッセージ・自動再生ログのファイル名接頭辞に使う)
     display: str  # Xvfb のディスプレイ番号(例 ":97")。同一ホストでの多重起動を避けるため
     wineprefix: str
     instance_dir: str
@@ -112,6 +112,12 @@ class GameConfig:
     log_path: str = field(init=False)
     injector: str = "injector.exe"
     pulse_source: str = "auto_null.monitor"
+    # フックDLLより前に注入する追加DLL(ファイル名のみ、game_dir_src配下に同梱されており
+    # prepare_instance()のrsyncで自動的にinstance_dirへコピーされる想定)。
+    # th06はwined3dの白画面ハング回避に必須のVsyncPatch(vpatch_th06.dll、
+    # touhou-recorder reports/30・31参照)をここで指定する。th07/th08は空タプルのまま
+    # (injector.exeは複数DLL指定に対応済みだが1個のみの従来通りの呼び出しになる)。
+    extra_dlls: tuple[str, ...] = ()
 
     def __post_init__(self):
         object.__setattr__(self, "game_exe", f"{self.game_id}.exe")
@@ -152,7 +158,9 @@ def ensure_xvfb(config, env, log=print):
 
 def prepare_instance(config, replay_path, log=print):
     """ゲーム一式を instance ディレクトリへ複製し、録画対象リプレイだけを
-    正規スロット名で replay/ 配下に配置する。"""
+    正規スロット名で replay/ 配下に配置する。extra_dlls(th06のvpatch_th06.dll等)は
+    game_dir_src配下に同梱されている前提のため、以下のrsyncで自動的にコピーされる
+    (個別のcpは不要)。"""
     subprocess.run(
         ["rsync", "-a", "--exclude=replay", f"{config.game_dir_src}/", f"{config.instance_dir}/"],
         check=True,
@@ -167,6 +175,13 @@ def prepare_instance(config, replay_path, log=print):
     if os.path.exists(config.log_path):
         os.remove(config.log_path)
     log(f"instance 準備完了 (対象リプレイを {config.canonical_slot} として配置)")
+
+
+def build_injector_cmd(config):
+    """injector.exeへ渡す引数列を組み立てる。extra_dllsが指定されていれば
+    hook_dllより前に指定順で注入させる(injector.exeは指定順に全DLLを注入してから
+    メインスレッドを再開する、mods/common/injector.cpp参照)。"""
+    return ["wine", config.injector, config.game_exe, *config.extra_dlls, config.hook_dll]
 
 
 def find_window(config, env, pid):
@@ -469,9 +484,10 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     ensure_xvfb(config, env, log=log)
     prepare_instance(config, replay_path, log=log)
 
-    log("injector を起動します")
+    injector_cmd = build_injector_cmd(config)
+    log(f"injector を起動します: {' '.join(injector_cmd)}")
     subprocess.Popen(
-        ["wine", config.injector, config.game_exe, config.hook_dll],
+        injector_cmd,
         cwd=config.instance_dir, env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
