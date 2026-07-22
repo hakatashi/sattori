@@ -71,6 +71,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     estimatedDurationSeconds: body.estimatedDurationSeconds ?? null,
     progress: null,
     previewImagePath: null,
+    replayInfo: body.replayInfo ?? null,
     pendingExpiresAt: new Date(now.getTime() + PENDING_JOB_TTL_MS).toISOString(),
   };
 

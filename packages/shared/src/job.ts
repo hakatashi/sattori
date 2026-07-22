@@ -1,4 +1,5 @@
 import type { GameId } from "./games.js";
+import type { ReplayInfo } from "./replay.js";
 
 /**
  * 録画ジョブのライフサイクル。ワーカー（worker/）が進行に応じて DynamoDB を更新し、
@@ -94,4 +95,11 @@ export interface JobRecord {
    * 古い画像が返り続けるのを避けるため）。未取得なら null。
    */
   previewImagePath: string | null;
+  /**
+   * ページAで解析済みの `ReplayInfo`（`POST /magic-links` の時点でそのまま転記）。
+   * ページBで「今録画しているリプレイの内容」をSTEP2と同じ見た目で表示するために
+   * 保持する（表示専用。ワーカーの進捗算出は引き続き `estimatedDurationSeconds`
+   * を参照する）。未取得・旧ジョブなら null。
+   */
+  replayInfo: ReplayInfo | null;
 }

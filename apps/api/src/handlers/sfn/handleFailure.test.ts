@@ -39,6 +39,7 @@ const baseJob: JobRecord = {
   estimatedDurationSeconds: null,
   progress: null,
   previewImagePath: null,
+  replayInfo: null,
   pendingExpiresAt: null,
 };
 

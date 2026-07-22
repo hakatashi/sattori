@@ -85,6 +85,54 @@ describe("POST /magic-links", () => {
     expect(emailBody).not.toContain("token=");
   });
 
+  it("replayInfoが渡されればジョブレコードにそのまま転記する", async () => {
+    const { handler } = await import("./requestMagicLink.js");
+    const replayInfo = {
+      game: "th07" as const,
+      player: "koyi",
+      date: "01/18",
+      character: "MarisaA",
+      difficulty: "Extra",
+      stage: null,
+      score: 303766040,
+      cleared: true,
+      estimatedDurationSeconds: 847,
+    };
+    const res = await handler(
+      makeEvent({
+        replayKey: "replays/abc.rpy",
+        options: { watermark: true },
+        email: "user@example.com",
+        replayInfo,
+      }),
+      {} as never,
+      () => {},
+    );
+    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(202);
+
+    const putCalls = ddbMock.commandCalls(PutCommand);
+    const jobPut = putCalls.find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.replayInfo).toEqual(replayInfo);
+  });
+
+  it("replayInfoが無ければnullとして保存する", async () => {
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: "replays/abc.rpy",
+        options: { watermark: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(202);
+
+    const putCalls = ddbMock.commandCalls(PutCommand);
+    const jobPut = putCalls.find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.replayInfo).toBeNull();
+  });
+
   it("email の形式が不正なら400を返しメールを送らない", async () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(

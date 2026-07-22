@@ -39,6 +39,7 @@ function baseJob(overrides: Partial<JobRecord>): JobRecord {
     estimatedDurationSeconds: null,
     progress: null,
     previewImagePath: null,
+    replayInfo: null,
     pendingExpiresAt: null,
     ...overrides,
   };
