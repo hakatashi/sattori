@@ -1,4 +1,5 @@
 import io
+import os
 import tarfile
 from unittest.mock import MagicMock
 
@@ -64,6 +65,40 @@ def test_downloads_and_extracts_when_missing(tmp_path, monkeypatch):
     assert (repo / "mods" / "th07_replay_autoplay" / "build" / "th07_hook.dll").read_bytes() == b"hook"
     # ダウンロードした一時アーカイブはクリーンアップされる
     assert not (download_dir / "sattori-title-assets-th07.tar.gz").exists()
+
+
+def test_extracts_wineprefix_absolute_symlinks(tmp_path, monkeypatch):
+    """WINEPREFIXの`dosdevices/z:`->`/`のような絶対パスへのシンボリックリンクは
+    Wineのドライブマッピングとして正常な構造であり、展開できなければならない
+    (Python 3.12+の既定filter="data"は絶対リンクを一律拒否するため、
+    filter="fully_trusted"を使う必要がある。実際にth08で展開失敗した障害の回帰テスト)。
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    download_dir = tmp_path / "downloads"
+    download_dir.mkdir()
+    monkeypatch.setattr(ta, "REPO", str(repo))
+    monkeypatch.setattr(ta, "DOWNLOAD_DIR", str(download_dir))
+
+    archive_path = tmp_path / "src.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as tar:
+        game_info = tarfile.TarInfo(name="games/th08/th08.exe")
+        game_info.size = len(b"game-body")
+        tar.addfile(game_info, io.BytesIO(b"game-body"))
+
+        link_info = tarfile.TarInfo(name="prefixes/th08-wined3d-gl/dosdevices/z:")
+        link_info.type = tarfile.SYMTYPE
+        link_info.linkname = "/"
+        tar.addfile(link_info)
+
+    s3 = MagicMock()
+    s3.download_file.side_effect = fake_download(archive_path)
+
+    ta.ensure_title_assets(s3, "assets-bucket", "th08")
+
+    link_path = repo / "prefixes" / "th08-wined3d-gl" / "dosdevices" / "z:"
+    assert link_path.is_symlink()
+    assert os.readlink(link_path) == "/"
 
 
 def test_removes_archive_even_when_extraction_fails(tmp_path, monkeypatch):
