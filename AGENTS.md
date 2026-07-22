@@ -166,7 +166,13 @@ DynamoDB に書き込む。`converting` は録画完了(生動画チェックポ
   x11grab(映像)とpulse(音声)を同時取り込みすると、内部のA/V同期がth08の描画
   タイミングを律速し、AWS環境で重複フレーム率が85%超まで悪化することが判明した
   (`reports/26`)。th07はこの問題の影響を受けないが、安全側に倒して両タイトル
-  共通の実装にした。
+  共通の実装にした。この副作用として、x11grab(映像)とpulse(音声)は起動から
+  実際にキャプチャを開始するまでの初期化レイテンシが異なり(pulse側が数百ms〜
+  1秒超遅い)、素朴にmuxすると音声が映像より数百ms先行して聴こえる音ズレが生じる
+  (th08実機で約700ms確認、`reports/28`)。両ffmpegに`-copyts`を付与して実際の
+  絶対キャプチャ開始時刻(wallclockベースのepoch秒)を出力ファイルのstart_timeに
+  保持し、`mux_audio_video()`がその差分を実測して遅く始まった側に`-itsoffset`を
+  与えて補正する(ハードコードされた定数ではなく毎回実測、環境差を自動的に吸収)。
 - `upscale.py`: th07(640x480)のような低解像度録画をそのまま YouTube にアップロード
   すると60fpsとして認識されない問題への対応（`touhou-recorder reports/21`）。
   **録画と同時ではなく録画完了後の別ステップとして**、アスペクト比を保ったまま
@@ -209,6 +215,11 @@ DynamoDB に書き込む。`converting` は録画完了(生動画チェックポ
   （`reports/26`）。原因はA/V同期がth08の描画タイミングを律速するためで、CPU数・
   ポーリング間隔・Dockerコンテナ化は無関係（切り分け済み）。映像・音声を別プロセスで
   録画し後でmuxする。
+- **映像/音声別プロセス録画は、pulse(音声)側の起動レイテンシがx11grab(映像)より
+  数百ms〜1秒超大きいため、素朴にmuxすると音声が数百ms先行する**（`reports/28`、
+  AWS実機で約700ms確認）。両ffmpegに`-copyts`を付与しwallclockベースのepoch秒を
+  start_timeとして保持、mux時に差分を実測して遅く始まった側に`-itsoffset`で
+  補正する（`worker/recording_common.py`の`mux_audio_video()`）。
 - **コンテナ内ではzombieプロセスに注意**（`reports/24`）。PID 1（entrypoint.py）が
   initのように孤児プロセスをreapしないため、`pkill`されたゲームプロセスがzombieの
   まま残り、次のリトライ試行で`pgrep`がzombieのPIDを誤って掴んでウィンドウ検出が
