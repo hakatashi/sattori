@@ -63,8 +63,11 @@ export async function checkAndRecordRateLimit(
         new UpdateCommand({
           TableName: table,
           Key: { normalizedEmail },
-          UpdateExpression: "SET requestCount = requestCount + :one, ttl = :ttl",
+          UpdateExpression: "SET requestCount = requestCount + :one, #ttl = :ttl",
           ConditionExpression: "windowStart > :windowFloor AND requestCount < :max",
+          ExpressionAttributeNames: {
+            "#ttl": "ttl",
+          },
           ExpressionAttributeValues: {
             ":one": 1,
             ":ttl": ttl,
@@ -87,8 +90,11 @@ export async function checkAndRecordRateLimit(
         new UpdateCommand({
           TableName: table,
           Key: { normalizedEmail },
-          UpdateExpression: "SET requestCount = :one, windowStart = :now, ttl = :ttl",
+          UpdateExpression: "SET requestCount = :one, windowStart = :now, #ttl = :ttl",
           ConditionExpression: "attribute_not_exists(windowStart) OR windowStart <= :windowFloor",
+          ExpressionAttributeNames: {
+            "#ttl": "ttl",
+          },
           ExpressionAttributeValues: {
             ":one": 1,
             ":now": new Date(now).toISOString(),
