@@ -324,31 +324,27 @@ def save_progress_snapshot(progress_dir, color_frame, elapsed_seconds, expected_
     os.replace(tmp_state_path, f"{progress_dir}/state.json")
 
 
-def build_video_ffmpeg_cmd(config, x, y, w, h, video_output, watermark_path, watermark_width):
+def build_video_ffmpeg_cmd(config, x, y, w, h, video_output):
     """映像のみを録画するffmpegコマンド(音声は別プロセス、reports/26参照)。
     `-copyts`で実際の絶対キャプチャ開始時刻(wallclockベースのepoch秒)を出力ファイルの
     start_timeとして保持する。mux時にこれを使ってA/V同期を補正する(reports/28参照)。
+
+    ウォーターマークはこのコマンドでは合成しない。x11grab の生ptsは wallclock
+    ベース(実epoch秒)で `-copyts` により無加工のまま filtergraph に渡るため、
+    ほぼ0起点のウォーターマーク動画(ファイル入力)と overlay filter 内で
+    フレーム同期が全く噛み合わず、overlay の `eof_action=pass` が即座に発動して
+    ウォーターマークが一切合成されない不具合が本番のth08録画で発覚した。
+    ウォーターマークは upscale.py 側(`-copyts`を使わない通常のファイル入力
+    同士の合成で、かつどのみち720p変換のために既に発生する再エンコード1回に
+    相乗りできる)で行う。
     """
-    cmd = [
+    return [
         "ffmpeg", "-y", "-copyts",
         "-f", "x11grab", "-draw_mouse", "0", "-video_size", f"{w}x{h}", "-framerate", "60",
         "-i", f"{config.display}+{x},{y}",
-    ]
-    if watermark_path:
-        # ウォーターマーク webm の VP9 アルファは libvpx 経由デコーダでないと
-        # 不透明扱いになる(reports/18)。-c:v libvpx-vp9 を明示する。
-        wm_w = min(watermark_width, w // 2)
-        cmd += ["-c:v", "libvpx-vp9", "-i", watermark_path]
-        cmd += [
-            "-filter_complex",
-            f"[1:v]scale={wm_w}:-1[wm];[0:v][wm]overlay=x=W-w-8:y=H-h-8:eof_action=pass[v]",
-            "-map", "[v]",
-        ]
-    cmd += [
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
         video_output,
     ]
-    return cmd
 
 
 def build_audio_ffmpeg_cmd(config, audio_output):
@@ -465,8 +461,7 @@ def _failure_result(config, env, log):
     }
 
 
-def attempt_recording(config, replay_path, output_path, watermark_path, watermark_width,
-                       progress_dir, expected_duration_seconds, log=print):
+def attempt_recording(config, replay_path, output_path, progress_dir, expected_duration_seconds, log=print):
     """録画を1回試行する。戻り値: dict(output_exists, classification, fps_runaway_hz, total_record_sec)。
     classification は "good" / "fps_runaway" / "stutter" / "timeout" / "setup_error" のいずれか。
     """
@@ -520,7 +515,7 @@ def attempt_recording(config, replay_path, output_path, watermark_path, watermar
     video_target = f"{base}.video.mp4"
     audio_target = f"{base}.audio.m4a"
 
-    video_cmd = build_video_ffmpeg_cmd(config, x, y, w, h, video_target, watermark_path, watermark_width)
+    video_cmd = build_video_ffmpeg_cmd(config, x, y, w, h, video_target)
     log(f"録画開始(映像): {' '.join(video_cmd)}")
     video_log_path = f"{os.path.dirname(output_path)}/ffmpeg_video.log"
     video_log_file = open(video_log_path, "wb")
@@ -664,7 +659,7 @@ def attempt_recording(config, replay_path, output_path, watermark_path, watermar
     }
 
 
-def record_with_retry(config, replay_path, output_path, *, watermark_path=None, watermark_width=285,
+def record_with_retry(config, replay_path, output_path, *,
                        progress_dir=None, expected_duration_seconds=None,
                        max_attempts=MAX_ATTEMPTS_DEFAULT, max_duplicate_rate=MAX_DUPLICATE_RATE_DEFAULT,
                        log=print):
@@ -674,8 +669,7 @@ def record_with_retry(config, replay_path, output_path, *, watermark_path=None, 
     for attempt in range(1, max_attempts + 1):
         log(f"=== 試行 {attempt}/{max_attempts} ===")
         result = attempt_recording(
-            config, replay_path, output_path, watermark_path, watermark_width,
-            progress_dir, expected_duration_seconds, log=log,
+            config, replay_path, output_path, progress_dir, expected_duration_seconds, log=log,
         )
         if not result["output_exists"]:
             log("WARNING: 出力ファイルが生成されなかったため、この試行は失敗として扱います")

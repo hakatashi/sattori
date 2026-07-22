@@ -46,8 +46,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--replay-path", required=True, help="録画対象リプレイの絶対パス(任意ファイル名)")
     parser.add_argument("--output", required=True, help="出力する mp4 のパス")
-    parser.add_argument("--watermark", default=None, help="ウォーターマーク動画(webm, VP9アルファ)のパス。未指定なら合成しない")
-    parser.add_argument("--watermark-width", type=int, default=285)
     parser.add_argument(
         "--progress-dir", default=None,
         help="進捗スクリーンショット(frame.jpg)/状態(state.json)の書き出し先。未指定なら無効(ローカル単体実行との後方互換)",
@@ -70,7 +68,6 @@ def main():
     config = build_config()
     success = record_with_retry(
         config, args.replay_path, args.output,
-        watermark_path=args.watermark, watermark_width=args.watermark_width,
         progress_dir=args.progress_dir, expected_duration_seconds=args.expected_duration_seconds,
         max_attempts=args.max_attempts, max_duplicate_rate=args.max_duplicate_rate,
         log=log,

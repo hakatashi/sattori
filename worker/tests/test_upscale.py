@@ -47,6 +47,59 @@ def test_upscale_keeps_aspect_ratio_for_4_3_input(monkeypatch):
     assert cmd[cmd.index("-vf") + 1] == "scale=960:720:flags=lanczos"
 
 
+def test_upscale_without_watermark_uses_simple_vf(monkeypatch):
+    monkeypatch.setattr(upscale, "probe_resolution", lambda path: (640, 480))
+    monkeypatch.setattr(upscale, "probe_duration", lambda path: None)
+    run_mock = MagicMock()
+    monkeypatch.setattr(upscale.subprocess, "run", run_mock)
+
+    upscale.upscale_to_720p("in.mp4", "out.mp4")
+
+    cmd = run_mock.call_args[0][0]
+    assert "-filter_complex" not in cmd
+    assert "-vf" in cmd
+
+
+def test_upscale_with_watermark_overlays_via_filter_complex(monkeypatch):
+    # ウォーターマークはx11grab録画時ではなくここ(720p変換、通常のファイル入力
+    # 同士)で合成する。-copytsを使わない完成済みファイル入力同士なのでoverlayの
+    # フレーム同期が正しく機能する(録画時に合成すると発生していた不具合の修正)。
+    monkeypatch.setattr(upscale, "probe_resolution", lambda path: (640, 480))
+    monkeypatch.setattr(upscale, "probe_duration", lambda path: None)
+    run_mock = MagicMock()
+    monkeypatch.setattr(upscale.subprocess, "run", run_mock)
+
+    upscale.upscale_to_720p("in.mp4", "out.mp4", watermark_path="watermark.webm", watermark_width=285)
+
+    cmd = run_mock.call_args[0][0]
+    assert "-copyts" not in cmd
+    assert "libvpx-vp9" in cmd  # VP9アルファはlibvpx経由デコーダでないと不透明扱いになる(reports/18)
+    assert "watermark.webm" in cmd
+    filter_expr = cmd[cmd.index("-filter_complex") + 1]
+    assert "scale=960:720:flags=lanczos" in filter_expr
+    assert "scale=285:-1" in filter_expr
+    assert "[0:v]" in filter_expr and "[1:v]" in filter_expr
+    assert cmd[cmd.index("-map") + 1] == "[v]"
+    assert "0:a" in cmd
+    assert "libx264" in cmd
+
+
+def test_upscale_with_watermark_caps_width_at_half_target_width(monkeypatch):
+    # ウォーターマーク幅は既定285pxでも、変換後の画面の半分より広くはしない
+    # (狭いウィンドウで画面の大半を覆ってしまうのを防ぐ)。
+    monkeypatch.setattr(upscale, "probe_resolution", lambda path: (200, 480))
+    monkeypatch.setattr(upscale, "probe_duration", lambda path: None)
+    run_mock = MagicMock()
+    monkeypatch.setattr(upscale.subprocess, "run", run_mock)
+
+    upscale.upscale_to_720p("in.mp4", "out.mp4", watermark_path="watermark.webm", watermark_width=285)
+
+    cmd = run_mock.call_args[0][0]
+    target_width = round(200 * upscale.TARGET_HEIGHT / 480 / 2) * 2
+    filter_expr = cmd[cmd.index("-filter_complex") + 1]
+    assert f"scale={target_width // 2}:-1" in filter_expr
+
+
 def test_upscale_rounds_target_width_to_even(monkeypatch):
     monkeypatch.setattr(upscale, "probe_resolution", lambda path: (853, 480))
     monkeypatch.setattr(upscale, "probe_duration", lambda path: None)
