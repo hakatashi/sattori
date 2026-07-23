@@ -39,7 +39,7 @@ const gameTitles = [
   {
     japanese: "東方永夜抄",
     english: "IN",
-    supported: false,
+    supported: true,
     icon: 'th08.png',
   },
   {

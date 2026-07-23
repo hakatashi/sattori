@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""th07(妖々夢)リプレイのヘッドレス録画パイプライン(Sattori ワーカー)。
+"""th08(永夜抄)リプレイのヘッドレス録画パイプライン(Sattori ワーカー)。
 
-touhou-recorder の PoC スクリプト
-(scripts/11_record_th07_replay_e2e.py, reports/11・13・14) を Web サービス向けに
-刷新したもの。PoC からの主な変更点は「録画対象リプレイを固定ファイル名ではなく
-任意パスから受け取り、ゲームが認識する正規スロット名で配置する」点。
+Issue #13 対応。touhou-recorder での事前検証(reports/22〜26)を踏まえた実装:
 
-録画本体の処理(Xvfb起動・ウィンドウ検出・終了検知・処理落ち早期検知・自動リトライ等)
-は th08 と共通のため `recording_common.py` に集約されている(Issue #13 対応時に
-th08向けの検知・リトライ機構を両タイトル共通化した)。本ファイルはタイトル固有の
-パス設定(`GameConfig`)を組み立てて渡すだけの薄いラッパー。
+- ゲームデータは公式アップデータ ver1.00d 相当のものを使う(タイトル資産アーカイブに
+  `games/th08` として配置。ver1.00a はリプレイ再生中に内部fpsが数百〜数千に暴走する
+  既知の不具合があり、ver1.00d で事実上解消した、reports/23)。
+- 録画対象リプレイを正規スロット名 `th8_ud0000.rpy` として配置する方式は、th07の
+  `th7_ud0000.rpy` と同じ命名則を踏襲したもの。touhou-recorder の実ゲームデータで
+  実機検証済み(スペルプラクティスリプレイを配置し、実際にそのリプレイのゲームプレイ
+  画面まで遷移することをスクリーンショットで確認した)。
+- fps暴走の残存ケース検知・処理落ちの早期検知・自動リトライ・音声/映像の別プロセス
+  録画(reports/26。単一ffmpegでのA/V同期がth08の描画タイミングを律速し、AWS環境で
+  重複フレーム率が85%超まで悪化する不具合への対策)は th07 と共通の実装
+  (`recording_common.py`)を使う。
 """
 import argparse
 import os
@@ -20,25 +24,22 @@ REPO = os.path.dirname(os.path.abspath(__file__))
 
 
 def log(msg):
-    log_with_prefix("record_th07", msg)
+    log_with_prefix("record_th08", msg)
 
 
 def build_config():
-    instance_dir = os.environ.get("SATTORI_INSTANCE_DIR", f"{REPO}/instances/th07-recording")
-    game_dir_src = os.environ.get("SATTORI_GAME_DIR", f"{REPO}/games/th07")
+    instance_dir = os.environ.get("SATTORI_INSTANCE_DIR", f"{REPO}/instances/th08-recording")
+    game_dir_src = os.environ.get("SATTORI_GAME_DIR", f"{REPO}/games/th08")
     mod_dir = os.environ.get("SATTORI_MOD_DIR", f"{REPO}/mods")
     return GameConfig(
-        game_id="th07",
-        display=os.environ.get("SATTORI_DISPLAY", ":97"),
-        wineprefix=os.environ.get("WINEPREFIX", f"{REPO}/prefixes/th07-wined3d-gl"),
+        game_id="th08",
+        display=os.environ.get("SATTORI_DISPLAY", ":98"),
+        wineprefix=os.environ.get("WINEPREFIX", f"{REPO}/prefixes/th08-wined3d-gl"),
         instance_dir=instance_dir,
         game_dir_src=game_dir_src,
-        # th07 のリプレイ一覧で 1 件目に並ぶ正規スロット名。MOD は「1 件目のリプレイを
-        # 固定選択」するため、アップロードされた任意ファイル名をこの名前で配置することで
-        # 任意のリプレイを再生できる(MOD 自体の改修は不要)。
-        canonical_slot="th7_ud0000.rpy",
+        canonical_slot="th8_ud0000.rpy",
         injector_path=f"{mod_dir}/common/build/injector.exe",
-        hook_dll_path=f"{mod_dir}/th07_replay_autoplay/build/th07_hook.dll",
+        hook_dll_path=f"{mod_dir}/th08_replay_autoplay/build/th08_hook.dll",
     )
 
 

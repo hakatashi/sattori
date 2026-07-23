@@ -50,11 +50,12 @@ export const GAME_TITLES: Record<GameId, string> = {
 };
 
 /**
- * フェーズ1で録画に対応しているタイトル。
- * PoC（touhou-recorder）で E2E 実証済みなのは th07・th08 のみ。
- * フェーズ1の初期実装では th07 のみを有効とする。
+ * 録画に対応しているタイトル。
+ * th07（フェーズ1）に続き、th08 の録画バックエンド（MOD 移植・ワーカー拡張）が
+ * Issue #13 で完了したため追加した。PoC（touhou-recorder）で E2E 実証済みなのは
+ * th07・th08 のみで、他タイトルは MOD 移植（録画対応）が未着手（AGENTS.md 参照）。
  */
-export const SUPPORTED_GAME_IDS: readonly GameId[] = ["th07"];
+export const SUPPORTED_GAME_IDS: readonly GameId[] = ["th07", "th08"];
 
 export function isSupportedGame(game: GameId): boolean {
   return SUPPORTED_GAME_IDS.includes(game);
