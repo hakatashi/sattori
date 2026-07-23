@@ -172,8 +172,6 @@ def record(s3):
             "--output", OUTPUT_VIDEO,
             "--progress-dir", PROGRESS_DIR,
         ]
-        if WATERMARK:
-            cmd += ["--watermark", WATERMARK_ASSET]
         if EXPECTED_DURATION_SECONDS:
             cmd += ["--expected-duration-seconds", EXPECTED_DURATION_SECONDS]
 
@@ -198,7 +196,11 @@ def convert_and_upload(s3):
     def on_convert_progress(percent):
         update_progress(JOB_ID, round(percent))
 
-    upscale_to_720p(OUTPUT_VIDEO, OUTPUT_VIDEO_720P, on_progress=on_convert_progress, log=log)
+    upscale_to_720p(
+        OUTPUT_VIDEO, OUTPUT_VIDEO_720P,
+        watermark_path=WATERMARK_ASSET if WATERMARK else None,
+        on_progress=on_convert_progress, log=log,
+    )
     upload_video(s3, OUTPUT_VIDEO_720P, OUTPUT_KEY_720P)
     update_status(JOB_ID, "done", output_path=OUTPUT_KEY, output_path_720p=OUTPUT_KEY_720P)
 
