@@ -7,7 +7,11 @@
 // この順序により、フックDLLの DllMain (DLL_PROCESS_ATTACH) で行う IAT フックが
 // ゲームの初期化コード (DirectInput8Create の呼び出し) より確実に先に完了する。
 //
-// 使い方: injector.exe <target.exe> <hook.dll>
+// 複数のDLLパスを渡すと、指定順にすべて注入してからメインスレッドを再開する
+// (例: th06のVsyncPatch(vpatch_th06.dll)とリプレイ自動再生MOD(th06_hook.dll)を
+// 同一プロセスに共存させる場合)。
+//
+// 使い方: injector.exe <target.exe> <hook1.dll> [hook2.dll ...]
 //   ワーキングディレクトリは target.exe と同じフォルダに自動設定する
 //   (ゲームがデータファイルを相対パスで探すため)。
 
@@ -30,28 +34,36 @@ static void GetDirName(const char* path, char* outDir, size_t outDirSize) {
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        printf("Usage: injector.exe <target.exe> <hook.dll>\n");
+        printf("Usage: injector.exe <target.exe> <hook1.dll> [hook2.dll ...]\n");
+        return 1;
+    }
+
+    int dllCount = argc - 2;
+    char dllFulls[8][MAX_PATH] = {{0}};
+    if (dllCount > 8) {
+        printf("Too many DLLs (max 8)\n");
         return 1;
     }
 
     char exeFull[MAX_PATH] = {0};
-    char dllFull[MAX_PATH] = {0};
     if (!GetFullPathNameA(argv[1], MAX_PATH, exeFull, NULL)) {
         printf("Invalid target exe path: %s\n", argv[1]);
         return 1;
     }
-    if (!GetFullPathNameA(argv[2], MAX_PATH, dllFull, NULL)) {
-        printf("Invalid dll path: %s\n", argv[2]);
-        return 1;
-    }
-
     if (GetFileAttributesA(exeFull) == INVALID_FILE_ATTRIBUTES) {
         printf("Target exe not found: %s\n", exeFull);
         return 1;
     }
-    if (GetFileAttributesA(dllFull) == INVALID_FILE_ATTRIBUTES) {
-        printf("Hook DLL not found: %s\n", dllFull);
-        return 1;
+
+    for (int i = 0; i < dllCount; i++) {
+        if (!GetFullPathNameA(argv[2 + i], MAX_PATH, dllFulls[i], NULL)) {
+            printf("Invalid dll path: %s\n", argv[2 + i]);
+            return 1;
+        }
+        if (GetFileAttributesA(dllFulls[i]) == INVALID_FILE_ATTRIBUTES) {
+            printf("Hook DLL not found: %s\n", dllFulls[i]);
+            return 1;
+        }
     }
 
     char workDir[MAX_PATH] = {0};
@@ -74,45 +86,48 @@ int main(int argc, char** argv) {
     }
     printf("Process created. PID=%lu\n", pi.dwProcessId);
 
-    size_t dllPathLen = strlen(dllFull) + 1;
-    LPVOID remoteMem =
-        VirtualAllocEx(pi.hProcess, NULL, dllPathLen, MEM_COMMIT, PAGE_READWRITE);
-    if (!remoteMem) {
-        printf("VirtualAllocEx failed: %lu\n", GetLastError());
-        TerminateProcess(pi.hProcess, 1);
-        return 1;
-    }
-
-    if (!WriteProcessMemory(pi.hProcess, remoteMem, dllFull, dllPathLen, NULL)) {
-        printf("WriteProcessMemory failed: %lu\n", GetLastError());
-        TerminateProcess(pi.hProcess, 1);
-        return 1;
-    }
-
     HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
     LPTHREAD_START_ROUTINE loadLibAddr =
         (LPTHREAD_START_ROUTINE)GetProcAddress(hKernel32, "LoadLibraryA");
 
-    HANDLE hRemoteThread =
-        CreateRemoteThread(pi.hProcess, NULL, 0, loadLibAddr, remoteMem, 0, NULL);
-    if (!hRemoteThread) {
-        printf("CreateRemoteThread failed: %lu\n", GetLastError());
-        TerminateProcess(pi.hProcess, 1);
-        return 1;
-    }
+    for (int i = 0; i < dllCount; i++) {
+        size_t dllPathLen = strlen(dllFulls[i]) + 1;
+        LPVOID remoteMem =
+            VirtualAllocEx(pi.hProcess, NULL, dllPathLen, MEM_COMMIT, PAGE_READWRITE);
+        if (!remoteMem) {
+            printf("VirtualAllocEx failed: %lu\n", GetLastError());
+            TerminateProcess(pi.hProcess, 1);
+            return 1;
+        }
 
-    WaitForSingleObject(hRemoteThread, 10000);
-    DWORD exitCode = 0;
-    GetExitCodeThread(hRemoteThread, &exitCode);
-    CloseHandle(hRemoteThread);
-    VirtualFreeEx(pi.hProcess, remoteMem, 0, MEM_RELEASE);
+        if (!WriteProcessMemory(pi.hProcess, remoteMem, dllFulls[i], dllPathLen, NULL)) {
+            printf("WriteProcessMemory failed: %lu\n", GetLastError());
+            TerminateProcess(pi.hProcess, 1);
+            return 1;
+        }
 
-    if (exitCode == 0) {
-        printf("DLL injection failed (LoadLibraryA returned NULL in target process)\n");
-        TerminateProcess(pi.hProcess, 1);
-        return 1;
+        HANDLE hRemoteThread =
+            CreateRemoteThread(pi.hProcess, NULL, 0, loadLibAddr, remoteMem, 0, NULL);
+        if (!hRemoteThread) {
+            printf("CreateRemoteThread failed: %lu\n", GetLastError());
+            TerminateProcess(pi.hProcess, 1);
+            return 1;
+        }
+
+        WaitForSingleObject(hRemoteThread, 10000);
+        DWORD exitCode = 0;
+        GetExitCodeThread(hRemoteThread, &exitCode);
+        CloseHandle(hRemoteThread);
+        VirtualFreeEx(pi.hProcess, remoteMem, 0, MEM_RELEASE);
+
+        if (exitCode == 0) {
+            printf("DLL injection failed for %s (LoadLibraryA returned NULL in target process)\n",
+                   dllFulls[i]);
+            TerminateProcess(pi.hProcess, 1);
+            return 1;
+        }
+        printf("DLL injected: %s. Module base in target = 0x%lx\n", dllFulls[i], exitCode);
     }
-    printf("DLL injected. Module base in target = 0x%lx\n", exitCode);
 
     printf("Resuming main thread...\n");
     ResumeThread(pi.hThread);
