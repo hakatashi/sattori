@@ -60,11 +60,24 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計・拡�
   タイムアウト時は `HandleFailure` タスクが孤児化したインスタンスをterminateしつつ
   最大3回まで自動リトライする。ワーカーはIMDS経由でSpot中断の2分前通知を監視し、
   検知次第60分タイムアウトを待たずに早期失敗通知する。EC2 Fleetの
-  `AllocationStrategy` はコスト優先で `lowest-price` 固定（`apps/api/src/ec2.ts`）
-  としており、その分リバランス推奨（発効するとは限らない予測的シグナル）は
+  `AllocationStrategy` は `price-capacity-optimized`（`apps/api/src/ec2.ts`、
+  Issue #29）とし、その分リバランス推奨（発効するとは限らない予測的シグナル）は
   比較的発生しやすい。これをそのまま早期失敗の合図にすると完走できたはずの
   ジョブまで不要にリトライしてしまうため、リバランス推奨は失敗扱いにせずログの
   みで処理を継続する（実際のSpot中断通知の監視は継続）。
+- **EC2 Fleetはインスタンスタイプを複数指定して分散する**（`c7i.xlarge`・
+  `c7a.xlarge`・`c6a.xlarge`・`c6i.xlarge`・`c7i-flex.xlarge`・`c5a.xlarge`、
+  `apps/api/src/ec2.ts` の `CANDIDATE_INSTANCE_TYPES`、Issue #29）。単一
+  インスタンスタイプのみだとそのハードウェアプールが時間帯によって枯渇し
+  `InsufficientInstanceCapacity` でジョブ起動自体が失敗する事例が発生したため、
+  独立したSpotキャパシティプールを持つ複数タイプ（サブネット×タイプの
+  全組み合わせを`CreateFleet`の`Overrides`へ、`SingleInstanceType: false`）に
+  広げてAZ分散よりも大きな耐性を持たせた。インスタンスタイプの変更は録画品質
+  （重複フレーム率）に直結するリスクがあり「同スペック帯・同価格帯だから安全」
+  とは限らない（`z1d.xlarge`は高クロック特化ゆえに悪化した実績がある）ため、
+  上記6タイプは touhou-recorder `reports/27` で th08 の重複フレーム率を実測検証
+  （いずれも1〜4%台の良好な値）した上で選定した。追加候補を投入する際は必ず
+  同様の実機検証を経ること。
 - **進捗はポーリング**（WebSocket/SSE は月1000回規模には過剰）。ワーカーが DynamoDB を
   更新し、`GET /jobs/{id}` が返す。
 - **完了メールは JobsTable の DynamoDB Streams を起点に送信**（Issue #10）。ワーカーが
@@ -252,6 +265,8 @@ DynamoDB に書き込む。`converting` は録画完了(生動画チェックポ
   へ変更した（`touhou-recorder reports/33・34`）。
 - ウォーターマーク webm のデコードは `-c:v libvpx-vp9` を明示（VP9アルファの罠）。
 - **4 vCPU が実用下限**、インスタンスは `c7i.xlarge` 推奨。高クロック特化(z1d)は逆効果。
+  本番のSpot Fleetでは`c7i.xlarge`に加え`c7a.xlarge`・`c6a.xlarge`・`c6i.xlarge`・
+  `c7i-flex.xlarge`・`c5a.xlarge`も実測検証済みで採用している（`reports/27`、上記§2参照）。
 - `.cfg` はウィンドウモード必須（フルスクリーンだと Xvfb でハング）。
 - 対応タイトルは th06・th07・th08。フェーズ3以降で他タイトルのMOD移植を進める。
 - 720pアップスケールは**幅を1280に固定しない**（`reports/21`）。th07は640x480(4:3)

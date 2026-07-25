@@ -2,12 +2,35 @@ import {
   CreateFleetCommand,
   CreateLaunchTemplateVersionCommand,
   EC2Client,
+  type _InstanceType as InstanceType,
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import type { JobRecord } from "@sattori/shared";
 import type { ApiConfig } from "./config.js";
 
 const ec2 = new EC2Client({});
+
+/**
+ * Spot Fleet に含める候補インスタンスタイプ。`c7i.xlarge` 単独だと、そのハードウェア
+ * プールが時間帯によって枯渇した際に `InsufficientInstanceCapacity` で録画ジョブの
+ * 起動自体が失敗する（Issue #29）。インスタンスタイプごとに独立したSpotキャパシティ
+ * プールを持つため、AZ分散よりも大きな改善効果が見込める。
+ *
+ * ただしインスタンスタイプの変更は録画品質（Wine+Xvfb+ffmpegの重複フレーム率）に
+ * 直結するリスクがあり、「同スペック帯・同価格帯だから安全」とは限らない
+ * （`z1d.xlarge` は高クロック特化ゆえに悪化した実績がある、AGENTS.md参照）。
+ * このリストは touhou-recorder `reports/27` で th08 の重複フレーム率を実測検証
+ * （いずれも1〜4%台の良好な値）した上で選定したもの。追加する際は必ず同様の
+ * 実機検証を経ること。
+ */
+const CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
+  "c7i.xlarge", // Intel Sapphire Rapids(現行世代、本番実績あり)
+  "c7a.xlarge", // AMD Genoa(現行世代、重複フレーム率3.1%)
+  "c6a.xlarge", // AMD Milan(前世代、重複フレーム率2.1%)
+  "c6i.xlarge", // Intel Ice Lake(前世代、重複フレーム率4.0%)
+  "c7i-flex.xlarge", // Intel現行世代のburstableオプション、重複フレーム率1.2%
+  "c5a.xlarge", // AMD旧世代、重複フレーム率3.7%
+];
 
 /**
  * ワーカーインスタンスの UserData（cloud-init）スクリプトを生成する。
@@ -112,11 +135,13 @@ docker run --rm \\
  * EC2 Fleet でワーカーインスタンスを1台起動して録画ジョブを実行する。
  * 起動したインスタンスIDを返す。
  *
- * ベースの Launch Template（AMI/インスタンスタイプ/IAM/SGはCDK側で設定済み）に対し、
- * ジョブ固有の UserData のみを持つ新しいバージョンを作成し、そのバージョンを参照する
- * `CreateFleet`（`Type: "instant"`）で即時に1台起動する。複数サブネット（=複数AZ）を
- * Overrides に渡し `lowest-price` 戦略で配置することで、単一AZでのSpot枯渇に対する
- * 耐性を持たせる（PoC reports/17）。
+ * ベースの Launch Template（AMI/IAM/SGはCDK側で設定済み）に対し、ジョブ固有の
+ * UserData のみを持つ新しいバージョンを作成し、そのバージョンを参照する
+ * `CreateFleet`（`Type: "instant"`）で即時に1台起動する。サブネット（=AZ）×
+ * `CANDIDATE_INSTANCE_TYPES` の全組み合わせを Overrides に渡し
+ * `price-capacity-optimized` 戦略（`SingleInstanceType: false`）で配置することで、
+ * 単一AZ・単一インスタンスタイプでのSpot枯渇に対する耐性を持たせる
+ * （PoC reports/17、Issue #29）。
  */
 export async function launchRecordingInstance(
   config: ApiConfig,
@@ -146,7 +171,12 @@ export async function launchRecordingInstance(
             LaunchTemplateId: config.ec2.launchTemplateId,
             Version: String(versionNumber),
           },
-          Overrides: config.ec2.subnetIds.map((subnetId) => ({ SubnetId: subnetId })),
+          Overrides: config.ec2.subnetIds.flatMap((subnetId) =>
+            CANDIDATE_INSTANCE_TYPES.map((instanceType) => ({
+              SubnetId: subnetId,
+              InstanceType: instanceType,
+            })),
+          ),
         },
       ],
       TargetCapacitySpecification: {
@@ -154,8 +184,8 @@ export async function launchRecordingInstance(
         DefaultTargetCapacityType: "spot",
       },
       SpotOptions: {
-        AllocationStrategy: "lowest-price",
-        SingleInstanceType: true,
+        AllocationStrategy: "price-capacity-optimized",
+        SingleInstanceType: false,
         SingleAvailabilityZone: false,
         InstanceInterruptionBehavior: "terminate",
       },
