@@ -122,12 +122,45 @@ detection lag, etc.) layered on top by a consumer such as Sattori's worker.
 
 Currently populated for:
 
+- **th06**: unlike th07/th08 (see below), th06's replay body is
+  uncompressed and stores a *sparse input-change-event log* rather than one
+  fixed-width record per frame: `ReplayDataInput { frameNum: i32; inputKey:
+  u16; padding: u16 }` (8 bytes), one record only when the held key
+  combination actually changes. `frameNum` resets to ~0 at the start of
+  every stage and the log is terminated by a sentinel `frameNum` of
+  `9999999`. This layout was confirmed exactly (not just empirically) via
+  `GensokyoClub/th06`'s decompilation of the game (`src/ReplayData.hpp`):
+  `ZUN_ASSERT_SIZE(StageReplayData, 0x69780)` matches this package's
+  16-byte header + `53998 * 8`-byte input array exactly, and the header's
+  known fields (score/power/lives/bombs/rank) line up with the same
+  offsets this package already read before frameCount support was added.
+  `frameCount` for each stage is the `frameNum` of the last real record
+  before that stage's terminator. Cross-validated against two real
+  recorded replays (not checked into this repo, see
+  `src/games/th06.ts`): a single-stage clear and a 6-stage clear both
+  landed within a few percent of their independently known recorded
+  durations. See the comments on `STAGE_INPUT_LOG_HEADER_SIZE` in
+  `src/games/th06.ts`.
 - **th07**: derived by reverse-engineering the per-checkpoint input log
   layout (not documented by threplay/threp, which don't parse this data at
   all). Cross-validated against real recorded durations of a checked-in
   fixture (`touhou-recorder` PoC reports: `th7_07.rpy` recorded at ~840-852s
   end-to-end; the computed frame count lands within that range) — see the
   comments on `STAGE_CHECKPOINT_HEADER_SIZE` in `src/games/th07.ts`.
+- **th08**: same reverse-engineering approach as th07 (a fixed-size
+  per-checkpoint header followed by one fixed-width record per frame), but
+  independently derived and with different constants (a 2-byte-per-frame
+  record instead of th07's 4). The header layout was cross-referenced
+  against `GensokyoClub/th08`'s decompilation of `StageReplayData`
+  (`src/ReplayManager.hpp`), which also revealed that the field threplay
+  (and this package, until now) labeled `Time` in `splits[].additional` is
+  actually `pointItemExteds` (a point-item-extend counter) — renamed to
+  `pointItemExtends` here accordingly. Cross-validated against real
+  recorded durations of two replays not checked into this repo (see
+  `src/games/th08.ts`): a single-segment Extra-stage clear and a short
+  spell-practice replay both landed within a few percent of their
+  independently known recorded durations. See the comments on
+  `STAGE_CHECKPOINT_HEADER_SIZE` in `src/games/th08.ts`.
 - **th10-th18** (all titles sharing the `decodeModernBody` pipeline: th10,
   th11, th12, th13, th14, th15, th16, th17, th18): each stage's decompressed
   header carries an explicit frame-count field, confirmed against
@@ -135,9 +168,9 @@ Currently populated for:
   reconstruct input logs for its own purposes) and independently against
   `yiyuezhuo/touhou-replay-decoder`.
 
-`null` for every other supported title (th06, th08, th09, th095, th125,
-th128, th143/th165, th20) — the per-frame input log location for those has
-not been reverse-engineered yet.
+`null` for every other supported title (th09, th095, th125, th128,
+th143/th165, th20) — the per-frame input log location for those has not
+been reverse-engineered yet.
 
 `splits[].frameCount` breaks the same total down per stage/segment (frames
 played from that checkpoint up to the next one, or to the end of the replay
@@ -153,6 +186,14 @@ TypeScript, based on `ReplayDecoder.cs` from
 decompression and XOR block decoding algorithms originate from `common.cpp`
 in [Fluorohydride/threp](https://github.com/Fluorohydride/threp), which that
 repository references.
+
+th06 and th08's `frameCount` support (see above) was additionally
+cross-referenced against the reverse-engineered struct layouts in
+[GensokyoClub/th06](https://github.com/GensokyoClub/th06) (CC0-1.0) and
+[GensokyoClub/th08](https://github.com/GensokyoClub/th08) (MIT), two
+community decompilation projects — used here only as factual confirmation
+of byte offsets/struct sizes already derived independently, not as a source
+of copied code.
 
 Neither repository carries an explicit OSS license
 (threplay's `LICENCES.txt` only lists licenses for third-party dependencies

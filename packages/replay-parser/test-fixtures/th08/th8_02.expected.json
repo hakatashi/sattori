@@ -28,10 +28,10 @@
       "graze": 0,
       "additional": {
         "pointItems": 0,
-        "time": 0
+        "pointItemExtends": 0
       },
-      "frameCount": null
+      "frameCount": 46501
     }
   ],
-  "frameCount": null
+  "frameCount": 46501
 }
