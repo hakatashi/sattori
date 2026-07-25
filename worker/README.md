@@ -14,10 +14,12 @@ th08: `reports/22`〜`reports/26`、Issue #13。th06: `reports/30`〜`reports/32
   録画 → 生動画をS3へチェックポイントUP → 720p変換 → S3 UP → DynamoDB/taskToken 通知。
   GAME環境変数に応じて `record_th06.py` / `record_th07.py` / `record_th08.py` を呼び分ける |
 | `recording_common.py` | th06・th07・th08共通の録画パイプライン本体(Issue #13でth08対応時に
-  共通化)。Xvfb起動・ウィンドウ検出・録画・終了検知(画面静止のMAD判定)・fps暴走/
-  処理落ちの早期検知・自動リトライ(既定3回)・映像/音声を別プロセスで録画し後でmuxする
-  処理(reports/26)・フックDLLより前に追加DLLを注入する処理(`GameConfig.extra_dlls`、
-  th06のVsyncPatch用)を担う。進捗スクリーンショット/状態も書き出す |
+  共通化)。Xvfb起動・ウィンドウ検出・録画・終了検知(リプレイ選択画面テンプレートとの
+  照合。テンプレート未整備のゲームは画面静止のMAD判定にフォールバック、reports/33・34)・
+  fps暴走/処理落ちの早期検知・自動リトライ(既定3回)・映像/音声を別プロセスで録画し
+  後でmuxする処理(reports/26)・フックDLLより前に追加DLLを注入する処理
+  (`GameConfig.extra_dlls`、th06のVsyncPatch用)を担う。進捗スクリーンショット/状態も
+  書き出す |
 | `record_th06.py` / `record_th07.py` / `record_th08.py` | タイトル固有のパス設定
   (`GameConfig`)を組み立てて `recording_common.record_with_retry()` を呼ぶだけの薄い
   ラッパー |
@@ -116,6 +118,35 @@ touhou-recorderでの事前検証(reports/30〜32)を踏まえた設計:
   「1件目のリプレイ」として正しく選択・再生し、60fps安定・重複フレームなしで
   ゲームプレイ画面(スコア進行・日本語表示すべて正常)を確認できた。
 
+## リプレイ終了検知の方式(reports/33・34)
+
+`recording_common.attempt_recording()`は「リプレイが終了したか」を、画面静止だけでは
+なく**リプレイ選択画面テンプレートとの一致**で判定する。
+
+- 当初の方式(画面静止のMAD判定のみ)には構造的な弱点があった。実際にリプレイが
+  終了して自動的に戻る「リプレイ選択画面」と、ステージクリア後に一時的に表示される
+  「Stage Clear」等のリザルト画面は、どちらも入力なしで画面がぴったり静止する
+  (MAD≈0.0)という点で区別がつかない。th06の実リプレイ(`th6_ud1vfq.rpy`)でステージ4
+  クリア後のリザルト画面がSTILL_CONSECUTIVE_REQUIRED(16秒)を超えて静止し続け、
+  リプレイ本編の途中で誤って「終了」と判定される事象が実際に発生した
+  (touhou-recorder reports/33)。この誤検知はth06に限らずth07/th08にも起こりうる。
+- 対策として、`assets/replay_end_templates/{game_id}.png`(ゲームごとのリプレイ選択画面の
+  参照画像)を用意し、画面が静止しているかに関わらず**毎回**そのテンプレートと照合する
+  方式に変更した(`recording_common.load_end_template()`/`END_TEMPLATE_*`定数)。
+  比較対象は160x120にダウンサンプルした座標系の上部の帯(`END_TEMPLATE_ROWS=40`、
+  タイトル文言+列見出し行)のみで、リプレイ内容(一覧の中身・プレイヤー名/日付)には
+  依存しない(reports/34でクロスリプレイ実証済み)。MADが閾値
+  (`END_TEMPLATE_MAD_THRESHOLD=15.0`)未満の状態が`END_TEMPLATE_CONSECUTIVE_REQUIRED`
+  (=2、4秒)回連続したら終了と確定する。動画圧縮ノイズ等による単発の偶然一致を弾く
+  ための連続回数要求であり、画面静止を待たない分、静止のみ判定(最短16秒+α)より
+  大幅に高速化されている(reports/34、th06実リプレイで画面切替から2.3秒で確定)。
+- テンプレート画像が未整備・未検出の場合は警告ログを出しつつ、従来の画面静止のみ判定
+  (`STILL_MAD_THRESHOLD`/`STILL_CONSECUTIVE_REQUIRED`)にフォールバックする。新規タイトル
+  追加時にテンプレートが未整備でも動作は壊れない。
+- テンプレート画像はゲーム本体ではなく録画パイプライン自体の参照素材のため、タイトル
+  資産S3アーカイブではなくワーカーイメージに焼き込む(「リポジトリに含まれない資産」
+  節参照)。
+
 ## テスト(`tests/`)
 
 Wine/Xvfb/実ゲームに依存する録画本体(`recording_common.attempt_recording()`)以外の、
@@ -137,9 +168,12 @@ GitHub Actions の `Test` ワークフロー(`.github/workflows/test.yml`)の
 
 以下はゲーム本体(著作権物)・ビルド成果物・素材であり `.gitignore` 済み。
 
-`worker/assets/watermark/watermark-60fps.webm`(ウォーターマーク素材、VP9アルファ)
-のみ、タイトル非依存の共通素材として `docker build` の前に `worker/` 配下へ配置し、
-イメージに含める。
+`worker/assets/watermark/watermark-60fps.webm`(ウォーターマーク素材、VP9アルファ)と
+`worker/assets/replay_end_templates/{th06,th07,th08}.png`(リプレイ終了検知用の
+リプレイ選択画面テンプレート、touhou-recorder reports/33・34参照)は、いずれもタイトル
+固有アセットではなく録画パイプライン自体が使う共通素材として `docker build` の前に
+`worker/` 配下へ配置し、イメージに含める(ゲーム本体ではないため、後述のタイトル資産
+S3アーカイブには含めずイメージへ焼き込む)。
 
 一方、ゲーム本体(`worker/games/{title}/`)・WINEPREFIX(`worker/prefixes/{title}-*/`)・
 MODビルド成果物(`worker/mods/**/build/*`)は **イメージには含めない**。ECRストレージ

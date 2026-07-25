@@ -95,6 +95,59 @@ def test_mad_computes_mean_absolute_difference():
     assert rc.mad(a, b) == pytest.approx(2.0)
 
 
+def test_game_config_end_template_path_defaults_next_to_module():
+    # 未指定ならrecording_common.pyと同じディレクトリ配下のassets/replay_end_templates/
+    # {game_id}.pngを既定値として使う(record_th0X.py側での明示指定は不要、reports/33・34)。
+    config = make_config(game_id="th07")
+
+    assert config.end_template_path.endswith("/assets/replay_end_templates/th07.png")
+
+
+def test_game_config_allows_overriding_end_template_path():
+    config = make_config(end_template_path="/custom/th08.png")
+
+    assert config.end_template_path == "/custom/th08.png"
+
+
+def test_load_end_template_returns_none_when_path_is_none():
+    assert rc.load_end_template(None) is None
+
+
+def test_load_end_template_returns_none_when_file_missing(tmp_path):
+    assert rc.load_end_template(str(tmp_path / "missing.png")) is None
+
+
+def test_load_end_template_crops_top_band_at_downsampled_resolution(tmp_path):
+    # grab_frame()と同じ160x120グレースケールへダウンサンプルした上で、リプレイ内容に
+    # 依存しない上部の帯(END_TEMPLATE_ROWS)だけを切り出す(reports/33)。
+    path = tmp_path / "template.png"
+    Image.new("RGB", (640, 480), color=(100, 150, 200)).save(path)
+
+    template = rc.load_end_template(str(path))
+
+    assert template.shape == (rc.END_TEMPLATE_ROWS, 160)
+
+
+def test_load_end_template_is_content_independent_of_lower_region(tmp_path):
+    # フェーズ34: 切り出し領域(タイトル文言+列見出しの帯)はリプレイ一覧の中身
+    # (プレイヤー名・日付等、画像下部)に依存しないことを確認する。
+    img_a = Image.new("RGB", (640, 480), color=(255, 255, 255))
+    for y in range(400, 480):
+        for x in range(0, 640, 10):
+            img_a.putpixel((x, y), (0, 0, 0))
+    path_a = tmp_path / "a.png"
+    img_a.save(path_a)
+
+    img_b = Image.new("RGB", (640, 480), color=(255, 255, 255))
+    path_b = tmp_path / "b.png"
+    img_b.save(path_b)
+
+    template_a = rc.load_end_template(str(path_a))
+    template_b = rc.load_end_template(str(path_b))
+
+    assert rc.mad(template_a, template_b) == pytest.approx(0.0)
+
+
 def test_build_video_ffmpeg_cmd_captures_without_watermark():
     # ウォーターマークはmux_audio_video()側で合成するため、build_video_ffmpeg_cmd()は
     # 常にウォーターマークなしの生キャプチャコマンドを返す(-copytsとoverlayの
