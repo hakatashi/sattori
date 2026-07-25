@@ -66,11 +66,12 @@ OUTPUT_KEY = f"videos/{JOB_ID}.mp4"
 OUTPUT_KEY_720P = f"videos/{JOB_ID}_720p.mp4"
 WATERMARK_ASSET = f"{REPO}/assets/watermark/watermark-60fps.webm"
 
-# GAME に応じたタイトル固有の録画スクリプト(Issue #13でth08を追加)。
+# GAME に応じたタイトル固有の録画スクリプト(Issue #13でth08、th06対応で追加)。
 # 辞書で明示的に許可した値のみを使うことで、job.game由来のGAME環境変数から
 # 任意のパスを組み立てないようにする(値自体はapps/api側でisSupportedGameを
 # 通過したものしかジョブ化されないが、念のための防御)。
 RECORDING_SCRIPTS = {
+    "th06": "record_th06.py",
     "th07": "record_th07.py",
     "th08": "record_th08.py",
 }

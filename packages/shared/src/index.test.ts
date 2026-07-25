@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { isSupportedGame, isTerminalStatus, DEFAULT_RECORDING_OPTIONS } from "./index.js";
 
 describe("shared", () => {
-  it("th07・th08 が録画対応タイトル(Issue #13でth08を追加)", () => {
+  it("th06・th07・th08 が録画対応タイトル(Issue #13でth08、th06対応でth06を追加)", () => {
+    expect(isSupportedGame("th06")).toBe(true);
     expect(isSupportedGame("th07")).toBe(true);
     expect(isSupportedGame("th08")).toBe(true);
     // th11 はパーサー的には認識できるが録画には未対応(MOD移植が未着手)。

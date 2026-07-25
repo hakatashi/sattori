@@ -30,6 +30,49 @@ def test_game_config_derives_exe_dll_and_log_path_from_game_id():
     assert config.log_path == "/instance/th08_autoplay.log"
 
 
+def test_game_config_extra_dlls_defaults_to_empty():
+    config = make_config()
+
+    assert config.extra_dlls == ()
+
+
+def test_game_config_process_name_defaults_to_game_exe():
+    config = make_config()
+
+    assert config.process_name == config.game_exe == "th08.exe"
+
+
+def test_game_config_allows_overriding_game_exe_and_process_name():
+    # th06はVsyncPatchが実行ファイル名を検証しているらしく、th{N}.exeへリネームすると
+    # 白画面ハングが再発するため元のファイル名のまま使う(record_th06.pyのモジュール
+    # docstring参照)。/proc/PID/commは15バイトで切り詰められるため、pgrep/pkill専用の
+    # process_nameは拡張子なしの別の値を指定する(touhou-recorder reports/31)。
+    config = make_config(
+        game_id="th06", game_exe="東方紅魔郷.exe", process_name="東方紅魔郷",
+    )
+
+    assert config.game_exe == "東方紅魔郷.exe"
+    assert config.process_name == "東方紅魔郷"
+
+
+def test_build_injector_cmd_without_extra_dlls():
+    config = make_config()
+
+    cmd = rc.build_injector_cmd(config)
+
+    assert cmd == ["wine", "injector.exe", "th08.exe", "th08_hook.dll"]
+
+
+def test_build_injector_cmd_injects_extra_dlls_before_hook_dll():
+    # th06のVsyncPatch(vpatch_th06.dll)はwined3dの白画面ハングを避けるため、
+    # MOD本体(hook_dll)より前に注入されなければならない(touhou-recorder reports/30)。
+    config = make_config(game_id="th06", extra_dlls=("vpatch_th06.dll",))
+
+    cmd = rc.build_injector_cmd(config)
+
+    assert cmd == ["wine", "injector.exe", "th06.exe", "vpatch_th06.dll", "th06_hook.dll"]
+
+
 def test_game_config_build_env_sets_wine_and_locale_vars():
     config = make_config()
 
@@ -50,6 +93,59 @@ def test_mad_computes_mean_absolute_difference():
     a = np.array([[0.0, 0.0], [0.0, 0.0]], dtype=np.float32)
     b = np.array([[2.0, 4.0], [0.0, 2.0]], dtype=np.float32)
     assert rc.mad(a, b) == pytest.approx(2.0)
+
+
+def test_game_config_end_template_path_defaults_next_to_module():
+    # 未指定ならrecording_common.pyと同じディレクトリ配下のassets/replay_end_templates/
+    # {game_id}.pngを既定値として使う(record_th0X.py側での明示指定は不要、reports/33・34)。
+    config = make_config(game_id="th07")
+
+    assert config.end_template_path.endswith("/assets/replay_end_templates/th07.png")
+
+
+def test_game_config_allows_overriding_end_template_path():
+    config = make_config(end_template_path="/custom/th08.png")
+
+    assert config.end_template_path == "/custom/th08.png"
+
+
+def test_load_end_template_returns_none_when_path_is_none():
+    assert rc.load_end_template(None) is None
+
+
+def test_load_end_template_returns_none_when_file_missing(tmp_path):
+    assert rc.load_end_template(str(tmp_path / "missing.png")) is None
+
+
+def test_load_end_template_crops_top_band_at_downsampled_resolution(tmp_path):
+    # grab_frame()と同じ160x120グレースケールへダウンサンプルした上で、リプレイ内容に
+    # 依存しない上部の帯(END_TEMPLATE_ROWS)だけを切り出す(reports/33)。
+    path = tmp_path / "template.png"
+    Image.new("RGB", (640, 480), color=(100, 150, 200)).save(path)
+
+    template = rc.load_end_template(str(path))
+
+    assert template.shape == (rc.END_TEMPLATE_ROWS, 160)
+
+
+def test_load_end_template_is_content_independent_of_lower_region(tmp_path):
+    # フェーズ34: 切り出し領域(タイトル文言+列見出しの帯)はリプレイ一覧の中身
+    # (プレイヤー名・日付等、画像下部)に依存しないことを確認する。
+    img_a = Image.new("RGB", (640, 480), color=(255, 255, 255))
+    for y in range(400, 480):
+        for x in range(0, 640, 10):
+            img_a.putpixel((x, y), (0, 0, 0))
+    path_a = tmp_path / "a.png"
+    img_a.save(path_a)
+
+    img_b = Image.new("RGB", (640, 480), color=(255, 255, 255))
+    path_b = tmp_path / "b.png"
+    img_b.save(path_b)
+
+    template_a = rc.load_end_template(str(path_a))
+    template_b = rc.load_end_template(str(path_b))
+
+    assert rc.mad(template_a, template_b) == pytest.approx(0.0)
 
 
 def test_build_video_ffmpeg_cmd_captures_without_watermark():

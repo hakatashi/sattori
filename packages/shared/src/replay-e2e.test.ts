@@ -15,6 +15,7 @@ const FIXTURES_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../replay-parser/test-fixtures",
 );
+const TH06_FIXTURE = path.join(FIXTURES_DIR, "th06/th6_02.rpy");
 const TH07_FIXTURE = path.join(FIXTURES_DIR, "th07/th7_07.rpy");
 // th11 はパーサー的には認識できるが、Sattoriの録画対応タイトルには含まれない
 // (isSupportedGame が false を返す) ため、parseReplayInfo の unsupported_game 検証に使う。
@@ -54,6 +55,20 @@ describe("parseReplayInfo end-to-end (Issue #8)", () => {
       cleared: true,
     });
     expect(result.info.estimatedDurationSeconds).toBeGreaterThan(0);
+  });
+
+  it("録画対応タイトル（th06）は unsupported_game にならない", async () => {
+    const data = new Uint8Array(await readFile(TH06_FIXTURE));
+    const result = parseReplayInfo(data);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.info).toMatchObject({
+      game: "th06",
+      character: "ReimuA",
+      difficulty: "Normal",
+      score: 66329830,
+    });
   });
 
   it("録画未対応タイトル（th11）は unsupported_game として日本語メッセージを返す", async () => {

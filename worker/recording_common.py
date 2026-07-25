@@ -64,6 +64,29 @@ POLL_INTERVAL_SEC = 2.0
 POST_START_GRACE_SEC = 15.0
 TIMEOUT_SEC = 40 * 60
 
+# 終了検知(リプレイ選択画面テンプレート照合)。touhou-recorder reports/33・34で判明した
+# 通り、画面静止(STILL_MAD_THRESHOLD/STILL_CONSECUTIVE_REQUIRED)だけでは「リプレイ終了時に
+# 自動的に戻るリプレイ選択画面」と「ステージクリア後に一時的に表示されるリザルト画面」を
+# 区別できず、後者がSTILL_CONSECUTIVE_REQUIRED(16秒)を超えて静止し続けると、リプレイ本編の
+# 途中でも誤って「終了」と判定されてしまう(th06のth6_ud1vfq.rpyでステージ4クリア後に実際に
+# 発生を確認、reports/33)。この誤検知はth06に限らずth07/th08にも起こりうる構造的な問題である
+# ため、画面静止という条件そのものを「実際にリプレイ選択画面(タイトル文言+列見出しの帯)と
+# 一致するか」のテンプレートマッチングに置き換える。
+# テンプレートが使えるゲームでは画面静止を待たず毎回テンプレートと照合するため、静止待ちの
+# 分だけ終了検知も高速化する(reports/34。静止のみ判定の最短16秒+αから、最短
+# END_TEMPLATE_CONSECUTIVE_REQUIRED*POLL_INTERVAL_SEC=4秒へ短縮)。
+# テンプレート画像は`assets/replay_end_templates/{game_id}.png`にゲームごとに1枚用意する
+# (`worker/README.md`参照。ゲーム本体等と同様リポジトリには含めずdocker build前に配置する)。
+# 未整備・未検出のゲームは警告ログを出しつつ従来の画面静止のみ判定にフォールバックする。
+END_TEMPLATE_ROWS = 40  # 160x120にダウンサンプルした座標系での上部の帯(タイトル文言+列見出し
+                        # 行を含む。リプレイ内容(一覧の中身・プレイヤー名/日付)には依存しない
+                        # 領域であることをreports/34でクロスリプレイ実証済み)
+END_TEMPLATE_MAD_THRESHOLD = 15.0  # 実測: テンプレート自己一致は0.0〜0.32、無関係な画面
+                                   # (ステージクリア画面・ゲームプレイ中・タイトル等)とは
+                                   # 40〜140超と大きなマージンがある(reports/33・34)
+END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒。動画圧縮ノイズ等による
+                                       # 単発の偶然一致を弾くため連続一致を要求する(reports/34)
+
 # 進捗スクリーンショットの書き出し間隔。POLL_INTERVAL_SEC(2秒)毎に取得している
 # フレームのうち5回に1回だけ保存する(=約10秒毎)。既存のMAD差分検知用のffmpeg
 # キャプチャを流用するため、追加のffmpeg呼び出しは発生しない。
@@ -99,7 +122,7 @@ MAX_DUPLICATE_RATE_DEFAULT = 30.0
 class GameConfig:
     """タイトルごとに異なる値をまとめたもの(record_th07.py / record_th08.py が組み立てる)。"""
 
-    game_id: str  # "th07" / "th08"(ログメッセージ・自動再生ログのファイル名接頭辞に使う)
+    game_id: str  # "th06" / "th07" / "th08"(ログメッセージ・自動再生ログのファイル名接頭辞に使う)
     display: str  # Xvfb のディスプレイ番号(例 ":97")。同一ホストでの多重起動を避けるため
     wineprefix: str
     instance_dir: str
@@ -107,16 +130,48 @@ class GameConfig:
     canonical_slot: str  # アップロードされた任意ファイル名リプレイを配置する正規スロット名
     injector_path: str
     hook_dll_path: str
-    game_exe: str = field(init=False)
+    # 実行ファイル名。未指定(None)ならf"{game_id}.exe"を使う(th07/th08)。
+    # th06はVsyncPatch(vpatch_th06.dll)が対象プロセスの実行ファイル名を検証している
+    # らしく、`th06.exe`へリネームすると白画面ハング(reports/30)が再発することを
+    # 実機検証で確認した(WaitForStableWindowが`stable`に到達せずCPU使用率100%で
+    # 張り付き続ける)。そのためth06は元のファイル名`東方紅魔郷.exe`をそのまま
+    # game_exeに指定する。
+    game_exe: str | None = None
+    # pgrep/pkillでのプロセス検索に使う名前。未指定ならgame_exeを使う。
+    # Linuxの`/proc/PID/comm`は15バイトで切り詰められるため、UTF-8で18バイトの
+    # `東方紅魔郷.exe`は末尾の`.exe`が欠落した`東方紅魔郷`(15バイトちょうど)という
+    # 値になり、`pgrep -x "東方紅魔郷.exe"`は一致しない(touhou-recorder reports/31)。
+    # th06はこのフィールドに`"東方紅魔郷"`(拡張子なし)を指定する。
+    process_name: str | None = None
     hook_dll: str = field(init=False)
     log_path: str = field(init=False)
     injector: str = "injector.exe"
     pulse_source: str = "auto_null.monitor"
+    # フックDLLより前に注入する追加DLL(ファイル名のみ、game_dir_src配下に同梱されており
+    # prepare_instance()のrsyncで自動的にinstance_dirへコピーされる想定)。
+    # th06はwined3dの白画面ハング回避に必須のVsyncPatch(vpatch_th06.dll、
+    # touhou-recorder reports/30・31参照)をここで指定する。th07/th08は空タプルのまま
+    # (injector.exeは複数DLL指定に対応済みだが1個のみの従来通りの呼び出しになる)。
+    extra_dlls: tuple[str, ...] = ()
+    # 終了検知用のリプレイ選択画面テンプレート画像のパス。未指定(None)ならこのモジュール
+    # (recording_common.py)と同じディレクトリ配下の`assets/replay_end_templates/{game_id}.png`
+    # を既定値として使う(record_th06.py等の呼び出し側での明示指定は不要)。ファイルが
+    # 存在しない場合はload_end_template()がNoneを返し、画面静止のみ判定にフォールバックする。
+    end_template_path: str | None = None
 
     def __post_init__(self):
-        object.__setattr__(self, "game_exe", f"{self.game_id}.exe")
+        if self.game_exe is None:
+            object.__setattr__(self, "game_exe", f"{self.game_id}.exe")
+        if self.process_name is None:
+            object.__setattr__(self, "process_name", self.game_exe)
         object.__setattr__(self, "hook_dll", f"{self.game_id}_hook.dll")
         object.__setattr__(self, "log_path", f"{self.instance_dir}/{self.game_id}_autoplay.log")
+        if self.end_template_path is None:
+            module_dir = os.path.dirname(os.path.abspath(__file__))
+            object.__setattr__(
+                self, "end_template_path",
+                f"{module_dir}/assets/replay_end_templates/{self.game_id}.png",
+            )
 
     def build_env(self):
         env = os.environ.copy()
@@ -152,7 +207,9 @@ def ensure_xvfb(config, env, log=print):
 
 def prepare_instance(config, replay_path, log=print):
     """ゲーム一式を instance ディレクトリへ複製し、録画対象リプレイだけを
-    正規スロット名で replay/ 配下に配置する。"""
+    正規スロット名で replay/ 配下に配置する。extra_dlls(th06のvpatch_th06.dll等)は
+    game_dir_src配下に同梱されている前提のため、以下のrsyncで自動的にコピーされる
+    (個別のcpは不要)。"""
     subprocess.run(
         ["rsync", "-a", "--exclude=replay", f"{config.game_dir_src}/", f"{config.instance_dir}/"],
         check=True,
@@ -167,6 +224,13 @@ def prepare_instance(config, replay_path, log=print):
     if os.path.exists(config.log_path):
         os.remove(config.log_path)
     log(f"instance 準備完了 (対象リプレイを {config.canonical_slot} として配置)")
+
+
+def build_injector_cmd(config):
+    """injector.exeへ渡す引数列を組み立てる。extra_dllsが指定されていれば
+    hook_dllより前に指定順で注入させる(injector.exeは指定順に全DLLを注入してから
+    メインスレッドを再開する、mods/common/injector.cpp参照)。"""
+    return ["wine", config.injector, config.game_exe, *config.extra_dlls, config.hook_dll]
 
 
 def find_window(config, env, pid):
@@ -195,14 +259,16 @@ def find_window(config, env, pid):
     return None
 
 
-def find_live_game_pid(game_exe):
-    """game_exeのPIDのうち、zombie(状態Z)ではないものを1つ返す(なければNone)。
+def find_live_game_pid(process_name):
+    """process_nameのPIDのうち、zombie(状態Z)ではないものを1つ返す(なければNone)。
     コンテナ内ではPID 1(entrypoint.py)がinitのように孤児プロセスをreapする仕組みを
     持たないため、前の試行でSIGKILLしたプロセスがzombieのまま残り続けることがある。
     `pgrep -x`はzombieもマッチしてしまうため、2回目以降の試行で新しいプロセスでは
     なく前回のzombieのPIDを掴んでしまい、ウィンドウが永遠に見つからない原因になって
-    いた(reports/24)。"""
-    out = subprocess.run(["pgrep", "-x", game_exe], capture_output=True, text=True).stdout.split()
+    いた(reports/24)。呼び出し側は`config.game_exe`(実際に起動するファイル名)ではなく
+    `config.process_name`(pgrep/pkill専用。`/proc/PID/comm`の15バイト切り詰め対策、
+    th06の`東方紅魔郷.exe`→`東方紅魔郷`、touhou-recorder reports/31参照)を渡すこと。"""
+    out = subprocess.run(["pgrep", "-x", process_name], capture_output=True, text=True).stdout.split()
     for pid in out:
         try:
             with open(f"/proc/{pid}/stat") as f:
@@ -215,14 +281,14 @@ def find_live_game_pid(game_exe):
     return None
 
 
-def kill_wine_and_wait(config, env, game_exe):
+def kill_wine_and_wait(config, env, process_name):
     """ゲーム本体とwineserverを終了させ、実際にwineserverが終了するまで待つ。
     固定sleepで待っていたところ、AWSのようにCPUが逼迫した環境ではwineserverの
     終了処理自体に2秒以上かかることがあり、終了前に次の試行のinjectorを起動して
     ウィンドウ検出に失敗する事象が確認された(reports/24)。`wineserver -w`は
     現在起動中のwineserverが実際に終了するまでブロックするため、固定時間の
-    推測より確実。"""
-    subprocess.run(["pkill", "-9", "-x", game_exe])
+    推測より確実。呼び出し側は`config.process_name`を渡すこと(find_live_game_pid()参照)。"""
+    subprocess.run(["pkill", "-9", "-x", process_name])
     subprocess.run(["wineserver", "-k"], env=env)
     subprocess.run(["wineserver", "-w"], env=env, timeout=60)
 
@@ -273,6 +339,17 @@ def grab_frame_gray(config, env, x, y, w, h):
 
 def mad(a, b):
     return float(np.mean(np.abs(a - b)))
+
+
+def load_end_template(path):
+    """リプレイ選択画面テンプレートを読み込み、grab_frameと同じ160x120グレースケール
+    座標系に揃えた上で、リプレイ内容に依存しない上部の帯(END_TEMPLATE_ROWS)だけを
+    切り出して返す。ファイル未設定・未存在の場合はNone(呼び出し側は画面静止のみで
+    判定する従来のフォールバック動作になる、reports/33参照)。"""
+    if not path or not os.path.exists(path):
+        return None
+    img = Image.open(path).convert("L").resize((160, 120))
+    return np.asarray(img, dtype=np.float32)[:END_TEMPLATE_ROWS, :]
 
 
 def probe_stutter(config, env, x, y, w, h):
@@ -452,7 +529,7 @@ def _failure_result(config, env, log):
     output_exists=Falseにしておけばrecord_with_retry()の失敗判定がそのまま効く
     (reports/24で、以前はsys.exit(1)によりリトライループごとプロセスが終了して
     しまう不具合があった教訓を踏まえた設計)。"""
-    kill_wine_and_wait(config, env, config.game_exe)
+    kill_wine_and_wait(config, env, config.process_name)
     return {
         "output_exists": False,
         "classification": "setup_error",
@@ -466,12 +543,19 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     classification は "good" / "fps_runaway" / "stutter" / "timeout" / "setup_error" のいずれか。
     """
     env = config.build_env()
+    end_template = load_end_template(config.end_template_path)
+    if end_template is None:
+        log(
+            f"WARNING: {config.end_template_path} が見つからないため、画面静止のみで"
+            "リプレイ終了を判定します(誤検知の可能性あり、reports/33参照)"
+        )
     ensure_xvfb(config, env, log=log)
     prepare_instance(config, replay_path, log=log)
 
-    log("injector を起動します")
+    injector_cmd = build_injector_cmd(config)
+    log(f"injector を起動します: {' '.join(injector_cmd)}")
     subprocess.Popen(
-        ["wine", config.injector, config.game_exe, config.hook_dll],
+        injector_cmd,
         cwd=config.instance_dir, env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
@@ -479,12 +563,12 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     game_pid = None
     t0 = time.time()
     while time.time() - t0 < 20:
-        game_pid = find_live_game_pid(config.game_exe)
+        game_pid = find_live_game_pid(config.process_name)
         if game_pid:
             break
         time.sleep(0.1)
     if not game_pid:
-        log(f"ERROR: {config.game_exe} プロセスが検出できませんでした")
+        log(f"ERROR: {config.process_name} プロセスが検出できませんでした")
         return _failure_result(config, env, log)
     log(f"game_pid={game_pid} ({time.time()-t0:.1f}s)")
 
@@ -545,6 +629,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
 
     prev_frame = None
     consecutive_still = 0
+    end_template_consecutive = 0
     detected = False
     stutter_detected = False
     fps_runaway_hz = None
@@ -581,18 +666,39 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         poll_count += 1
         if progress_dir and poll_count % PROGRESS_SNAPSHOT_EVERY_N_POLLS == 0:
             save_progress_snapshot(progress_dir, color_frame, elapsed, expected_duration_seconds)
-        if prev_frame is not None:
-            d = mad(prev_frame, frame)
-            if d < STILL_MAD_THRESHOLD:
-                consecutive_still += 1
+        if end_template is not None:
+            # テンプレートが使えるゲームでは、画面静止を待たずに毎回テンプレート照合する
+            # (静止待ちを挟むと、リプレイ選択画面に戻った後さらにSTILL_CONSECUTIVE_REQUIRED
+            # 分の遅延が余分にかかってしまうため、reports/34)。テンプレート自体が
+            # ステージクリア画面等の無関係な画面と大きく乖離する(MAD 40〜140超、reports/33・34)
+            # ため誤検知リスクは小さいが、動画圧縮ノイズ等による単発の偶然一致を弾くため
+            # END_TEMPLATE_CONSECUTIVE_REQUIRED回連続の一致を要求する。
+            template_d = mad(frame[:END_TEMPLATE_ROWS, :], end_template)
+            if template_d < END_TEMPLATE_MAD_THRESHOLD:
+                end_template_consecutive += 1
             else:
-                consecutive_still = 0
-            log(f"poll: elapsed={elapsed:.1f}s MAD={d:.2f} still={consecutive_still}")
-            if consecutive_still >= STILL_CONSECUTIVE_REQUIRED:
-                log("画面が一定時間変化しなくなったためリプレイ終了と判定しました")
+                end_template_consecutive = 0
+            log(
+                f"poll: elapsed={elapsed:.1f}s template_MAD={template_d:.2f} "
+                f"end_template_consecutive={end_template_consecutive}"
+            )
+            if end_template_consecutive >= END_TEMPLATE_CONSECUTIVE_REQUIRED:
+                log("リプレイ選択画面と連続して一致したためリプレイ終了と判定しました")
                 detected = True
                 break
-        prev_frame = frame
+        else:
+            if prev_frame is not None:
+                d = mad(prev_frame, frame)
+                if d < STILL_MAD_THRESHOLD:
+                    consecutive_still += 1
+                else:
+                    consecutive_still = 0
+                log(f"poll: elapsed={elapsed:.1f}s MAD={d:.2f} still={consecutive_still}")
+                if consecutive_still >= STILL_CONSECUTIVE_REQUIRED:
+                    log("画面が一定時間変化しなくなったためリプレイ終了と判定しました")
+                    detected = True
+                    break
+            prev_frame = frame
         time.sleep(POLL_INTERVAL_SEC)
 
     log("録画を停止します (SIGINT)")
@@ -649,7 +755,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         stop_reason = "タイムアウト"
     log(f"録画終了。総録画時間 {total_record_sec:.1f}秒 検知方式: {stop_reason}")
 
-    kill_wine_and_wait(config, env, config.game_exe)
+    kill_wine_and_wait(config, env, config.process_name)
 
     return {
         "output_exists": output_exists,
