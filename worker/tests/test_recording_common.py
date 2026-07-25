@@ -95,6 +95,50 @@ def test_mad_computes_mean_absolute_difference():
     assert rc.mad(a, b) == pytest.approx(2.0)
 
 
+def test_build_still_mask_returns_none_when_rect_is_none():
+    assert rc.build_still_mask(None, 640, 480) is None
+
+
+def test_build_still_mask_excludes_rect_scaled_to_160x120(tmp_path):
+    # th11のPause Menu画面選択カーソル明滅矩形(元のウィンドウ座標系(70,288)-(188,318)、
+    # touhou-recorder reports/37・38)を640x480ウィンドウで変換すると、160x120座標系では
+    # おおよそx=[17,47) y=[72,80)になる。
+    mask = rc.build_still_mask((70, 288, 188, 318), 640, 480)
+
+    assert mask.shape == (120, 160)
+    assert mask[75, 30] == False  # noqa: E712 - 矩形内は除外(False)
+    assert mask[0, 0] == True  # noqa: E712 - 矩形外は静止判定に使う(True)
+
+
+def test_mad_masked_falls_back_to_mad_when_mask_is_none():
+    a = np.array([[0.0, 0.0], [0.0, 0.0]], dtype=np.float32)
+    b = np.array([[2.0, 4.0], [0.0, 2.0]], dtype=np.float32)
+
+    assert rc.mad_masked(a, b, None) == pytest.approx(rc.mad(a, b))
+
+
+def test_mad_masked_ignores_differences_inside_excluded_mask():
+    a = np.zeros((4, 4), dtype=np.float32)
+    b = np.zeros((4, 4), dtype=np.float32)
+    b[0, 0] = 100.0  # マスクで除外される画素だけが変化(=明滅カーソル相当)
+    mask = np.ones((4, 4), dtype=bool)
+    mask[0, 0] = False
+
+    assert rc.mad_masked(a, b, mask) == pytest.approx(0.0)
+
+
+def test_game_config_still_detect_exclude_rect_defaults_to_none():
+    config = make_config()
+
+    assert config.still_detect_exclude_rect is None
+
+
+def test_game_config_allows_overriding_still_detect_exclude_rect():
+    config = make_config(game_id="th11", still_detect_exclude_rect=(70, 288, 188, 318))
+
+    assert config.still_detect_exclude_rect == (70, 288, 188, 318)
+
+
 def test_game_config_end_template_path_defaults_next_to_module():
     # 未指定ならrecording_common.pyと同じディレクトリ配下のassets/replay_end_templates/
     # {game_id}.pngを既定値として使う(record_th0X.py側での明示指定は不要、reports/33・34)。
