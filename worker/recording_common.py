@@ -64,6 +64,29 @@ POLL_INTERVAL_SEC = 2.0
 POST_START_GRACE_SEC = 15.0
 TIMEOUT_SEC = 40 * 60
 
+# 終了検知(リプレイ選択画面テンプレート照合)。touhou-recorder reports/33・34で判明した
+# 通り、画面静止(STILL_MAD_THRESHOLD/STILL_CONSECUTIVE_REQUIRED)だけでは「リプレイ終了時に
+# 自動的に戻るリプレイ選択画面」と「ステージクリア後に一時的に表示されるリザルト画面」を
+# 区別できず、後者がSTILL_CONSECUTIVE_REQUIRED(16秒)を超えて静止し続けると、リプレイ本編の
+# 途中でも誤って「終了」と判定されてしまう(th06のth6_ud1vfq.rpyでステージ4クリア後に実際に
+# 発生を確認、reports/33)。この誤検知はth06に限らずth07/th08にも起こりうる構造的な問題である
+# ため、画面静止という条件そのものを「実際にリプレイ選択画面(タイトル文言+列見出しの帯)と
+# 一致するか」のテンプレートマッチングに置き換える。
+# テンプレートが使えるゲームでは画面静止を待たず毎回テンプレートと照合するため、静止待ちの
+# 分だけ終了検知も高速化する(reports/34。静止のみ判定の最短16秒+αから、最短
+# END_TEMPLATE_CONSECUTIVE_REQUIRED*POLL_INTERVAL_SEC=4秒へ短縮)。
+# テンプレート画像は`assets/replay_end_templates/{game_id}.png`にゲームごとに1枚用意する
+# (`worker/README.md`参照。ゲーム本体等と同様リポジトリには含めずdocker build前に配置する)。
+# 未整備・未検出のゲームは警告ログを出しつつ従来の画面静止のみ判定にフォールバックする。
+END_TEMPLATE_ROWS = 40  # 160x120にダウンサンプルした座標系での上部の帯(タイトル文言+列見出し
+                        # 行を含む。リプレイ内容(一覧の中身・プレイヤー名/日付)には依存しない
+                        # 領域であることをreports/34でクロスリプレイ実証済み)
+END_TEMPLATE_MAD_THRESHOLD = 15.0  # 実測: テンプレート自己一致は0.0〜0.32、無関係な画面
+                                   # (ステージクリア画面・ゲームプレイ中・タイトル等)とは
+                                   # 40〜140超と大きなマージンがある(reports/33・34)
+END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒。動画圧縮ノイズ等による
+                                       # 単発の偶然一致を弾くため連続一致を要求する(reports/34)
+
 # 進捗スクリーンショットの書き出し間隔。POLL_INTERVAL_SEC(2秒)毎に取得している
 # フレームのうち5回に1回だけ保存する(=約10秒毎)。既存のMAD差分検知用のffmpeg
 # キャプチャを流用するため、追加のffmpeg呼び出しは発生しない。
@@ -130,6 +153,11 @@ class GameConfig:
     # touhou-recorder reports/30・31参照)をここで指定する。th07/th08は空タプルのまま
     # (injector.exeは複数DLL指定に対応済みだが1個のみの従来通りの呼び出しになる)。
     extra_dlls: tuple[str, ...] = ()
+    # 終了検知用のリプレイ選択画面テンプレート画像のパス。未指定(None)ならこのモジュール
+    # (recording_common.py)と同じディレクトリ配下の`assets/replay_end_templates/{game_id}.png`
+    # を既定値として使う(record_th06.py等の呼び出し側での明示指定は不要)。ファイルが
+    # 存在しない場合はload_end_template()がNoneを返し、画面静止のみ判定にフォールバックする。
+    end_template_path: str | None = None
 
     def __post_init__(self):
         if self.game_exe is None:
@@ -138,6 +166,12 @@ class GameConfig:
             object.__setattr__(self, "process_name", self.game_exe)
         object.__setattr__(self, "hook_dll", f"{self.game_id}_hook.dll")
         object.__setattr__(self, "log_path", f"{self.instance_dir}/{self.game_id}_autoplay.log")
+        if self.end_template_path is None:
+            module_dir = os.path.dirname(os.path.abspath(__file__))
+            object.__setattr__(
+                self, "end_template_path",
+                f"{module_dir}/assets/replay_end_templates/{self.game_id}.png",
+            )
 
     def build_env(self):
         env = os.environ.copy()
@@ -305,6 +339,17 @@ def grab_frame_gray(config, env, x, y, w, h):
 
 def mad(a, b):
     return float(np.mean(np.abs(a - b)))
+
+
+def load_end_template(path):
+    """リプレイ選択画面テンプレートを読み込み、grab_frameと同じ160x120グレースケール
+    座標系に揃えた上で、リプレイ内容に依存しない上部の帯(END_TEMPLATE_ROWS)だけを
+    切り出して返す。ファイル未設定・未存在の場合はNone(呼び出し側は画面静止のみで
+    判定する従来のフォールバック動作になる、reports/33参照)。"""
+    if not path or not os.path.exists(path):
+        return None
+    img = Image.open(path).convert("L").resize((160, 120))
+    return np.asarray(img, dtype=np.float32)[:END_TEMPLATE_ROWS, :]
 
 
 def probe_stutter(config, env, x, y, w, h):
@@ -498,6 +543,12 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     classification は "good" / "fps_runaway" / "stutter" / "timeout" / "setup_error" のいずれか。
     """
     env = config.build_env()
+    end_template = load_end_template(config.end_template_path)
+    if end_template is None:
+        log(
+            f"WARNING: {config.end_template_path} が見つからないため、画面静止のみで"
+            "リプレイ終了を判定します(誤検知の可能性あり、reports/33参照)"
+        )
     ensure_xvfb(config, env, log=log)
     prepare_instance(config, replay_path, log=log)
 
@@ -578,6 +629,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
 
     prev_frame = None
     consecutive_still = 0
+    end_template_consecutive = 0
     detected = False
     stutter_detected = False
     fps_runaway_hz = None
@@ -614,18 +666,39 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         poll_count += 1
         if progress_dir and poll_count % PROGRESS_SNAPSHOT_EVERY_N_POLLS == 0:
             save_progress_snapshot(progress_dir, color_frame, elapsed, expected_duration_seconds)
-        if prev_frame is not None:
-            d = mad(prev_frame, frame)
-            if d < STILL_MAD_THRESHOLD:
-                consecutive_still += 1
+        if end_template is not None:
+            # テンプレートが使えるゲームでは、画面静止を待たずに毎回テンプレート照合する
+            # (静止待ちを挟むと、リプレイ選択画面に戻った後さらにSTILL_CONSECUTIVE_REQUIRED
+            # 分の遅延が余分にかかってしまうため、reports/34)。テンプレート自体が
+            # ステージクリア画面等の無関係な画面と大きく乖離する(MAD 40〜140超、reports/33・34)
+            # ため誤検知リスクは小さいが、動画圧縮ノイズ等による単発の偶然一致を弾くため
+            # END_TEMPLATE_CONSECUTIVE_REQUIRED回連続の一致を要求する。
+            template_d = mad(frame[:END_TEMPLATE_ROWS, :], end_template)
+            if template_d < END_TEMPLATE_MAD_THRESHOLD:
+                end_template_consecutive += 1
             else:
-                consecutive_still = 0
-            log(f"poll: elapsed={elapsed:.1f}s MAD={d:.2f} still={consecutive_still}")
-            if consecutive_still >= STILL_CONSECUTIVE_REQUIRED:
-                log("画面が一定時間変化しなくなったためリプレイ終了と判定しました")
+                end_template_consecutive = 0
+            log(
+                f"poll: elapsed={elapsed:.1f}s template_MAD={template_d:.2f} "
+                f"end_template_consecutive={end_template_consecutive}"
+            )
+            if end_template_consecutive >= END_TEMPLATE_CONSECUTIVE_REQUIRED:
+                log("リプレイ選択画面と連続して一致したためリプレイ終了と判定しました")
                 detected = True
                 break
-        prev_frame = frame
+        else:
+            if prev_frame is not None:
+                d = mad(prev_frame, frame)
+                if d < STILL_MAD_THRESHOLD:
+                    consecutive_still += 1
+                else:
+                    consecutive_still = 0
+                log(f"poll: elapsed={elapsed:.1f}s MAD={d:.2f} still={consecutive_still}")
+                if consecutive_still >= STILL_CONSECUTIVE_REQUIRED:
+                    log("画面が一定時間変化しなくなったためリプレイ終了と判定しました")
+                    detected = True
+                    break
+            prev_frame = frame
         time.sleep(POLL_INTERVAL_SEC)
 
     log("録画を停止します (SIGINT)")

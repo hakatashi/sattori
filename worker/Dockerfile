@@ -8,10 +8,13 @@
 # (title_assets.py、アップロード手順は worker/README.md 参照)。このため本イメージは
 # タイトル数に依存せず1本のみで、新タイトル追加時に再ビルドする必要はない。
 #
-# 重要: 以下はウォーターマーク素材であり、リポジトリには含めない(.gitignore 済み)。
-# docker build 前にビルドコンテキスト(worker/)配下へ配置しておくこと
-# (詳細は worker/README.md):
+# 重要: 以下はウォーターマーク素材・終了検知用テンプレート画像であり、リポジトリには
+# 含めない(.gitignore 済み)。docker build 前にビルドコンテキスト(worker/)配下へ
+# 配置しておくこと(詳細は worker/README.md):
 #   assets/watermark/watermark-60fps.webm … ウォーターマーク素材(VP9 アルファ、タイトル非依存の共通素材)
+#   assets/replay_end_templates/{th06,th07,th08}.png … リプレイ選択画面テンプレート
+#     (リプレイ終了検知用。ゲーム本体ではなく録画パイプライン自体の参照画像なので
+#     タイトル資産アーカイブ(S3)ではなくこのイメージに含める)
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -38,6 +41,10 @@ WORKDIR /app
 # ウォーターマーク素材(タイトル非依存の共通素材。ビルド時にコンテキストへ配置。
 # リポジトリには含まれない)
 COPY assets/watermark/watermark-60fps.webm /app/assets/watermark/watermark-60fps.webm
+
+# リプレイ選択画面テンプレート(終了検知用。ビルド時にコンテキストへ配置。
+# リポジトリには含まれない。touhou-recorder reports/33・34参照)
+COPY assets/replay_end_templates/ /app/assets/replay_end_templates/
 
 # ワーカーのソース(リポジトリ管理)
 COPY recording_common.py record_th06.py record_th07.py record_th08.py entrypoint.py status.py upscale.py interruption_watcher.py progress_reporter.py title_assets.py /app/
