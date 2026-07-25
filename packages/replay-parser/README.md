@@ -202,6 +202,27 @@ published under the MIT license as an independent implementation built from
 factual information (byte offsets, XOR keys, etc.), but please make your own
 judgment call about usage with this background in mind.
 
+## Related work
+
+Other open-source projects for parsing or reverse-engineering Touhou replay
+files:
+
+- [raviddog/threplay](https://github.com/raviddog/threplay) (C#) — the base
+  this package's decoding logic was ported from; see "Credits" above.
+- [Fluorohydride/threp](https://github.com/Fluorohydride/threp) (C++) — source
+  of the LZSS decompression / XOR block decoding algorithms; see "Credits"
+  above.
+- [GensokyoClub/th06](https://github.com/GensokyoClub/th06) and
+  [GensokyoClub/th08](https://github.com/GensokyoClub/th08) — decompilation
+  projects used to cross-reference struct layouts for th06/th08 `frameCount`
+  support; see "Credits" above.
+- [yiyuezhuo/touhou-replay-decoder](https://github.com/yiyuezhuo/touhou-replay-decoder) —
+  used to independently cross-validate the th10-th18 frame-count field (see
+  the "`frameCount`" section above).
+- [hoangcaominh/thrpy-parser](https://github.com/hoangcaominh/thrpy-parser)
+  (Python) — listed here as prior art; its code has not been consulted or
+  referenced during the development of this package.
+
 ## License
 
 MIT (see [LICENSE](./LICENSE); also see the "Credits" section above for background)
