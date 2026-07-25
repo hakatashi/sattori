@@ -127,11 +127,25 @@ describe("launchRecordingInstance", () => {
         TotalTargetCapacity: 1,
         DefaultTargetCapacityType: "spot",
       },
-      SpotOptions: { AllocationStrategy: "lowest-price" },
+      SpotOptions: {
+        AllocationStrategy: "price-capacity-optimized",
+        SingleInstanceType: false,
+      },
     });
+    // サブネット(AZ) × 候補インスタンスタイプの全組み合わせをOverridesに渡す
+    // （単一AZ・単一インスタンスタイプでのSpot枯渇耐性、Issue #29）
+    const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    expect(overrides.length).toBeGreaterThan(2);
+    expect(overrides).toEqual(
+      expect.arrayContaining([
+        { SubnetId: "subnet-aaaa", InstanceType: "c7i.xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "c7i.xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "c7a.xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "c5a.xlarge" },
+      ]),
+    );
     expect(fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]).toMatchObject({
       LaunchTemplateSpecification: { LaunchTemplateId: "lt-xxxx", Version: "3" },
-      Overrides: [{ SubnetId: "subnet-aaaa" }, { SubnetId: "subnet-bbbb" }],
     });
   });
 

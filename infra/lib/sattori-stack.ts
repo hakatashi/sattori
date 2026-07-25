@@ -142,12 +142,17 @@ export class SattoriStack extends Stack {
     });
 
     // NAT を持たない公開サブネット構成(ワーカーは外向き通信のみ必要 = 最小コスト)。
-    // maxAzs は us-east-1 の全AZ数(a-fの6つ)に合わせている。EC2 Fleet の起動時に
-    // 全AZへスポットリクエストを送ることで、単一AZでのキャパシティ枯渇
-    // (InsufficientInstanceCapacity)への耐性を高める(NATを使わないため
-    // AZ追加によるコスト増はない)。
+    // EC2 Fleet の起動時に全AZへスポットリクエストを送ることで、単一AZでの
+    // キャパシティ枯渇(InsufficientInstanceCapacity)への耐性を高める(NATを
+    // 使わないためAZ追加によるコスト増はない)。availabilityZones を明示指定して
+    // us-east-1e を除外している。us-east-1e はこのアカウントではレガシーAZ
+    // (AZ ID `use1-az3`)で、c3/c4/d2/i2/i3/m3等の旧世代インスタンスファミリしか
+    // 提供しておらず、`apps/api/src/ec2.ts` の CANDIDATE_INSTANCE_TYPES
+    // (c7i/c7a/c6a/c6i/c7i-flex/c5aのいずれのxlarge)も1つも存在しない。含めても
+    // Overrides内の常に容量ゼロな組み合わせが増えるだけで実害は薄いが、無駄な
+    // 設定を避けるため明示的に外す（Issue #29）。
     const vpc = new ec2.Vpc(this, "WorkerVpc", {
-      maxAzs: 6,
+      availabilityZones: ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1f"],
       natGateways: 0,
       subnetConfiguration: [
         { name: "public", subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
