@@ -29,7 +29,7 @@
       "additional": {
         "rank": 16
       },
-      "frameCount": null
+      "frameCount": 8836
     },
     {
       "stage": 2,
@@ -50,7 +50,7 @@
       "additional": {
         "rank": 31
       },
-      "frameCount": null
+      "frameCount": 11525
     },
     {
       "stage": 3,
@@ -71,7 +71,7 @@
       "additional": {
         "rank": 32
       },
-      "frameCount": null
+      "frameCount": 14215
     },
     {
       "stage": 4,
@@ -92,7 +92,7 @@
       "additional": {
         "rank": 32
       },
-      "frameCount": null
+      "frameCount": 18471
     },
     {
       "stage": 5,
@@ -113,7 +113,7 @@
       "additional": {
         "rank": 16
       },
-      "frameCount": null
+      "frameCount": 16648
     },
     {
       "stage": 6,
@@ -134,8 +134,8 @@
       "additional": {
         "rank": 11
       },
-      "frameCount": null
+      "frameCount": 19298
     }
   ],
-  "frameCount": null
+  "frameCount": 88993
 }

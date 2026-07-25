@@ -28,9 +28,9 @@
       "graze": 0,
       "additional": {
         "pointItems": 0,
-        "time": 0
+        "pointItemExtends": 0
       },
-      "frameCount": null
+      "frameCount": 10551
     },
     {
       "stage": 2,
@@ -50,9 +50,9 @@
       "graze": 320,
       "additional": {
         "pointItems": 57,
-        "time": 0
+        "pointItemExtends": 0
       },
-      "frameCount": null
+      "frameCount": 13343
     },
     {
       "stage": 3,
@@ -72,9 +72,9 @@
       "graze": 625,
       "additional": {
         "pointItems": 182,
-        "time": 1
+        "pointItemExtends": 1
       },
-      "frameCount": null
+      "frameCount": 17630
     },
     {
       "stage": 4,
@@ -94,10 +94,10 @@
       "graze": 1422,
       "additional": {
         "pointItems": 390,
-        "time": 2,
+        "pointItemExtends": 2,
         "route": "4B"
       },
-      "frameCount": null
+      "frameCount": 22432
     },
     {
       "stage": 5,
@@ -117,9 +117,9 @@
       "graze": 1901,
       "additional": {
         "pointItems": 655,
-        "time": 3
+        "pointItemExtends": 3
       },
-      "frameCount": null
+      "frameCount": 21881
     },
     {
       "stage": 6,
@@ -139,11 +139,11 @@
       "graze": 2812,
       "additional": {
         "pointItems": 835,
-        "time": 4,
+        "pointItemExtends": 4,
         "route": "6B"
       },
-      "frameCount": null
+      "frameCount": 32954
     }
   ],
-  "frameCount": null
+  "frameCount": 118791
 }
