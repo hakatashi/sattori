@@ -142,17 +142,20 @@ export class SattoriStack extends Stack {
     });
 
     // NAT を持たない公開サブネット構成(ワーカーは外向き通信のみ必要 = 最小コスト)。
-    // EC2 Fleet の起動時に全AZへスポットリクエストを送ることで、単一AZでの
-    // キャパシティ枯渇(InsufficientInstanceCapacity)への耐性を高める(NATを
-    // 使わないためAZ追加によるコスト増はない)。availabilityZones を明示指定して
-    // us-east-1e を除外している。us-east-1e はこのアカウントではレガシーAZ
-    // (AZ ID `use1-az3`)で、c3/c4/d2/i2/i3/m3等の旧世代インスタンスファミリしか
-    // 提供しておらず、`apps/api/src/ec2.ts` の CANDIDATE_INSTANCE_TYPES
-    // (c7i/c7a/c6a/c6i/c7i-flex/c5aのいずれのxlarge)も1つも存在しない。含めても
-    // Overrides内の常に容量ゼロな組み合わせが増えるだけで実害は薄いが、無駄な
-    // 設定を避けるため明示的に外す（Issue #29）。
+    // maxAzs は us-east-1 の全AZ数(a-fの6つ)に合わせている。EC2 Fleet の起動時に
+    // 全AZへスポットリクエストを送ることで、単一AZでのキャパシティ枯渇
+    // (InsufficientInstanceCapacity)への耐性を高める(NATを使わないため
+    // AZ追加によるコスト増はない)。
+    //
+    // AZの構成自体（maxAzs）は変更しない。当初は us-east-1e を availabilityZones の
+    // 明示指定で除外する案を試したが、既存サブネット(index5)のAZ・CIDRを差し替える
+    // 形の更新になり、CloudFormationが新サブネット作成を旧サブネット削除より先に
+    // 試みるため同一CIDR('10.0.4.0/24')の重複でデプロイが失敗した(create-before-delete
+    // の既定挙動とCIDR一意制約が噛み合わない)。VPC自体は変更せず、下記
+    // WORKER_SUBNET_IDS の組み立て時にus-east-1eのサブネットを除外することで
+    // 同じ目的を安全に達成する（Issue #29）。
     const vpc = new ec2.Vpc(this, "WorkerVpc", {
-      availabilityZones: ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1f"],
+      maxAzs: 6,
       natGateways: 0,
       subnetConfiguration: [
         { name: "public", subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
@@ -225,6 +228,18 @@ export class SattoriStack extends Stack {
 
     // --- API(Lambda + HTTP API) -------------------------------------------
 
+    // us-east-1e はこのAWSアカウントではレガシーAZ(AZ ID `use1-az3`)で、
+    // c3/c4/d2/i2/i3/m3等の旧世代インスタンスファミリしか提供しておらず、
+    // `apps/api/src/ec2.ts` の CANDIDATE_INSTANCE_TYPES
+    // (c7i/c7a/c6a/c6i/c7i-flex/c5aのいずれのxlarge)も1つも存在しない
+    // （`describe-instance-type-offerings`で確認済み）。含めても EC2 Fleet の
+    // Overrides内で常に容量ゼロな組み合わせが増えるだけなので、
+    // WORKER_SUBNET_IDS の組み立て時に除外する（Issue #29）。VPC自体
+    // (maxAzs:6)は変更しない点に注意（上記コメント参照）。
+    const workerSubnets = vpc.publicSubnets.filter(
+      (subnet) => subnet.availabilityZone !== "us-east-1e",
+    );
+
     const commonEnv: Record<string, string> = {
       UPLOAD_BUCKET: uploadBucket.bucketName,
       OUTPUT_BUCKET: outputBucket.bucketName,
@@ -233,7 +248,7 @@ export class SattoriStack extends Stack {
       WORKER_IMAGE: `${workerRepo.repositoryUri}:latest`,
       TITLE_ASSETS_BUCKET: titleAssetsBucket.bucketName,
       WORKER_LOG_GROUP: workerLogGroup.logGroupName,
-      WORKER_SUBNET_IDS: vpc.publicSubnets.map((subnet) => subnet.subnetId).join(","),
+      WORKER_SUBNET_IDS: workerSubnets.map((subnet) => subnet.subnetId).join(","),
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
       EMAIL_RATE_LIMIT_TABLE: emailRateLimitTable.tableName,
       SES_FROM_ADDRESS: sesFromAddress,
