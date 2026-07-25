@@ -37,8 +37,8 @@ jobs:
           git filter-repo --force --message-callback '
           import re
           text = message.decode("utf-8", "replace")
-          text = re.sub(r"\n?^Co-Authored-By:\s*Claude.*$", "", text, flags=re.MULTILINE)
-          text = re.sub(r"\n?^Claude-Session:.*$", "", text, flags=re.MULTILINE)
+          text = re.sub(r"\n?^Co-Authored-By:\s*Claude.*$", "", text, flags=re.MULTILINE | re.IGNORECASE)
+          text = re.sub(r"\n?^Claude-Session:.*$", "", text, flags=re.MULTILINE | re.IGNORECASE)
           text = re.sub(r"\n{3,}", "\n\n", text)
           return text.rstrip("\n").encode("utf-8") + b"\n"
           '
