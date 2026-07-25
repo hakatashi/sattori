@@ -160,7 +160,7 @@ describe("POST /magic-links", () => {
     const res = await handler(
       makeEvent({
         replayKey: "replays/abc.rpy",
-        game: "th11",
+        game: "th13",
         options: { watermark: true },
         email: "user@example.com",
       }),

@@ -51,12 +51,14 @@ export const GAME_TITLES: Record<GameId, string> = {
 
 /**
  * 録画に対応しているタイトル。
- * th07（フェーズ1）・th08（Issue #13）に続き、th06 の録画バックエンド（MOD 移植・
- * VsyncPatch 併用によるwined3d白画面ハング回避・ワーカー拡張）を追加した。
- * PoC（touhou-recorder）で E2E 実証済みなのは th06・th07・th08 のみで、他タイトルは
- * MOD 移植（録画対応）が未着手（AGENTS.md 参照）。
+ * th07（フェーズ1）・th08（Issue #13）・th06（MOD 移植・VsyncPatch 併用による
+ * wined3d白画面ハング回避・ワーカー拡張）に続き、th11（GetKeyboardStateフックに
+ * よるメニュー自動操作・画面静止検知のみでの終了判定・Pause Menu明滅カーソルの
+ * 除外マスク等、touhou-recorder reports/35〜39）を追加した。
+ * PoC（touhou-recorder）で E2E 実証済みなのは th06・th07・th08・th11 のみで、
+ * 他タイトルは MOD 移植（録画対応）が未着手（AGENTS.md 参照）。
  */
-export const SUPPORTED_GAME_IDS: readonly GameId[] = ["th06", "th07", "th08"];
+export const SUPPORTED_GAME_IDS: readonly GameId[] = ["th06", "th07", "th08", "th11"];
 
 export function isSupportedGame(game: GameId): boolean {
   return SUPPORTED_GAME_IDS.includes(game);
