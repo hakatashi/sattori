@@ -90,6 +90,15 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計・拡�
   `job.game`で分岐）。コスト影響は`.xlarge`比で概ね2倍。なお`c6a.2xlarge`・
   `c7a.2xlarge`はreports/40では未検証（検証済みは`c6i.2xlarge`・`c7i.2xlarge`
   のみ）で、他タイプと同様に本番運用の中で注視が必要。
+- **`CreateFleet`が実際に確保したインスタンスタイプ・アベイラビリティゾーンは
+  `JobRecord.instanceType`/`.availabilityZone`としてJobsTableに記録する**
+  （`apps/api/src/ec2.ts`の`launchRecordingInstance()`が`CreateFleet`レスポンスの
+  `result.Instances[0]`からそのまま取得、追加の`DescribeInstances`呼び出しは不要。
+  `apps/api/src/jobs.ts`の`updateJobInstance()`が`sfn/launch.ts`から呼ばれてinstanceIdと
+  併せて書き込む）。上記の通り複数の候補インスタンスタイプ・AZに分散配置しているため、
+  実際にどの組み合わせが割り当てられたかは事後にしか分からず、録画品質（重複フレーム率）
+  の分析や運用調査のために記録している。ユーザー向けAPI（`GetJobResponse`）には含めない
+  内部運用データ。
 - **進捗はポーリング**（WebSocket/SSE は月1000回規模には過剰）。ワーカーが DynamoDB を
   更新し、`GET /jobs/{id}` が返す。
 - **完了メールは JobsTable の DynamoDB Streams を起点に送信**（Issue #10）。ワーカーが

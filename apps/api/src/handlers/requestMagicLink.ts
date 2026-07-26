@@ -68,6 +68,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     updatedAt: now.toISOString(),
     email: body.email,
     instanceId: null,
+    instanceType: null,
+    availabilityZone: null,
     estimatedDurationSeconds: body.estimatedDurationSeconds ?? null,
     progress: null,
     previewImagePath: null,

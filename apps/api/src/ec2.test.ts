@@ -44,6 +44,8 @@ const job: JobRecord = {
   updatedAt: "2026-07-17T00:00:00.000Z",
   email: null,
   instanceId: null,
+  instanceType: null,
+  availabilityZone: null,
   estimatedDurationSeconds: 900,
   progress: null,
   previewImagePath: null,
@@ -102,17 +104,27 @@ describe("launchRecordingInstance", () => {
     ec2Mock.reset();
   });
 
-  it("Launch Template の新バージョンを作成し、EC2 Fleet で起動してinstanceIdを返す", async () => {
+  it("Launch Template の新バージョンを作成し、EC2 Fleet で起動して実際に確保されたインスタンス情報を返す", async () => {
     ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
       LaunchTemplateVersion: { VersionNumber: 3 },
     });
     ec2Mock.on(CreateFleetCommand).resolves({
-      Instances: [{ InstanceIds: ["i-0123456789abcdef0"] }],
+      Instances: [
+        {
+          InstanceIds: ["i-0123456789abcdef0"],
+          InstanceType: "c7i.xlarge",
+          AvailabilityZone: "ap-northeast-1a",
+        },
+      ],
     });
 
-    const instanceId = await launchRecordingInstance(config, job, "task-token-abc");
+    const instance = await launchRecordingInstance(config, job, "task-token-abc");
 
-    expect(instanceId).toBe("i-0123456789abcdef0");
+    expect(instance).toEqual({
+      instanceId: "i-0123456789abcdef0",
+      instanceType: "c7i.xlarge",
+      availabilityZone: "ap-northeast-1a",
+    });
 
     const versionCall = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[0];
     expect(versionCall?.args[0].input).toMatchObject({
@@ -157,7 +169,10 @@ describe("launchRecordingInstance", () => {
       Instances: [{ InstanceIds: ["i-0123456789abcdef0"] }],
     });
 
-    await launchRecordingInstance(config, { ...job, game: "th11" }, "task-token-abc");
+    const instance = await launchRecordingInstance(config, { ...job, game: "th11" }, "task-token-abc");
+    // InstanceType/AvailabilityZoneがレスポンスに含まれない場合はnullにフォールバックする
+    expect(instance.instanceType).toBeNull();
+    expect(instance.availabilityZone).toBeNull();
 
     const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
     const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
