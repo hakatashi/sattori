@@ -15,6 +15,15 @@
   text-align: center;
 }
 
+.headerLink {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: inherit;
+  text-decoration: none;
+}
+
 .tagline {
   margin: 0;
   color: var(--text-muted);

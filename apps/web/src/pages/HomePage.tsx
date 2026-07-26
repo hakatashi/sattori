@@ -10,7 +10,7 @@ export function HomePage() {
 
   if (view.kind === "sent") {
     return (
-      <MagicLinkSent email={view.email} onReset={() => setView({ kind: "upload" })} />
+      <MagicLinkSent email={view.email} />
     );
   }
 
