@@ -45,7 +45,7 @@ export function buildDownloadFilename(
     .join(" ");
 
   const player = replayInfo.player ? ` (プレイヤー ${replayInfo.player})` : "";
-  const resolutionSuffix = variant === "original" ? " (オリジナル解像度)" : "";
+  const resolutionSuffix = variant === "original" ? " #raw" : "";
 
   return sanitizeFilename(`${headline}${player}${resolutionSuffix} ${HASHTAG}.mp4`);
 }

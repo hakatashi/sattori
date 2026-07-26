@@ -23,7 +23,7 @@ describe("buildDownloadFilename", () => {
 
   it("オリジナル解像度版は区別できるサフィックスを付ける", () => {
     expect(buildDownloadFilename("job-1", SAMPLE_REPLAY_INFO, "original")).toBe(
-      "東方地霊殿 Lunatic 霊夢A 442,469,780 (プレイヤー koyi) (オリジナル解像度) #TouhouSattori.mp4",
+      "東方地霊殿 Lunatic 霊夢A 442,469,780 (プレイヤー koyi) #raw #TouhouSattori.mp4",
     );
   });
 
