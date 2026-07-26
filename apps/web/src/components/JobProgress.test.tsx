@@ -66,7 +66,7 @@ describe("JobProgressView のダウンロード", () => {
     await waitFor(() =>
       expect(mockedDownloadFile.downloadFile).toHaveBeenCalledWith(
         "https://media.example/original.mp4",
-        "東方地霊殿 Lunatic 霊夢A 442,469,780 (プレイヤー koyi) (オリジナル解像度) #TouhouSattori.mp4",
+        "東方地霊殿 Lunatic 霊夢A 442,469,780 (プレイヤー koyi) #raw #TouhouSattori.mp4",
       ),
     );
   });
