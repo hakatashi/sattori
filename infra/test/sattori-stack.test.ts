@@ -209,13 +209,14 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("動画配信CDNにCORSを許可するResponseHeadersPolicyが設定されている(ダウンロードボタンのfetch用)", () => {
-    template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
-      ResponseHeadersPolicyConfig: Match.objectLike({
-        CorsConfig: Match.objectLike({
-          AccessControlAllowOrigins: { Items: ["https://sattori.hakatashi.com"] },
-          AccessControlAllowMethods: { Items: ["GET"] },
-          OriginOverride: true,
+  it("動画配信CDNがresponse-content-dispositionクエリをオリジンへ転送・キャッシュキーに含める(ダウンロードのファイル名指定用)", () => {
+    template.hasResourceProperties("AWS::CloudFront::CachePolicy", {
+      CachePolicyConfig: Match.objectLike({
+        ParametersInCacheKeyAndForwardedToOrigin: Match.objectLike({
+          QueryStringsConfig: {
+            QueryStringBehavior: "whitelist",
+            QueryStrings: ["response-content-disposition"],
+          },
         }),
       }),
     });
