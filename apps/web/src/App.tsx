@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Link, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { HomePage } from "./pages/HomePage.tsx";
 import { JobPage } from "./pages/JobPage.tsx";
 import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
@@ -10,11 +10,13 @@ function Layout() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <p className={styles.tagline}>東方リプレイ自動録画サービス</p>
-        <p>
-          <img className={styles.icon} src="/icon-transparent.png" alt="Sattori logo" />
-          <img className={styles.logo} src="/logo-black.svg" alt="TouhouSattori" />
-        </p>
+        <Link className={styles.headerLink} to="/">
+          <p className={styles.tagline}>東方リプレイ自動録画サービス</p>
+          <p>
+            <img className={styles.icon} src="/icon-transparent.png" alt="Sattori logo" />
+            <img className={styles.logo} src="/logo-black.svg" alt="TouhouSattori" />
+          </p>
+        </Link>
       </header>
 
       <main className={styles.main}>

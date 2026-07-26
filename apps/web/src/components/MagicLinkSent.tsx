@@ -2,14 +2,13 @@ import styles from "./MagicLinkSent.module.css";
 
 interface Props {
   email: string;
-  onReset: () => void;
 }
 
 /**
  * 「次のステップ」押下後、マジックリンクメールの送信要求が成功した際に表示する画面。
  * メール内のリンクをクリックすると録画が開始する（ページBの作り込みはIssue #10）。
  */
-export function MagicLinkSent({ email, onReset }: Props) {
+export function MagicLinkSent({ email }: Props) {
   return (
     <section className={styles.card}>
       <h1 className={styles.heading}>メールを確認してください</h1>
@@ -19,9 +18,6 @@ export function MagicLinkSent({ email, onReset }: Props) {
       <p className={styles.hint}>
         メール内のリンクをクリックすると録画が始まります（受付期限は24時間です。リンクは何度でも開けるので、進捗確認やダウンロードにもお使いいただけます）。
       </p>
-      <button type="button" className={styles.reset} onClick={onReset}>
-        別のリプレイを録画する
-      </button>
     </section>
   );
 }
