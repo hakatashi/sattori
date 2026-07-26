@@ -40,7 +40,7 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
     title: "status: recording（進捗・プレビュー画像あり）",
     job: buildJob({
       status: "recording",
-      progress: 42,
+      progress: 756, // 1800秒中756秒経過(42%相当)
       previewImageUrl: "https://placehold.co/640x480/222/fff?text=Recording",
     }),
   },
@@ -48,7 +48,7 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
     title: "status: converting（進捗あり）",
     job: buildJob({
       status: "converting",
-      progress: 78,
+      progress: 1404, // 1800秒中1404秒経過(78%相当)
       previewImageUrl: "https://placehold.co/640x480/222/fff?text=Converting",
     }),
   },
@@ -73,8 +73,12 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
   },
   {
     title: "ポーリングエラー",
-    job: buildJob({ status: "recording", progress: 10 }),
+    job: buildJob({ status: "recording", progress: 180 }),
     loadError: "状態の取得に失敗しました。再試行します…",
+  },
+  {
+    title: "status: recording（replayInfo無し・旧ジョブ、割合表示なしで経過秒数のみ）",
+    job: buildJob({ status: "recording", progress: 96, replayInfo: null }),
   },
 ];
 

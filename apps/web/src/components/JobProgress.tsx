@@ -25,6 +25,14 @@ const STATUS_META: Record<JobStatus, { label: string; step: number }> = {
 
 const STEPS = ["待機", "起動", "録画", "変換", "完了"];
 
+/** 秒数を "m:ss" 形式に整形する。 */
+function formatSeconds(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
 export function JobProgress({ jobId }: Props) {
   const { job, loadError } = useJobPolling(jobId);
   return <JobProgressView job={job} loadError={loadError} />;
@@ -71,13 +79,21 @@ export function JobProgressView({ job, loadError }: ViewProps) {
 
       {!done && !failed && typeof job?.progress === "number" && (
         <div>
-          <div className={styles.progressBar}>
-            <div
-              className={styles.progressBarFill}
-              style={{ width: `${Math.min(100, Math.max(0, job.progress))}%` }}
-            />
-          </div>
-          <p className={styles.progressText}>{Math.round(job.progress)}%</p>
+          {typeof job.replayInfo?.estimatedDurationSeconds === "number" && (
+            <div className={styles.progressBar}>
+              <div
+                className={styles.progressBarFill}
+                style={{
+                  width: `${Math.min(100, Math.max(0, (job.progress / job.replayInfo.estimatedDurationSeconds) * 100))}%`,
+                }}
+              />
+            </div>
+          )}
+          <p className={styles.progressText}>
+            {typeof job.replayInfo?.estimatedDurationSeconds === "number"
+              ? `${formatSeconds(job.progress)} / ${formatSeconds(job.replayInfo.estimatedDurationSeconds)}`
+              : `${formatSeconds(job.progress)} 経過`}
+          </p>
         </div>
       )}
 

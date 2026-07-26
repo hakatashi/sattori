@@ -149,7 +149,8 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
   実行を開始する。同一jobIdへの複数回呼び出しは最初の1回のみ起動し、以降は現在の状態を
   冪等に返す（Issue #9） |
 | `GET /jobs/{jobId}` | ジョブ状態取得（ポーリング用）。完了時に CloudFront のDL URL、
-  進行中は進捗率(`progress`)とプレビュー画像URL(`previewImageUrl`)も返す |
+  進行中は現在フェーズ内で実際に処理が完了した秒数(`progress`。全体に対する割合では
+  ない)とプレビュー画像URL(`previewImageUrl`)も返す |
 
 ジョブ状態: `pending → queued → launching → recording → converting → done | failed`
 （`packages/shared/src/job.ts`）。`pending` はマジックリンク送信済み・ジョブページへの
@@ -166,8 +167,8 @@ DynamoDB に書き込む。`converting` は録画完了(生動画チェックポ
   チェックポイントUP(status=`converting`)→720pアップスケール変換→S3へUP→
   DynamoDB更新、の順で進む。バックグラウンドで`InterruptionWatcher`
   （Spot中断の2分前通知をIMDS経由で監視。リバランス推奨は失敗扱いにせずログのみで
-  処理を継続する）と`ProgressReporter`（録画中の進捗スクリーンショット/進捗率を
-  S3・DynamoDBへ反映）を動かす。taskToken経由で
+  処理を継続する）と`ProgressReporter`（録画中の進捗スクリーンショット/実際に処理が
+  完了した秒数をS3・DynamoDBへ反映）を動かす。taskToken経由で
   Step Functionsへ成否を通知する（`SendTaskSuccess`/`SendTaskFailure`）。
   UserData から `docker run`。
 - `recording_common.py`: th06・th07・th08・th11 共通の録画パイプライン本体(Issue #13で
