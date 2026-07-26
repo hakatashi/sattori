@@ -65,19 +65,31 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計・拡�
   比較的発生しやすい。これをそのまま早期失敗の合図にすると完走できたはずの
   ジョブまで不要にリトライしてしまうため、リバランス推奨は失敗扱いにせずログの
   みで処理を継続する（実際のSpot中断通知の監視は継続）。
-- **EC2 Fleetはインスタンスタイプを複数指定して分散する**（`c7i.xlarge`・
-  `c7a.xlarge`・`c6a.xlarge`・`c6i.xlarge`・`c7i-flex.xlarge`・`c5a.xlarge`、
-  `apps/api/src/ec2.ts` の `CANDIDATE_INSTANCE_TYPES`、Issue #29）。単一
-  インスタンスタイプのみだとそのハードウェアプールが時間帯によって枯渇し
-  `InsufficientInstanceCapacity` でジョブ起動自体が失敗する事例が発生したため、
-  独立したSpotキャパシティプールを持つ複数タイプ（サブネット×タイプの
-  全組み合わせを`CreateFleet`の`Overrides`へ、`SingleInstanceType: false`）に
-  広げてAZ分散よりも大きな耐性を持たせた。インスタンスタイプの変更は録画品質
+- **EC2 Fleetはインスタンスタイプを複数指定して分散する**（th06/07/08向けは
+  `c7i.xlarge`・`c7a.xlarge`・`c6a.xlarge`・`c6i.xlarge`・`c7i-flex.xlarge`・
+  `c5a.xlarge`、`apps/api/src/ec2.ts` の `DEFAULT_CANDIDATE_INSTANCE_TYPES`、
+  Issue #29）。単一インスタンスタイプのみだとそのハードウェアプールが時間帯に
+  よって枯渇し `InsufficientInstanceCapacity` でジョブ起動自体が失敗する事例が
+  発生したため、独立したSpotキャパシティプールを持つ複数タイプ（サブネット×
+  タイプの全組み合わせを`CreateFleet`の`Overrides`へ、`SingleInstanceType: false`）
+  に広げてAZ分散よりも大きな耐性を持たせた。インスタンスタイプの変更は録画品質
   （重複フレーム率）に直結するリスクがあり「同スペック帯・同価格帯だから安全」
   とは限らない（`z1d.xlarge`は高クロック特化ゆえに悪化した実績がある）ため、
   上記6タイプは touhou-recorder `reports/27` で th08 の重複フレーム率を実測検証
   （いずれも1〜4%台の良好な値）した上で選定した。追加候補を投入する際は必ず
   同様の実機検証を経ること。
+  **th11のみ`.xlarge`帯(4vCPU)では不十分**であることが本番運用で判明した
+  （ステージ後半でゲーム内fps表示が最悪35fps程度まで低下する深刻な処理落ちが
+  発生し、重複フレーム率も悪化。コマ落ちではなくゲームプレイの実時間自体が
+  伸長する現象で、th06/07/08の処理落ちとは性質が異なる）。touhou-recorder
+  `reports/40`の実機検証で原因はCPU世代ではなくvCPU数の不足と特定し、
+  8vCPU/16GiB以上(`.2xlarge`帯)にすると明確に改善する（`c6i.xlarge`の重複
+  フレーム率16.5%→`c6i.2xlarge`4.0%等）ことを確認したため、th11のみ別の
+  候補リスト`TH11_CANDIDATE_INSTANCE_TYPES`（`c6i.2xlarge`・`c6a.2xlarge`・
+  `c7i.2xlarge`・`c7a.2xlarge`）を使う（`getCandidateInstanceTypes()`が
+  `job.game`で分岐）。コスト影響は`.xlarge`比で概ね2倍。なお`c6a.2xlarge`・
+  `c7a.2xlarge`はreports/40では未検証（検証済みは`c6i.2xlarge`・`c7i.2xlarge`
+  のみ）で、他タイプと同様に本番運用の中で注視が必要。
 - **進捗はポーリング**（WebSocket/SSE は月1000回規模には過剰）。ワーカーが DynamoDB を
   更新し、`GET /jobs/{id}` が返す。
 - **完了メールは JobsTable の DynamoDB Streams を起点に送信**（Issue #10）。ワーカーが
@@ -500,6 +512,14 @@ Sattori向けの `ReplayInfo` への変換は `packages/shared/src/replay.ts` �
   誤検知(長時間静止するステージ間演出等)のリスクを本質的には排除できていない
   （th06(§10・reports/33)と同様の注意が必要。今後の運用の中で注意深く見ていく
   必要がある、touhou-recorder reports/36・37）。
+- **th11の「ゲームプレイ自体の実時間伸長」型の処理落ちを、既存の自動品質検知
+  （fps暴走・stutter判定）は検出できない**（未解決、touhou-recorder reports/40）。
+  本番で発生した`c6i.xlarge`での劣化録画(重複フレーム率16.5%・総再生時間が
+  本来尺より約15%伸長)も、`scripts/25`の試行分類ロジックでは「正常な録画」と
+  判定され自動リトライは発生しなかった。EC2インスタンスタイプを`.2xlarge`帯へ
+  変更（上記§2参照）したことで発生頻度は大きく下がる見込みだが、リプレイの
+  物理フレーム数と壁時計時間の比較等による恒久的な検知ロジックの追加は
+  今後の課題として残っている。
 - th08の「任意ファイル名リプレイ→正規スロット名」命名則(`th8_ud0000.rpy`)は
   Issue #13対応時にtouhou-recorderの実ゲームデータ(ver1.00d)で実機検証済みだが、
   本番のS3タイトル資産アーカイブ(実際にアップロードするth08データ)そのものでの
