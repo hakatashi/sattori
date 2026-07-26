@@ -98,25 +98,43 @@
 .download {
   display: inline-block;
   padding: 0.85rem 1.5rem;
+  border: none;
   border-radius: var(--radius);
   background: var(--accent);
   color: #fff;
+  font: inherit;
   font-weight: 600;
   text-decoration: none;
+  cursor: pointer;
 }
 
-.download:hover {
+.download:hover:not(:disabled) {
   background: var(--accent-hover);
 }
 
+.download:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
 .secondaryDownload {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
   font-size: 0.85rem;
   color: var(--text-muted);
   text-decoration: underline;
+  cursor: pointer;
 }
 
-.secondaryDownload:hover {
+.secondaryDownload:hover:not(:disabled) {
   color: var(--text);
+}
+
+.secondaryDownload:disabled {
+  opacity: 0.7;
+  cursor: default;
 }
 
 .reset {

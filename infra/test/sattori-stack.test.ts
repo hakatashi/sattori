@@ -209,6 +209,18 @@ describe("SattoriStack", () => {
     });
   });
 
+  it("動画配信CDNにCORSを許可するResponseHeadersPolicyが設定されている(ダウンロードボタンのfetch用)", () => {
+    template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
+      ResponseHeadersPolicyConfig: Match.objectLike({
+        CorsConfig: Match.objectLike({
+          AccessControlAllowOrigins: { Items: ["https://sattori.hakatashi.com"] },
+          AccessControlAllowMethods: { Items: ["GET"] },
+          OriginOverride: true,
+        }),
+      }),
+    });
+  });
+
   it("SendCompletionEmail LambdaがJobsTableのStreamsをイベントソースとし、statusがdoneへの変更だけに絞り込まれている(Issue #10)", () => {
     template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
       FilterCriteria: {
