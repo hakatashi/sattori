@@ -1,6 +1,7 @@
 """録画フェーズ中、record_th07.py が書き出す進捗スクリーンショット/状態
 (progress_dir/frame.jpg, progress_dir/state.json)をポーリングし、S3へアップロード
-しつつDynamoDBへ進捗率を反映するバックグラウンドスレッド(Issue #11)。
+しつつDynamoDBへ進捗(実際に処理が完了した時間、秒)を反映するバックグラウンドスレッド
+(Issue #11)。
 
 スクリーンショットは毎回ユニークなS3キー(progress/{jobId}/{unixMillis}.jpg)で
 アップロードする。同一キーを使い回すとCloudFrontの長期キャッシュにより古い画像が
@@ -55,16 +56,13 @@ class ProgressReporter:
             with open(state_path) as f:
                 state = json.load(f)
             elapsed = state.get("elapsedSeconds")
-            expected = state.get("expectedDurationSeconds")
-            percent = None
-            if elapsed is not None and expected:
-                percent = min(99, round(elapsed / expected * 100))
+            progress_seconds = round(elapsed) if elapsed is not None else None
 
             key = f"progress/{self._job_id}/{int(time.time() * 1000)}.jpg"
             self._s3.upload_file(
                 frame_path, self._output_bucket, key,
                 ExtraArgs={"ContentType": "image/jpeg"},
             )
-            update_progress(self._job_id, percent, preview_image_path=key)
+            update_progress(self._job_id, progress_seconds, preview_image_path=key)
         except Exception as err:  # noqa: BLE001 - 進捗レポートの失敗で録画自体は止めない
             self._log(f"[progress_reporter] 進捗レポート失敗(継続): {err}")

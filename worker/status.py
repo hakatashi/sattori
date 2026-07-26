@@ -72,9 +72,11 @@ def update_status(job_id, status, *, output_path=None, output_path_720p=None, er
 
 
 def update_progress(job_id, progress, preview_image_path=None):
-    """status/outputPath 等には触れず、進捗率(・プレビュー画像パス)だけを更新する
+    """status/outputPath 等には触れず、進捗(・プレビュー画像パス)だけを更新する
     軽量な更新関数。録画・変換フェーズ中に10秒間隔程度の高頻度で呼ばれるため、
     毎回 update_status の全項目を触らないよう分けている。
+    progress は全体の長さに対する割合ではなく、現在のフェーズ内で実際に処理が
+    完了した時間(秒)を渡す。
     """
     table_name = os.environ.get("JOBS_TABLE")
     if not table_name:
@@ -92,4 +94,4 @@ def update_progress(job_id, progress, preview_image_path=None):
         UpdateExpression=expr,
         ExpressionAttributeValues=values,
     )
-    print(f"[status] {job_id} progress -> {progress}%", flush=True)
+    print(f"[status] {job_id} progress -> {progress}秒", flush=True)
