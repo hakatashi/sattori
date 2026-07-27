@@ -36,6 +36,8 @@ function baseJob(overrides: Partial<JobRecord>): JobRecord {
     updatedAt: "2026-01-01T00:00:00.000Z",
     email: "user@example.com",
     instanceId: null,
+    instanceType: null,
+    availabilityZone: null,
     estimatedDurationSeconds: null,
     progress: null,
     previewImagePath: null,
