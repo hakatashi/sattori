@@ -11,6 +11,10 @@
 //
 // GetDeviceState が返す BYTE[256] 生バッファの該当バイトを 0x80 に
 // 書き換えることでメニュー・ゲームプレイ両方にキー入力を注入する。
+//
+// TH10以降のエンジン(th11で確認)はこの経路を実際の入力ポーリングに使わないため
+// (下記InstallKeyboardStateHook参照)、対象タイトルに応じてどちらか一方、または
+// 両方を併用する。
 
 namespace autoplay {
 
@@ -41,5 +45,22 @@ bool InstallDinputHook();
 // 呼び出し元は別スレッド(DllMain以外)から呼ぶこと。
 void PressKey(BYTE dik, unsigned int holdFrames = 4, unsigned int releaseFrames = 4,
               unsigned int timeoutMs = 2000);
+
+// TH10以降のエンジン(th11で確認)向け: USER32.dll!GetKeyboardState の IAT フック。
+// これらのタイトルはDirectInputデバイスを作成する(CreateDevice/GetDeviceStateの
+// フックは掛かる)ものの、実際の入力ポーリングはWin32の GetKeyboardState() 経由で
+// 行っており、GetDeviceStateフックだけでは一切呼ばれない(g_hookCallCountが0の
+// まま)ことをth11で確認した(touhou-recorder reports/35)。
+//
+// GetDeviceStateフックと同じ g_hookCallCount を共有するため、WaitForHookActive/
+// WaitFrames はどちらの経路が実際に使われるゲームでも変更なしに動作する。
+bool InstallKeyboardStateHook();
+
+// vk (Win32 仮想キーコード、例: VK_DOWN=0x28, VK_RETURN=0x0D) を holdFrames 回分の
+// GetKeyboardState 呼び出しだけ押しっぱなしにし、その後 releaseFrames 回分離した
+// 状態を保ってから戻る。意味・引数はPressKey()と同じ(スキャンコードか仮想キー
+// コードかの違いのみ)。
+void PressVKey(BYTE vk, unsigned int holdFrames = 4, unsigned int releaseFrames = 4,
+               unsigned int timeoutMs = 2000);
 
 } // namespace autoplay

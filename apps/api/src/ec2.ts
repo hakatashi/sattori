@@ -11,10 +11,10 @@ import type { ApiConfig } from "./config.js";
 const ec2 = new EC2Client({});
 
 /**
- * Spot Fleet に含める候補インスタンスタイプ。`c7i.xlarge` 単独だと、そのハードウェア
- * プールが時間帯によって枯渇した際に `InsufficientInstanceCapacity` で録画ジョブの
- * 起動自体が失敗する（Issue #29）。インスタンスタイプごとに独立したSpotキャパシティ
- * プールを持つため、AZ分散よりも大きな改善効果が見込める。
+ * Spot Fleet に含める候補インスタンスタイプ（th11以外）。`c7i.xlarge` 単独だと、
+ * そのハードウェアプールが時間帯によって枯渇した際に `InsufficientInstanceCapacity`
+ * で録画ジョブの起動自体が失敗する（Issue #29）。インスタンスタイプごとに独立した
+ * Spotキャパシティプールを持つため、AZ分散よりも大きな改善効果が見込める。
  *
  * ただしインスタンスタイプの変更は録画品質（Wine+Xvfb+ffmpegの重複フレーム率）に
  * 直結するリスクがあり、「同スペック帯・同価格帯だから安全」とは限らない
@@ -23,7 +23,7 @@ const ec2 = new EC2Client({});
  * （いずれも1〜4%台の良好な値）した上で選定したもの。追加する際は必ず同様の
  * 実機検証を経ること。
  */
-const CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
+const DEFAULT_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
   "c7i.xlarge", // Intel Sapphire Rapids(現行世代、本番実績あり)
   "c7a.xlarge", // AMD Genoa(現行世代、重複フレーム率3.1%)
   "c6a.xlarge", // AMD Milan(前世代、重複フレーム率2.1%)
@@ -31,6 +31,26 @@ const CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
   "c7i-flex.xlarge", // Intel現行世代のburstableオプション、重複フレーム率1.2%
   "c5a.xlarge", // AMD旧世代、重複フレーム率3.7%
 ];
+
+/**
+ * th11専用の候補インスタンスタイプ。`.xlarge`帯(4vCPU)では本番で深刻な処理落ち
+ * （ゲーム内fps表示が最悪35fps程度まで低下する、コマ落ちではなくゲームプレイ自体の
+ * 実時間伸長）が発生した。touhou-recorder `reports/40` の実機検証で、原因は
+ * CPU世代ではなくvCPU数の不足であることが判明し、8vCPU/16GiB以上(`.2xlarge`帯)に
+ * すると重複フレーム率が明確に改善する（`c6i.xlarge`16.5%→`c6i.2xlarge`4.0%等）
+ * ことを確認した。th06/07/08向けの`DEFAULT_CANDIDATE_INSTANCE_TYPES`とは
+ * インスタンスタイプの重なりがない別リストとして管理する。
+ */
+const TH11_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
+  "c6i.2xlarge", // Intel Ice Lake、reports/40実測で重複フレーム率4.0%
+  "c6a.2xlarge", // AMD Milan(DEFAULT側のc6a.xlargeに対応する.2xlarge帯)
+  "c7i.2xlarge", // Intel Sapphire Rapids、reports/40実測で重複フレーム率5.4%、第一候補
+  "c7a.2xlarge", // AMD Genoa(DEFAULT側のc7a.xlargeに対応する.2xlarge帯)
+];
+
+function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
+  return game === "th11" ? TH11_CANDIDATE_INSTANCE_TYPES : DEFAULT_CANDIDATE_INSTANCE_TYPES;
+}
 
 /**
  * ワーカーインスタンスの UserData（cloud-init）スクリプトを生成する。
@@ -138,9 +158,10 @@ docker run --rm \\
  * ベースの Launch Template（AMI/IAM/SGはCDK側で設定済み）に対し、ジョブ固有の
  * UserData のみを持つ新しいバージョンを作成し、そのバージョンを参照する
  * `CreateFleet`（`Type: "instant"`）で即時に1台起動する。サブネット（=AZ）×
- * `CANDIDATE_INSTANCE_TYPES` の全組み合わせを Overrides に渡し
- * `price-capacity-optimized` 戦略（`SingleInstanceType: false`）で配置することで、
- * 単一AZ・単一インスタンスタイプでのSpot枯渇に対する耐性を持たせる
+ * 候補インスタンスタイプ（`getCandidateInstanceTypes()`、th11のみ`.2xlarge`帯の
+ * 別リストを使う。touhou-recorder `reports/40`参照）の全組み合わせを Overrides に
+ * 渡し `price-capacity-optimized` 戦略（`SingleInstanceType: false`）で配置する
+ * ことで、単一AZ・単一インスタンスタイプでのSpot枯渇に対する耐性を持たせる
  * （PoC reports/17、Issue #29）。
  */
 export async function launchRecordingInstance(
@@ -149,6 +170,7 @@ export async function launchRecordingInstance(
   taskToken: string,
 ): Promise<string> {
   const userData = buildUserData(config, job, taskToken);
+  const candidateInstanceTypes = getCandidateInstanceTypes(job.game);
 
   const version = await ec2.send(
     new CreateLaunchTemplateVersionCommand({
@@ -172,7 +194,7 @@ export async function launchRecordingInstance(
             Version: String(versionNumber),
           },
           Overrides: config.ec2.subnetIds.flatMap((subnetId) =>
-            CANDIDATE_INSTANCE_TYPES.map((instanceType) => ({
+            candidateInstanceTypes.map((instanceType) => ({
               SubnetId: subnetId,
               InstanceType: instanceType,
             })),

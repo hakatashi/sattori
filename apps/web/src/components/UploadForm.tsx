@@ -63,7 +63,7 @@ const gameTitles = [
   {
     japanese: "東方地霊殿",
     english: "SA",
-    supported: false,
+    supported: true,
     icon: 'th11.png',
   },
   {
