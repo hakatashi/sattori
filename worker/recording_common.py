@@ -618,27 +618,50 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     # openboxの初期配置によっては、ウィンドウがXVFB_SCREEN(800x600)の範囲外にはみ出す
     # 位置に置かれることがある(th11実機検証で、y=159+height=480=639が800x600の高さ600を
     # 超えてx11grabが起動失敗する事象を確認、touhou-recorder reports/35)。クロップ座標に
-    # 依存せず常に録画・スクリーンショットが機能するよう、検出後に左上(0,0)へ強制移動する。
+    # 依存せず常に録画・スクリーンショットが機能するよう、範囲外の場合のみ検出後に
+    # 左上(0,0)へ強制移動する。
     # 移動後の実座標は必ず再取得すること: xdotool windowmoveは(装飾のあるウィンドウの場合)
     # ウィンドウ枠を(0,0)へ移動するため、xwininfoが返すクライアント領域のAbsolute
     # upper-leftは(0,0)にならないことがある(th11実機検証で、タイトルバー分ずれて録画
     # される不具合として発覚、touhou-recorder reports/37)。さらにxdotool windowmoveの
     # 反映は非同期で、直後に再取得すると移動前の座標がまだ返ることがある(AWS実機検証で
     # 確認)。座標がXVFB_SCREENの範囲内に収まるまでwindowmoveを最大20回(0.1秒間隔)
-    # 再試行する。この対策は全ゲーム共通だが、th06/07/08ではこれまでたまたま問題が
-    # 起きない位置にウィンドウが配置されており実害はない。
+    # 再試行する。
+    # 既に範囲内に収まっている場合はwindowmove自体を呼ばない: openboxが装飾込みの
+    # ウィンドウ枠を画面内に収めようとする再配置(タイミングはWM側の内部状態に依存し
+    # 非決定的)と衝突し、xwininfoが一時的にクライアント領域のAbsolute upper-leftとして
+    # (0,0)(=装飾抜きの見かけ上の位置)を返した直後、実際の装飾入り再配置が確定する前に
+    # ループがそれを「安定した」座標として採用してしまうことがある。この場合、録画開始
+    # 時点では装飾(タイトルバー)が画面内に戻っておりゲーム画面の下端と重なって欠ける
+    # (sattori側の実機検証で2026-07-28にth07/th08で再現・確認、`AGENTS.md`参照)。
+    # 既に範囲内のwindowを不要に動かさなければこの競合自体を避けられる。
+    #
+    # 実際に移動が必要な場合(th11等、はみ出し配置)はこの競合を避けられないため、
+    # 「画面内に収まる」だけでなく直後の再取得(0.3秒後)でも同じ座標が返ることを
+    # 確認してから確定する(1回の取得だけだと、上記の一時的な(0,0)を掴んだまま
+    # 確定してしまう可能性があるため。sattori側の実機検証で2026-07-28、th11の
+    # windowmoveでは偶然再現しなかったが、原理的にth07/08と同じ競合が起こりうる)。
     screen_w, screen_h = (int(v) for v in XVFB_SCREEN.split("x")[:2])
-    for _ in range(20):
-        subprocess.run(["xdotool", "windowmove", winid, "0", "0"], env=env)
-        time.sleep(0.1)
-        moved_geom = find_window(config, env, game_pid)
-        if moved_geom:
-            x, y, w, h, _ = moved_geom
-            if x + w <= screen_w and y + h <= screen_h:
+    if x + w > screen_w or y + h > screen_h:
+        for _ in range(20):
+            subprocess.run(["xdotool", "windowmove", winid, "0", "0"], env=env)
+            time.sleep(0.1)
+            moved_geom = find_window(config, env, game_pid)
+            if not moved_geom:
+                continue
+            mx, my, mw, mh, _ = moved_geom
+            if mx + mw > screen_w or my + mh > screen_h:
+                continue
+            time.sleep(0.3)
+            confirm_geom = find_window(config, env, game_pid)
+            if confirm_geom and confirm_geom[:4] == (mx, my, mw, mh):
+                x, y, w, h = mx, my, mw, mh
                 break
+        else:
+            log(f"WARNING: ウィンドウが画面内に収まりませんでした (x={x} y={y} w={w} h={h})")
+        log(f"移動後のウィンドウ座標: x={x} y={y} w={w} h={h}")
     else:
-        log(f"WARNING: ウィンドウが画面内に収まりませんでした (x={x} y={y} w={w} h={h})")
-    log(f"移動後のウィンドウ座標: x={x} y={y} w={w} h={h}")
+        log(f"ウィンドウは既に画面内に収まっているため移動をスキップします: x={x} y={y} w={w} h={h}")
     still_mask = build_still_mask(config.still_detect_exclude_rect, w, h)
 
     seen_lines = set()
