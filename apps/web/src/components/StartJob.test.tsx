@@ -27,7 +27,7 @@ describe("StartJob", () => {
 
     render(<StartJob jobId="job-1" onStarted={onStarted} onReset={vi.fn()} />);
 
-    expect(screen.getByText("録画を開始しています…")).toBeTruthy();
+    expect(screen.getByText("読み込み中…")).toBeTruthy();
     expect(mocked.startJob).toHaveBeenCalledWith("job-1");
     await waitFor(() => expect(onStarted).toHaveBeenCalledWith("job-1"));
   });
