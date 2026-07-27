@@ -46,11 +46,6 @@ export function JobProgress({ jobId }: Props) {
  * `dev/JobProgressPlayground.tsx` から実データ無しで各状態を確認するために分離。
  */
 export function JobProgressView({ job, loadError }: ViewProps) {
-  const status = job?.status ?? "queued";
-  const meta = STATUS_META[status];
-  const failed = status === "failed";
-  const done = status === "done";
-
   const [downloadingVariant, setDownloadingVariant] = useState<"720p" | "original" | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
@@ -66,6 +61,22 @@ export function JobProgressView({ job, loadError }: ViewProps) {
       setDownloadingVariant(null);
     }
   }
+
+  // 初回ロード中（jobが未取得）はステータス別の表示を仮定せず、中立的な読み込み中表示に留める。
+  // 既に完了しているジョブでも「準備をしています」等が一瞬表示されて紛らわしくなるのを防ぐ。
+  if (!job) {
+    return (
+      <section className={styles.card}>
+        <h1 className={styles.heading}>読み込み中…</h1>
+        {loadError && <p className={styles.hint}>{loadError}</p>}
+      </section>
+    );
+  }
+
+  const status = job.status;
+  const meta = STATUS_META[status];
+  const failed = status === "failed";
+  const done = status === "done";
 
   return (
     <section className={styles.card}>
@@ -90,13 +101,13 @@ export function JobProgressView({ job, loadError }: ViewProps) {
         })}
       </ol>
 
-      {job?.replayInfo && <ReplayPreview status="ready" info={job.replayInfo} />}
+      {job.replayInfo && <ReplayPreview status="ready" info={job.replayInfo} />}
 
-      {!done && !failed && job?.previewImageUrl && (
+      {!done && !failed && job.previewImageUrl && (
         <img className={styles.previewImage} src={job.previewImageUrl} alt="録画中のプレビュー" />
       )}
 
-      {!done && !failed && typeof job?.progress === "number" && (
+      {!done && !failed && typeof job.progress === "number" && (
         <div>
           {typeof job.replayInfo?.estimatedDurationSeconds === "number" && (
             <div className={styles.progressBar}>
@@ -120,24 +131,24 @@ export function JobProgressView({ job, loadError }: ViewProps) {
       {loadError && <p className={styles.hint}>{loadError}</p>}
       {failed && (
         <p className={styles.error}>
-          {job?.error ?? "録画中に問題が発生しました。もう一度お試しください。"}
+          {job.error ?? "録画中に問題が発生しました。もう一度お試しください。"}
         </p>
       )}
 
       {done && downloadError && <p className={styles.error}>{downloadError}</p>}
 
-      {done && (job?.downloadUrl720p ?? job?.downloadUrl) && (
+      {done && (job.downloadUrl720p ?? job.downloadUrl) && (
         <button
           type="button"
           className={styles.download}
           disabled={downloadingVariant !== null}
-          onClick={() => handleDownload((job?.downloadUrl720p ?? job?.downloadUrl) as string, "720p")}
+          onClick={() => handleDownload((job.downloadUrl720p ?? job.downloadUrl) as string, "720p")}
         >
           {downloadingVariant === "720p" ? "ダウンロード準備中…" : "動画をダウンロード"}
         </button>
       )}
 
-      {done && job?.downloadUrl720p && job?.downloadUrl && (
+      {done && job.downloadUrl720p && job.downloadUrl && (
         <button
           type="button"
           className={styles.secondaryDownload}

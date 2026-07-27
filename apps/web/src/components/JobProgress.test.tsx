@@ -4,6 +4,16 @@ import type { GetJobResponse, ReplayInfo } from "@sattori/shared";
 import { JobProgressView } from "./JobProgress.tsx";
 import * as downloadFileModule from "../lib/downloadFile.ts";
 
+describe("JobProgressView の初回ロード中表示", () => {
+  it("jobが未取得の間はステータス別の文言（pending/queued等）を表示しない", () => {
+    render(<JobProgressView job={null} loadError={null} />);
+
+    expect(screen.getByText("読み込み中…")).toBeTruthy();
+    expect(screen.queryByText("録画の準備をしています")).toBeNull();
+    expect(screen.queryByText("録画の順番を待っています")).toBeNull();
+  });
+});
+
 vi.mock("../lib/downloadFile.ts", () => ({
   downloadFile: vi.fn(),
 }));

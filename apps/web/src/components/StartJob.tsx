@@ -43,7 +43,7 @@ export function StartJob({ jobId, onStarted, onReset }: Props) {
   if (state.phase === "starting") {
     return (
       <section className={styles.card}>
-        <p>録画を開始しています…</p>
+        <p>読み込み中…</p>
       </section>
     );
   }
