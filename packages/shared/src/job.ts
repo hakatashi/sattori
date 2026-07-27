@@ -87,7 +87,12 @@ export interface JobRecord {
    * （取得できなければ null）。
    */
   estimatedDurationSeconds: number | null;
-  /** 現在のフェーズ内での処理進捗率（0-100）。フェーズ開始直後や不明時は null。 */
+  /**
+   * 現在のフェーズ（recording/converting）内で実際に処理が完了した時間（秒）。
+   * 全体の長さに対する割合ではなく、経過秒数そのものを持つ（フェーズ開始直後や
+   * 不明時は null）。全体の長さに対する割合として表示する場合は
+   * `replayInfo.estimatedDurationSeconds` を分母として呼び出し側で算出する。
+   */
   progress: number | null;
   /**
    * 録画中の画面プレビュー画像の S3 オブジェクトキー（出力バケット内）。

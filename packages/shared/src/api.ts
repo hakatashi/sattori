@@ -99,7 +99,11 @@ export interface GetJobResponse {
   downloadUrl720p: string | null;
   error: string | null;
   updatedAt: string;
-  /** 現在のフェーズ（recording/converting）内での処理進捗率（0-100）。不明なら null。 */
+  /**
+   * 現在のフェーズ（recording/converting）内で実際に処理が完了した時間（秒）。
+   * 全体の長さに対する割合ではなく経過秒数そのもの（不明なら null）。割合として
+   * 表示する場合は `replayInfo.estimatedDurationSeconds` を分母として算出する。
+   */
   progress: number | null;
   /**
    * 録画中の画面プレビュー画像URL（CloudFront配信）。

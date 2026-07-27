@@ -46,26 +46,16 @@ def probe_resolution(input_path):
     return stream["width"], stream["height"]
 
 
-def probe_duration(input_path):
-    out = subprocess.run(
-        [
-            "ffprobe", "-v", "error", "-show_entries", "format=duration",
-            "-of", "json", input_path,
-        ],
-        capture_output=True, text=True, check=True,
-    ).stdout
-    duration = json.loads(out)["format"].get("duration")
-    return float(duration) if duration is not None else None
-
-
 def upscale_to_720p(input_path, output_path, watermark_path=None, watermark_width=285,
                      on_progress=None, log=print):
     """input_path の動画をアスペクト比を保ったまま高さ720pxへ変換する。
     watermark_path を指定すると、変換と同時にウォーターマークも合成する(モジュール
     docstring参照)。
 
-    on_progress が指定されていれば、変換の進捗率(0-100のfloat、完了直前まで)を
-    およそ PROGRESS_REPORT_INTERVAL_SEC 秒間隔で呼び出す。
+    on_progress が指定されていれば、実際に変換処理が完了した動画の時間(秒、float)を
+    およそ PROGRESS_REPORT_INTERVAL_SEC 秒間隔で呼び出す(全体の長さに対する割合では
+    ない。呼び出し側で総尺に対する割合を表示したい場合はこの値を分子として自前で
+    算出すること)。
     """
     width, height = probe_resolution(input_path)
     target_width = round(width * TARGET_HEIGHT / height / 2) * 2
@@ -94,8 +84,7 @@ def upscale_to_720p(input_path, output_path, watermark_path=None, watermark_widt
             output_path,
         ]
 
-    total_duration = probe_duration(input_path) if on_progress else None
-    if on_progress is None or not total_duration:
+    if on_progress is None:
         subprocess.run(cmd, check=True)
         return
 
@@ -123,8 +112,7 @@ def upscale_to_720p(input_path, output_path, watermark_path=None, watermark_widt
         if now - last_reported < PROGRESS_REPORT_INTERVAL_SEC:
             continue
         last_reported = now
-        percent = min(99.0, out_time_us / 1_000_000 / total_duration * 100)
-        on_progress(percent)
+        on_progress(out_time_us / 1_000_000)
     proc.wait()
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg によるアップスケール変換に失敗しました (exit_code={proc.returncode})")
