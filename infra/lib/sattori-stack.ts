@@ -76,19 +76,25 @@ export class SattoriStack extends Stack {
       autoDeleteObjects: true,
     });
 
-    // ページBがダウンロードボタンでfetch()し、Blob経由でファイル名を指定して保存するために
-    // CORSを許可する(HTMLのdownload属性はcrossオリジンのURLではChrome等で無視され、
-    // 新しいタブでの再生にフォールバックしてしまうため)。CloudFrontのResponseHeadersPolicy
-    // はオリジン(S3)側の設定に関係なく配信時にCORSヘッダーを付与できる。
-    const mediaCorsPolicy = new cloudfront.ResponseHeadersPolicy(this, "MediaCorsPolicy", {
-      corsBehavior: {
-        accessControlAllowOrigins: [`https://${webDomainName}`],
-        accessControlAllowMethods: ["GET"],
-        accessControlAllowHeaders: ["*"],
-        accessControlAllowCredentials: false,
-        originOverride: true,
-      },
-      comment: "Sattori 録画動画配信のCORS許可(ダウンロードボタンのfetch用)",
+    // ダウンロードボタンは`response-content-disposition`クエリパラメータ付きのURLを使う
+    // (apps/api/src/handlers/getJob.ts が組み立てる)。S3のGetObject APIはこのクエリを
+    // そのまま`Content-Disposition`レスポンスヘッダーへエコーバックするため、ブラウザ
+    // 標準のダウンロード機構(進捗表示・タブを離れても継続・ディスクへの直接
+    // ストリーミング)を使わせられ、フロントエンド側のfetch+Blob化やCORS許可が不要になる
+    // (旧実装からの変更点。AGENTS.md参照)。このクエリをオリジン(S3)へ転送しキャッシュキー
+    // にも含めるため、標準の CACHING_OPTIMIZED ではなく専用の CachePolicy を使う
+    // (含めないと同一動画への初回リクエストのdispositionがそのまま以降もキャッシュされ、
+    // 720p/オリジナル解像度など異なるファイル名のリクエストに誤って使い回されてしまう)。
+    const mediaCachePolicy = new cloudfront.CachePolicy(this, "MediaCachePolicy", {
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList(
+        "response-content-disposition",
+      ),
+      enableAcceptEncodingGzip: true,
+      enableAcceptEncodingBrotli: true,
+      minTtl: Duration.seconds(1),
+      defaultTtl: Duration.days(1),
+      maxTtl: Duration.days(365),
+      comment: "Sattori 録画動画配信(response-content-dispositionをキャッシュキーに含める)",
     });
 
     // 動画配信用 CloudFront(OAC 経由の非公開配信, 無料枠でegress実質ゼロ)。
@@ -96,8 +102,7 @@ export class SattoriStack extends Stack {
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(outputBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        responseHeadersPolicy: mediaCorsPolicy,
+        cachePolicy: mediaCachePolicy,
       },
       comment: "Sattori 録画動画配信",
     });

@@ -1,8 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
 import type { GetJobResponse, ReplayInfo } from "@sattori/shared";
 import { JobProgressView } from "./JobProgress.tsx";
-import * as downloadFileModule from "../lib/downloadFile.ts";
 
 describe("JobProgressView の初回ロード中表示", () => {
   it("jobが未取得の間はステータス別の文言（pending/queued等）を表示しない", () => {
@@ -13,12 +12,6 @@ describe("JobProgressView の初回ロード中表示", () => {
     expect(screen.queryByText("録画の順番を待っています")).toBeNull();
   });
 });
-
-vi.mock("../lib/downloadFile.ts", () => ({
-  downloadFile: vi.fn(),
-}));
-
-const mockedDownloadFile = vi.mocked(downloadFileModule);
 
 const REPLAY_INFO: ReplayInfo = {
   game: "th11",
@@ -37,8 +30,11 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     jobId: "job-1",
     game: "th11",
     status: "done",
-    downloadUrl: "https://media.example/original.mp4",
-    downloadUrl720p: "https://media.example/720p.mp4",
+    // API側(getJob.ts)が response-content-disposition クエリ付きで組み立てて返す
+    // 想定のURL。ブラウザ標準のダウンロード機構を使わせるため、フロントは
+    // このURLへの単純な<a>リンクを描画するだけでよい（filenameを自前で組み立てない）。
+    downloadUrl: "https://media.example/original.mp4?response-content-disposition=attachment%3B...",
+    downloadUrl720p: "https://media.example/720p.mp4?response-content-disposition=attachment%3B...",
     error: null,
     updatedAt: new Date().toISOString(),
     progress: null,
@@ -49,46 +45,31 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
 }
 
 describe("JobProgressView のダウンロード", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("「動画をダウンロード」クリックで720p版をファイル名付きでダウンロードする", async () => {
-    mockedDownloadFile.downloadFile.mockResolvedValue();
+  it("「動画をダウンロード」は720p版のダウンロードURLへのリンクになる", () => {
     render(<JobProgressView job={buildDoneJob()} loadError={null} />);
 
-    screen.getByText("動画をダウンロード").click();
-
-    await waitFor(() =>
-      expect(mockedDownloadFile.downloadFile).toHaveBeenCalledWith(
-        "https://media.example/720p.mp4",
-        "東方地霊殿 Lunatic 霊夢A 442,469,780 (プレイヤー koyi) #TouhouSattori.mp4",
-      ),
-    );
+    const link = screen.getByText("動画をダウンロード") as HTMLAnchorElement;
+    expect(link.tagName).toBe("A");
+    expect(link.href).toBe(buildDoneJob().downloadUrl720p);
+    expect(link.hasAttribute("download")).toBe(true);
   });
 
-  it("「元の解像度でダウンロード」クリックで区別できるファイル名を使う", async () => {
-    mockedDownloadFile.downloadFile.mockResolvedValue();
+  it("「元の解像度でダウンロード」は元解像度版のダウンロードURLへのリンクになる", () => {
     render(<JobProgressView job={buildDoneJob()} loadError={null} />);
 
-    screen.getByText("元の解像度でダウンロード").click();
-
-    await waitFor(() =>
-      expect(mockedDownloadFile.downloadFile).toHaveBeenCalledWith(
-        "https://media.example/original.mp4",
-        "東方地霊殿 Lunatic 霊夢A 442,469,780 (プレイヤー koyi) #raw #TouhouSattori.mp4",
-      ),
-    );
+    const link = screen.getByText("元の解像度でダウンロード") as HTMLAnchorElement;
+    expect(link.tagName).toBe("A");
+    expect(link.href).toBe(buildDoneJob().downloadUrl);
+    expect(link.hasAttribute("download")).toBe(true);
   });
 
-  it("ダウンロード失敗時はエラーメッセージを表示する", async () => {
-    mockedDownloadFile.downloadFile.mockRejectedValue(new Error("network error"));
-    render(<JobProgressView job={buildDoneJob()} loadError={null} />);
-
-    screen.getByText("動画をダウンロード").click();
-
-    await waitFor(() =>
-      expect(screen.getByText("ダウンロードに失敗しました。もう一度お試しください。")).toBeTruthy(),
+  it("720p版が無ければ「動画をダウンロード」が元解像度版へフォールバックする", () => {
+    render(
+      <JobProgressView job={buildDoneJob({ downloadUrl720p: null })} loadError={null} />,
     );
+
+    const link = screen.getByText("動画をダウンロード") as HTMLAnchorElement;
+    expect(link.href).toBe(buildDoneJob().downloadUrl);
+    expect(screen.queryByText("元の解像度でダウンロード")).toBeNull();
   });
 });
