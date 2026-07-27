@@ -36,6 +36,8 @@ const baseJob: JobRecord = {
   updatedAt: "2026-07-17T00:00:00.000Z",
   email: null,
   instanceId: "i-abc123",
+  instanceType: "c7i.xlarge",
+  availabilityZone: "us-east-1a",
   estimatedDurationSeconds: null,
   progress: null,
   previewImagePath: null,

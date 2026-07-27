@@ -151,9 +151,19 @@ docker run --rm \\
   return Buffer.from(script, "utf-8").toString("base64");
 }
 
+/** `launchRecordingInstance` が実際に確保できたインスタンスの情報。 */
+export interface LaunchedInstance {
+  instanceId: string;
+  /** `CreateFleet` レスポンスに含まれなかった場合は null。 */
+  instanceType: string | null;
+  /** `CreateFleet` レスポンスに含まれなかった場合は null。 */
+  availabilityZone: string | null;
+}
+
 /**
  * EC2 Fleet でワーカーインスタンスを1台起動して録画ジョブを実行する。
- * 起動したインスタンスIDを返す。
+ * 起動したインスタンスの情報（インスタンスID・実際に確保されたインスタンスタイプ・
+ * アベイラビリティゾーン）を返す。
  *
  * ベースの Launch Template（AMI/IAM/SGはCDK側で設定済み）に対し、ジョブ固有の
  * UserData のみを持つ新しいバージョンを作成し、そのバージョンを参照する
@@ -162,13 +172,15 @@ docker run --rm \\
  * 別リストを使う。touhou-recorder `reports/40`参照）の全組み合わせを Overrides に
  * 渡し `price-capacity-optimized` 戦略（`SingleInstanceType: false`）で配置する
  * ことで、単一AZ・単一インスタンスタイプでのSpot枯渇に対する耐性を持たせる
- * （PoC reports/17、Issue #29）。
+ * （PoC reports/17、Issue #29）。実際にどの候補が確保されたかは `CreateFleet` の
+ * レスポンス（`result.Instances[0]`）からそのまま読み取れ、追加の `DescribeInstances`
+ * 呼び出しは不要。
  */
 export async function launchRecordingInstance(
   config: ApiConfig,
   job: JobRecord,
   taskToken: string,
-): Promise<string> {
+): Promise<LaunchedInstance> {
   const userData = buildUserData(config, job, taskToken);
   const candidateInstanceTypes = getCandidateInstanceTypes(job.game);
 
@@ -223,14 +235,19 @@ export async function launchRecordingInstance(
     }),
   );
 
-  const instanceId = result.Instances?.[0]?.InstanceIds?.[0];
+  const launchedInstance = result.Instances?.[0];
+  const instanceId = launchedInstance?.InstanceIds?.[0];
   if (!instanceId) {
     const reason = result.Errors?.map((e) => `${e.ErrorCode}: ${e.ErrorMessage}`).join("; ");
     throw new Error(
       `EC2 Fleet でのインスタンス起動に失敗しました（InstanceId 不明）${reason ? `: ${reason}` : ""}`,
     );
   }
-  return instanceId;
+  return {
+    instanceId,
+    instanceType: launchedInstance.InstanceType ?? null,
+    availabilityZone: launchedInstance.AvailabilityZone ?? null,
+  };
 }
 
 /**

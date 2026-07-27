@@ -126,22 +126,27 @@ export async function startPendingJob(table: string, jobId: string): Promise<voi
 }
 
 /**
- * ジョブに紐づく実行中の EC2 インスタンスIDを記録する。
- * Step Functions の失敗ハンドラ（handleFailure）がリトライ/タイムアウト時に
- * どのインスタンスを terminate すべきか判定するために使う。
+ * ジョブに紐づく実行中の EC2 インスタンスの情報（インスタンスID・実際に確保された
+ * インスタンスタイプ・アベイラビリティゾーン）を記録する。instanceId は Step Functions
+ * の失敗ハンドラ（handleFailure）がリトライ/タイムアウト時にどのインスタンスを
+ * terminate すべきか判定するために使う。instanceType/availabilityZone は録画品質
+ * （重複フレーム率）の分析・運用調査用。
  */
-export async function updateJobInstanceId(
+export async function updateJobInstance(
   table: string,
   jobId: string,
-  instanceId: string,
+  instance: { instanceId: string; instanceType: string | null; availabilityZone: string | null },
 ): Promise<void> {
   await client.send(
     new UpdateCommand({
       TableName: table,
       Key: { jobId },
-      UpdateExpression: "SET instanceId = :i, updatedAt = :u",
+      UpdateExpression:
+        "SET instanceId = :i, instanceType = :t, availabilityZone = :az, updatedAt = :u",
       ExpressionAttributeValues: {
-        ":i": instanceId,
+        ":i": instance.instanceId,
+        ":t": instance.instanceType,
+        ":az": instance.availabilityZone,
         ":u": new Date().toISOString(),
       },
     }),

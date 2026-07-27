@@ -36,6 +36,8 @@ const job: JobRecord = {
   updatedAt: "2026-07-17T00:00:00.000Z",
   email: null,
   instanceId: null,
+  instanceType: null,
+  availabilityZone: null,
   estimatedDurationSeconds: 900,
   progress: null,
   previewImagePath: null,
@@ -53,12 +55,20 @@ beforeEach(() => {
 });
 
 describe("sfn/launch handler", () => {
-  it("ジョブを取得しEC2 Fleetで起動、statusとinstanceIdを更新する", async () => {
+  it("ジョブを取得しEC2 Fleetで起動、status・instanceId・instanceType・availabilityZoneを更新する", async () => {
     ddbMock.on(GetCommand).resolves({ Item: job });
     ec2Mock
       .on(CreateLaunchTemplateVersionCommand)
       .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
-    ec2Mock.on(CreateFleetCommand).resolves({ Instances: [{ InstanceIds: ["i-abc123"] }] });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [
+        {
+          InstanceIds: ["i-abc123"],
+          InstanceType: "c7i.xlarge",
+          AvailabilityZone: "us-east-1a",
+        },
+      ],
+    });
     ddbMock.on(UpdateCommand).resolves({});
 
     const { handler } = await import("./launch.js");
@@ -71,7 +81,11 @@ describe("sfn/launch handler", () => {
     expect(updatedFields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ ":s": "launching" }),
-        expect.objectContaining({ ":i": "i-abc123" }),
+        expect.objectContaining({
+          ":i": "i-abc123",
+          ":t": "c7i.xlarge",
+          ":az": "us-east-1a",
+        }),
       ]),
     );
   });

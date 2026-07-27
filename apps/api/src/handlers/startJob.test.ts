@@ -39,6 +39,8 @@ const pendingJob: JobRecord = {
   updatedAt: "2026-07-18T00:00:00.000Z",
   email: "user@example.com",
   instanceId: null,
+  instanceType: null,
+  availabilityZone: null,
   estimatedDurationSeconds: 900,
   progress: null,
   previewImagePath: null,

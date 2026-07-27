@@ -82,6 +82,20 @@ export interface JobRecord {
    */
   instanceId: string | null;
   /**
+   * `CreateFleet` が実際に確保した EC2 インスタンスタイプ（例: `c7i.xlarge`）。
+   * 候補インスタンスタイプを複数指定して分散させている（Issue #29、AGENTS.md参照）ため、
+   * 実際にどのタイプが割り当てられたかは事後にしか分からない。録画品質（重複フレーム率）
+   * の分析・運用調査用に記録する。未起動なら null。
+   */
+  instanceType: string | null;
+  /**
+   * `CreateFleet` が実際に確保した EC2 インスタンスのアベイラビリティゾーン
+   * （例: `us-east-1a`）。候補サブネット（=AZ）を複数指定して分散させているため、
+   * 実際にどのAZが割り当てられたかは事後にしか分からない。運用調査用に記録する。
+   * 未起動なら null。
+   */
+  availabilityZone: string | null;
+  /**
    * リプレイの推定再生時間（秒）。`ReplayInfo.estimatedDurationSeconds` の値を
    * ジョブ作成時に転記したもの。ワーカーが録画フェーズの進捗率算出に使う
    * （取得できなければ null）。
