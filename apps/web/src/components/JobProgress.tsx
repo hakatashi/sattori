@@ -1,5 +1,8 @@
+import { useState } from "react";
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
 import { useJobPolling } from "../hooks/useJobPolling.ts";
+import { downloadFile } from "../lib/downloadFile.ts";
+import { buildDownloadFilename } from "../lib/downloadFilename.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./JobProgress.module.css";
 
@@ -47,6 +50,22 @@ export function JobProgressView({ job, loadError }: ViewProps) {
   const meta = STATUS_META[status];
   const failed = status === "failed";
   const done = status === "done";
+
+  const [downloadingVariant, setDownloadingVariant] = useState<"720p" | "original" | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  async function handleDownload(url: string, variant: "720p" | "original") {
+    setDownloadError(null);
+    setDownloadingVariant(variant);
+    try {
+      const filename = buildDownloadFilename(job?.jobId ?? "", job?.replayInfo ?? null, variant);
+      await downloadFile(url, filename);
+    } catch {
+      setDownloadError("ダウンロードに失敗しました。もう一度お試しください。");
+    } finally {
+      setDownloadingVariant(null);
+    }
+  }
 
   return (
     <section className={styles.card}>
@@ -105,20 +124,28 @@ export function JobProgressView({ job, loadError }: ViewProps) {
         </p>
       )}
 
+      {done && downloadError && <p className={styles.error}>{downloadError}</p>}
+
       {done && (job?.downloadUrl720p ?? job?.downloadUrl) && (
-        <a
+        <button
+          type="button"
           className={styles.download}
-          href={job?.downloadUrl720p ?? job?.downloadUrl ?? undefined}
-          download
+          disabled={downloadingVariant !== null}
+          onClick={() => handleDownload((job?.downloadUrl720p ?? job?.downloadUrl) as string, "720p")}
         >
-          動画をダウンロード
-        </a>
+          {downloadingVariant === "720p" ? "ダウンロード準備中…" : "動画をダウンロード"}
+        </button>
       )}
 
       {done && job?.downloadUrl720p && job?.downloadUrl && (
-        <a className={styles.secondaryDownload} href={job.downloadUrl} download>
-          元の解像度でダウンロード
-        </a>
+        <button
+          type="button"
+          className={styles.secondaryDownload}
+          disabled={downloadingVariant !== null}
+          onClick={() => handleDownload(job.downloadUrl as string, "original")}
+        >
+          {downloadingVariant === "original" ? "ダウンロード準備中…" : "元の解像度でダウンロード"}
+        </button>
       )}
     </section>
   );
