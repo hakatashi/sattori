@@ -1,10 +1,11 @@
 # worker — Sattori 録画ワーカー
 
-東方紅魔郷(th06)・東方妖々夢(th07)・東方永夜抄(th08)のリプレイを Wine + Xvfb + ffmpeg
-でヘッドレス録画し、S3 へアップロードする Python ワーカー。AWS EC2 Spot インスタンス上で
-Docker コンテナとして実行される。技術的背景は `touhou-recorder` の PoC レポート
-(th07: `reports/11`, `reports/13`, `reports/14`, `reports/16`, `reports/17`, `reports/21`。
-th08: `reports/22`〜`reports/26`、Issue #13。th06: `reports/30`〜`reports/32`)を参照。
+東方紅魔郷(th06)・東方妖々夢(th07)・東方永夜抄(th08)・東方地霊殿(th11)のリプレイを
+Wine + Xvfb + ffmpeg でヘッドレス録画し、S3 へアップロードする Python ワーカー。AWS EC2
+Spot インスタンス上で Docker コンテナとして実行される。技術的背景は `touhou-recorder` の
+PoC レポート(th07: `reports/11`, `reports/13`, `reports/14`, `reports/16`, `reports/17`,
+`reports/21`。th08: `reports/22`〜`reports/26`、Issue #13。th06: `reports/30`〜`reports/32`。
+th11: `reports/35`〜`reports/39`)を参照。
 
 ## 構成
 
@@ -12,17 +13,21 @@ th08: `reports/22`〜`reports/26`、Issue #13。th06: `reports/30`〜`reports/32
 | --- | --- |
 | `entrypoint.py` | ジョブ全体の制御。DynamoDBのチェックポイント確認 → (再開でなければ)S3 DL →
   録画 → 生動画をS3へチェックポイントUP → 720p変換 → S3 UP → DynamoDB/taskToken 通知。
-  GAME環境変数に応じて `record_th06.py` / `record_th07.py` / `record_th08.py` を呼び分ける |
-| `recording_common.py` | th06・th07・th08共通の録画パイプライン本体(Issue #13でth08対応時に
-  共通化)。Xvfb起動・ウィンドウ検出・録画・終了検知(リプレイ選択画面テンプレートとの
-  照合。テンプレート未整備のゲームは画面静止のMAD判定にフォールバック、reports/33・34)・
+  GAME環境変数に応じて `record_th06.py` / `record_th07.py` / `record_th08.py` /
+  `record_th11.py` を呼び分ける |
+| `recording_common.py` | th06・th07・th08・th11共通の録画パイプライン本体(Issue #13でth08
+  対応時に共通化)。Xvfb起動・ウィンドウ検出(検出後に画面外へのはみ出しを補正する
+  `windowmove`再試行ループを含む、th11実機検証で発覚、reports/35・37)・録画・終了検知
+  (リプレイ選択画面テンプレートとの照合。テンプレート未整備のゲームは画面静止のMAD判定に
+  フォールバック、reports/33・34。静止判定は`GameConfig.still_detect_exclude_rect`で
+  指定した矩形をMAD計算から除外できる、th11のPause Menu明滅カーソル対策、reports/37・38)・
   fps暴走/処理落ちの早期検知・自動リトライ(既定3回)・映像/音声を別プロセスで録画し
   後でmuxする処理(reports/26)・フックDLLより前に追加DLLを注入する処理
   (`GameConfig.extra_dlls`、th06のVsyncPatch用)を担う。進捗スクリーンショット/状態も
   書き出す |
-| `record_th06.py` / `record_th07.py` / `record_th08.py` | タイトル固有のパス設定
-  (`GameConfig`)を組み立てて `recording_common.record_with_retry()` を呼ぶだけの薄い
-  ラッパー |
+| `record_th06.py` / `record_th07.py` / `record_th08.py` / `record_th11.py` | タイトル
+  固有のパス設定(`GameConfig`)を組み立てて `recording_common.record_with_retry()` を
+  呼ぶだけの薄いラッパー |
 | `upscale.py` | 録画動画をアスペクト比を保って720pへアップスケールする後処理(reports/21)。
   進捗コールバック対応 |
 | `status.py` | DynamoDB へのジョブ状態・進捗反映、チェックポイント確認用のジョブ取得 |
@@ -39,6 +44,9 @@ th08: `reports/22`〜`reports/26`、Issue #13。th06: `reports/30`〜`reports/32
 | `mods/th06_replay_autoplay/` | th06 自動再生フック DLL(`th06_hook.dll`)のソース(C++, MSVC) |
 | `mods/th07_replay_autoplay/` | th07 自動再生フック DLL(`th07_hook.dll`)のソース(C++, MSVC) |
 | `mods/th08_replay_autoplay/` | th08 自動再生フック DLL(`th08_hook.dll`)のソース(C++, MSVC) |
+| `mods/th11_replay_autoplay/` | th11 自動再生フック DLL(`th11_hook.dll`)のソース(C++, MSVC)。
+  DirectInput GetDeviceStateではなくGetKeyboardStateフック(`PressVKey`)でキー入力を
+  注入する(TH10以降のエンジン向け、reports/35) |
 
 `mods/` 配下はソース・ビルドスクリプトのみリポジトリで管理する
 (元は `touhou-recorder` の PoC で作成したもの)。ビルド方法は後述。
@@ -118,6 +126,69 @@ touhou-recorderでの事前検証(reports/30〜32)を踏まえた設計:
   「1件目のリプレイ」として正しく選択・再生し、60fps安定・重複フレームなしで
   ゲームプレイ画面(スコア進行・日本語表示すべて正常)を確認できた。
 
+## th11対応の技術的背景(reports/35〜39)
+
+touhou-recorderでの事前検証(reports/35〜39)を踏まえた設計:
+
+- **レンダリングはth08と同じ経路**: th11.exeのインポートテーブルはth08と同じ
+  `d3d9.dll`/`DINPUT8.dll`系統で、Xvfb上でも追加調査なしに正常動作する。th08用に
+  導入済みのMS Gothic配置・レジストリ登録もそのまま有効に働く(reports/35)。
+- **メニュー自動操作にはGetKeyboardStateフックが必要**: TH10以降のエンジンは
+  DirectInput `GetDeviceState`を実際の入力ポーリングに使わない(`CreateDevice`は
+  呼ばれるがGetDeviceStateは一切呼ばれず、FpsMonitorが常に0Hzを示す)。実際の
+  入力ポーリングはWin32 `GetKeyboardState()`経由のため、`mods/common/dinput_hook.h/.cpp`
+  に`InstallKeyboardStateHook`/`PressVKey`を追加し、`mods/th11_replay_autoplay/dllmain.cpp`
+  がこちらを使う(GetDeviceStateフックと同じ`g_hookCallCount`を共有するため、
+  `WaitForHookActive`は変更なしでどちらの経路でも動作する)。
+- **リプレイ一覧の「ユーザーリプレイ」タブ**: th11のリプレイ一覧画面は「組み込み
+  リプレイ(No.01〜24、ファイル名の数字で表示スロットが決まる)」と、右キーで切り替わる
+  別タブの「ユーザーリプレイ(ud0000〜)」に分かれている。実際のプレイヤー録画リプレイは
+  後者に属するため、MODのキーシーケンスはDown×2→Enter(Replay確定)→Right(ユーザー
+  リプレイタブへ切替)→Enter(1件目選択)→Enter(再生確定)とし、投入リプレイは
+  `th11_ud0000.rpy`という固定名で配置する(`GameConfig.canonical_slot`)。
+- **タイトルロゴアニメーション待機は6000ms必要**: th08の1500msでは不足し、メニューが
+  まだ操作可能になっていないタイミングで入力が送られて意図しないメニュー項目
+  (Practice Start等)に迷い込む誤動作が発生した。
+- **終了検知はテンプレート照合を使わず、画面静止検知のみで運用する**: th11の終了画面は
+  th06/07/08のような内容非依存の専用リプレイ選択画面ではなく、「直前のゲームプレイ
+  画面がそのまま静止し、半透明のPause Menuがオーバーレイ表示される」という構造で、
+  静止直前の背景(スペルカード名・弾幕パターン等)はリプレイ内容によって異なる。
+  テンプレート照合の前提(上部帯がリプレイ内容非依存)が崩れるため、th11は
+  `end_template_path`を意図的に用意しない(ワーカーイメージに`assets/replay_end_templates/
+  th11.png`を含めない)ことで、`load_end_template()`が自動的にNoneを返し、画面静止のみ
+  判定にフォールバックする(reports/36)。
+- **Pause Menu画面の選択カーソル明滅を静止判定から除外する**: 画面静止検知のみに
+  依存する副作用として、Pause Menu画面で現在選択中のメニュー項目の文字が明滅し続け、
+  画面全体のMADが閾値をわずかに超え続けて自然終了を検知できない事例が実機で発生した
+  (`th11_ud16gm.rpy`、40分のハードタイムアウトに到達、reports/37)。この明滅は640x480
+  原座標で`(70,288)-(188,318)`の矩形に収まることが判明したため、
+  `GameConfig.still_detect_exclude_rect`にこの矩形を指定し、
+  `recording_common.build_still_mask()`/`mad_masked()`でMAD計算から除外する
+  (reports/38)。
+- **ウィンドウ位置の強制移動と再試行ループ(全ゲーム共通)**: openboxの初期配置に
+  よってはウィンドウがXVFB_SCREEN(800x600)の範囲外にはみ出す位置に置かれることが
+  ある(th11実機検証で発覚、reports/35)。ウィンドウ検出後に`xdotool windowmove`で
+  左上(0,0)へ強制移動するが、装飾のあるウィンドウでは移動後の実座標(クライアント
+  領域)を再取得しないとタイトルバー分ずれて録画される(reports/37)。さらに
+  `windowmove`の反映は非同期なため、座標がXVFB_SCREENの範囲内に収まるまで最大20回
+  (0.1秒間隔)再試行する。この対策はth06/07/08にも共通で適用されるが、これまで
+  たまたま問題が起きない位置に配置されており実害はない。
+- **MS明朝(`msmincho.ttc`)の配置・レジストリ登録が必要**: NPC会話シーン等で
+  「ＭＳ 明朝」というフォント名が要求されるが、実体・レジストリが無いとWineの代替
+  フォント解決チェーンを経由して別の書体(ゴシック体寄り・半角括弧)にフォールバック
+  する。`setup_wineprefix.sh`の第3引数でmsmincho.ttcを渡すと配置・レジストリ登録
+  される(reports/38、後述の「WINEPREFIXの作成・フォント修正」参照)。
+- **文字輪郭のジャギーは既知の制約として残る(対応なし)**: 修正後もWindows実機と
+  比べて文字の輪郭が粗い(グレースケール階調の遷移幅が狭い)現象が残る。原因は
+  WineのFreeTypeベースAA(`GGO_GRAY4_BITMAP`、4bit=17階調)自体が実機Windowsの描画
+  結果と比べてアルゴリズムレベルで異なることによるもので、gaspテーブル・lfQuality
+  書き換え・MacType(旧gdi++)等の対策はいずれも画素値レベルで効果がないことを
+  確認済み(reports/39)。費用対効果の観点からこのリポジトリでは対応を見送る。
+- **fps暴走の検知・処理落ちの早期検知・自動リトライ・音声/映像の別プロセス録画**は
+  th06/07/08と共通の実装(`recording_common.py`)をそのまま使う。th11のMODも
+  `fps_monitor.cpp`を組み込んでおり、実機検証では56.6〜60.2Hzで安定していた
+  (fps暴走の兆候なし、reports/35)。
+
 ## リプレイ終了検知の方式(reports/33・34)
 
 `recording_common.attempt_recording()`は「リプレイが終了したか」を、画面静止だけでは
@@ -142,7 +213,9 @@ touhou-recorderでの事前検証(reports/30〜32)を踏まえた設計:
   大幅に高速化されている(reports/34、th06実リプレイで画面切替から2.3秒で確定)。
 - テンプレート画像が未整備・未検出の場合は警告ログを出しつつ、従来の画面静止のみ判定
   (`STILL_MAD_THRESHOLD`/`STILL_CONSECUTIVE_REQUIRED`)にフォールバックする。新規タイトル
-  追加時にテンプレートが未整備でも動作は壊れない。
+  追加時にテンプレートが未整備でも動作は壊れない。**th11はこのフォールバックを意図的に
+  常用する**(終了画面がリプレイ内容依存でテンプレート照合に不向きなため、上記
+  「th11対応の技術的背景」参照)。
 - テンプレート画像はゲーム本体ではなく録画パイプライン自体の参照素材のため、タイトル
   資産S3アーカイブではなくワーカーイメージに焼き込む(「リポジトリに含まれない資産」
   節参照)。
@@ -202,8 +275,18 @@ cd worker
 ./setup_wineprefix.sh prefixes/th08-wined3d-gl /path/to/msgothic.ttc
 ```
 
-`msgothic.ttc`(実際のMS Gothic/MS PGothic/MS UI Gothicを含むTrueTypeコレクション)
-はWindowsのライセンスフォントであり、著作権上リポジトリにもS3にも単体では置いて
+th11は上記に加えてMS明朝(`msmincho.ttc`)の配置・レジストリ登録も必要
+(NPC会話シーン等でのフォント誤り対策、touhou-recorder reports/38、上記「th11対応の
+技術的背景」参照)。第3引数にmsmincho.ttcのパスを渡すと追加で登録される:
+
+```bash
+cd worker
+./setup_wineprefix.sh prefixes/th11-wined3d-gl /path/to/msgothic.ttc /path/to/msmincho.ttc
+```
+
+`msgothic.ttc`(実際のMS Gothic/MS PGothic/MS UI Gothicを含むTrueTypeコレクション)・
+`msmincho.ttc`(実際のMS Mincho/MS PMinchoを含むTrueTypeコレクション)はいずれも
+Windowsのライセンスフォントであり、著作権上リポジトリにもS3にも単体では置いて
 いない。Windows実機等から別途用意すること。
 
 日本語ロケール(`LANG=ja_JP.UTF-8`/`LC_ALL=ja_JP.UTF-8`)はWINEPREFIX作成時ではなく
@@ -281,6 +364,21 @@ tar -czf /tmp/th06-assets.tar.gz \
 aws s3 cp /tmp/th06-assets.tar.gz "s3://${TITLE_ASSETS_BUCKET}/titles/th06/assets.tar.gz"
 ```
 
+th11の場合、WINEPREFIXはMS明朝も登録済みのものを使うこと(上記「WINEPREFIXの作成・
+フォント修正」参照)。ゲーム本体・MODファイル名はth07/th08と同じ命名則
+(`th11.exe`・`th11_hook.dll`)で、`GameConfig.game_exe`/`process_name`の
+オーバーライドは不要:
+
+```bash
+cd worker
+tar -czf /tmp/th11-assets.tar.gz \
+  games/th11 \
+  prefixes/th11-wined3d-gl \
+  mods/common/build/injector.exe \
+  mods/th11_replay_autoplay/build/th11_hook.dll
+aws s3 cp /tmp/th11-assets.tar.gz "s3://${TITLE_ASSETS_BUCKET}/titles/th11/assets.tar.gz"
+```
+
 `title_assets.py` はインスタンス起動時に `worker/games/{title}/` が既に存在するかを
 確認し、無ければこのアーカイブをダウンロード・展開する(存在すればスキップ、
 Spot中断リトライ時の同一インスタンス再利用等を想定)。展開先はワーカーイメージ内の
@@ -290,7 +388,7 @@ Spot中断リトライ時の同一インスタンス再利用等を想定)。展
 ## MOD (DLL インジェクタ / 自動再生フック) のビルド
 
 `mods/` はソースのみ管理しており、`injector.exe` / `th06_hook.dll` / `th07_hook.dll` /
-`th08_hook.dll` 自体は `.gitignore` 済みのビルド成果物。
+`th08_hook.dll` / `th11_hook.dll` 自体は `.gitignore` 済みのビルド成果物。
 **Windows + Visual Studio (C++ x86/x64 tools)** が必要(ゲームが 32bit ネイティブ
 Win32 バイナリのため MSVC の x86 ツールチェーンでビルドする)。x86 Native Tools
 Command Prompt for VS、または通常のコマンドプロンプトから:
@@ -300,6 +398,7 @@ worker\mods\common\build_injector.bat
 worker\mods\th06_replay_autoplay\build.bat
 worker\mods\th07_replay_autoplay\build.bat
 worker\mods\th08_replay_autoplay\build.bat
+worker\mods\th11_replay_autoplay\build.bat
 ```
 
 - `build_injector.bat` は `setup_vcvars.bat`(vswhere.exe で VS を検出し
@@ -310,8 +409,12 @@ worker\mods\th08_replay_autoplay\build.bat
   `common/` の `dinput_hook.cpp` / `window_wait.cpp` / `logging.cpp` を静的にまとめて
   それぞれ `worker/mods/th06_replay_autoplay/build/th06_hook.dll` /
   `worker/mods/th07_replay_autoplay/build/th07_hook.dll` を生成する。
-- `th08_replay_autoplay/build.bat` も同様に `fps_monitor.cpp`(th08のfps暴走検知用、
-  reports/22)を加えて `worker/mods/th08_replay_autoplay/build/th08_hook.dll` を生成する。
+- `th08_replay_autoplay/build.bat` / `th11_replay_autoplay/build.bat` も同様に
+  `fps_monitor.cpp`(fps暴走検知用、reports/22)を加えてそれぞれ
+  `worker/mods/th08_replay_autoplay/build/th08_hook.dll` /
+  `worker/mods/th11_replay_autoplay/build/th11_hook.dll` を生成する
+  (th11は`InstallKeyboardStateHook`を使うが、リンクするソースファイル自体はth08と
+  同じ構成)。
 - MSVCが使えない検証環境では `mingw-w64`(`i686-w64-mingw32-g++`)でも同一ソースを
   クロスビルドできる(実機注入テストでMSVCビルドと同一挙動を確認済み、reports/25)。
   正式なビルド手順は引き続きMSVC想定(`build.bat`)で、mingw-w64は調査目的のセルフ
@@ -333,8 +436,8 @@ worker\mods\th08_replay_autoplay\build.bat
 | 変数 | 説明 |
 | --- | --- |
 | `JOB_ID` | ジョブ ID(DynamoDB キー・出力キーに使用) |
-| `GAME` | タイトル(`th06` / `th07` / `th08`。`entrypoint.py` がこの値に応じて
-  `record_th06.py` / `record_th07.py` / `record_th08.py` を呼び分ける) |
+| `GAME` | タイトル(`th06` / `th07` / `th08` / `th11`。`entrypoint.py` がこの値に応じて
+  `record_th06.py` / `record_th07.py` / `record_th08.py` / `record_th11.py` を呼び分ける) |
 | `REPLAY_BUCKET` / `REPLAY_KEY` | アップロード済みリプレイの S3 位置 |
 | `OUTPUT_BUCKET` | 録画動画の出力先バケット(CloudFront オリジン) |
 | `TITLE_ASSETS_BUCKET` | タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)のバケット
@@ -383,6 +486,8 @@ python3 record_th07.py --replay-path /path/to/any.rpy --output /tmp/out.mp4 \
   --watermark assets/watermark/watermark-60fps.webm
 python3 record_th08.py --replay-path /path/to/any.rpy --output /tmp/out.mp4 \
   --watermark assets/watermark/watermark-60fps.webm
+python3 record_th11.py --replay-path /path/to/any.rpy --output /tmp/out.mp4 \
+  --watermark assets/watermark/watermark-60fps.webm
 ```
 
 720pアップスケール変換だけを試す場合(ffmpeg/ffprobeがあれば動作する):
@@ -399,6 +504,11 @@ docker build -t sattori-worker:latest worker/
 
 ## 制約と今後
 
-- 対応タイトルは th07・th08(Issue #13)。他タイトルはリプレイパーサー側は
+- 対応タイトルは th06・th07・th08・th11。他タイトルはリプレイパーサー側は
   多タイトル対応済みだが、録画対応(MOD移植)は未着手(AGENTS.md参照)。
+- th11の文字輪郭のジャギー(Windows実機よりWineのFreeTypeベースAAが粗い)は
+  原因調査済み・対策なしの既知の制約として残る(touhou-recorder reports/39)。
+- th11は画面静止検知のみで終了判定するため、Pause Menu明滅カーソル以外の要因による
+  誤検知(長時間静止するステージ間演出等)のリスクを本質的には排除できていない
+  (th06(reports/33)と同様の注意が必要)。
 - リプレイ内容の解析・デシンク検知は未実装。

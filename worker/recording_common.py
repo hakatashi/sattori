@@ -158,6 +158,13 @@ class GameConfig:
     # を既定値として使う(record_th06.py等の呼び出し側での明示指定は不要)。ファイルが
     # 存在しない場合はload_end_template()がNoneを返し、画面静止のみ判定にフォールバックする。
     end_template_path: str | None = None
+    # 画面静止判定(テンプレート未整備のゲームが使うフォールバック経路)のMAD計算から
+    # 除外する矩形(元のウィンドウ座標系、x0, y0, x1, y1)。th11のPause Menu画面は
+    # 全体が完全に静止する一方、現在選択中のメニュー項目の文字だけが明滅し続け、
+    # 画面全体のMADが閾値をわずかに超え続けて自然終了を検知できない事例が実機で
+    # 発生した(touhou-recorder reports/37・38)。この矩形をMAD計算から除外することで
+    # 明滅の影響を受けずに静止判定できる。未指定(None)なら従来通り除外なしで計算する。
+    still_detect_exclude_rect: tuple[int, int, int, int] | None = None
 
     def __post_init__(self):
         if self.game_exe is None:
@@ -339,6 +346,29 @@ def grab_frame_gray(config, env, x, y, w, h):
 
 def mad(a, b):
     return float(np.mean(np.abs(a - b)))
+
+
+def build_still_mask(rect, w, h):
+    """GameConfig.still_detect_exclude_rect(元のウィンドウ座標系のx0,y0,x1,y1)を、
+    grab_frame()が常にリサイズする160x120グレースケール座標系のブールマスク
+    (True=静止判定に使う画素)に変換する。rect未設定ならNone(呼び出し側はマスク無しの
+    従来通りのmad()にフォールバックする)。"""
+    if not rect:
+        return None
+    x0, y0, x1, y1 = rect
+    rx0 = int(x0 * 160 / w)
+    rx1 = int(np.ceil(x1 * 160 / w))
+    ry0 = int(y0 * 120 / h)
+    ry1 = int(np.ceil(y1 * 120 / h))
+    mask = np.ones((120, 160), dtype=bool)
+    mask[ry0:ry1, rx0:rx1] = False
+    return mask
+
+
+def mad_masked(a, b, mask):
+    if mask is None:
+        return mad(a, b)
+    return float(np.mean(np.abs(a - b)[mask]))
 
 
 def load_end_template(path):
@@ -585,6 +615,32 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     x, y, w, h, winid = geom
     log(f"ウィンドウ検出: x={x} y={y} w={w} h={h} (winid={winid})")
 
+    # openboxの初期配置によっては、ウィンドウがXVFB_SCREEN(800x600)の範囲外にはみ出す
+    # 位置に置かれることがある(th11実機検証で、y=159+height=480=639が800x600の高さ600を
+    # 超えてx11grabが起動失敗する事象を確認、touhou-recorder reports/35)。クロップ座標に
+    # 依存せず常に録画・スクリーンショットが機能するよう、検出後に左上(0,0)へ強制移動する。
+    # 移動後の実座標は必ず再取得すること: xdotool windowmoveは(装飾のあるウィンドウの場合)
+    # ウィンドウ枠を(0,0)へ移動するため、xwininfoが返すクライアント領域のAbsolute
+    # upper-leftは(0,0)にならないことがある(th11実機検証で、タイトルバー分ずれて録画
+    # される不具合として発覚、touhou-recorder reports/37)。さらにxdotool windowmoveの
+    # 反映は非同期で、直後に再取得すると移動前の座標がまだ返ることがある(AWS実機検証で
+    # 確認)。座標がXVFB_SCREENの範囲内に収まるまでwindowmoveを最大20回(0.1秒間隔)
+    # 再試行する。この対策は全ゲーム共通だが、th06/07/08ではこれまでたまたま問題が
+    # 起きない位置にウィンドウが配置されており実害はない。
+    screen_w, screen_h = (int(v) for v in XVFB_SCREEN.split("x")[:2])
+    for _ in range(20):
+        subprocess.run(["xdotool", "windowmove", winid, "0", "0"], env=env)
+        time.sleep(0.1)
+        moved_geom = find_window(config, env, game_pid)
+        if moved_geom:
+            x, y, w, h, _ = moved_geom
+            if x + w <= screen_w and y + h <= screen_h:
+                break
+    else:
+        log(f"WARNING: ウィンドウが画面内に収まりませんでした (x={x} y={y} w={w} h={h})")
+    log(f"移動後のウィンドウ座標: x={x} y={y} w={w} h={h}")
+    still_mask = build_still_mask(config.still_detect_exclude_rect, w, h)
+
     seen_lines = set()
     stable_time = wait_for_log_marker(
         config.log_path, "WaitForStableWindow: stable", timeout=20, poll_interval=0.1,
@@ -688,7 +744,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
                 break
         else:
             if prev_frame is not None:
-                d = mad(prev_frame, frame)
+                d = mad_masked(prev_frame, frame, still_mask)
                 if d < STILL_MAD_THRESHOLD:
                     consecutive_still += 1
                 else:

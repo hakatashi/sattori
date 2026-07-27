@@ -140,4 +140,39 @@ void PressKey(BYTE dik, unsigned int holdFrames, unsigned int releaseFrames,
     WaitFrames(releaseStart, releaseFrames, timeoutMs);
 }
 
+static volatile BYTE g_injectVk[256] = {0};
+
+typedef BOOL(WINAPI* GetKeyboardState_t)(PBYTE lpKeyState);
+static GetKeyboardState_t g_origGetKeyboardState = nullptr;
+
+static BOOL WINAPI MyGetKeyboardState(PBYTE lpKeyState) {
+    BOOL ok = g_origGetKeyboardState(lpKeyState);
+    InterlockedIncrement(&g_hookCallCount);
+    if (ok && lpKeyState) {
+        for (int i = 0; i < 256; i++) {
+            if (g_injectVk[i]) lpKeyState[i] |= 0x80;
+        }
+    }
+    return ok;
+}
+
+bool InstallKeyboardStateHook() {
+    bool ok = HookIATEntry("USER32.dll", "GetKeyboardState", (void*)MyGetKeyboardState,
+                            (void**)&g_origGetKeyboardState);
+    Log("InstallKeyboardStateHook: IAT hook %s",
+        ok ? "OK" : "FAILED (GetKeyboardState not found in IAT)");
+    return ok;
+}
+
+void PressVKey(BYTE vk, unsigned int holdFrames, unsigned int releaseFrames,
+               unsigned int timeoutMs) {
+    LONG holdStart = g_hookCallCount;
+    g_injectVk[vk] = 1;
+    WaitFrames(holdStart, holdFrames, timeoutMs);
+
+    LONG releaseStart = g_hookCallCount;
+    g_injectVk[vk] = 0;
+    WaitFrames(releaseStart, releaseFrames, timeoutMs);
+}
+
 } // namespace autoplay
