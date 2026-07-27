@@ -1,8 +1,5 @@
-import { useState } from "react";
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
 import { useJobPolling } from "../hooks/useJobPolling.ts";
-import { downloadFile } from "../lib/downloadFile.ts";
-import { buildDownloadFilename } from "../lib/downloadFilename.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./JobProgress.module.css";
 
@@ -46,22 +43,6 @@ export function JobProgress({ jobId }: Props) {
  * `dev/JobProgressPlayground.tsx` から実データ無しで各状態を確認するために分離。
  */
 export function JobProgressView({ job, loadError }: ViewProps) {
-  const [downloadingVariant, setDownloadingVariant] = useState<"720p" | "original" | null>(null);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-
-  async function handleDownload(url: string, variant: "720p" | "original") {
-    setDownloadError(null);
-    setDownloadingVariant(variant);
-    try {
-      const filename = buildDownloadFilename(job?.jobId ?? "", job?.replayInfo ?? null, variant);
-      await downloadFile(url, filename);
-    } catch {
-      setDownloadError("ダウンロードに失敗しました。もう一度お試しください。");
-    } finally {
-      setDownloadingVariant(null);
-    }
-  }
-
   // 初回ロード中（jobが未取得）はステータス別の表示を仮定せず、中立的な読み込み中表示に留める。
   // 既に完了しているジョブでも「準備をしています」等が一瞬表示されて紛らわしくなるのを防ぐ。
   if (!job) {
@@ -135,28 +116,20 @@ export function JobProgressView({ job, loadError }: ViewProps) {
         </p>
       )}
 
-      {done && downloadError && <p className={styles.error}>{downloadError}</p>}
-
       {done && (job.downloadUrl720p ?? job.downloadUrl) && (
-        <button
-          type="button"
+        <a
           className={styles.download}
-          disabled={downloadingVariant !== null}
-          onClick={() => handleDownload((job.downloadUrl720p ?? job.downloadUrl) as string, "720p")}
+          href={job.downloadUrl720p ?? job.downloadUrl ?? undefined}
+          download
         >
-          {downloadingVariant === "720p" ? "ダウンロード準備中…" : "動画をダウンロード"}
-        </button>
+          動画をダウンロード
+        </a>
       )}
 
       {done && job.downloadUrl720p && job.downloadUrl && (
-        <button
-          type="button"
-          className={styles.secondaryDownload}
-          disabled={downloadingVariant !== null}
-          onClick={() => handleDownload(job.downloadUrl as string, "original")}
-        >
-          {downloadingVariant === "original" ? "ダウンロード準備中…" : "元の解像度でダウンロード"}
-        </button>
+        <a className={styles.secondaryDownload} href={job.downloadUrl} download>
+          元の解像度でダウンロード
+        </a>
       )}
     </section>
   );

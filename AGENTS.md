@@ -108,6 +108,22 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計・拡�
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。CloudFront 永年無料枠で egress を
   実質ゼロにできる（PoC 実証済み）。出力 S3 は7日で自動削除。アップロード S3 は
   `.rpy` のサイズが小さく保管コストが無視できるため自動削除しない。
+- **動画ダウンロードはブラウザ標準のダウンロード機構に任せる**（`response-content-disposition`
+  クエリパラメータ方式）。当初(PR #39)は `<a download>` がクロスオリジンURLで無視され
+  新しいタブで再生されてしまう問題への対処として、フロントエンドで `fetch()` して
+  `Blob` 化してからダウンロードさせていたが、これだと進捗が見えない・ダウンロード中に
+  ページを離れられない・動画全体をメモリに載せるという副作用があった。S3の GetObject API
+  は `response-content-disposition` クエリパラメータの値をそのまま `Content-Disposition`
+  レスポンスヘッダーへエコーバックする仕様を持つため、`apps/api/src/handlers/getJob.ts`
+  の `buildDownloadUrl()` がこのクエリ（ファイル名は `packages/shared/src/download.ts` の
+  `buildDownloadFilename()`/`buildContentDispositionValue()` で組み立て、日本語ファイル名は
+  RFC 5987 `filename*=UTF-8''...` + ASCIIフォールバックの `filename=...` を併記）を含めて
+  `downloadUrl`/`downloadUrl720p` を返す。フロントエンド（`JobProgress.tsx`）は単純な
+  `<a href={...} download>` に戻すだけでよく、CORS許可（`ResponseHeadersPolicy`）も
+  fetch/Blob化も不要になった。CloudFront(`MediaCdn`)側はこのクエリをオリジンへ転送し
+  キャッシュキーにも含める専用の `CachePolicy`（`infra/lib/sattori-stack.ts` の
+  `mediaCachePolicy`）を使う（含めないと720p/オリジナル解像度など異なるファイル名の
+  リクエスト間でdispositionヘッダーのキャッシュが混線する）。
 - **録画ワーカーだけ Python**。PoC の numpy/PIL によるフレーム差分・Wine 制御が実証済みで、
   TS 再実装はリスクだけ増える。フロント・API・パーサー・IaC は TypeScript 7.0。
 
