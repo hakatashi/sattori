@@ -47,21 +47,22 @@ def test_tick_uploads_frame_and_reports_progress(tmp_path, monkeypatch):
     assert args[2].endswith(".jpg")
     assert kwargs["ExtraArgs"] == {"ContentType": "image/jpeg"}
 
-    update_progress_mock.assert_called_once_with("job-1", 50, preview_image_path=args[2])
+    # progress は全体の長さに対する割合ではなく、実際に処理が完了した秒数を渡す。
+    update_progress_mock.assert_called_once_with("job-1", 30, preview_image_path=args[2])
 
 
-def test_tick_caps_progress_at_99_percent(tmp_path, monkeypatch):
-    write_progress_files(tmp_path, elapsed=60, expected=60)
+def test_tick_reports_elapsed_seconds_even_without_expected(tmp_path, monkeypatch):
+    # expectedDurationSeconds はもはや進捗の算出に使わないため、無くても経過秒数を報告できる。
+    write_progress_files(tmp_path, elapsed=30, expected=None)
     reporter, s3, update_progress_mock = make_reporter(tmp_path, monkeypatch)
 
     reporter._tick()
 
-    percent = update_progress_mock.call_args[0][1]
-    assert percent == 99
+    assert update_progress_mock.call_args[0][1] == 30
 
 
-def test_tick_passes_none_percent_when_expected_missing(tmp_path, monkeypatch):
-    write_progress_files(tmp_path, elapsed=30, expected=None)
+def test_tick_passes_none_when_elapsed_missing(tmp_path, monkeypatch):
+    write_progress_files(tmp_path, elapsed=None, expected=60)
     reporter, s3, update_progress_mock = make_reporter(tmp_path, monkeypatch)
 
     reporter._tick()
