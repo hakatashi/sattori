@@ -23,12 +23,12 @@ th07（妖々夢）・th08（永夜抄）の E2E 動作を実証済みで、そ�
 
 | パッケージ | 内容 |
 | --- | --- |
-| `apps/web` | フロントエンド（Vite + React + CSS Modules） |
-| `apps/api` | バックエンド API（AWS Lambda ハンドラ / TypeScript） |
-| `packages/shared` | フロント・API 共有の型定義 |
-| `packages/replay-parser` | `.rpy` デコーダ（フェーズ2で実装予定） |
-| `worker` | 録画ワーカー（Python + Docker、EC2 Spot 上で実行） |
-| `infra` | AWS CDK（TypeScript）によるインフラ定義 |
+| [`apps/web`](apps/web/README.md) | フロントエンド（Vite + React + CSS Modules） |
+| [`apps/api`](apps/api/README.md) | バックエンド API（AWS Lambda ハンドラ / TypeScript） |
+| [`packages/shared`](packages/shared/README.md) | フロント・API 共有の型定義 |
+| [`packages/replay-parser`](packages/replay-parser/README.md) | `.rpy` デコーダ |
+| [`worker`](worker/README.md) | 録画ワーカー（Python + Docker、EC2 Spot 上で実行） |
+| [`infra`](infra/README.md) | AWS CDK（TypeScript）によるインフラ定義 |
 
 技術スタック: TypeScript 7.0 / Vite / React / Vitest / CSS Modules / AWS CDK /
 pnpm workspaces + Turborepo。
@@ -45,11 +45,13 @@ pnpm --filter @sattori/web dev   # フロントエンドの開発サーバ
 
 ## 現在の状況
 
-**フェーズ1（初期実装）**: th07 のリプレイをアップロード → 録画ジョブ実行 →
-S3 アップロードまでの最小フローを実装済み。メール認証・リプレイ解析・複数タイトル
-対応・ジョブのリトライ制御はフェーズ2以降で追加します。
+アップロード→解析プレビュー→メール認証（マジックリンク）→録画→進捗ポーリング→
+ダウンロード→完了メール送信という主要フローは実装済みで、初回リリースに向けた
+準備を進めています。対応タイトルは東方紅魔郷（th06）・東方妖々夢（th07）・
+東方永夜抄（th08）・東方地霊殿（th11）の4本です。
 
-開発の全体設計・拡張計画・引き継ぎ情報は **[`AGENTS.md`](./AGENTS.md)** を参照してください。
+全体アーキテクチャや常に踏まえておくべき設計判断は **[`AGENTS.md`](./AGENTS.md)** を、
+各パッケージの実装詳細はそれぞれの README.md を参照してください。
 
 ## ライセンス / 注意
 
