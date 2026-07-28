@@ -46,7 +46,7 @@ def probe_resolution(input_path):
     return stream["width"], stream["height"]
 
 
-def upscale_to_720p(input_path, output_path, watermark_path=None, watermark_width=285,
+def upscale_to_720p(input_path, output_path, watermark_path=None, watermark_width=428,
                      on_progress=None, log=print):
     """input_path の動画をアスペクト比を保ったまま高さ720pxへ変換する。
     watermark_path を指定すると、変換と同時にウォーターマークも合成する(モジュール
