@@ -89,7 +89,7 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
  */
 export function JobProgressPlayground() {
   return (
-    <div style={{ maxWidth: "50rem", margin: "0 auto", padding: "2rem", display: "flex", flexDirection: "column", gap: "2rem" }}>
+    <div style={{ maxWidth: "90rem", margin: "0 auto", padding: "2rem", display: "flex", flexDirection: "column", gap: "2rem" }}>
       {SAMPLE_JOBS.map(({ title, job, loadError }) => (
         <section key={title}>
           <h2>{title}</h2>
