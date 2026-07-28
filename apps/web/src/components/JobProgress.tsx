@@ -97,7 +97,7 @@ export function JobProgressView({ job, loadError }: ViewProps) {
                     <p className={styles.logName}>{name}</p>
                     {showDetail && typeof progress === "number" && (
                       <div className={styles.logDetail}>
-                        {job.previewImageUrl && (
+                        {job.previewImageUrl && status !== "converting" && (
                           <img
                             className={styles.logThumbnail}
                             src={job.previewImageUrl}
@@ -156,7 +156,11 @@ export function JobProgressView({ job, loadError }: ViewProps) {
         </div>
       </div>
 
-      {!done && !failed && <p className={styles.hint}>このページは自動で更新されます。</p>}
+      {!done && !failed && (
+        <p className={styles.hint}>
+          このページを閉じても録画・変換処理は中断されません。いつでもこのページに戻って状況を確認できます。
+        </p>
+      )}
     </section>
   );
 }
