@@ -1,18 +1,26 @@
 # AGENTS.md
 
-Sattori（東方リプレイ録画ウェブサービス）の全体設計・拡張計画・引き継ぎ情報。
-このリポジトリで作業する次のエージェント（または人間）は着手前に必読。
-録画バックエンドの技術的背景は別リポジトリ `touhou-recorder`（PoC）の
-`reports/latest.md` と `AGENTS.md` に詳しい。
+Sattori（東方リプレイ録画ウェブサービス）の全体設計。このリポジトリで作業する
+次のエージェント（または人間）は着手前に必読。**パッケージ固有の詳細は各パッケージの
+README.md に分割してある**ので、そちらも合わせて参照すること。ここには
+パッケージ・機能を問わず常に踏まえておくべき情報のみを残す。
 
-## 1. サービス概要
+録画バックエンドの技術的背景（実機検証レポート群）は別リポジトリ
+`touhou-recorder`（PoC）の `reports/latest.md` と `AGENTS.md` に詳しい。
+このリポジトリの各所で `reports/NN` として参照されるのはそちらのレポート番号。
+
+## 1. サービス概要と現状
 
 東方Projectのリプレイファイル（`.rpy`）をアップロードすると、AWS 上で自動録画し、
 動画をダウンロードできる無料サービス。動画に詳しくないファンでも迷わず使えることを
 最優先とし、UI は説明を最小限に、操作を単純にする。想定利用規模は**月間最大1000回**の
-録画。この規模を前提に、コストとオペレーションを最小化する構成を選んでいる。
+録画で、コストとオペレーションの最小化を最優先に設計判断を行っている。
 
-## 2. アーキテクチャ（AWS フルサーバーレス）
+主要機能（アップロード→解析プレビュー→マジックリンク認証→録画→ポーリング→
+DL→完了メール）はすべて実装済みで、現在は初回リリースに向けた準備段階。
+対応タイトルは th06・th07・th08・th11 の4本（`worker/README.md` 参照）。
+
+## 2. アーキテクチャ概観
 
 ```
 [ブラウザ: React/Vite SPA]
@@ -21,113 +29,69 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計・拡�
   ③ メール内リンク（ジョブページ）を開くと POST /jobs/{jobId}/start で録画ジョブ起動
   ④ GET /jobs/{id} をポーリングして進捗表示・DL
         │
-[API Gateway HTTP API] → [Lambda: createUpload / parseReplay / requestMagicLink /
-  startJob / getJob] → [DynamoDB: ジョブ状態・メールレート制限カウンタ]
+[API Gateway HTTP API] → [Lambda ハンドラ群] → [DynamoDB: ジョブ状態・メールレート制限カウンタ]
         │ startJob が Step Functions の実行を開始(StartExecution)
         ▼
-[Step Functions(Standard, 1ジョブ=1実行)]
-   Launch(Lambda, waitForTaskToken, 60分timeout) が EC2 Fleet でワーカーを起動
-   ワーカーの成否は taskToken(SendTaskSuccess/Failure)で通知される。失敗時は
-   HandleFailure(Lambda)が孤児インスタンスをterminateしつつ最大3回までリトライ
+[Step Functions(Standard, 1ジョブ=1実行)] → EC2 Fleet でワーカーを起動、
+   ワーカー自身が taskToken(SendTaskSuccess/Failure)で成否を通知。失敗時は
+   孤児インスタンスをterminateしつつ最大10回までリトライ(`apps/api/src/retryPolicy.ts`)
         ▼
 [EC2 Fleet ワーカー(Spot, Docker: Wine+Xvfb+ffmpeg+Python)]
-   S3から.rpy取得 → 録画(進捗スクリーンショットをS3・DynamoDBへ定期報告) →
-   生動画をS3へチェックポイントUP → 720pアップスケール変換(進捗%報告) →
-   変換後動画をS3へUP → DynamoDB更新 → taskToken通知 → 自動シャットダウン
-   (Spot中断の2分前通知をIMDS経由で監視し、検知次第taskTokenで早期に失敗通知して
-   リトライを早める。リバランス推奨は発効するとは限らない予測的シグナルのため
-   失敗扱いにせずログのみで処理を継続する)
+   S3から.rpy取得 → 録画 → 生動画をS3へチェックポイントUP →
+   720pアップスケール変換 → 変換後動画をS3へUP → DynamoDB更新 →
+   taskToken通知 → 自動シャットダウン
         ▼
-[S3(出力) → CloudFront(OAC, 無料枠1TB/月)] → ブラウザからDL
+[S3(出力) → CloudFront(OAC)] → ブラウザからDL
         │ ワーカーがDynamoDBのstatusを"done"に更新
         ▼
 [JobsTable DynamoDB Streams] → [Lambda: sendCompletionEmail] → SES で完了メール送信
 ```
 
-### 主要な設計判断（確定済み）
-- **ウェブ基盤は AWS フルサーバーレスに統一**。録画基盤が AWS 固定（EC2/S3/CloudFront）で
-  あるため、Firebase/GCP を混ぜるとクロスクラウドの IAM 連携が増える。単一クラウドに寄せて
-  運用を単純化。
-- **IaC は AWS CDK（TypeScript）**。モノレポの言語を TS に統一。
-  ただし **EC2 インスタンスの起動（EC2 Fleet）は CDK ではなく実行時に AWS SDK で行う**
-  （ベースの Launch Template のみ CDK が作り、ジョブ毎の UserData は実行時に
-  `CreateLaunchTemplateVersion` で上書きする）。PoC で `terraform-provider-aws` が
-  Spot キャパシティ不足時に無限ハングする問題が判明しており（touhou-recorder
-  `reports/16`）、IaC でインスタンスを作らない方針を踏襲。
-- **録画ジョブは Step Functions（Standard）でオーケストレーション**（Issue #11）。
-  1ジョブ=1実行。`Launch` タスク（`waitForTaskToken`、60分タイムアウト）がEC2 Fleetで
-  ワーカーを起動し、ワーカー自身が taskToken 経由で成否を通知する。Spot中断・
-  タイムアウト時は `HandleFailure` タスクが孤児化したインスタンスをterminateしつつ
-  最大3回まで自動リトライする。ワーカーはIMDS経由でSpot中断の2分前通知を監視し、
-  検知次第60分タイムアウトを待たずに早期失敗通知する。EC2 Fleetの
-  `AllocationStrategy` は `price-capacity-optimized`（`apps/api/src/ec2.ts`、
-  Issue #29）とし、その分リバランス推奨（発効するとは限らない予測的シグナル）は
-  比較的発生しやすい。これをそのまま早期失敗の合図にすると完走できたはずの
-  ジョブまで不要にリトライしてしまうため、リバランス推奨は失敗扱いにせずログの
-  みで処理を継続する（実際のSpot中断通知の監視は継続）。
-- **EC2 Fleetはインスタンスタイプを複数指定して分散する**（th06/07/08向けは
-  `c7i.xlarge`・`c7a.xlarge`・`c6a.xlarge`・`c6i.xlarge`・`c7i-flex.xlarge`・
-  `c5a.xlarge`、`apps/api/src/ec2.ts` の `DEFAULT_CANDIDATE_INSTANCE_TYPES`、
-  Issue #29）。単一インスタンスタイプのみだとそのハードウェアプールが時間帯に
-  よって枯渇し `InsufficientInstanceCapacity` でジョブ起動自体が失敗する事例が
-  発生したため、独立したSpotキャパシティプールを持つ複数タイプ（サブネット×
-  タイプの全組み合わせを`CreateFleet`の`Overrides`へ、`SingleInstanceType: false`）
-  に広げてAZ分散よりも大きな耐性を持たせた。インスタンスタイプの変更は録画品質
-  （重複フレーム率）に直結するリスクがあり「同スペック帯・同価格帯だから安全」
-  とは限らない（`z1d.xlarge`は高クロック特化ゆえに悪化した実績がある）ため、
-  上記6タイプは touhou-recorder `reports/27` で th08 の重複フレーム率を実測検証
-  （いずれも1〜4%台の良好な値）した上で選定した。追加候補を投入する際は必ず
-  同様の実機検証を経ること。
-  **th11のみ`.xlarge`帯(4vCPU)では不十分**であることが本番運用で判明した
-  （ステージ後半でゲーム内fps表示が最悪35fps程度まで低下する深刻な処理落ちが
-  発生し、重複フレーム率も悪化。コマ落ちではなくゲームプレイの実時間自体が
-  伸長する現象で、th06/07/08の処理落ちとは性質が異なる）。touhou-recorder
-  `reports/40`の実機検証で原因はCPU世代ではなくvCPU数の不足と特定し、
-  8vCPU/16GiB以上(`.2xlarge`帯)にすると明確に改善する（`c6i.xlarge`の重複
-  フレーム率16.5%→`c6i.2xlarge`4.0%等）ことを確認したため、th11のみ別の
-  候補リスト`TH11_CANDIDATE_INSTANCE_TYPES`（`c6i.2xlarge`・`c6a.2xlarge`・
-  `c7i.2xlarge`・`c7a.2xlarge`）を使う（`getCandidateInstanceTypes()`が
-  `job.game`で分岐）。コスト影響は`.xlarge`比で概ね2倍。なお`c6a.2xlarge`・
-  `c7a.2xlarge`はreports/40では未検証（検証済みは`c6i.2xlarge`・`c7i.2xlarge`
-  のみ）で、他タイプと同様に本番運用の中で注視が必要。
-- **`CreateFleet`が実際に確保したインスタンスタイプ・アベイラビリティゾーンは
-  `JobRecord.instanceType`/`.availabilityZone`としてJobsTableに記録する**
-  （`apps/api/src/ec2.ts`の`launchRecordingInstance()`が`CreateFleet`レスポンスの
-  `result.Instances[0]`からそのまま取得、追加の`DescribeInstances`呼び出しは不要。
-  `apps/api/src/jobs.ts`の`updateJobInstance()`が`sfn/launch.ts`から呼ばれてinstanceIdと
-  併せて書き込む）。上記の通り複数の候補インスタンスタイプ・AZに分散配置しているため、
-  実際にどの組み合わせが割り当てられたかは事後にしか分からず、録画品質（重複フレーム率）
-  の分析や運用調査のために記録している。ユーザー向けAPI（`GetJobResponse`）には含めない
-  内部運用データ。
-- **進捗はポーリング**（WebSocket/SSE は月1000回規模には過剰）。ワーカーが DynamoDB を
-  更新し、`GET /jobs/{id}` が返す。
-- **完了メールは JobsTable の DynamoDB Streams を起点に送信**（Issue #10）。ワーカーが
-  status を "done" に更新した瞬間を Streams で検知し、`sendCompletionEmail` Lambda が
-  SES で送信する。ワーカー（Python）に SES の権限・文面知識を持たせず、ユーザー向け
-  メール通信を API 層（TypeScript）に閉じるための設計（マジックリンク送信と対称）。
-- **配信は必ず CloudFront 経由**（S3 直リンク禁止）。CloudFront 永年無料枠で egress を
-  実質ゼロにできる（PoC 実証済み）。出力 S3 は7日で自動削除。アップロード S3 は
-  `.rpy` のサイズが小さく保管コストが無視できるため自動削除しない。
-- **動画ダウンロードはブラウザ標準のダウンロード機構に任せる**（`response-content-disposition`
-  クエリパラメータ方式）。当初(PR #39)は `<a download>` がクロスオリジンURLで無視され
-  新しいタブで再生されてしまう問題への対処として、フロントエンドで `fetch()` して
-  `Blob` 化してからダウンロードさせていたが、これだと進捗が見えない・ダウンロード中に
-  ページを離れられない・動画全体をメモリに載せるという副作用があった。S3の GetObject API
-  は `response-content-disposition` クエリパラメータの値をそのまま `Content-Disposition`
-  レスポンスヘッダーへエコーバックする仕様を持つため、`apps/api/src/handlers/getJob.ts`
-  の `buildDownloadUrl()` がこのクエリ（ファイル名は `packages/shared/src/download.ts` の
-  `buildDownloadFilename()`/`buildContentDispositionValue()` で組み立て、日本語ファイル名は
-  RFC 5987 `filename*=UTF-8''...` + ASCIIフォールバックの `filename=...` を併記）を含めて
-  `downloadUrl`/`downloadUrl720p` を返す。フロントエンド（`JobProgress.tsx`）は単純な
-  `<a href={...} download>` に戻すだけでよく、CORS許可（`ResponseHeadersPolicy`）も
-  fetch/Blob化も不要になった。CloudFront(`MediaCdn`)側はこのクエリをオリジンへ転送し
-  キャッシュキーにも含める専用の `CachePolicy`（`infra/lib/sattori-stack.ts` の
-  `mediaCachePolicy`）を使う（含めないと720p/オリジナル解像度など異なるファイル名の
-  リクエスト間でdispositionヘッダーのキャッシュが混線する）。
-- **録画ワーカーだけ Python**。PoC の numpy/PIL によるフレーム差分・Wine 制御が実証済みで、
-  TS 再実装はリスクだけ増える。フロント・API・パーサー・IaC は TypeScript 7.0。
+各コンポーネントの詳細は次のREADMEに分割してある。
 
-## 3. モノレポ構成
+| コンポーネント | 詳細 |
+| --- | --- |
+| API契約・ジョブ状態機械・共有型 | [`packages/shared/README.md`](packages/shared/README.md) |
+| リプレイパーサー | [`packages/replay-parser/README.md`](packages/replay-parser/README.md) |
+| Lambda API・EC2起動・課金/レート制限 | [`apps/api/README.md`](apps/api/README.md) |
+| フロントエンド | [`apps/web/README.md`](apps/web/README.md) |
+| 録画ワーカー（Python） | [`worker/README.md`](worker/README.md) |
+| AWS CDK インフラ | [`infra/README.md`](infra/README.md) |
+
+## 3. 常に踏まえておくべき設計判断
+
+これらはどのパッケージで作業する場合でも影響する、確定済みの全体方針。
+
+- **ウェブ基盤は AWS フルサーバーレスに統一**。録画基盤が AWS 固定（EC2/S3/CloudFront）
+  であるため、他クラウドを混ぜるとクロスクラウドの IAM 連携が増える。単一クラウドに
+  寄せて運用を単純化している。
+- **IaC は AWS CDK（TypeScript）だが、EC2 インスタンスの起動（EC2 Fleet）だけは
+  CDK ではなく実行時に AWS SDK で行う**（ベースの Launch Template のみ CDK が作り、
+  ジョブ毎の UserData は実行時に `CreateLaunchTemplateVersion` で上書きする）。PoC で
+  `terraform-provider-aws` が Spot キャパシティ不足時に無限ハングする問題が判明して
+  おり（touhou-recorder `reports/16`）、IaC でインスタンスを直接作らない方針を
+  踏襲している。新しいインフラを足す際もこの分離を崩さないこと。
+- **録画ジョブは Step Functions（Standard）でオーケストレーションする**。1ジョブ=1実行。
+  Spot 中断・タイムアウトからの自動リトライ、孤児インスタンスの後始末を担う
+  （詳細は `apps/api/README.md`・`infra/README.md`）。
+- **進捗はポーリング**（WebSocket/SSE は月1000回規模には過剰という判断）。ワーカーが
+  DynamoDB を更新し、`GET /jobs/{id}` が返す。
+- **配信は必ず CloudFront 経由**（S3 直リンク禁止）。CloudFront 永年無料枠で egress を
+  実質ゼロにできる。
+- **録画ワーカーだけ Python**。PoC の numpy/PIL によるフレーム差分・Wine 制御が
+  実証済みで、TS 再実装はリスクだけ増えるための判断。フロント・API・パーサー・IaC は
+  TypeScript。
+- **jobId 自体が認可の秘密値**（マジックリンクのトークンではなく jobId をそのまま
+  使う設計）。メールを確認しないと分からない値であることを利用してbot/濫用対策と
+  メール認証を兼ねている。
+- **インスタンスタイプ・録画パイプラインの変更は必ず実機検証を経ること**。
+  「同スペック帯・同価格帯だから安全」という推測は繰り返し裏切られている
+  （高クロック特化インスタンスでの重複フレーム率悪化、既存タイトルの命名則・
+  実行ファイル名の慣習を新タイトルへ無検証で流用して発生した不具合など）。
+  変更の妥当性は touhou-recorder のレポートか、このリポジトリでの実機/実データ
+  スモークテストの記録で必ず裏付けること。
+
+## 4. モノレポ構成
 
 pnpm workspaces + Turborepo。ルートに `pnpm-workspace.yaml` / `turbo.json` /
 `tsconfig.base.json`。Node 24 / pnpm 10.33（`.tool-versions` で asdf 管理）。
@@ -135,13 +99,13 @@ pnpm workspaces + Turborepo。ルートに `pnpm-workspace.yaml` / `turbo.json` 
 | パッケージ | 役割 | 主なツール |
 | --- | --- | --- |
 | `packages/shared` | 型定義（ゲーム・リプレイ・ジョブ・API 契約） | tsc, vitest |
-| `packages/replay-parser` | `.rpy` デコーダ（**実装済み**。npm パッケージ名は `@sattori/touhou-replay-parser`。`@sattori/shared` 非依存でOSS公開可能な設計） | tsc, vitest |
-| `apps/api` | Lambda ハンドラ・S3/DynamoDB/EC2 連携 | tsc(--noEmit), vitest |
-| `apps/web` | フロントエンド SPA（`react-router-dom`でクライアントサイドルーティング。`/`＝ページA、`/jobs/{jobId}`＝ページB） | vite, vitest, jsdom |
+| `packages/replay-parser` | `.rpy` デコーダ。npm パッケージ名は `@sattori/touhou-replay-parser`（`@sattori/shared` 非依存でOSS公開可能な設計） | tsc, vitest |
+| `apps/api` | Lambda ハンドラ・S3/DynamoDB/EC2/Step Functions 連携 | tsc(--noEmit), vitest |
+| `apps/web` | フロントエンド SPA（`react-router-dom`） | vite, vitest, jsdom |
 | `worker` | 録画パイプライン（Python） | python, docker |
 | `infra` | AWS CDK スタック | cdk, tsx, vitest |
 
-### TypeScript の約束事
+### TypeScript の約束事（全 TS パッケージ共通）
 - `tsconfig.base.json` は `NodeNext` + `verbatimModuleSyntax` + `strict` +
   `noUncheckedIndexedAccess`。
 - **相対 import は `.js` 拡張子で書く**（emit される JS に合わせる NodeNext 流儀）。
@@ -159,426 +123,22 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 > `esbuild` を exec する**ため、ルート devDependencies に `esbuild` を置いてある。
 > corepack のダウンロードプロンプトが出る場合は `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` を付ける。
 
-## 4. API 契約（`packages/shared/src/api.ts`）
+デプロイ手順は `infra/README.md`、ワーカーイメージ・タイトル資産のビルド/アップロード
+手順は `worker/README.md` を参照。
 
-| メソッド・パス | 用途 |
-| --- | --- |
-| `POST /uploads` | 署名付きアップロードURL発行（キーはサーバー採番、`.rpy`・サイズ検証） |
-| `POST /replays/parse` | アップロード済みリプレイの解析（ページAのプレビュー用、フェーズ2） |
-| `POST /magic-links` | マジックリンクメール送信要求。この時点で `status: "pending"` の
-  `JobRecord` を作成する（Step Functionsはまだ起動しない）。同一メール（`+`エイリアス
-  正規化後）は24時間5件までのレート制限あり（Issue #9） |
-| `POST /jobs/{jobId}/start` | ジョブページ（メールのリンク先）アクセス時の録画起動要求。
-  認可は `jobId` のみで行う（`jobId` 自体がメールを確認しないと分からない秘密値。tokenは
-  廃止）。`pending`→`queued`をDynamoDBの条件付き更新で原子的に遷移させ、Step Functions
-  実行を開始する。同一jobIdへの複数回呼び出しは最初の1回のみ起動し、以降は現在の状態を
-  冪等に返す（Issue #9） |
-| `GET /jobs/{jobId}` | ジョブ状態取得（ポーリング用）。完了時に CloudFront のDL URL、
-  進行中は現在フェーズ内で実際に処理が完了した秒数(`progress`。全体に対する割合では
-  ない)とプレビュー画像URL(`previewImageUrl`)も返す |
+## 5. ジョブ状態機械（横断的に使われる）
 
-ジョブ状態: `pending → queued → launching → recording → converting → done | failed`
-（`packages/shared/src/job.ts`）。`pending` はマジックリンク送信済み・ジョブページへの
-アクセス（録画起動）待ちの状態で、24時間（bot/濫用対策としての期限。アップロード用S3の
-自動削除とは独立）以内に起動されなければ受付期限切れとして扱う（Issue #9）。ワーカーが
-`recording` 以降を
-DynamoDB に書き込む。`converting` は録画完了(生動画チェックポイントアップロード済み)〜
-720p変換〜出力アップロード完了までを指す（旧 `uploading` から改名、Issue #11）。
+`pending → queued → launching → recording → converting → done | failed`
+（`packages/shared/src/job.ts`）。フロントエンド・API・ワーカーの3者が共通で参照する
+ため、状態の意味を変える場合は3パッケージすべての整合を確認すること。詳細は
+`packages/shared/README.md`。
 
-## 5. 録画ワーカー（`worker/`）
+## 6. 今後の展開・既知の制約
 
-- `entrypoint.py`: ジョブの全体制御。DynamoDBの`outputPath`(生動画チェックポイント)
-  が既にあれば「変換から再開」、無ければS3からリプレイDL→録画→生動画をS3へ
-  チェックポイントUP(status=`converting`)→720pアップスケール変換→S3へUP→
-  DynamoDB更新、の順で進む。バックグラウンドで`InterruptionWatcher`
-  （Spot中断の2分前通知をIMDS経由で監視。リバランス推奨は失敗扱いにせずログのみで
-  処理を継続する）と`ProgressReporter`（録画中の進捗スクリーンショット/実際に処理が
-  完了した秒数をS3・DynamoDBへ反映）を動かす。taskToken経由で
-  Step Functionsへ成否を通知する（`SendTaskSuccess`/`SendTaskFailure`）。
-  UserData から `docker run`。
-- `recording_common.py`: th06・th07・th08・th11 共通の録画パイプライン本体(Issue #13で
-  th08対応時に共通化、続けてth06対応・th11対応で拡張)。PoC `scripts/11_...`(th07)・
-  `scripts/23_...`(th08)・`scripts/25_...`(th06/th11、複数タイトル対応版)の刷新版。
-  Xvfb起動・ウィンドウ検出(ウィンドウがXVFB_SCREEN(800x600)の範囲外にはみ出す位置に
-  openboxが配置した場合のみ`xdotool windowmove`で左上(0,0)へ強制移動する。openboxの
-  初期配置によってはウィンドウが範囲外にはみ出すことがあるためで、th11実機検証で
-  発覚(`touhou-recorder reports/35`)。既に範囲内なら`windowmove`自体を呼ばない
-  (2026-07-28にsattori側でth06/07/08向けゲームデータを新しいものへ差し替えた際の
-  実機再検証で追加した条件。理由は次の通り)。
-  装飾のあるウィンドウでは移動後の実座標を再取得しないとタイトルバー分ずれて
-  録画される上、`windowmove`の反映は非同期なため、座標が画面内に収まるまで最大20回
-  再試行する。この対策は当初全ゲーム共通で無条件に適用しており「th06/07/08では
-  実害がなかった」としていたが(`reports/37`)、2026-07-28の実機再検証でth07・th08
-  について実害(タイトルバーがゲーム画面上端に重なり下端が録画されない)が偶発的に
-  再現した。原因はopenboxが装飾込みのウィンドウ枠を画面内に収めようとする再配置と
-  `windowmove`直後の座標再取得が競合するレース条件で、画面内に収まる座標を検出した
-  瞬間がまだ装飾抜きの一時的な値(見かけ上(0,0))であることがあり、それを「安定した」
-  座標として確定してしまうと装飾が録画範囲に戻ってきてしまう。既に範囲内に収まって
-  いるウィンドウは移動自体が不要なため、その場合は`windowmove`を呼ばないことで
-  この競合を回避した(th06/07/08は通常この経路)。実際に移動が必要な場合(th11等)は
-  競合を避けられないため、移動後の座標を0.3秒後に再取得し一致することを確認してから
-  確定するようにした(`worker/recording_common.py`)・
-  録画・**終了検知**(リプレイ選択画面テンプレートとの
-  MAD照合。テンプレート画像`assets/replay_end_templates/{game_id}.png`と160x120
-  ダウンサンプル座標系の上部の帯(タイトル文言+列見出し行、リプレイ内容非依存)を
-  毎回比較し、閾値未満が2回連続(4秒)したら終了と確定。画面静止(MAD差分)だけでは
-  「リプレイ終了時のリプレイ選択画面」と「ステージクリア後の一時的なリザルト画面」を
-  区別できず、後者が静止判定の閾値(16秒)を超えて静止し続けると録画がリプレイ本編の
-  途中で誤停止する不具合がth06実リプレイで発覚したための変更(`touhou-recorder
-  reports/33・34`)。テンプレート未整備・未検出のゲームは従来の画面静止のみ判定に
-  フォールバックする。**th11は終了画面がリプレイ内容依存(直前ゲームプレイ画面の
-  凍結+Pause Menuオーバーレイ)でテンプレート照合に不向きなため、この
-  フォールバックを意図的に常用する**(`reports/36`)。静止判定のMAD計算は
-  `GameConfig.still_detect_exclude_rect`で指定した矩形を除外できる(th11のPause Menu
-  画面で選択中メニュー項目の文字が明滅し続けMADが閾値をわずかに超え続けて自然終了を
-  検知できない事例への対策、`reports/37・38`))に加え、**fps暴走の残存ケース
-  検知**(`mods/common/fps_monitor.cpp`が5秒毎に出力するHzログを閾値100Hz・2回連続
-  超過で異常判定、`touhou-recorder reports/22・23`)・**処理落ちの早期検知**
-  (0.15秒間隔の短時間サンプリングで重複フレーム率70%以上を検知、録画開始5分以内
-  限定、`reports/12・13・22`)・**自動リトライ**(既定3回、`record_th06.py` /
-  `record_th07.py` / `record_th08.py` / `record_th11.py` 共通)・**フックDLLより前に
-  追加DLLを注入する仕組み**(`GameConfig.extra_dlls`、th06のVsyncPatch(`vpatch_th06.dll`)用。
-  `mods/common/injector.cpp`は複数DLLの順次注入に対応済み)を持つ。2秒毎の画面
-  キャプチャのうち5回に1回(約10秒毎)を`--progress-dir`へスクリーンショット
-  (`frame.jpg`)と経過時間(`state.json`)として書き出す（追加のffmpeg呼び出しは
-  発生しない。既存のMAD差分検知用キャプチャを流用）。
-- `record_th06.py` / `record_th07.py` / `record_th08.py` / `record_th11.py`: タイトル
-  固有のパス設定(`GameConfig`)を組み立てて`recording_common.record_with_retry()`を
-  呼ぶだけの薄いラッパー。
-- **任意ファイル名のリプレイを正規スロット名(`th6_ud0000.rpy` / `th7_ud0000.rpy` /
-  `th8_ud0000.rpy` / `th11_ud0000.rpy`)として配置**することで、MOD の「リプレイ一覧の
-  1件目を固定選択」ロジックを改修せずに任意リプレイを再生する。th08の命名則
-  (`th{N}_ud####.rpy`をth07から踏襲)は touhou-recorderの検証レポート(22〜26)では
-  未検証だったため、Issue #13対応時に実ゲームデータ(ver1.00d)で別途実機検証した。
-  **th06の命名則も2026-07-23にローカル実機スモークテストで検証済み**（§10参照）。
-  **th11はリプレイ一覧が「組み込みリプレイ(No.01〜、ファイル名の数字でスロットが
-  決まる)」と「ユーザーリプレイ(ud0000〜、右キーで切り替わる別タブ)」に分かれており、
-  実際のプレイヤー録画リプレイは後者に属する**という他タイトルにない仕様がある
-  (`touhou-recorder reports/35`)。MOD(`th11_replay_autoplay/dllmain.cpp`)はリプレイ
-  一覧に入った後、右キーでユーザーリプレイタブへ切り替えてから1件目を選択する。
-- **th06はwined3dの白画面ハング(既知のvsync/タイミングバグ)を起こすため、
-  ファン製パッチ「VsyncPatch」(`vpatch_th06.dll`)をMOD本体(`th06_hook.dll`)より
-  前に同一プロセスへ注入する必要がある**(`reports/30`)。th06のタイトル画面は
-  最初からアトラクトモードのデモプレイを表示しておりメニュー自体がまだ出ていない
-  ため、MOD(`th06_replay_autoplay/dllmain.cpp`)はDown連打の前にメニュー表示の
-  ためのEnter押下を1回余分に行う(`reports/31`)。
-- **th06は実行ファイル名を元の`東方紅魔郷.exe`のまま使う**(th07/th08のような
-  `th{N}.exe`へのリネームはしない)。VsyncPatchが対象プロセスの実行ファイル名を
-  検証しているらしく、リネームすると白画面ハングが再発することを実機検証で
-  確認した。このため`GameConfig`に`game_exe`/`process_name`の明示オーバーライドを
-  追加した(未指定時は従来通り`f"{game_id}.exe"`を自動導出、th07/th08は無指定の
-  まま)。`process_name`はLinuxの`/proc/PID/comm`が15バイトで切り詰められるため
-  `pgrep -x`/`pkill -x`専用に別途必要(`東方紅魔郷.exe`→`東方紅魔郷`、
-  touhou-recorder reports/31)。
-- **th11(TH10以降のエンジン)はDirectInput GetDeviceStateではなくGetKeyboardStateを
-  実際の入力ポーリングに使う**ため、メニュー自動操作には別のフック方式が必要
-  (`CreateDevice`は呼ばれGetDeviceStateフックのチェーン自体は確立するが、
-  GetDeviceStateが一切呼ばれずFpsMonitorが常に0Hzを示す、`touhou-recorder
-  reports/35`)。`mods/common/dinput_hook.h/.cpp`に`USER32.dll!GetKeyboardState`の
-  IATフック(`InstallKeyboardStateHook`/`PressVKey`)を追加し、
-  `mods/th11_replay_autoplay/dllmain.cpp`がこちらでキー入力を注入する
-  (GetDeviceStateフックと同じ`g_hookCallCount`を共有するため`WaitForHookActive`は
-  変更なしで両方式に対応)。th11のタイトルロゴアニメーション待機は6000ms必要
-  (th08の1500msでは不足し、意図しないメニュー項目に迷い込む誤動作が発生した)。
-- **th11はMS明朝(`msmincho.ttc`)の配置・レジストリ登録も必要**。NPC会話シーン等で
-  「ＭＳ 明朝」というフォント名が要求されるが、実体・レジストリが無いとWineの代替
-  フォント解決チェーンを経由して別の書体(ゴシック体寄り・半角括弧)にフォールバック
-  する(`touhou-recorder reports/38`)。文字輪郭のジャギー(WineのFreeTypeベースAAが
-  実機Windowsより粗い)は原因調査済みだが対策なし(gaspテーブル・lfQuality書き換え・
-  MacType等はいずれも画素値レベルで無効と確認済み)の既知の制約として残る
-  (`reports/39`)。
-- **映像/音声を別プロセスで録画し後でmux**(既定、th06・th07・th08・th11共通)。単一ffmpegで
-  x11grab(映像)とpulse(音声)を同時取り込みすると、内部のA/V同期がth08の描画
-  タイミングを律速し、AWS環境で重複フレーム率が85%超まで悪化することが判明した
-  (`reports/26`)。th07はこの問題の影響を受けないが、安全側に倒して両タイトル
-  共通の実装にした。この副作用として、x11grab(映像)とpulse(音声)は起動から
-  実際にキャプチャを開始するまでの初期化レイテンシが異なり(pulse側が数百ms〜
-  1秒超遅い)、素朴にmuxすると音声が映像より数百ms先行して聴こえる音ズレが生じる
-  (th08実機で約700ms確認、`reports/28`)。両ffmpegに`-copyts`を付与して実際の
-  絶対キャプチャ開始時刻(wallclockベースのepoch秒)を出力ファイルのstart_timeに
-  保持し、`mux_audio_video()`がその差分を実測して遅く始まった側に`-itsoffset`を
-  与えて補正する(ハードコードされた定数ではなく毎回実測、環境差を自動的に吸収)。
-  **ウォーターマークはx11grab録画と同一のffmpegプロセスでは合成しない**(`mux_audio_video()`
-  もこの時点では合成しない)。上記`-copyts`はx11grabの生pts(wallclockベース、実epoch秒)を
-  無加工のまま`overlay`フィルタのfiltergraphに渡してしまうため、ほぼ0起点のウォーターマーク
-  動画(ファイル入力)とフレーム同期が全く噛み合わず、`overlay`の`eof_action=pass`が
-  即座に発動してウォーターマークが一切合成されない不具合が本番のth08録画で発覚した。
-  ウォーターマーク合成は`upscale.py`側(720p変換と同時)で行う。
-- `upscale.py`: th07(640x480)のような低解像度録画をそのまま YouTube にアップロード
-  すると60fpsとして認識されない問題への対応（`touhou-recorder reports/21`）。
-  **録画と同時ではなく録画完了後の別ステップとして**、アスペクト比を保ったまま
-  高さ720px(th07なら960x720)へ変換した版を追加生成し、元動画と併せて2本を
-  出力S3へアップロードする（DynamoDB `outputPath` / `outputPath720p`、API
-  `GetJobResponse.downloadUrl` / `downloadUrl720p`）。同時アップスケールは
-  4vCPU構成(実用下限)で重複フレーム率を2倍以上悪化させるため不採用。
-  ページBの主要ダウンロードボタンは既定で720p版を案内し、元解像度版は副次リンクで提供する。
-  変換の進捗はffmpegの`-progress`出力(`out_time_ms`、実体はマイクロ秒)から算出し、
-  10秒間隔程度でコールバックする。**ウォーターマークもこのステップで合成する**
-  (`mux_audio_video()`側では合成しない、上記参照)。input_pathが`-copyts`を使わない
-  通常の完成済みファイルであるため`overlay`フィルタが正しく機能し、かつどのみち
-  720p変換のために発生する再エンコード1回に相乗りできるため追加の再エンコード
-  コストが生じない。トレードオフとして、720p変換前の元解像度版(副次ダウンロード
-  リンク)にはウォーターマークが合成されない。
-- `interruption_watcher.py` / `progress_reporter.py`: IMDSv2ポーリングによる
-  Spot中断監視、および進捗スクリーンショットのS3アップロードを行うバックグラウンド
-  スレッド（Issue #11、標準ライブラリのみで実装・新規依存なし）。
-- `worker/mods/`: DLL インジェクタ（`common/injector.cpp`。複数DLLを指定順に注入して
-  からメインスレッドを再開する方式に対応しており、th06のVsyncPatch(`vpatch_th06.dll`)
-  とMOD本体(`th06_hook.dll`)の共存に使う。th07/th08/th11はDLL1個のみの従来通りの
-  呼び出しのままで後方互換）、th06/th07/th08/th11 自動再生フック
-  （`th06_replay_autoplay/dllmain.cpp` / `th07_replay_autoplay/dllmain.cpp` /
-  `th08_replay_autoplay/dllmain.cpp` / `th11_replay_autoplay/dllmain.cpp`。th11のみ
-  DirectInput GetDeviceStateではなくGetKeyboardStateフック経由でキー入力を注入する）、
-  fps計測スレッド（`common/fps_monitor.cpp`、th08/th11のfps暴走検知用）の**ソースは
-  この リポジトリで管理**（元は `touhou-recorder` PoC）。C++/MSVC（Windows + VS C++ x86
-  tools）でビルドが必要（ビルド手順は `worker/README.md`。mingw-w64での代替ビルドも
-  検証済み）。
-- ゲーム本体・WINEPREFIX・MOD **ビルド成果物**（`injector.exe`/`th06_hook.dll`/
-  `th07_hook.dll`/`th08_hook.dll`/`th11_hook.dll` 等）・ウォーターマーク素材・終了検知用
-  リプレイ選択画面テンプレート（`assets/replay_end_templates/{th06,th07,th08}.png`。
-  th11は終了画面がリプレイ内容依存でテンプレート照合に不向きなため意図的に用意しない、
-  §5「終了検知」参照）は**リポジトリに含めない**（`.gitignore` 済み）。ビルド/配置は
-  `worker/` 配下へ（`worker/README.md` 参照）。
-
-### PoC 由来の必修ハマりどころ（`touhou-recorder/reports/` 由来）
-- 録画開始は MODログ `WaitForStableWindow: stable` 確認後（早いと重複フレーム多発）。
-- クロップ座標は `xwininfo` の `Absolute upper-left`（`xdotool` はタイトルバー分ズレる）。
-- 日本語表示は MS Gothic 登録 + プロセスを `LANG=ja_JP.UTF-8` で起動。
-- 終了検知は**リプレイ選択画面テンプレートとのMAD照合**（`assets/replay_end_templates/
-  {game_id}.png`、閾値**15.0**未満が2回連続=4秒。テンプレート未整備・未検出の場合の
-  フォールバックのみ、直前フレームとのMADが閾値**2.0**未満で16秒連続という旧来の画面
-  静止判定を使う）。画面静止のみの判定は、ステージクリア後の一時的なリザルト画面
-  停留（霧背景等）とリプレイ終了時のリプレイ選択画面を区別できず、th06実リプレイで
-  録画がリプレイ本編の途中で誤停止する事象が実際に発生したため、テンプレート照合方式
-  へ変更した（`touhou-recorder reports/33・34`）。
-- ウォーターマーク webm のデコードは `-c:v libvpx-vp9` を明示（VP9アルファの罠）。
-- **4 vCPU が実用下限**、インスタンスは `c7i.xlarge` 推奨。高クロック特化(z1d)は逆効果。
-  本番のSpot Fleetでは`c7i.xlarge`に加え`c7a.xlarge`・`c6a.xlarge`・`c6i.xlarge`・
-  `c7i-flex.xlarge`・`c5a.xlarge`も実測検証済みで採用している（`reports/27`、上記§2参照）。
-- `.cfg` はウィンドウモード必須（フルスクリーンだと Xvfb でハング）。
-- 対応タイトルは th06・th07・th08・th11。フェーズ3以降で他タイトルのMOD移植を進める。
-- 720pアップスケールは**幅を1280に固定しない**（`reports/21`）。th07は640x480(4:3)
-  であり、1280x720(16:9)に固定すると横方向だけ引き伸ばされて歪む。入力解像度から
-  `round(w * 720 / h / 2) * 2` で幅を算出し、アスペクト比を保つ（th07なら960x720）。
-- **th08はth07と異なり、公式アップデータ ver1.00d 相当のゲームデータが必須**
-  （`reports/23`）。ver1.00a はリプレイ再生中に内部fpsが数百〜数千に暴走する既知
-  不具合があり、成功率が20%まで落ち込む場合がある。ver1.00dで事実上解消する。
-- **単一ffmpegでの映像/音声同時取り込みはth08で重複フレーム率85%超を招く**
-  （`reports/26`）。原因はA/V同期がth08の描画タイミングを律速するためで、CPU数・
-  ポーリング間隔・Dockerコンテナ化は無関係（切り分け済み）。映像・音声を別プロセスで
-  録画し後でmuxする。
-- **映像/音声別プロセス録画は、pulse(音声)側の起動レイテンシがx11grab(映像)より
-  数百ms〜1秒超大きいため、素朴にmuxすると音声が数百ms先行する**（`reports/28`、
-  AWS実機で約700ms確認）。両ffmpegに`-copyts`を付与しwallclockベースのepoch秒を
-  start_timeとして保持、mux時に差分を実測して遅く始まった側に`-itsoffset`で
-  補正する（`worker/recording_common.py`の`mux_audio_video()`）。
-- **コンテナ内ではzombieプロセスに注意**（`reports/24`）。PID 1（entrypoint.py）が
-  initのように孤児プロセスをreapしないため、`pkill`されたゲームプロセスがzombieの
-  まま残り、次のリトライ試行で`pgrep`がzombieのPIDを誤って掴んでウィンドウ検出が
-  永遠に失敗する。zombie（状態`Z`）を除外してPIDを取得すること。
-- **th06はwined3dの白画面ハングを起こす既知のvsync/タイミングバグを持つ**
-  （`reports/30`）。ファン製パッチ「VsyncPatch」(`vpatch_th06.dll`)をMOD本体より前に
-  同一プロセスへ注入することで解消する（`GameConfig.extra_dlls`、`injector.exe`は
-  複数DLLの順次注入に対応済み）。Direct3Dレジストリの特殊設定（`OffscreenRenderingMode`
-  等）は不要と確認済み。
-- **th06のタイトル画面は最初からアトラクトモードのデモプレイを表示しており、
-  th07/th08と異なりメニュー自体がまだ出ていない**（`reports/31`）。MODはDown連打の
-  前にメニュー表示のためのEnter押下を1回余分に行う。
-- **th06の実行ファイルをth07/th08のように`th{N}.exe`へリネームしてはいけない**
-  （2026-07-23、sattori側での実機検証で判明。touhou-recorderのreports/30〜32では
-  未検証だった）。VsyncPatch(`vpatch_th06.dll`)が対象プロセスの実行ファイル名を
-  検証しているらしく、`th06.exe`へリネームすると`WaitForStableWindow`が`stable`に
-  到達せずCPU使用率100%で張り付く白画面ハングが再発する（元の`東方紅魔郷.exe`の
-  ままなら約3.5秒で正常に安定）。Linuxの`/proc/PID/comm`は15バイトで切り詰められる
-  ため、`pgrep -x`/`pkill -x`には別途拡張子なしの`process_name`（`東方紅魔郷`）が
-  必要（`GameConfig.game_exe`/`process_name`、touhou-recorder reports/31）。
-
-## 6. インフラ（`infra/`, CDK）
-
-`SattoriStack` 一つに集約（フェーズ1）:
-- S3: アップロード用（自動削除なし。`.rpy` はサイズが小さく保管コストが無視できるため）・
-  出力用（7日、動画に加え進捗スクリーンショットも `progress/{jobId}/*.jpg` として置く）・
-  Web ホスティング用
-- CloudFront: 動画配信用・Web 用（いずれも OAC 非公開）
-- DynamoDB: `JobsTable`（`jobId` パーティションキー。DynamoDB Streams
-  （`NEW_AND_OLD_IMAGES`）を有効化し、完了メール送信のトリガーに使う。Issue #10）、
-  `EmailRateLimitTable`（`normalizedEmail` パーティションキーのみ・1メール1item。
-  マジックリンク送信のレート制限カウンタを条件付き`UpdateItem`で原子的に判定・記録
-  する。Issue #9）。いずれもオンデマンド課金
-- SES: `EmailIdentity`（送信元ドメインのDKIM検証。マジックリンク・完了メール送信用、
-  Issue #9・#10）
-- ECR: `sattori-worker`
-- VPC: NAT なし公開サブネット×2AZ（ワーカーは外向き通信のみ）+ SG（egress のみ）
-- EC2 Launch Template: ワーカー起動の基点（AMI/インスタンスタイプ/IAM/SG固定）。
-  ジョブ固有の UserData は実行時に `CreateLaunchTemplateVersion` で上書きする
-- Step Functions: `RecordingStateMachine`（Standard）。`Launch`
-  （`waitForTaskToken`、60分タイムアウト）→ 失敗時 `HandleFailure` →
-  リトライ(最大3回)/`Fail` の状態遷移（Issue #11）
-- IAM: ワーカーロール（ECR pull / S3 / DynamoDB / `states:SendTask*`）+
-  インスタンスプロファイル、Launch Lambda ロール（EC2 Fleet起動 + `iam:PassRole`）、
-  HandleFailure Lambda ロール（`ec2:TerminateInstances`）、
-  StartJob Lambda ロール（`states:StartExecution`）、RequestMagicLink Lambda ロール
-  （`JobsTable`/`EmailRateLimitTable`書き込み + `ses:SendEmail`。サンドボックス中は
-  送信先IDも権限チェック対象になるため、Resourceはアカウント配下のSES identity全体
-  `identity/*` に絞っている）、SendCompletionEmail Lambda ロール（`JobsTable`
-  Streams読み取り + `ses:SendEmail`、同様に`identity/*`に絞っている。Issue #10）
-- Lambda(NodejsFunction ESM) × 8（createUpload/parseReplay/requestMagicLink/startJob/
-  getJob/sendCompletionEmail/sfn.launch/sfn.handleFailure）+ HTTP API + ルーティング。
-  `sendCompletionEmail` のみ HTTP API ではなく `JobsTable` の DynamoDB Streams
-  （`eventName: MODIFY`・`NewImage.status: "done"` にフィルタ）をイベントソースとする
-- ワーカー AMI は SSM の ECS 最適化 AL2023（Docker 同梱）を参照
-
-デプロイ手順の要点:
-1. `pnpm build`（web の dist を作ると CDK が `BucketDeployment` で配信）
-2. `cdk bootstrap`（初回）→ `cdk deploy`
-3. ワーカーイメージを ECR へ push（`docker build worker/` → `docker push`）
-4. web の `VITE_API_BASE` に HTTP API の URL を設定して再ビルド・再デプロイ
-
-## 7. ユーザーフロー（製品全体像 / フェーズ2で実装）
-
-フェーズ1は「アップロード→即録画→DL」の最小フローのみ。製品版は以下:
-1. **ページA**: `.rpy` 選択 → 自動アップロード＆解析 → ゲーム名/キャラ/スコア/クリア可否を
-   プレビュー。メール入力＋解析成功で「次のステップ」活性化。詳細設定でウォーターマーク
-   ON/OFF（既定 ON）。
-2. ボタン押下で `POST /magic-links` を呼び、SES から**マジックリンク**送信（実装済み、
-   Issue #9）。この時点で `status: "pending"` のジョブを作成するがStep Functionsは
-   まだ起動しない。tokenは使わず、`jobId` 自体を「メールを確認しないと分からない秘密値」
-   として認可に使う設計（フェーズ2実装当初のtoken方式から変更）。これがメール認証と
-   bot/濫用対策（コスト管理）を兼ねる。同一メールのレート制限あり。24時間以内に
-   起動されなければ受付期限切れとして拒否する。
-3. **ページB**（`/jobs/{jobId}`、リンク先。実装済み）: アクセスで
-   `POST /jobs/{jobId}/start` を呼び録画を起動（`pending`→`queued`をDynamoDBの
-   条件付き更新で原子的に遷移）、進捗ポーリング、完了で DL ボタン表示 ＋完了メール
-   送信（Issue #10。ワーカーがstatusを"done"に更新した瞬間をJobsTableのDynamoDB
-   Streamsで検知し`sendCompletionEmail` Lambdaが送る）。起動は最初の1回のみで、
-   以降の同一リンクへの再アクセスは冪等に現在の状態を返す（単回使用ではない）。
-   リンク＝ジョブの永続ビューとして何度でも戻れる。失敗時はエラー内容と
-   「最初からやり直す」導線を表示する。フロントエンドは`react-router-dom`で
-   `/`（ページA）と`/jobs/{jobId}`（ページB）をルーティングする。
-
-## 8. リプレイパーサー（`packages/replay-parser`, 実装済み）
-
-`raviddog/threplay` の `ReplayDecoder.cs` を参考に独自にTypeScriptへ書き起こした
-（詳細は `packages/replay-parser/README.md`）。**`@sattori/shared` を含む他の
-ワークスペースパッケージに一切依存しない**（単体でOSS公開できることを意識した設計）。
-Sattori向けの `ReplayInfo` への変換は `packages/shared/src/replay.ts` の
-`fromParsedReplay()` が担う（依存の向きは shared → replay-parser の一方向）。
-
-- **npm パッケージ名は `@sattori/touhou-replay-parser`**（ディレクトリ名
-  `packages/replay-parser` とは異なる）。単体OSS公開を前提としているため、
-  モノレポ内の他パッケージのような `@sattori/<ディレクトリ名>` 命名には揃えていない。
-- **コード内コメント・README・テストの記述（`describe`/`it` 文言等）は英語で書く**
-  （このパッケージのみの規約。モノレポの他パッケージは日本語で構わない）。
-  ただし以下は対象外・例外:
-  - `REPLAY_GAME_TITLES`（`src/game-ids.ts`）や `ParsedReplay.gameTitle` など、
-    ライブラリが実際に返す値（公開APIの出力データ）は原作準拠の日本語表記のまま。
-    ゴールデンテストの `test-fixtures/**/*.expected.json` にも同じ値が書き込まれている。
-  - Shift_JISデコードの検証用リテラル（例: `byte-reader.test.ts` の `"あい"`）等、
-    テスト対象のデータそのものである日本語文字列。
-  - 東方タイトルの日本語名に言及するコメントは、日本語名を残したまま
-    英語略称を併記する（例: `th07 (東方妖々夢, PCB)`）。
-
-- ゲーム判定: 先頭4バイトのマジック（`T6RP`/`T7RP`/`T8RP`/… `t10r`…）。
-  th13(神霊廟)とth14(輝針城)は同一マジック`t13r`をヘッダ内バージョンバイトで判別。
-- 旧世代(TH06–09/095/125/128/143/165): offset 12 の USER セクションポインタから
-  名前/日付/キャラ/難易度/ステージ/スコアを抽出（一部はLZSS展開したステージ内訳も持つ）。
-- 新世代(TH10–18): 36バイトヘッダ除去 → `decode()` 2パス（ブロックXOR）→ LZSS系
-  `decompress()`（13bit辞書/4bit長）で展開後に抽出。
-- **対応タイトルと検証状況は `packages/replay-parser/README.md` の一覧を参照**。
-  th06/07/08/09/095/10/11/12/125/128/13/14/143/15/16/17/18/20 は実リプレイ
-  （`packages/replay-parser/test-fixtures/**` にチェックイン済みの作者本人プレイ分、
-  または Silent Selene から取得した検証用サンプル）で検証済み。th165のみテストデータ
-  未入手のため upstream 移植のみ（未検証）。
-  th20(錦上京)はUSERセクション（名前/日付/キャラ/難易度/ステージ/スコア）のみ対応
-  （ステージ内訳は未解析フォーマットのため非対応）。th19(獣王園)はリプレイ保存機能
-  自体が存在しないため対象外。
-- 残機・ボム(`splits[].lives`/`.bombs`)は文字列ではなく欠片数にも対応した構造化型
-  `ReplayResourceCount`、UFOの色やトランス等のゲーム固有付加情報(`splits[].additional`)も
-  文字列ではなく実プロパティを持つオブジェクトとして返す（`packages/replay-parser/README.md`
-  参照）。
-- 不正/破損/非対応ファイルは例外を投げず `ReplayParseResult`（判別可能なエラー種別）
-  を返す。
-- ゴールデンテストは `packages/replay-parser/src/golden.test.ts`。`test-fixtures/**`
-  にチェックイン済みの実リプレイ（著作権上問題のない作者本人プレイ分のみ）を動的に
-  列挙し、`splits` を含む全プロパティをゴールデンJSON(`*.expected.json`)と完全一致
-  比較する。リポジトリのクローンのみで完結し、外部リポジトリへの依存はない。
-- ライセンス注記: 移植元(threplay/threp)にOSSライセンスの明記がないため、
-  `packages/replay-parser/README.md`「クレジット」節にその経緯を記載した上で
-  MITとして公開している。
-
-### 版数非互換（旧 #16、解消済み）
-録画用 th07 バイナリのバージョンアップにより、以前は再生できなかった版の
-リプレイも認識できるようになった。そのため replay-parser・shared のいずれにも
-「録画可能バージョンかどうか」を判定するロジックは持たせていない
-（`ParsedReplay.formatVersion` はヘッダの生バイトとしてのみ公開）。
-
-## 9. フェーズ計画（GitHub Project の kanban で管理）
-
-- **フェーズ1（実装済み）**: モノレポ雛形 / shared 型 / web 最小UI / api（署名URL・ジョブ起動・
-  状態取得）/ worker（th07 録画・S3・DynamoDB）/ CDK 一式。認証・解析・複雑なキューは含まない。
-- **フェーズ2**: replay-parser（**実装済み**。§8参照。th06〜th20の大半に対応済み）、
-  ページAのプレビュー（**実装済み**）、SES + マジック
-  リンク認証（**実装済み**。§4・§6・§7参照、Issue #9）、ページB（**実装済み**。
-  `/jobs/{jobId}`での起動・進捗ポーリング・DL・完了メール送信・失敗時の再試行導線
-  すべて実装済み、Issue #10）、Step Functions 化（Spot 中断
-  リトライ・タイムアウト・taskToken 完了通知、実装済み・Issue #11）、ウォーターマークUI
-  の貫通（実装済み）。
-- **フェーズ3**: th08 録画対応（**実装済み**。§5参照、Issue #13。ver1.00d相当の
-  ゲームデータ・fps暴走/処理落ちの検知とリトライ・映像音声分離録画をth07と共通の
-  パイプラインとして実装）。続けてth06 録画対応（**実装済み**。§5参照。
-  wined3d白画面ハングをファン製VsyncPatch(`vpatch_th06.dll`)併用の複数DLL注入で
-  回避し、th07/th08と共通のパイプラインに組み込んだ。touhou-recorderでの検証
-  (reports/30〜32)ではローカル・Docker・AWS実機いずれも重複フレーム率0.1%程度と
-  良好）。続けてth11 録画対応（**実装済み**。§5参照。TH10以降のエンジンに合わせた
-  GetKeyboardStateフック・ユーザーリプレイタブへの切替シーケンス・画面静止検知のみ
-  での終了判定・Pause Menu明滅カーソル除外マスクをth06/07/08と共通のパイプラインに
-  組み込んだ。touhou-recorderでの検証(reports/35〜39)では重複フレーム率0.3〜9.4%
-  (AWS実機、Lunaticステージ約32分で6.3%)と良好。文字輪郭のジャギーは原因調査済み・
-  対策なしの既知の制約として残る)。
-- **フェーズ3以降(継続)**: 対応タイトル拡大(th09/th10/th12以降…、MOD 移植と録画
-  ワーカー拡張を並行。パーサー側は既に多タイトル対応済みのため主にMOD移植が残作業)、
-  レート制限・濫用対策強化、コスト監視、同時実行スケーリング検証。
-
-## 10. 未解決・要検討
-- Spot 中断時のリトライ／レジュームは Step Functions（Issue #11）で対応済み
-  （録画完了後・変換前のチェックポイントにより「変換から」再開可能。録画フェーズ
-  自体の途中再開は対象外で、中断時はそのフェーズを最初からやり直す）。
-- 録画がリプレイと一致しているかの自動デシンク検知は PoC でも未実装（目視のみ）。
-- 複数 EC2 同時起動の負荷検証は未実施（1インスタンス=1ジョブ分離で問題ないと推測）。
-- th06・th07・th08・th11 以外のタイトルは MOD 移植（録画対応）が未着手
-  （リプレイパーサー自体は th06〜th20 の大半に対応済み、§8参照）。
-- th11の画面静止検知のみでの終了判定は、Pause Menu明滅カーソル以外の要因による
-  誤検知(長時間静止するステージ間演出等)のリスクを本質的には排除できていない
-  （th06(§10・reports/33)と同様の注意が必要。今後の運用の中で注意深く見ていく
-  必要がある、touhou-recorder reports/36・37）。
-- **th11の「ゲームプレイ自体の実時間伸長」型の処理落ちを、既存の自動品質検知
-  （fps暴走・stutter判定）は検出できない**（未解決、touhou-recorder reports/40）。
-  本番で発生した`c6i.xlarge`での劣化録画(重複フレーム率16.5%・総再生時間が
-  本来尺より約15%伸長)も、`scripts/25`の試行分類ロジックでは「正常な録画」と
-  判定され自動リトライは発生しなかった。EC2インスタンスタイプを`.2xlarge`帯へ
-  変更（上記§2参照）したことで発生頻度は大きく下がる見込みだが、リプレイの
-  物理フレーム数と壁時計時間の比較等による恒久的な検知ロジックの追加は
-  今後の課題として残っている。
-- th08の「任意ファイル名リプレイ→正規スロット名」命名則(`th8_ud0000.rpy`)は
-  Issue #13対応時にtouhou-recorderの実ゲームデータ(ver1.00d)で実機検証済みだが、
-  本番のS3タイトル資産アーカイブ(実際にアップロードするth08データ)そのものでの
-  検証はまだ済んでいない。本番投入前に実リプレイでのスモークテストを推奨する。
-- **th06の「任意ファイル名リプレイ→正規スロット名」命名則(`th6_ud0000.rpy`)は
-  2026-07-23にローカル実機スモークテストで検証済み**。`worker/games/th06`の
-  `replay/`に任意ファイル名のリプレイ(`test-fixtures/th06/th6_02.rpy`)を
-  `th6_ud0000.rpy`として配置し、`record_th06.py`をそのまま実行したところ、
-  MODが「1件目のリプレイ」として正しく選択・再生し、60fps安定・重複フレームなし
-  でゲームプレイ画面(スコア進行・ReimuA・日本語表示すべて正常)を確認できた。
-- **th06のゲーム本体実行ファイルは元の`東方紅魔郷.exe`のまま使う(th07/th08のような
-  `th{N}.exe`へのリネームはしない)**。当初th07/th08のGameConfig慣習に合わせて
-  `th06.exe`へリネームしていたが、2026-07-23の実機検証でVsyncPatch(`vpatch_th06.dll`)
-  が対象プロセスの実行ファイル名を検証しているらしいことが判明し、リネームすると
-  `WaitForStableWindow`が`stable`に到達せずCPU使用率100%で張り付く白画面ハングが
-  再発することを確認した(`東方紅魔郷.exe`のままだと約3.5秒で正常に安定)。このため
-  `GameConfig.game_exe`/`process_name`に明示的なオーバーライドの仕組みを追加し
-  (`worker/recording_common.py`)、th06は`game_exe="東方紅魔郷.exe"`・
-  `process_name="東方紅魔郷"`(Linuxの`/proc/PID/comm`が15バイトで切り詰められる
-  ため、`pgrep -x`/`pkill -x`用に拡張子なしの別名が必要、touhou-recorder
-  reports/31)を指定する(§5参照)。本番用th06ゲームデータ・WINEPREFIX
-  (`prefixes/th06-wined3d-gl`、`worker/setup_wineprefix.sh`で新規作成)の
-  S3タイトル資産アップロードは2026-07-23に完了済み（手順は`CLAUDE.local.md`参照）。
+- 対応タイトル拡大（th09/th10/th12以降…）: リプレイパーサー自体は th06〜th20 の
+  大半に対応済みだが、録画対応（Wine上でのMOD移植・実機検証）が主な残作業
+  （`worker/README.md` 参照）。
+- 複数 EC2 同時起動時の負荷検証は未実施（1インスタンス=1ジョブ分離のため問題ない
+  と推測しているが、実運用規模拡大時は要注意）。
+- 録画がリプレイと一致しているかの自動デシンク検知は未実装（目視のみ）。
+- レート制限・濫用対策の強化、コスト監視は継続課題。
