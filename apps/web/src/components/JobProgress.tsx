@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
 import { useJobPolling } from "../hooks/useJobPolling.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
@@ -41,6 +42,8 @@ export function JobProgress({ jobId }: Props) {
 /**
  * ジョブ状態表示の純粋表示部分（ポーリングを持たない）。
  * `dev/JobProgressPlayground.tsx` から実データ無しで各状態を確認するために分離。
+ * レイアウトは Claude Design 案「JobProgress 再設計案 1c」準拠
+ * （リプレイ情報カード + アクティビティログの2カラム構成）。全体の進捗は未実装のため省略。
  */
 export function JobProgressView({ job, loadError }: ViewProps) {
   // 初回ロード中（jobが未取得）はステータス別の表示を仮定せず、中立的な読み込み中表示に留める。
@@ -58,79 +61,102 @@ export function JobProgressView({ job, loadError }: ViewProps) {
   const meta = STATUS_META[status];
   const failed = status === "failed";
   const done = status === "done";
+  const progress = job.progress;
+  const showProgress = typeof progress === "number" && !done && !failed;
+  const estimatedDurationSeconds = job.replayInfo?.estimatedDurationSeconds ?? null;
 
   return (
     <section className={styles.card}>
       <h1 className={styles.heading}>{meta.label}</h1>
+      {loadError && <p className={styles.hint}>{loadError}</p>}
 
-      <ol className={styles.steps} aria-label="録画の進捗">
-        {STEPS.map((name, index) => {
-          const state =
-            failed && index === meta.step
-              ? "failed"
-              : index < meta.step
-                ? "done"
-                : index === meta.step
-                  ? "active"
-                  : "todo";
-          return (
-            <li key={name} className={styles.step} data-state={state}>
-              <span className={styles.dot} />
-              <span className={styles.stepLabel}>{name}</span>
-            </li>
-          );
-        })}
-      </ol>
+      <div className={clsx(styles.grid, !job.replayInfo && styles.gridSingle)}>
+        {job.replayInfo && (
+          <div className={styles.replayCard}>
+            <ReplayPreview status="ready" info={job.replayInfo} />
+          </div>
+        )}
 
-      {job.replayInfo && <ReplayPreview status="ready" info={job.replayInfo} />}
+        <div className={styles.logCard}>
+          <ol className={styles.logList} aria-label="録画の進捗">
+            {STEPS.map((name, index) => {
+              const state =
+                failed && index === meta.step
+                  ? "failed"
+                  : index < meta.step
+                    ? "done"
+                    : index === meta.step
+                      ? "active"
+                      : "todo";
+              const showDetail = showProgress && index === meta.step && typeof progress === "number";
 
-      {!done && !failed && job.previewImageUrl && (
-        <img className={styles.previewImage} src={job.previewImageUrl} alt="録画中のプレビュー" />
-      )}
+              return (
+                <li key={name} className={styles.logItem} data-state={state}>
+                  <span className={styles.logDot} />
+                  <div className={styles.logContent}>
+                    <p className={styles.logName}>{name}</p>
+                    {showDetail && typeof progress === "number" && (
+                      <div className={styles.logDetail}>
+                        {job.previewImageUrl && (
+                          <img
+                            className={styles.logThumbnail}
+                            src={job.previewImageUrl}
+                            alt="録画中のプレビュー"
+                          />
+                        )}
+                        <div className={styles.logProgressWrap}>
+                          {estimatedDurationSeconds === null ? (
+                            <p className={styles.logProgressText}>{formatSeconds(progress)} 経過</p>
+                          ) : (
+                            <>
+                              <div className={styles.logProgressBar}>
+                                <div
+                                  className={styles.logProgressFill}
+                                  style={{
+                                    width: `${Math.min(100, Math.max(0, (progress / estimatedDurationSeconds) * 100))}%`,
+                                  }}
+                                />
+                              </div>
+                              <p className={styles.logProgressText}>
+                                {formatSeconds(progress)} / {formatSeconds(estimatedDurationSeconds)}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
 
-      {!done && !failed && typeof job.progress === "number" && (
-        <div>
-          {typeof job.replayInfo?.estimatedDurationSeconds === "number" && (
-            <div className={styles.progressBar}>
-              <div
-                className={styles.progressBarFill}
-                style={{
-                  width: `${Math.min(100, Math.max(0, (job.progress / job.replayInfo.estimatedDurationSeconds) * 100))}%`,
-                }}
-              />
+          {failed && (
+            <p className={styles.error}>
+              {job.error ?? "録画中に問題が発生しました。もう一度お試しください。"}
+            </p>
+          )}
+
+          {done && (job.downloadUrl720p ?? job.downloadUrl) && (
+            <div className={styles.doneActions}>
+              <a
+                className={styles.download}
+                href={job.downloadUrl720p ?? job.downloadUrl ?? undefined}
+                download
+              >
+                動画をダウンロード
+              </a>
+              {job.downloadUrl720p && job.downloadUrl && (
+                <a className={styles.secondaryDownload} href={job.downloadUrl} download>
+                  元の解像度でダウンロード
+                </a>
+              )}
             </div>
           )}
-          <p className={styles.progressText}>
-            {typeof job.replayInfo?.estimatedDurationSeconds === "number"
-              ? `${formatSeconds(job.progress)} / ${formatSeconds(job.replayInfo.estimatedDurationSeconds)}`
-              : `${formatSeconds(job.progress)} 経過`}
-          </p>
         </div>
-      )}
+      </div>
 
       {!done && !failed && <p className={styles.hint}>このページは自動で更新されます。</p>}
-      {loadError && <p className={styles.hint}>{loadError}</p>}
-      {failed && (
-        <p className={styles.error}>
-          {job.error ?? "録画中に問題が発生しました。もう一度お試しください。"}
-        </p>
-      )}
-
-      {done && (job.downloadUrl720p ?? job.downloadUrl) && (
-        <a
-          className={styles.download}
-          href={job.downloadUrl720p ?? job.downloadUrl ?? undefined}
-          download
-        >
-          動画をダウンロード
-        </a>
-      )}
-
-      {done && job.downloadUrl720p && job.downloadUrl && (
-        <a className={styles.secondaryDownload} href={job.downloadUrl} download>
-          元の解像度でダウンロード
-        </a>
-      )}
     </section>
   );
 }
