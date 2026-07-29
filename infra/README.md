@@ -11,7 +11,13 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。`SattoriStack`
   （`titles/{game}/assets.tar.gz`、Issue #22。`worker/README.md`参照）、
   Webホスティング用バケット。
 - **CloudFront**: 動画配信用（`MediaCdn`、OAC非公開）・Web配信用（`WebCdn`、
-  カスタムドメイン+ACM証明書、SPA用に403/404を`index.html`へフォールバック）。
+  カスタムドメイン+ACM証明書）。SPAのフォールバックはCloudFront Function
+  （`WebRouting`、ビューワーリクエスト）で行い、拡張子の無いパスを`/en`配下なら
+  `/en/index.html`、それ以外は`/index.html`へ書き換える。**errorResponsesによる
+  一律フォールバックにはしないこと**: 全パスが日本語版HTMLに落ちてしまい、
+  `/en/...`を共有した際のOGP・`<title>`・`<html lang>`を英語に出し分けられなくなる
+  （クローラーはJSを実行しないため、React側の書き換えではunfurlに反映されない。
+  `apps/web/README.md`「多言語対応」参照）。
   `MediaCdn`は`response-content-disposition`クエリをオリジンへ転送しキャッシュ
   キーにも含める専用の`CachePolicy`（`mediaCachePolicy`）を使う（含めないと720p/
   オリジナル解像度など異なるファイル名のリクエスト間でdispositionヘッダーの
