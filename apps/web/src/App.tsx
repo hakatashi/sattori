@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useMatch } from "react-router-dom";
 import { HomePage } from "./pages/HomePage.tsx";
 import { JobPage } from "./pages/JobPage.tsx";
+import { AboutPage } from "./pages/AboutPage.tsx";
+import { GameInfoPage } from "./pages/GameInfoPage.tsx";
 import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
 import { JobProgressPlayground } from "./dev/JobProgressPlayground.tsx";
 import { LanguageSwitcher } from "./components/LanguageSwitcher.tsx";
@@ -63,6 +65,10 @@ function Layout({ lang }: LayoutProps) {
         </main>
 
         <footer className={styles.footer}>
+          <nav className={styles.footerNav}>
+            <Link to={toLocalizedPath("/about", lang)}>{t("app.footerNav.about")}</Link>
+            <Link to={toLocalizedPath("/info", lang)}>{t("app.footerNav.gameInfo")}</Link>
+          </nav>
           <small>{t("app.footer")}</small>
         </footer>
 
@@ -92,6 +98,8 @@ export function App() {
         <Route path="/" element={<Layout lang="ja" />}>
           <Route index element={<HomePage />} />
           <Route path="jobs/:jobId" element={<JobPage />} />
+          <Route path="about" element={<AboutPage />} />
+          <Route path="info" element={<GameInfoPage />} />
           {/* 未定義のパスは"/"へ戻す。 */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
@@ -99,6 +107,8 @@ export function App() {
         <Route path="/en" element={<Layout lang="en" />}>
           <Route index element={<HomePage />} />
           <Route path="jobs/:jobId" element={<JobPage />} />
+          <Route path="about" element={<AboutPage />} />
+          <Route path="info" element={<GameInfoPage />} />
           <Route path="*" element={<Navigate to="/en" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

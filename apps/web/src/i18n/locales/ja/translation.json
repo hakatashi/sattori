@@ -9,7 +9,36 @@
       "label": "言語",
       "ja": "日本語",
       "en": "English"
+    },
+    "footerNav": {
+      "about": "このサービスについて",
+      "gameInfo": "対応タイトルの情報"
     }
+  },
+  "about": {
+    "heading": "Sattoriについて",
+    "intro": [
+      "Sattoriは、東方Projectのリプレイファイルをアップロードするだけで、録画動画を自動生成できる無料サービスです。",
+      "東方原作を遊んで、プレイ動画を公開する人がもっと増えてほしい、という思いで制作されました。",
+      "動画ファイルの扱いに詳しくなくても、面倒な処理をせずに気軽にリプレイの録画動画を作成し、各種動画サイトへ簡単にアップロードできるようにすることを目指しています。"
+    ],
+    "disclaimer": "本サービスは、東方Project製作サークルである「上海アリス幻樂団」「上海アリスReprise」「黄昏フロンティア」、および代表のZUN様、その他版権を有する個人ならびに団体とは無関係な、ファンメイドによる非公式サービスです。本サービスに関するお問い合わせを上海アリス幻樂団様に行わないようお願いします。",
+    "authorHeading": "作者について",
+    "authorName": "名前",
+    "authorRace": "種族",
+    "authorRaceValue": "人間",
+    "authorAbility": "能力",
+    "authorAbilityValue": "Lunaticをノーコンクリアする程度の能力",
+    "socialLinksHeading": "ソーシャルリンク",
+    "troubleHeading": "困ったことがあったら",
+    "troubleText1": "上記MastodonにDM、もしくはメールをお送りください。",
+    "troubleText2": "なお、極度の筆不精のため返信がたいへん遅くなる、または無視される可能性が大いにあることをご了承ください。",
+    "noTroubleHeading": "困ったことが無かったら",
+    "noTroubleText": "お楽しみ下さい。"
+  },
+  "gameInfo": {
+    "heading": "対応タイトルの情報",
+    "vpatchApplied": "vpatch rev{{rev}} 適用済み"
   },
   "uploadForm": {
     "supportedTitlesLabel": "現在録画対応中のタイトル ({{count}}作品)",
