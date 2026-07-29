@@ -27,115 +27,134 @@ type Phase = "idle" | "uploading" | "parsing" | "ready" | "starting";
 const gameTitles = [
   {
     japanese: "東方紅魔郷",
-    english: "EoSD",
+    english: "Embodiment of\nScarlet Devil",
+    shortName: "EoSD",
     supported: true,
     icon: 'th06.png',
   },
   {
     japanese: "東方妖々夢",
-    english: "PCB",
+    english: "Perfect Cherry\nBlossom",
+    shortName: "PCB",
     supported: true,
     icon: 'th07.png',
   },
   {
     japanese: "東方永夜抄",
-    english: "IN",
+    english: "Imperishable Night",
+    shortName: "IN",
     supported: true,
     icon: 'th08.png',
   },
   {
     japanese: "東方花映塚",
-    english: "PoFV",
+    english: "Phantasmagoria of\nFlower View",
+    shortName: "PoFV",
     supported: false,
     icon: 'th09.png',
   },
   {
     japanese: "東方文花帖",
-    english: "StB",
+    english: "Shoot the Bullet",
+    shortName: "StB",
     supported: false,
     icon: 'th095.png',
   },
   {
     japanese: "東方風神録",
-    english: "MoF",
+    english: "Mountain of Faith",
+    shortName: "MoF",
     supported: false,
     icon: 'th10.png',
   },
   {
     japanese: "東方地霊殿",
-    english: "SA",
+    english: "Subterranean\nAnimism",
+    shortName: "SA",
     supported: true,
     icon: 'th11.png',
   },
   {
     japanese: "東方星蓮船",
-    english: "UFO",
+    english: "Undefined\nFantastic Object",
+    shortName: "UFO",
     supported: false,
     icon: 'th12.png',
   },
   {
     japanese: "ダブルスポイラー",
-    english: "DS",
+    english: "Double Spoiler",
+    shortName: "DS",
     supported: false,
     icon: 'th125.png',
   },
   {
     japanese: "妖精大戦争",
-    english: "GFW",
+    english: "Fairy Wars",
+    shortName: "GFW",
     supported: false,
     icon: 'th128.png',
   },
   {
     japanese: "東方神霊廟",
-    english: "TD",
+    english: "Ten Desires",
+    shortName: "TD",
     supported: false,
     icon: 'th13.png',
   },
   {
     japanese: "東方輝針城",
-    english: "DDC",
+    english: "Double Dealing\nCharacter",
+    shortName: "DDC",
     supported: false,
     icon: 'th14.png',
   },
   {
     japanese: "弾幕アマノジャク",
-    english: "ISC",
+    english: "Impossible\nSpell Card",
+    shortName: "ISC",
     supported: false,
     icon: 'th14.png',
   },
   {
     japanese: "東方紺珠伝",
-    english: "LoLK",
+    english: "Legacy of\nLunatic Kingdom",
+    shortName: "LoLK",
     supported: false,
     icon: 'th15.png',
   },
   {
     japanese: "東方天空璋",
-    english: "HSiFS",
+    english: "Hidden Star in\nFour Seasons",
+    shortName: "HSiFS",
     supported: false,
     icon: 'th16.png',
   },
   {
     japanese: "秘封ナイトメア\nダイアリー",
     english: "Violet Detector",
+    shortName: "VD",
     supported: false,
     icon: 'th165.png',
   },
   {
     japanese: "東方鬼形獣",
-    english: "WBaWC",
+    english: "Wily Beast and\nWeakest Creature",
+    shortName: "WBaWC",
     supported: false,
     icon: 'th17.png',
   },
   {
     japanese: "東方虹龍洞",
-    english: "UM",
+    english: "Unconnected\nMarketeers",
+    shortName: "UM",
     supported: false,
     icon: 'th18.png',
   },
   {
     japanese: "東方錦上京",
     english: "Fossilized Wonders",
+    shortName: "FW",
     supported: false,
     icon: 'th20.png',
   },
@@ -264,11 +283,11 @@ export function UploadForm({ onMagicLinkSent }: Props) {
       </p>
       <ul className={styles.supportedTitles}>
         {gameTitles.map((title) => {
-          const name = isEnglish ? title.english : title.japanese;
+          const fullName = isEnglish ? title.english : title.japanese;
           return (
-            <li key={title.english} className={clsx(styles.supportedTitle, title.supported && styles.supported)}>
-              <img src={`/icons/${title.icon}`} alt={name} className={styles.supportedTitleIcon} />
-              <span className={styles.supportedTitleName}>{name}</span>
+            <li key={title.shortName} className={clsx(styles.supportedTitle, title.supported && styles.supported)}>
+              <img src={`/icons/${title.icon}`} alt={fullName} className={styles.supportedTitleIcon} />
+              <span className={styles.supportedTitleName}>{fullName}</span>
             </li>
           );
         })}
