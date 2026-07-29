@@ -43,6 +43,20 @@
   max-width: 100%;
 }
 
+.logoDark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .logoLight {
+    display: none;
+  }
+
+  .logoDark {
+    display: inline;
+  }
+}
+
 .main {
   width: 100%;
   max-width: 50rem;
