@@ -9,7 +9,8 @@
 - `/jobs/:jobId` = ページB（`JobPage`）: マジックリンクのリンク先。アクセスで自動的に
   録画を起動し、進捗ポーリング・DLボタン表示まで担う。`jobId`のみで認可する
   （メールを確認しないと分からない秘密値。URLに他の認可情報は含まない）。
-- 未定義パスは`/`へリダイレクト。
+- 上記2ルートは`/en`配下（`/en`・`/en/jobs/:jobId`）にも同型で存在する（英語版、
+  詳細は下記「多言語対応」）。未定義パスはそれぞれ`/`・`/en`へリダイレクト。
 - 共通レイアウト（ヘッダー・フッター）は`Layout`。ページBはページAより広い画面幅
   （2カラムのリプレイ情報+アクティビティログ）を活かすため、`useMatch`でページBのみ
   最大幅を広げている。
@@ -45,6 +46,31 @@
 `response-content-disposition`クエリ付き）へ単純な`<a href={...} download>`を張るだけ。
 ブラウザ標準のダウンロード機構（進捗表示・タブを離れても継続）を使うため、
 fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
+
+## 多言語対応（i18n、`src/i18n/`）
+
+`i18next` + `react-i18next`。日本語（既定、プレフィックス無し）と英語（`/en`
+プレフィックス）の2言語のみ対応。
+
+- `i18n/i18n.ts`: i18next初期化。翻訳リソースは`i18n/locales/{ja,en}/translation.json`
+  （コンポーネント名でネストしたキー構成）。**言語はブラウザ検出ではなく常にURLパスのみで
+  決まる**（`fallbackLng`はja）。マジックリンクメールのURLはバックエンドが
+  `/jobs/{jobId}`固定で生成する（`apps/api/src/ses.ts`）ため、既定言語(ja)は常に
+  プレフィックス無しで到達できる必要があり、これがブラウザ言語自動リダイレクトを
+  行わない理由。
+- `App.tsx`の`<Routes>`はja用（`/`配下）・en用（`/en`配下）の2つの同型ツリーを持ち、
+  各ツリーの`Layout`が`lang` propを受けて`i18n.changeLanguage()`する。配下のページ・
+  コンポーネントは`i18n/LocaleContext.ts`の`useLocale()`で現在言語を参照できる
+  （言語をまたぐ`navigate()`・`Link`の行き先組み立てに使う）。
+- `i18n/paths.ts`の`toLocalizedPath(pathname, lang)`で、現在のパスを保ったまま
+  他言語の等価パスへ変換する（例: `/jobs/xxx` ⇔ `/en/jobs/xxx`）。ヘッダーの
+  `LanguageSwitcher`（`components/LanguageSwitcher.tsx`、ページ右上に常時表示）や
+  `JobPage`の「最初からやり直す」導線で使用。
+- `GAME_TITLES`（`@sattori/shared`、公式タイトル名+英語副題）自体は言語を問わず共通表示。
+  `UploadForm`の対応タイトル一覧のみ、各タイトルが持つ`japanese`/`english`表記を
+  `i18n.language`で出し分けている。
+- API（Lambda）が返すエラーメッセージ（`SattoriApiError.message`）は日本語固定
+  （バックエンド側は未対応）。フロント側の文言のみが対象。
 
 ## API クライアント（`src/api/client.ts`）
 
