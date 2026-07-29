@@ -2,10 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  padding: 2rem;
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
+  margin-top: 2rem;
 }
 
 .heading {
@@ -32,7 +29,7 @@
   grid-template-columns: 1fr;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 900px) {
   .grid {
     grid-template-columns: 1fr;
   }
@@ -182,13 +179,15 @@
 
 .doneActions {
   display: flex;
-  flex-direction: column;
   gap: 0.6rem;
+  padding-left: 2rem;
+  justify-content: space-between;
+  align-items: flex-end;
 }
 
 .download {
   display: inline-block;
-  padding: 0.85rem 1.5rem;
+  padding: 0.85rem 3rem;
   text-align: center;
   text-decoration: none;
   color: #fff;
@@ -202,9 +201,10 @@
 }
 
 .secondaryDownload {
-  text-align: center;
-  text-decoration: underline;
+  display: inline-block;
+  text-align: right;
   color: var(--text-muted);
+  text-decoration: none;
   font-size: 0.85rem;
 }
 

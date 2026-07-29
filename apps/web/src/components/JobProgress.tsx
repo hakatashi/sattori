@@ -152,7 +152,7 @@ export function JobProgressView({ job, loadError }: ViewProps) {
               </a>
               {job.downloadUrl720p && job.downloadUrl && (
                 <a className={styles.secondaryDownload} href={job.downloadUrl} download>
-                  元の解像度でダウンロード
+                  変換前の動画をダウンロード
                 </a>
               )}
             </div>
