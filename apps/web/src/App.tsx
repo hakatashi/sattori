@@ -44,7 +44,16 @@ function Layout({ lang }: LayoutProps) {
             <p className={styles.tagline}>{t("app.tagline")}</p>
             <p>
               <img className={styles.icon} src="/icon-transparent.png" alt={t("app.logoAlt")} />
-              <img className={styles.logo} src="/logo-black.svg" alt={t("app.wordmarkAlt")} />
+              <img
+                className={clsx(styles.logo, styles.logoLight)}
+                src="/logo-black.svg"
+                alt={t("app.wordmarkAlt")}
+              />
+              <img
+                className={clsx(styles.logo, styles.logoDark)}
+                src="/logo-white.svg"
+                alt={t("app.wordmarkAlt")}
+              />
             </p>
           </Link>
         </header>
