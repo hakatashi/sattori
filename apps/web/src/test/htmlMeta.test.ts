@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -9,13 +10,17 @@ import { describe, expect, it } from "vitest";
  */
 const SITE_ORIGIN = "https://sattori.hakatashi.com";
 
+// テスト環境はjsdomで、グローバルの`URL`はNodeの`fileURLToPath`が受け付けないため、
+// パス解決に`new URL(relative, import.meta.url)`は使えない。
+const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
 function parse(relativePath: string): Document {
-  const html = readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf-8");
+  const html = readFileSync(join(WEB_ROOT, relativePath), "utf-8");
   return new DOMParser().parseFromString(html, "text/html");
 }
 
-const ja = parse("../../index.html");
-const en = parse("../../en/index.html");
+const ja = parse("index.html");
+const en = parse("en/index.html");
 
 /** `<meta>`のキー(name/property)集合。値は言語で変わるのでキーだけを比べる。 */
 function metaKeys(doc: Document): string[] {
@@ -64,10 +69,22 @@ describe("エントリHTMLのメタ情報", () => {
     }
   });
 
-  it("og:imageは絶対URLで、両言語で共通", () => {
-    const image = metaContent(ja, "og:image");
-    expect(image).toMatch(new RegExp(`^${SITE_ORIGIN}/`));
-    expect(metaContent(en, "og:image")).toBe(image);
+  it("og:imageは言語ごとに異なる絶対URLで、実体が`public/`に存在する", () => {
+    // キャッチコピーを画像に焼いているため、OGP画像も言語ごとに別ファイル。
+    const images = [ja, en].map((doc) => metaContent(doc, "og:image"));
+    expect(new Set(images).size).toBe(2);
+    for (const image of images) {
+      expect(image).toMatch(new RegExp(`^${SITE_ORIGIN}/`));
+      const fileName = (image ?? "").slice(`${SITE_ORIGIN}/`.length);
+      expect(existsSync(join(WEB_ROOT, "public", fileName)), `${fileName} が public/ に無い`).toBe(
+        true,
+      );
+    }
+    // 宣言する寸法は両言語共通(1200x630)。
+    for (const doc of [ja, en]) {
+      expect(metaContent(doc, "og:image:width")).toBe("1200");
+      expect(metaContent(doc, "og:image:height")).toBe("630");
+    }
   });
 
   it("hreflangが両言語+x-defaultを相互に指している", () => {
