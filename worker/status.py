@@ -47,10 +47,11 @@ def update_status(job_id, status, *, output_path=None, output_path_720p=None, er
         print(f"[status] JOBS_TABLE 未設定のため更新スキップ: {job_id} -> {status}", flush=True)
         return
     table = _table(table_name)
+    now = _now()
 
     expr = "SET #s = :s, updatedAt = :u"
     names = {"#s": "status"}
-    values = {":s": status, ":u": _now()}
+    values = {":s": status, ":u": now}
     if output_path is not None:
         expr += ", outputPath = :o"
         values[":o"] = output_path
@@ -61,6 +62,11 @@ def update_status(job_id, status, *, output_path=None, output_path_720p=None, er
         expr += ", #e = :e"
         names["#e"] = "error"
         values[":e"] = error
+    if status == "done":
+        # ダウンロード期限表示(ジョブ画面・完了メール)の起点。"done"への遷移は
+        # ジョブの生涯で一度しか起こらないため、無条件にセットしてよい。
+        expr += ", doneAt = :d"
+        values[":d"] = now
 
     table.update_item(
         Key={"jobId": job_id},

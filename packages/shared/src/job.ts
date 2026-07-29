@@ -18,6 +18,14 @@ export const JOB_STATUSES = [
 
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
+/**
+ * 出力動画バケット（`infra/lib/sattori-stack.ts` の `OutputBucket`）のS3ライフサイクル
+ * ルールによる自動削除までの日数。CDK側もこの値を `Duration.days()` に渡して使うため
+ * （インフラの実際の削除日数とAPI/フロントエンドの表示文言が食い違わないようにする）、
+ * 変更する場合はここだけを直せばよい。
+ */
+export const OUTPUT_RETENTION_DAYS = 7;
+
 /** 終端状態かどうか（ポーリング停止判定に使う）。 */
 export function isTerminalStatus(status: JobStatus): boolean {
   return status === "done" || status === "failed";
@@ -66,6 +74,15 @@ export interface JobRecord {
   /** ISO 8601。 */
   createdAt: string;
   updatedAt: string;
+  /**
+   * status が "done" に遷移した時刻（ISO 8601）。ワーカーが status を "done" に
+   * 更新する際に一度だけ設定する（`worker/status.py`）。出力バケットのライフサイクル
+   * ルール（`OUTPUT_RETENTION_DAYS`日で自動削除）の起点はS3オブジェクトの作成日時だが、
+   * それとほぼ同時刻に確定するこの値を「ダウンロード期限 = doneAt + retention」の
+   * 算出に使う（`apps/api/src/handlers/getJob.ts`）。done未到達、またはこのフィールド
+   * 追加より前に完了した旧ジョブでは null。
+   */
+  doneAt: string | null;
   /** マジックリンクの送信先メールアドレス。 */
   email: string | null;
   /**

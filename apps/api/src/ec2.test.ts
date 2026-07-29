@@ -42,6 +42,7 @@ const job: JobRecord = {
   error: null,
   createdAt: "2026-07-17T00:00:00.000Z",
   updatedAt: "2026-07-17T00:00:00.000Z",
+  doneAt: null,
   email: null,
   instanceId: null,
   instanceType: null,

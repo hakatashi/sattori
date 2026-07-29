@@ -38,6 +38,7 @@ describe("sendCompletionEmail", () => {
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "ja",
+      doneAt: null,
     });
 
     const calls = sesMock.commandCalls(SendEmailCommand);
@@ -54,6 +55,7 @@ describe("sendCompletionEmail", () => {
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "en",
+      doneAt: null,
     });
 
     const calls = sesMock.commandCalls(SendEmailCommand);
@@ -61,6 +63,37 @@ describe("sendCompletionEmail", () => {
     expect(calls[0]?.args[0].input.Content?.Simple?.Subject?.Data).not.toMatch(/録画/);
     const body = calls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
     expect(body).toContain("https://sattori.hakatashi.com/en/jobs/job-1");
+  });
+
+  it("doneAtがあれば本文にダウンロード期限(doneAt+7日、UTC表記)を含める", async () => {
+    await sendCompletionEmail({
+      from: "no-reply@sattori.hakatashi.com",
+      to: "user@example.com",
+      webBaseUrl: "https://sattori.hakatashi.com",
+      jobId: "job-1",
+      language: "ja",
+      doneAt: "2026-07-18T00:00:00.000Z",
+    });
+
+    const calls = sesMock.commandCalls(SendEmailCommand);
+    const body = calls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
+    expect(body).toContain("までダウンロードできます");
+    expect(body).toContain("UTC");
+  });
+
+  it("doneAtが無ければ本文にダウンロード期限の案内を含めない", async () => {
+    await sendCompletionEmail({
+      from: "no-reply@sattori.hakatashi.com",
+      to: "user@example.com",
+      webBaseUrl: "https://sattori.hakatashi.com",
+      jobId: "job-1",
+      language: "ja",
+      doneAt: null,
+    });
+
+    const calls = sesMock.commandCalls(SendEmailCommand);
+    const body = calls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
+    expect(body).not.toContain("までダウンロードできます");
   });
 });
 
