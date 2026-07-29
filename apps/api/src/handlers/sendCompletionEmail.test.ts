@@ -43,6 +43,7 @@ function baseJob(overrides: Partial<JobRecord>): JobRecord {
     previewImagePath: null,
     replayInfo: null,
     pendingExpiresAt: null,
+    language: "ja",
     ...overrides,
   };
 }
@@ -90,6 +91,50 @@ describe("sendCompletionEmail (DynamoDB Streams)", () => {
     const calls = sesMock.commandCalls(SendEmailCommand);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.args[0].input.Destination?.ToAddresses).toEqual(["user@example.com"]);
+    const body = calls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
+    expect(body).toContain("https://sattori.hakatashi.com/jobs/job-1");
+  });
+
+  it("languageがenのジョブなら英語の文面・/enリンクで完了メールを送る", async () => {
+    const { handler } = await import("./sendCompletionEmail.js");
+    const event: DynamoDBStreamEvent = {
+      Records: [
+        modifyRecord(
+          baseJob({ status: "converting", language: "en" }),
+          baseJob({ status: "done", outputPath: "out/job-1.mp4", language: "en" }),
+        ),
+      ],
+    };
+
+    await handler(event, {} as never, () => {});
+
+    const calls = sesMock.commandCalls(SendEmailCommand);
+    expect(calls[0]?.args[0].input.Content?.Simple?.Subject?.Data).not.toMatch(/録画/);
+    const body = calls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
+    expect(body).toContain("https://sattori.hakatashi.com/en/jobs/job-1");
+  });
+
+  it("languageが無い旧ジョブレコードはjaにフォールバックする", async () => {
+    const { handler } = await import("./sendCompletionEmail.js");
+    const oldJob = baseJob({ status: "converting" }) as Partial<JobRecord>;
+    const newJob = baseJob({ status: "done", outputPath: "out/job-1.mp4" }) as Partial<JobRecord>;
+    delete oldJob.language;
+    delete newJob.language;
+    const event: DynamoDBStreamEvent = {
+      Records: [
+        {
+          eventName: "MODIFY",
+          dynamodb: {
+            NewImage: toStreamImage(newJob as JobRecord),
+            OldImage: toStreamImage(oldJob as JobRecord),
+          },
+        },
+      ],
+    };
+
+    await handler(event, {} as never, () => {});
+
+    const calls = sesMock.commandCalls(SendEmailCommand);
     const body = calls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
     expect(body).toContain("https://sattori.hakatashi.com/jobs/job-1");
   });

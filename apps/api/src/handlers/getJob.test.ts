@@ -54,6 +54,7 @@ const doneJob: JobRecord = {
   previewImagePath: null,
   replayInfo: REPLAY_INFO,
   pendingExpiresAt: "2099-01-01T00:00:00.000Z",
+  language: "ja",
 };
 
 function makeEvent(jobId: string): APIGatewayProxyEventV2 {
