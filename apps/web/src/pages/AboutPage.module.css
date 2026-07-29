@@ -1,0 +1,36 @@
+.author {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.authorIcon {
+  width: 96px;
+  height: 96px;
+  border-radius: var(--radius);
+}
+
+.authorInfo {
+  margin: 0;
+}
+
+.authorInfo dt {
+  float: left;
+  clear: left;
+  width: 4em;
+  color: var(--text-muted);
+}
+
+.authorInfo dd {
+  margin: 0 0 0.3rem 4em;
+}
+
+.socialLinks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}

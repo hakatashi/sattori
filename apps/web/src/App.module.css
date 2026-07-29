@@ -72,6 +72,23 @@
   text-align: center;
 }
 
+.footerNav {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.footerNav a {
+  color: var(--text-muted);
+}
+
+.footerNav a:not(:first-child) {
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--divider);
+}
+
 .easterEgg {
   position: absolute;
   top: 100%;
