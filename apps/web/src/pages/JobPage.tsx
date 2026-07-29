@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { StartJob } from "../components/StartJob.tsx";
 import { JobProgress } from "../components/JobProgress.tsx";
+import { useLocale } from "../i18n/LocaleContext.ts";
+import { toLocalizedPath } from "../i18n/paths.ts";
 
 /**
  * ページB（`/jobs/{jobId}`, マジックリンクのメールから開く）。
@@ -12,10 +14,11 @@ import { JobProgress } from "../components/JobProgress.tsx";
 export function JobPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
+  const lang = useLocale();
   const [started, setStarted] = useState(false);
 
-  // ページBからページAへ戻る際は"/"へ遷移する。
-  const resetToUpload = () => navigate("/");
+  // ページBからページAへ戻る際は現在の言語のホームへ遷移する。
+  const resetToUpload = () => navigate(toLocalizedPath("/", lang));
 
   if (!jobId) {
     return null;

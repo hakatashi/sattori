@@ -1,0 +1,25 @@
+.switcher {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.option {
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.option:hover {
+  color: var(--text);
+}
+
+.active {
+  color: var(--text);
+  background: var(--panel-border);
+  font-weight: bold;
+}

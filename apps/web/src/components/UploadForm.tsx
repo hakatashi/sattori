@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { DEFAULT_RECORDING_OPTIONS, EMAIL_PATTERN, type ReplayInfo } from "@sattori/shared";
 import {
   createUpload,
@@ -145,6 +146,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export function UploadForm({ onMagicLinkSent }: Props) {
+  const { t, i18n } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
   const [replayKey, setReplayKey] = useState<string | null>(null);
   const [preview, setPreview] = useState<ReplayInfo | null>(null);
@@ -167,7 +169,7 @@ export function UploadForm({ onMagicLinkSent }: Props) {
     }
     if (!selected.name.toLowerCase().endsWith(".rpy")) {
       setFile(null);
-      setErrorMessage("リプレイファイル（.rpy）を選択してください");
+      setErrorMessage(t("uploadForm.invalidFileExtension"));
       return;
     }
     setFile(selected);
@@ -214,7 +216,7 @@ export function UploadForm({ onMagicLinkSent }: Props) {
       setPhase("ready");
     } catch (err) {
       const message =
-        err instanceof SattoriApiError ? err.message : "予期しないエラーが発生しました";
+        err instanceof SattoriApiError ? err.message : t("uploadForm.unexpectedError");
       setErrorMessage(message);
       setFile(null);
       setPhase("idle");
@@ -232,7 +234,7 @@ export function UploadForm({ onMagicLinkSent }: Props) {
       onMagicLinkSent(email);
     } catch (err) {
       const message =
-        err instanceof SattoriApiError ? err.message : "予期しないエラーが発生しました";
+        err instanceof SattoriApiError ? err.message : t("uploadForm.unexpectedError");
       setErrorMessage(message);
       setPhase("ready");
     }
@@ -240,10 +242,10 @@ export function UploadForm({ onMagicLinkSent }: Props) {
 
   function renderPreview() {
     if (phase === "uploading") {
-      return <ReplayPreview status="loading" label="アップロード中…" />;
+      return <ReplayPreview status="loading" label={t("uploadForm.uploading")} />;
     }
     if (phase === "parsing") {
-      return <ReplayPreview status="loading" label="リプレイを解析しています…" />;
+      return <ReplayPreview status="loading" label={t("uploadForm.parsing")} />;
     }
     if (preview) {
       return <ReplayPreview status="ready" info={preview} />;
@@ -251,22 +253,29 @@ export function UploadForm({ onMagicLinkSent }: Props) {
     return <ReplayPreview status="empty" />;
   }
 
+  const isEnglish = i18n.language.startsWith("en");
+
   return (
     <section className={styles.card}>
       <p className={styles.supportedTitlesLabel}>
-        現在録画対応中のタイトル ({gameTitles.filter((t) => t.supported).length}作品)
+        {t("uploadForm.supportedTitlesLabel", {
+          count: gameTitles.filter((title) => title.supported).length,
+        })}
       </p>
       <ul className={styles.supportedTitles}>
-        {gameTitles.map((t) => (
-          <li key={t.english} className={clsx(styles.supportedTitle, t.supported && styles.supported)}>
-            <img src={`/icons/${t.icon}`} alt={t.japanese} className={styles.supportedTitleIcon} />
-            <span className={styles.supportedTitleName}>{t.japanese}</span>
-          </li>
-        ))}
+        {gameTitles.map((title) => {
+          const name = isEnglish ? title.english : title.japanese;
+          return (
+            <li key={title.english} className={clsx(styles.supportedTitle, title.supported && styles.supported)}>
+              <img src={`/icons/${title.icon}`} alt={name} className={styles.supportedTitleIcon} />
+              <span className={styles.supportedTitleName}>{name}</span>
+            </li>
+          );
+        })}
       </ul>
       <p className={styles.stepLabel}>
         <span className={styles.stepNumber}>STEP 1</span>
-        リプレイファイルを選択
+        {t("uploadForm.step1Label")}
       </p>
       <label
         className={styles.dropzone}
@@ -285,10 +294,10 @@ export function UploadForm({ onMagicLinkSent }: Props) {
         />
         <span className={styles.dropzoneLabel}>
           {file ? `${file.name} (${formatFileSize(file.size)})` : <>
-            <span className={styles.emphasisDropzone}>ここをクリック</span>
-            してリプレイファイル (.rpy) をアップロード
+            <span className={styles.emphasisDropzone}>{t("uploadForm.dropzoneClick")}</span>
+            {t("uploadForm.dropzoneRest")}
             <br/>
-            もしくはドラッグ&ドロップ
+            {t("uploadForm.dropzoneOr")}
           </>}
         </span>
       </label>
@@ -297,28 +306,26 @@ export function UploadForm({ onMagicLinkSent }: Props) {
 
       <p className={clsx(styles.stepLabel, styles.stepLabelSecondary)}>
         <span className={styles.stepNumber}>STEP 2</span>
-        内容を確認
+        {t("uploadForm.step2Label")}
       </p>
       {renderPreview()}
 
       <p className={clsx(styles.stepLabel, styles.stepLabelSecondary)}>
         <span className={styles.stepNumber}>STEP 3</span>
-        メールアドレスを入力
+        {t("uploadForm.step3Label")}
       </p>
       <input
         type="email"
         className={styles.emailInput}
-        placeholder="komeiji@example.com"
+        placeholder={t("uploadForm.emailPlaceholder")}
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         disabled={busy}
       />
-      <small className={styles.optionHint}>
-        録画した動画をダウンロードするためのリンクがメールで送信されます。
-      </small>
+      <small className={styles.optionHint}>{t("uploadForm.emailHint")}</small>
 
       <details className={styles.details}>
-        <summary className={styles.summary}>詳細設定</summary>
+        <summary className={styles.summary}>{t("uploadForm.advancedSettings")}</summary>
         <label className={styles.option}>
           <input
             type="checkbox"
@@ -327,10 +334,10 @@ export function UploadForm({ onMagicLinkSent }: Props) {
             disabled={busy}
           />
           <span>
-            ウォーターマークを合成する
+            {t("uploadForm.watermarkOption")}
             <small className={styles.optionHint}>
-              リプレイ本編が始まるまでの数秒間、動画右下に「TouhouSattori」のロゴが表示されます。<br/>
-              リプレイ再生中の画面には表示されません。
+              {t("uploadForm.watermarkHintLine1")}<br/>
+              {t("uploadForm.watermarkHintLine2")}
             </small>
           </span>
         </label>
@@ -342,7 +349,7 @@ export function UploadForm({ onMagicLinkSent }: Props) {
         onClick={handleSubmit}
         disabled={phase !== "ready" || !emailValid}
       >
-        {phase === "starting" ? "少女祈祷中⋯" : "次へ"}
+        {phase === "starting" ? t("uploadForm.submitStarting") : t("uploadForm.submit")}
       </button>
     </section>
   );

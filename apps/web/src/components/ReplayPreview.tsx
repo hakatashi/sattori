@@ -1,4 +1,6 @@
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { GAME_TITLES, type ReplayInfo } from "@sattori/shared";
 import styles from "./ReplayPreview.module.css";
 
@@ -11,24 +13,24 @@ type Props =
   | { status: "ready"; info: ReplayInfo };
 
 /** 秒数を「◯分◯◯秒」形式にする（推定収録時間の表示用）。 */
-export function formatDuration(seconds: number | null): string {
+export function formatDuration(seconds: number | null, t: TFunction): string {
   if (seconds === null) {
-    return "不明";
+    return t("replayPreview.unknown");
   }
   const minutes = Math.floor(seconds / 60);
   const remaining = seconds % 60;
-  return `${minutes}分${remaining.toString().padStart(2, "0")}秒`;
+  return t("replayPreview.durationFormat", { minutes, seconds: remaining.toString().padStart(2, "0") });
 }
 
-function formatScore(score: number | null): string {
-  return score === null ? "不明" : score.toLocaleString("ja-JP");
+function formatScore(score: number | null, t: TFunction, locale: string): string {
+  return score === null ? t("replayPreview.unknown") : score.toLocaleString(locale);
 }
 
-function formatCleared(cleared: boolean | null): string {
+function formatCleared(cleared: boolean | null, t: TFunction): string {
   if (cleared === null) {
-    return "不明";
+    return t("replayPreview.unknown");
   }
-  return cleared ? "クリア" : "未クリア";
+  return cleared ? t("replayPreview.cleared") : t("replayPreview.notCleared");
 }
 
 /**
@@ -36,18 +38,20 @@ function formatCleared(cleared: boolean | null): string {
  * 状態に応じてプレースホルダー／読み込み中スピナー／解析結果を切り替える。
  */
 export function ReplayPreview(props: Props) {
+  const { t, i18n } = useTranslation();
+
   if (props.status === "empty") {
     return (
-      <section className={clsx(styles.preview, styles.placeholder)} aria-label="リプレイ解析結果">
-        <p className={styles.placeholderText}>リプレイファイルを選択すると、ここに内容が表示されます</p>
+      <section className={clsx(styles.preview, styles.placeholder)} aria-label={t("replayPreview.ariaLabel")}>
+        <p className={styles.placeholderText}>{t("replayPreview.emptyPlaceholder")}</p>
       </section>
     );
   }
 
   if (props.status === "loading") {
     return (
-      <section className={clsx(styles.preview, styles.placeholder)} aria-label="リプレイ解析結果">
-        <span className={styles.spinner} role="status" aria-label="読み込み中" />
+      <section className={clsx(styles.preview, styles.placeholder)} aria-label={t("replayPreview.ariaLabel")}>
+        <span className={styles.spinner} role="status" aria-label={t("replayPreview.loadingAriaLabel")} />
         <p className={styles.placeholderText}>{props.label}</p>
       </section>
     );
@@ -55,46 +59,46 @@ export function ReplayPreview(props: Props) {
 
   const { info } = props;
   return (
-    <section className={styles.preview} aria-label="リプレイ解析結果">
+    <section className={styles.preview} aria-label={t("replayPreview.ariaLabel")}>
       <div className={styles.headline}>
         <img className={styles.icon} src={`/icons/${info.game}.png`} alt="" />
         <p className={styles.title}>{GAME_TITLES[info.game]}</p>
         <div className={clsx(styles.difficultyBadge, info.difficulty ? styles[info.difficulty.toLowerCase()] : undefined)}>
-          {info.difficulty ?? "不明"}
+          {info.difficulty ?? t("replayPreview.unknown")}
         </div>
       </div>
       <div className={styles.basicInfo}>
         <div className={styles.character}>
-          {info.character ?? "不明"}
+          {info.character ?? t("replayPreview.unknown")}
         </div>
         <div className={styles.score}>
-          {formatScore(info.score)}
+          {formatScore(info.score, t, i18n.language)}
         </div>
       </div>
       <dl className={styles.details}>
         <div className={styles.row}>
-          <dt>プレイヤー名</dt>
-          <dd>{info.player ?? "不明"}</dd>
+          <dt>{t("replayPreview.player")}</dt>
+          <dd>{info.player ?? t("replayPreview.unknown")}</dd>
         </div>
         {info.stage !== null && (
           <div className={styles.row}>
-            <dt>到達ステージ</dt>
+            <dt>{t("replayPreview.stage")}</dt>
             <dd>{info.stage}</dd>
           </div>
         )}
         <div className={styles.row}>
-          <dt>記録日時</dt>
-          <dd>{info.date ?? "不明"}</dd>
+          <dt>{t("replayPreview.date")}</dt>
+          <dd>{info.date ?? t("replayPreview.unknown")}</dd>
         </div>
         {info.cleared !== null && (
           <div className={styles.row}>
-            <dt>クリア</dt>
-            <dd>{formatCleared(info.cleared)}</dd>
+            <dt>{t("replayPreview.clearedLabel")}</dt>
+            <dd>{formatCleared(info.cleared, t)}</dd>
           </div>
         )}
         <div className={styles.row}>
-          <dt>プレイ時間（目安）</dt>
-          <dd>{formatDuration(info.estimatedDurationSeconds)}</dd>
+          <dt>{t("replayPreview.duration")}</dt>
+          <dd>{formatDuration(info.estimatedDurationSeconds, t)}</dd>
         </div>
       </dl>
     </section>

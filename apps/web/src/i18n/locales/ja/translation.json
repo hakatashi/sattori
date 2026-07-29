@@ -1,0 +1,79 @@
+{
+  "app": {
+    "tagline": "東方リプレイ自動録画サービス",
+    "logoAlt": "Sattori logo",
+    "wordmarkAlt": "TouhouSattori",
+    "footer": "Sattori はファンメイドの非公式サービスです。東方Project © 上海アリス幻樂団",
+    "easterEgg": "「10点満点中、11点のサービスです」――とある館の主",
+    "languageSwitcher": {
+      "label": "言語",
+      "ja": "日本語",
+      "en": "English"
+    }
+  },
+  "uploadForm": {
+    "supportedTitlesLabel": "現在録画対応中のタイトル ({{count}}作品)",
+    "step1Label": "リプレイファイルを選択",
+    "step2Label": "内容を確認",
+    "step3Label": "メールアドレスを入力",
+    "dropzoneClick": "ここをクリック",
+    "dropzoneRest": "してリプレイファイル (.rpy) をアップロード",
+    "dropzoneOr": "もしくはドラッグ&ドロップ",
+    "invalidFileExtension": "リプレイファイル（.rpy）を選択してください",
+    "unexpectedError": "予期しないエラーが発生しました",
+    "uploading": "アップロード中…",
+    "parsing": "リプレイを解析しています…",
+    "emailPlaceholder": "komeiji@example.com",
+    "emailHint": "録画した動画をダウンロードするためのリンクがメールで送信されます。",
+    "advancedSettings": "詳細設定",
+    "watermarkOption": "ウォーターマークを合成する",
+    "watermarkHintLine1": "リプレイ本編が始まるまでの数秒間、動画右下に「TouhouSattori」のロゴが表示されます。",
+    "watermarkHintLine2": "リプレイ再生中の画面には表示されません。",
+    "submitStarting": "少女祈祷中⋯",
+    "submit": "次へ"
+  },
+  "replayPreview": {
+    "ariaLabel": "リプレイ解析結果",
+    "loadingAriaLabel": "読み込み中",
+    "emptyPlaceholder": "リプレイファイルを選択すると、ここに内容が表示されます",
+    "unknown": "不明",
+    "cleared": "クリア",
+    "notCleared": "未クリア",
+    "player": "プレイヤー名",
+    "stage": "到達ステージ",
+    "date": "記録日時",
+    "clearedLabel": "クリア",
+    "duration": "プレイ時間（目安）",
+    "durationFormat": "{{minutes}}分{{seconds}}秒"
+  },
+  "startJob": {
+    "loading": "読み込み中…",
+    "unexpectedError": "予期しないエラーが発生しました",
+    "retry": "最初からやり直す"
+  },
+  "magicLinkSent": {
+    "heading": "メールを確認してください",
+    "sentTo": "<0>{{email}}</0> 宛に、録画を開始するためのリンクを送信しました。",
+    "hint": "メール内のリンクをクリックすると録画が始まります（受付期限は24時間です。リンクは何度でも開けるので、進捗確認やダウンロードにもお使いいただけます）。"
+  },
+  "jobProgress": {
+    "loading": "読み込み中…",
+    "status": {
+      "pending": "録画の準備をしています",
+      "queued": "録画の順番を待っています",
+      "launching": "録画用サーバーを起動しています",
+      "recording": "リプレイを録画しています",
+      "converting": "動画を変換しています",
+      "done": "録画が完了しました",
+      "failed": "録画に失敗しました"
+    },
+    "steps": ["待機", "起動", "録画", "変換", "完了"],
+    "progressAriaLabel": "録画の進捗",
+    "previewAlt": "録画中のプレビュー",
+    "elapsed": "{{time}} 経過",
+    "genericError": "録画中に問題が発生しました。もう一度お試しください。",
+    "download": "動画をダウンロード",
+    "downloadOriginal": "元の解像度でダウンロード",
+    "hint": "このページを閉じても録画・変換処理は中断されません。いつでもこのページに戻って状況を確認できます。"
+  }
+}

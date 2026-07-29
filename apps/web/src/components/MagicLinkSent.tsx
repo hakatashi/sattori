@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from "react-i18next";
 import styles from "./MagicLinkSent.module.css";
 
 interface Props {
@@ -9,15 +10,15 @@ interface Props {
  * メール内のリンクをクリックすると録画が開始する（ページBの作り込みはIssue #10）。
  */
 export function MagicLinkSent({ email }: Props) {
+  const { t } = useTranslation();
+
   return (
     <section className={styles.card}>
-      <h1 className={styles.heading}>メールを確認してください</h1>
+      <h1 className={styles.heading}>{t("magicLinkSent.heading")}</h1>
       <p>
-        <strong>{email}</strong> 宛に、録画を開始するためのリンクを送信しました。
+        <Trans i18nKey="magicLinkSent.sentTo" values={{ email }} components={[<strong key="email" />]} />
       </p>
-      <p className={styles.hint}>
-        メール内のリンクをクリックすると録画が始まります（受付期限は24時間です。リンクは何度でも開けるので、進捗確認やダウンロードにもお使いいただけます）。
-      </p>
+      <p className={styles.hint}>{t("magicLinkSent.hint")}</p>
     </section>
   );
 }
