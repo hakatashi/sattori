@@ -43,6 +43,7 @@ const job: JobRecord = {
   previewImagePath: null,
   replayInfo: null,
   pendingExpiresAt: null,
+  language: "ja",
 };
 
 beforeEach(() => {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { startJob, SattoriApiError } from "../api/client.ts";
 import styles from "./StartJob.module.css";
 
@@ -17,6 +18,7 @@ type State = { phase: "starting" } | { phase: "error"; message: string };
  * 進捗表示へ進む（ページBそのものの作り込みはIssue #10）。
  */
 export function StartJob({ jobId, onStarted, onReset }: Props) {
+  const { t } = useTranslation();
   const [state, setState] = useState<State>({ phase: "starting" });
 
   useEffect(() => {
@@ -32,18 +34,18 @@ export function StartJob({ jobId, onStarted, onReset }: Props) {
           return;
         }
         const message =
-          err instanceof SattoriApiError ? err.message : "予期しないエラーが発生しました";
+          err instanceof SattoriApiError ? err.message : t("startJob.unexpectedError");
         setState({ phase: "error", message });
       });
     return () => {
       cancelled = true;
     };
-  }, [jobId, onStarted]);
+  }, [jobId, onStarted, t]);
 
   if (state.phase === "starting") {
     return (
       <section className={styles.card}>
-        <p>読み込み中…</p>
+        <p>{t("startJob.loading")}</p>
       </section>
     );
   }
@@ -52,7 +54,7 @@ export function StartJob({ jobId, onStarted, onReset }: Props) {
     <section className={styles.card}>
       <p className={styles.error}>{state.message}</p>
       <button type="button" className={styles.reset} onClick={onReset}>
-        最初からやり直す
+        {t("startJob.retry")}
       </button>
     </section>
   );

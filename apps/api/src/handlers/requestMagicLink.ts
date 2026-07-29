@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import {
+  DEFAULT_LANGUAGE,
   EMAIL_PATTERN,
   isSupportedGame,
+  isSupportedLanguage,
   type GameId,
   type JobRecord,
   type RequestMagicLinkRequest,
@@ -53,6 +55,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     );
   }
 
+  const language = isSupportedLanguage(body.language) ? body.language : DEFAULT_LANGUAGE;
+
   const now = new Date();
   const jobId = randomUUID();
   const job: JobRecord = {
@@ -75,6 +79,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     previewImagePath: null,
     replayInfo: body.replayInfo ?? null,
     pendingExpiresAt: new Date(now.getTime() + PENDING_JOB_TTL_MS).toISOString(),
+    language,
   };
 
   try {
@@ -97,6 +102,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       to: job.email as string,
       webBaseUrl: config.webBaseUrl,
       jobId: job.jobId,
+      language: job.language,
     });
   } catch (err) {
     console.error(

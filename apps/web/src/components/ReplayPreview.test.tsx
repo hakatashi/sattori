@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { ReplayInfo } from "@sattori/shared";
+import i18n from "../i18n/i18n.ts";
 import { formatDuration, ReplayPreview } from "./ReplayPreview.tsx";
+
+const t = i18n.t.bind(i18n);
 
 const SAMPLE_REPLAY_INFO: ReplayInfo = {
   game: "th07",
@@ -41,12 +44,12 @@ describe("ReplayPreview", () => {
 
 describe("formatDuration", () => {
   it("秒数を「◯分◯◯秒」に変換する", () => {
-    expect(formatDuration(847)).toBe("14分07秒");
-    expect(formatDuration(60)).toBe("1分00秒");
-    expect(formatDuration(5)).toBe("0分05秒");
+    expect(formatDuration(847, t)).toBe("14分07秒");
+    expect(formatDuration(60, t)).toBe("1分00秒");
+    expect(formatDuration(5, t)).toBe("0分05秒");
   });
 
   it("null は「不明」を返す", () => {
-    expect(formatDuration(null)).toBe("不明");
+    expect(formatDuration(null, t)).toBe("不明");
   });
 });

@@ -1,0 +1,79 @@
+{
+  "app": {
+    "tagline": "Automatic Touhou Replay Recording Service",
+    "logoAlt": "Sattori logo",
+    "wordmarkAlt": "TouhouSattori",
+    "footer": "Sattori is an unofficial, fan-made service. Touhou Project © Team Shanghai Alice",
+    "easterEgg": "“Out of a possible ten points, this service rates an eleven.” — the mistress of a certain palace",
+    "languageSwitcher": {
+      "label": "Language",
+      "ja": "日本語",
+      "en": "English"
+    }
+  },
+  "uploadForm": {
+    "supportedTitlesLabel": "Currently supported titles ({{count}})",
+    "step1Label": "Select a replay file",
+    "step2Label": "Check the details",
+    "step3Label": "Enter your email address",
+    "dropzoneClick": "Click here",
+    "dropzoneRest": "to upload a replay file (.rpy)",
+    "dropzoneOr": "or drag and drop it",
+    "invalidFileExtension": "Please select a replay file (.rpy)",
+    "unexpectedError": "An unexpected error occurred",
+    "uploading": "Uploading…",
+    "parsing": "Analyzing the replay…",
+    "emailPlaceholder": "komeiji@example.com",
+    "emailHint": "A link to download the recorded video will be sent to this email address.",
+    "advancedSettings": "Advanced settings",
+    "watermarkOption": "Add a watermark",
+    "watermarkHintLine1": "For a few seconds before the replay itself starts, the \"TouhouSattori\" logo is shown in the bottom-right corner of the video.",
+    "watermarkHintLine2": "It is not shown while the replay is playing.",
+    "submitStarting": "Praying⋯",
+    "submit": "Next"
+  },
+  "replayPreview": {
+    "ariaLabel": "Replay analysis result",
+    "loadingAriaLabel": "Loading",
+    "emptyPlaceholder": "Select a replay file to see its details here",
+    "unknown": "Unknown",
+    "cleared": "Cleared",
+    "notCleared": "Not cleared",
+    "player": "Player name",
+    "stage": "Stage reached",
+    "date": "Recorded on",
+    "clearedLabel": "Cleared",
+    "duration": "Estimated duration",
+    "durationFormat": "{{minutes}}m {{seconds}}s"
+  },
+  "startJob": {
+    "loading": "Loading…",
+    "unexpectedError": "An unexpected error occurred",
+    "retry": "Start over"
+  },
+  "magicLinkSent": {
+    "heading": "Please check your email",
+    "sentTo": "We've sent a link to start the recording to <0>{{email}}</0>.",
+    "hint": "Click the link in the email to start recording (it's valid for 24 hours). You can open it as many times as you like to check progress or download the video."
+  },
+  "jobProgress": {
+    "loading": "Loading…",
+    "status": {
+      "pending": "Preparing to record",
+      "queued": "Waiting in the recording queue",
+      "launching": "Starting the recording server",
+      "recording": "Recording the replay",
+      "converting": "Converting the video",
+      "done": "Recording complete",
+      "failed": "Recording failed"
+    },
+    "steps": ["Waiting", "Starting", "Recording", "Converting", "Done"],
+    "progressAriaLabel": "Recording progress",
+    "previewAlt": "Preview while recording",
+    "elapsed": "{{time}} elapsed",
+    "genericError": "A problem occurred while recording. Please try again.",
+    "download": "Download video",
+    "downloadOriginal": "Download video before conversion",
+    "hint": "Recording and conversion continue even if you close this page. You can come back to this page at any time to check the status."
+  }
+}
