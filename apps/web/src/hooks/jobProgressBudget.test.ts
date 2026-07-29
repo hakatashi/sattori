@@ -6,24 +6,29 @@ import {
   FALLBACK_ESTIMATED_DURATION_SECONDS,
   isPhaseOverrun,
   LAUNCHING_BUDGET_SECONDS,
+  MIN_CONVERTING_RATE,
   OVERALL_PROGRESS_CAP_PERCENT,
   PHASE_OVERRUN_FACTOR,
 } from "./jobProgressBudget.ts";
 
 describe("computePhaseBudgets", () => {
-  it("estimatedDurationSecondsが分かっていればrecording/convertingをその値で見積もる", () => {
-    const budgets = computePhaseBudgets(800);
+  it("estimatedDurationSecondsが分かっていればrecordingはその値、convertingはMIN_CONVERTING_RATE分の1(recordingの1/3の長さ)で見積もる", () => {
+    const budgets = computePhaseBudgets(900);
     expect(budgets.launching).toBe(LAUNCHING_BUDGET_SECONDS);
-    expect(budgets.recording).toBe(800);
-    expect(budgets.converting).toBe(800);
-    expect(budgets.total).toBe(LAUNCHING_BUDGET_SECONDS + 1600);
+    expect(budgets.recording).toBe(900);
+    expect(budgets.converting).toBe(300);
+    expect(budgets.total).toBe(LAUNCHING_BUDGET_SECONDS + 900 + 300);
   });
 
   it("estimatedDurationSecondsがnullならフォールバック値を使う", () => {
     const budgets = computePhaseBudgets(null);
     expect(budgets.recording).toBe(FALLBACK_ESTIMATED_DURATION_SECONDS);
-    expect(budgets.converting).toBe(FALLBACK_ESTIMATED_DURATION_SECONDS);
-    expect(budgets.total).toBe(LAUNCHING_BUDGET_SECONDS + FALLBACK_ESTIMATED_DURATION_SECONDS * 2);
+    expect(budgets.converting).toBe(FALLBACK_ESTIMATED_DURATION_SECONDS / MIN_CONVERTING_RATE);
+    expect(budgets.total).toBe(
+      LAUNCHING_BUDGET_SECONDS +
+        FALLBACK_ESTIMATED_DURATION_SECONDS +
+        FALLBACK_ESTIMATED_DURATION_SECONDS / MIN_CONVERTING_RATE,
+    );
   });
 });
 
