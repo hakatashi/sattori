@@ -523,6 +523,35 @@ export class SattoriStack extends Stack {
       validation: acm.CertificateValidation.fromDns(),
     });
 
+    // SPAのフォールバックを言語別に振り分けるビューワーリクエスト関数。
+    // 以前は errorResponses(403/404 -> /index.html)でフォールバックしていたが、それだと
+    // `/en/jobs/xxx` にも日本語版HTMLが配られてしまい、OGP・title・`<html lang>` を
+    // 言語ごとに出し分けられない(クローラーはJSを実行しないため、React側の書き換えでは
+    // unfurlに反映されない)。フロントは `dist/index.html`(ja) と `dist/en/index.html`(en)
+    // の2枚を吐くので(`apps/web/vite.config.ts`)、拡張子の無いパスを言語別のHTMLへ
+    // 書き換える。拡張子つき(= 実ファイル)はそのままオリジンへ通すため、存在しない
+    // アセットが 200 + HTML で返る従来の挙動も解消される。
+    const webRoutingFunction = new cloudfront.Function(this, "WebRouting", {
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+      comment: "SPA fallback with /en locale prefix",
+      code: cloudfront.FunctionCode.fromInline(`
+function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+  // 末尾セグメントに拡張子があれば実ファイル要求(jobIdはUUIDなのでドットを含まない)。
+  if (uri.slice(uri.lastIndexOf('/') + 1).indexOf('.') !== -1) {
+    return request;
+  }
+  if (uri === '/en' || uri.indexOf('/en/') === 0) {
+    request.uri = '/en/index.html';
+  } else {
+    request.uri = '/index.html';
+  }
+  return request;
+}
+`),
+    });
+
     const webDistribution = new cloudfront.Distribution(this, "WebCdn", {
       defaultRootObject: "index.html",
       domainNames: [webDomainName],
@@ -530,12 +559,13 @@ export class SattoriStack extends Stack {
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(webBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        functionAssociations: [
+          {
+            function: webRoutingFunction,
+            eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+          },
+        ],
       },
-      // SPA: 未知パスは index.html にフォールバック。
-      errorResponses: [
-        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: "/index.html" },
-        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: "/index.html" },
-      ],
       comment: "Sattori Web",
     });
 

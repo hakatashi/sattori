@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+  英語版のエントリHTML。日本語版(既定言語)は `../index.html` にあり、両者は
+  「言語依存のメタ情報だけが異なる同じSPA」である（片方にタグを足したらもう片方にも
+  足すこと。`src/test/htmlMeta.test.ts` がタグ集合の一致を検証している）。
+
+  `/src/main.tsx` は同じエントリを読み込む（言語はURLの"/en"プレフィックスから
+  `App.tsx` のルーティングで決まるため、HTML側で切り替える必要はない）。
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TouhouSattori - Automatic Touhou Replay Recording</title>
+    <meta
+      name="description"
+      content="A free service that turns your Touhou Project replay file into a gameplay video. Just upload the replay and the video is recorded for you automatically."
+    />
+
+    <link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/" />
+    <link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en" />
+    <link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/" />
+
+    <!-- OGP。ジョブページ(/en/jobs/{jobId})にも同じHTMLを配るため、ジョブ固有の情報は
+         絶対に含めないこと（jobId自体が認可の秘密値であり、URLを貼った先の
+         unfurl botがこのHTMLを取得しに来る）。 -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="TouhouSattori" />
+    <meta property="og:url" content="https://sattori.hakatashi.com/en" />
+    <meta property="og:title" content="TouhouSattori - Automatic Touhou Replay Recording" />
+    <meta
+      property="og:description"
+      content="A free service that turns your Touhou Project replay file into a gameplay video. Just upload the replay and the video is recorded for you automatically."
+    />
+    <!-- og:imageは絶対URL必須。実体は `public/og-image.png`(1200x630)に配置する。 -->
+    <meta property="og:image" content="https://sattori.hakatashi.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="TouhouSattori - Automatic Touhou Replay Recording" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="ja_JP" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
