@@ -30,8 +30,9 @@ export interface OverallProgress {
   retrySuspected: boolean;
 }
 
-interface LaunchingStartSample {
+interface PhaseStartSample {
   jobId: string;
+  status: JobStatus;
   startAtMs: number;
 }
 
@@ -47,26 +48,30 @@ interface RetrySuspectedSample {
 
 function computeElapsedSeconds(params: {
   status: JobStatus;
-  launchingElapsedSeconds: number;
+  phaseElapsedSeconds: number;
   phaseProgressSeconds: number | null;
   budgets: PhaseBudgets;
 }): number {
-  const { status, launchingElapsedSeconds, phaseProgressSeconds, budgets } = params;
+  const { status, phaseElapsedSeconds, phaseProgressSeconds, budgets } = params;
   switch (status) {
     case "pending":
     case "queued":
       return 0;
     case "launching":
-      return Math.min(launchingElapsedSeconds, budgets.launching);
+      return Math.min(phaseElapsedSeconds, budgets.launching);
     case "recording":
       return budgets.launching + Math.min(phaseProgressSeconds ?? 0, budgets.recording);
     case "converting":
-    case "failed":
-      return (
-        budgets.launching +
-        budgets.recording +
-        Math.min(phaseProgressSeconds ?? 0, budgets.converting)
-      );
+    case "failed": {
+      // phaseProgressSecondsはconvertingでは「変換済みコンテンツ秒数(0〜budgets.recording)」
+      // であり、悲観バジェット(budgets.converting = budgets.recording/MIN_CONVERTING_RATE、
+      // wall-clock換算で圧縮された値)とは単位が異なる。そのままminで比較すると、実際の変換が
+      // まだ半分も終わっていない段階でbudgets.convertingに達してしまい、全体%が早期に頭打ちに
+      // なる。実際の変換進捗率(content秒数ベース)をbudgets.convertingの持ち分に按分することで、
+      // 変換の実進捗に応じて全体%が伸びるようにする。
+      const ratio = Math.min(1, (phaseProgressSeconds ?? 0) / budgets.recording);
+      return budgets.launching + budgets.recording + ratio * budgets.converting;
+    }
     case "done":
       return budgets.total;
   }
@@ -94,14 +99,15 @@ function budgetForStatus(status: JobStatus, budgets: PhaseBudgets): number | nul
  *   A. 同一ジョブ内でSTATUS_STEPが後退した(例: recording→launching。Step Functionsの
  *      リトライはDynamoDBのstatusを巻き戻さずクラッシュ時点のまま残すため、3分の待機を
  *      経て突然前のフェーズに戻ったように見える)。
- *   B. 現フェーズの経過時間が悲観バジェットを大幅(PHASE_OVERRUN_FACTOR倍)に超過した。
+ *   B. 現フェーズに入ってからの実経過時間(wall-clock、job.updatedAtがフェーズ遷移時点を示す
+ *      ことを利用して計測)が、そのフェーズの悲観バジェットをPHASE_OVERRUN_FACTOR倍超過した。
  */
 export function useOverallProgress(
   job: GetJobResponse | null,
   phaseProgressSeconds: number | null,
 ): OverallProgress {
   const [now, setNow] = useState(() => Date.now());
-  const launchingStartRef = useRef<LaunchingStartSample | null>(null);
+  const phaseStartRef = useRef<PhaseStartSample | null>(null);
   const prevStatusRef = useRef<{ jobId: string; status: JobStatus } | null>(null);
   const maxStepRef = useRef<MaxStepSample | null>(null);
   const retrySuspectedRef = useRef<RetrySuspectedSample | null>(null);
@@ -113,18 +119,19 @@ export function useOverallProgress(
 
     const prev = prevStatusRef.current;
     const isNewJob = !prev || prev.jobId !== job.jobId;
-    const enteredLaunching = isNewJob
-      ? job.status === "launching"
-      : prev.status !== "launching" && job.status === "launching";
+    const enteredNewPhase = isNewJob || prev.status !== job.status;
 
     if (isNewJob) {
       maxStepRef.current = { jobId: job.jobId, maxStep: STATUS_STEP[job.status] };
       retrySuspectedRef.current = { jobId: job.jobId, suspected: false };
-      launchingStartRef.current = null;
     }
 
-    if (enteredLaunching) {
-      launchingStartRef.current = { jobId: job.jobId, startAtMs: Date.parse(job.updatedAt) };
+    if (enteredNewPhase) {
+      phaseStartRef.current = {
+        jobId: job.jobId,
+        status: job.status,
+        startAtMs: Date.parse(job.updatedAt),
+      };
     }
 
     if (!isNewJob && job.status !== "failed") {
@@ -139,9 +146,18 @@ export function useOverallProgress(
     }
 
     prevStatusRef.current = { jobId: job.jobId, status: job.status };
+
+    // retrySuspectedRef/phaseStartRefはrefのミューテーションのため、それ自体は再レンダーを
+    // 起こさない。ここで明示的に状態を更新し、このeffect内での判定結果が同じコミット内で
+    // 即座に描画へ反映されるようにする(activeの値がフェーズ遷移前後で変化しない場合、後段の
+    // ティック用effectだけには頼れないため)。
+    setNow(Date.now());
   }, [job?.jobId, job?.status, job?.updatedAt]);
 
-  const active = job !== null && job.status === "launching";
+  // done/failed(終端状態)以外は、フェーズ開始からの実経過時間を追跡し続ける必要があるため
+  // 常にティックさせる(launchingはprogressシグナルが無くこれが唯一の情報源、
+  // recording/convertingはリトライ疑い判定Bの計測にも使うため)。
+  const active = job !== null && job.status !== "done" && job.status !== "failed";
 
   useEffect(() => {
     if (!active) {
@@ -157,15 +173,15 @@ export function useOverallProgress(
   }
 
   const budgets = computePhaseBudgets(job.replayInfo?.estimatedDurationSeconds ?? null);
-  const launchingStart = launchingStartRef.current;
-  const launchingElapsedSeconds =
-    launchingStart && launchingStart.jobId === job.jobId
-      ? Math.max(0, (now - launchingStart.startAtMs) / 1000)
+  const phaseStart = phaseStartRef.current;
+  const phaseElapsedSeconds =
+    phaseStart && phaseStart.jobId === job.jobId && phaseStart.status === job.status
+      ? Math.max(0, (now - phaseStart.startAtMs) / 1000)
       : 0;
 
   const elapsedSeconds = computeElapsedSeconds({
     status: job.status,
-    launchingElapsedSeconds,
+    phaseElapsedSeconds,
     phaseProgressSeconds,
     budgets,
   });
@@ -175,10 +191,7 @@ export function useOverallProgress(
 
   const stickyRetrySuspected =
     retrySuspectedRef.current?.jobId === job.jobId && retrySuspectedRef.current.suspected;
-  const overrunRetrySuspected = isPhaseOverrun(
-    budgetForStatus(job.status, budgets),
-    job.status === "launching" ? launchingElapsedSeconds : (phaseProgressSeconds ?? 0),
-  );
+  const overrunRetrySuspected = isPhaseOverrun(budgetForStatus(job.status, budgets), phaseElapsedSeconds);
   const retrySuspected = stickyRetrySuspected || overrunRetrySuspected;
 
   // estimatedDurationSecondsが不明なジョブはFALLBACK_ESTIMATED_DURATION_SECONDSという

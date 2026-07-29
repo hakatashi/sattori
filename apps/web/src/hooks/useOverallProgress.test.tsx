@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { GetJobResponse, ReplayInfo } from "@sattori/shared";
 import { useOverallProgress } from "./useOverallProgress.ts";
-import { computePhaseBudgets, LAUNCHING_BUDGET_SECONDS } from "./jobProgressBudget.ts";
+import { computePhaseBudgets, LAUNCHING_BUDGET_SECONDS, OVERALL_PROGRESS_CAP_PERCENT } from "./jobProgressBudget.ts";
 
 afterEach(() => {
   cleanup();
@@ -124,6 +124,36 @@ describe("useOverallProgress", () => {
     // ポーリング結果としてjobオブジェクト自体は変わらないまま経過時間だけが伸びるケース
     rerender(<Probe job={job} phaseProgressSeconds={null} />);
     expect(screen.getByTestId("retry").textContent).toBe("true");
+  });
+
+  it("converting中は実際の変換進捗率に応じて全体percentが伸びる(悲観バジェットで早期に頭打ちにならない)", () => {
+    const totalBudget = computePhaseBudgets(REPLAY_INFO.estimatedDurationSeconds).total;
+    // 800秒中400秒(50%)変換済み。悲観バジェット換算(800/3≈266.67秒)に按分されるため、
+    // 99%キャップより明確に低い値になるはず(旧実装ではphaseProgressSecondsをそのまま
+    // budgets.convertingとminしていたため、この時点で早くも100%相当になり99%キャップに
+    // 張り付いていた)。
+    const job = buildJob({ status: "converting", progress: 400, updatedAt: new Date().toISOString() });
+    render(<Probe job={job} phaseProgressSeconds={400} />);
+    const value = Number(screen.getByTestId("percent").textContent);
+    const expected = ((LAUNCHING_BUDGET_SECONDS + 800 + 0.5 * (800 / 3)) / totalBudget) * 100;
+    expect(value).toBeCloseTo(expected, 0);
+    expect(value).toBeLessThan(OVERALL_PROGRESS_CAP_PERCENT);
+  });
+
+  it("converting完了間際では全体percentが99%キャップに達する", () => {
+    const job = buildJob({ status: "converting", progress: 799, updatedAt: new Date().toISOString() });
+    render(<Probe job={job} phaseProgressSeconds={799} />);
+    const value = Number(screen.getByTestId("percent").textContent);
+    expect(value).toBeCloseTo(OVERALL_PROGRESS_CAP_PERCENT, 0);
+  });
+
+  it("converting中に実進捗が進んでいるだけではretrySuspectedにならない(進捗値とwall-clock経過時間の単位混同の回帰防止)", () => {
+    // 変換済み700/800秒(87.5%)は、旧実装のバジェット比較(悲観バジェット266.67秒の1.5倍=400秒)
+    // では超過扱いになってしまっていたが、convertingフェーズに入ってからの実経過時間はまだ
+    // ごくわずかなので、誤ってリトライ疑いにならないことを確認する。
+    const job = buildJob({ status: "converting", progress: 700, updatedAt: new Date().toISOString() });
+    render(<Probe job={job} phaseProgressSeconds={700} />);
+    expect(screen.getByTestId("retry").textContent).toBe("false");
   });
 
   it("failedはSTATUS_STEP後退検知の対象から除外される", () => {
