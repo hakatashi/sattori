@@ -3,7 +3,7 @@
     "tagline": "Automatic Touhou Replay Recording Service",
     "logoAlt": "TouhouSattori logo",
     "wordmarkAlt": "TouhouSattori",
-    "footer": "TouhouSattori is an unofficial, fan-made service. Touhou Project © Team Shanghai Alice",
+    "footer": "TouhouSattori is an unofficial, fan-made service.",
     "easterEgg": "“Out of a possible ten points, this service rates an eleven.” — the mistress of a certain palace",
     "languageSwitcher": {
       "label": "Language",
@@ -32,7 +32,6 @@
     "socialLinksHeading": "Social links",
     "troubleHeading": "If you run into trouble",
     "troubleText1": "Please send a DM on the Mastodon account above, or an email.",
-    "troubleText2": "Please note that, due to being extremely bad at replying, responses may take a very long time, or may not come at all.",
     "noTroubleHeading": "If you don't run into any trouble",
     "noTroubleText": "Enjoy!"
   },
