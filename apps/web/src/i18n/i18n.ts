@@ -1,11 +1,12 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
+import { DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, type SupportedLanguage } from "@sattori/shared";
 import ja from "./locales/ja/translation.json" with { type: "json" };
 import en from "./locales/en/translation.json" with { type: "json" };
 
-export const SUPPORTED_LANGUAGES = ["ja", "en"] as const;
-export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
-export const DEFAULT_LANGUAGE: SupportedLanguage = "ja";
+// 言語の定義（対応言語一覧・既定言語）は apps/api とも共有するため
+// `@sattori/shared` を単一のソースとする（`RequestMagicLinkRequest.language`）。
+export { DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, type SupportedLanguage };
 
 /**
  * 言語はブラウザ検出ではなく常にURLパス（"/" = ja, "/en/..." = en）で決まる

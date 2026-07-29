@@ -8,6 +8,7 @@ import {
   SattoriApiError,
   uploadReplay,
 } from "../api/client.ts";
+import { useLocale } from "../i18n/LocaleContext.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
@@ -166,6 +167,7 @@ function formatFileSize(bytes: number): string {
 
 export function UploadForm({ onMagicLinkSent }: Props) {
   const { t, i18n } = useTranslation();
+  const locale = useLocale();
   const [file, setFile] = useState<File | null>(null);
   const [replayKey, setReplayKey] = useState<string | null>(null);
   const [preview, setPreview] = useState<ReplayInfo | null>(null);
@@ -249,7 +251,7 @@ export function UploadForm({ onMagicLinkSent }: Props) {
     setErrorMessage(null);
     try {
       setPhase("starting");
-      await requestMagicLink(replayKey, { watermark }, email, preview);
+      await requestMagicLink(replayKey, { watermark }, email, locale, preview);
       onMagicLinkSent(email);
     } catch (err) {
       const message =

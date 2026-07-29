@@ -1,5 +1,6 @@
 import type { GameId } from "./games.js";
 import type { JobStatus, RecordingOptions } from "./job.js";
+import type { SupportedLanguage } from "./language.js";
 import type { ReplayInfo } from "./replay.js";
 
 /**
@@ -69,6 +70,13 @@ export interface RequestMagicLinkRequest {
    * （省略・null なら表示しない）。
    */
   replayInfo?: ReplayInfo | null;
+  /**
+   * 「次のステップ」押下時点でユーザーが選択していた表示言語。マジックリンク
+   * メール・完了メールの文面、およびメール本文に載せるジョブページリンクの
+   * 言語（`/` = ja, `/en` = en）を出し分けるために `JobRecord` へ転記して保持する。
+   * 省略・不正値なら `DEFAULT_LANGUAGE`（ja）として扱う。
+   */
+  language?: SupportedLanguage;
 }
 
 /** POST /magic-links のレスポンス（送信成功、bodyは空でよい。jobIdは含めない）。 */
