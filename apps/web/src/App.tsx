@@ -1,4 +1,5 @@
-import { BrowserRouter, Link, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import clsx from "clsx";
+import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useMatch } from "react-router-dom";
 import { HomePage } from "./pages/HomePage.tsx";
 import { JobPage } from "./pages/JobPage.tsx";
 import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
@@ -7,6 +8,10 @@ import styles from "./App.module.css";
 
 /** 共通のヘッダー・フッター。ルートごとの画面は `<Outlet />` に差し込まれる。 */
 function Layout() {
+  // ページB（2カラムのリプレイ情報+アクティビティログ）はページAより広い画面幅を活かせるため、
+  // ページAの幅(50rem)はそのままにページBのみ最大90remまで広げる。
+  const isJobPage = useMatch("/jobs/:jobId");
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -19,7 +24,7 @@ function Layout() {
         </Link>
       </header>
 
-      <main className={styles.main}>
+      <main className={clsx(styles.main, isJobPage && styles.mainWide)}>
         <Outlet />
       </main>
 

@@ -6,103 +6,195 @@
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
-  text-align: center;
 }
 
 .heading {
   margin: 0;
   font-size: 1.3rem;
-}
-
-.steps {
-  display: flex;
-  justify-content: space-between;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.step {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
-  flex: 1;
-}
-
-.dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--panel-border);
-}
-
-.step[data-state="done"] .dot {
-  background: var(--accent);
-}
-
-.step[data-state="active"] .dot {
-  background: var(--accent);
-  box-shadow: 0 0 0 4px rgba(179, 108, 240, 0.25);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-.step[data-state="failed"] .dot {
-  background: var(--danger);
-}
-
-.stepLabel {
-  font-size: 0.8rem;
-  color: var(--text-muted);
+  text-align: center;
 }
 
 .hint {
   margin: 0;
   color: var(--text-muted);
   font-size: 0.9rem;
+  text-align: center;
 }
 
-.previewImage {
-  width: 100%;
-  max-width: 480px;
-  align-self: center;
-  border-radius: var(--radius);
-  border: 1px solid var(--panel-border);
+.grid {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  gap: 1.5rem;
+  align-items: stretch;
 }
 
-.progressBar {
-  width: 100%;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--panel-border);
+.gridSingle {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .replayCard {
+    order: 2;
+  }
+
+  .logCard {
+    order: 1;
+  }
+}
+
+.replayCard {
   overflow: hidden;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
 }
 
-.progressBarFill {
+/* ReplayPreview はページAの縦積みレイアウト用に自前の余白(margin-bottom)を
+   持つが、ここでは replayCard の枠自体が区切りになるため打ち消す。 */
+.replayCard > section {
+  margin-bottom: 0;
+}
+
+/* ReplayPreview の詳細欄は2カラム(repeat(2, 1fr))が既定だが、480px幅の
+   ビューポート基準メディアクエリのため 320px の replayCard 内では発動せず、
+   半分の幅（約144px）に「プレイヤー名」等のラベルが収まらず文字単位で
+   折り返してしまう。ここでは常に1カラムにして防ぐ（`dl`要素へのタグ
+   セレクタなのでCSS Modulesのスコープ名を知らなくても上書きできる）。 */
+.replayCard dl {
+  grid-template-columns: 1fr;
+}
+
+.logCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.25rem;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+}
+
+.logList {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.logItem {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.logItem:last-child {
+  border-bottom: none;
+}
+
+.logDot {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  background: var(--panel-border);
+  border-radius: 50%;
+}
+
+.logItem[data-state="done"] .logDot,
+.logItem[data-state="active"] .logDot {
+  background: var(--accent);
+}
+
+.logItem[data-state="active"] .logDot {
+  box-shadow: 0 0 0 4px rgba(179, 108, 240, 0.25);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.logItem[data-state="failed"] .logDot {
+  background: var(--danger);
+}
+
+.logContent {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.logName {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.logDetail {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.logThumbnail {
+  width: 64px;
+  height: 48px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+}
+
+.logProgressWrap {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.logProgressBar {
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  background: var(--panel-border);
+  border-radius: 3px;
+}
+
+.logProgressFill {
   height: 100%;
   background: var(--accent);
   transition: width 0.6s ease;
 }
 
-.progressText {
+.logProgressText {
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: 0.75rem;
 }
 
 .error {
   margin: 0;
   color: var(--danger);
+  font-size: 0.875rem;
+}
+
+.doneActions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .download {
   display: inline-block;
   padding: 0.85rem 1.5rem;
-  border-radius: var(--radius);
-  background: var(--accent);
+  text-align: center;
+  text-decoration: none;
   color: #fff;
   font-weight: 600;
-  text-decoration: none;
+  background: var(--accent);
+  border-radius: var(--radius);
 }
 
 .download:hover {
@@ -110,23 +202,14 @@
 }
 
 .secondaryDownload {
-  font-size: 0.85rem;
-  color: var(--text-muted);
+  text-align: center;
   text-decoration: underline;
+  color: var(--text-muted);
+  font-size: 0.85rem;
 }
 
 .secondaryDownload:hover {
   color: var(--text);
-}
-
-.reset {
-  align-self: center;
-  padding: 0.5rem 1rem;
-  background: transparent;
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  cursor: pointer;
 }
 
 @keyframes pulse {
@@ -134,6 +217,7 @@
   100% {
     box-shadow: 0 0 0 4px rgba(179, 108, 240, 0.25);
   }
+
   50% {
     box-shadow: 0 0 0 8px rgba(179, 108, 240, 0.1);
   }
