@@ -34,6 +34,7 @@ const baseJob: JobRecord = {
   error: null,
   createdAt: "2026-07-17T00:00:00.000Z",
   updatedAt: "2026-07-17T00:00:00.000Z",
+  doneAt: null,
   email: null,
   instanceId: "i-abc123",
   instanceType: "c7i.xlarge",
