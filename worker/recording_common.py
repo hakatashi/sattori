@@ -110,8 +110,16 @@ STUTTER_PROBE_ACTIVE_UNTIL_SEC = 300.0
 # を誤検知しないよう、閾値超過が2回連続(出力間隔5秒×2=約10秒間持続)した場合のみ
 # 異常とみなす。th07のMODはFpsMonitorを組み込んでいないため、このチェックは
 # th07では実質的に発火しない(ログに"FpsMonitor:"行が現れないため常にNoneを返す)。
+#
+# 会話イベント(ダイアログボックス表示中)は、実際のレンダリングfpsは60のまま
+# GetDeviceStateのポーリング頻度だけが一時的に約3倍(実測179.9Hz、通常60Hzの
+# ちょうど3倍)に上がる仕様であることが本番ジョブ64367b3c-64f5-47c4-be9d-
+# e0c4aa8a35d8の調査で判明した(旧閾値100Hzだとこれだけで誤って異常判定していた)。
+# この一時的な上昇は2回連続の判定窓(約10秒)以内に収まり、直後に60Hz程度へ復帰する。
+# 閾値はこの良性の上昇(実測上限179.9Hz)を確実に超えつつ、本物のfps暴走(実測下限
+# 479Hz)は引き続き検知できるよう、両者の中間である300Hzとする。
 FPS_MONITOR_HZ_RE = re.compile(r"FpsMonitor:.*\(([\d.]+) Hz\)")
-FPS_RUNAWAY_HZ_THRESHOLD = 100.0
+FPS_RUNAWAY_HZ_THRESHOLD = 300.0
 FPS_RUNAWAY_CONSECUTIVE_REQUIRED = 2
 
 MAX_ATTEMPTS_DEFAULT = 3
