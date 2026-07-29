@@ -4,7 +4,7 @@
     "logoAlt": "Sattori logo",
     "wordmarkAlt": "TouhouSattori",
     "footer": "Sattori is an unofficial, fan-made service. Touhou Project © Team Shanghai Alice",
-    "easterEgg": "“Out of a possible ten points, this service rates an eleven.” — the mistress of a certain mansion",
+    "easterEgg": "“Out of a possible ten points, this service rates an eleven.” — the mistress of a certain palace",
     "languageSwitcher": {
       "label": "Language",
       "ja": "日本語",
@@ -73,7 +73,7 @@
     "elapsed": "{{time}} elapsed",
     "genericError": "A problem occurred while recording. Please try again.",
     "download": "Download video",
-    "downloadOriginal": "Download original resolution",
+    "downloadOriginal": "Download video before conversion",
     "hint": "Recording and conversion continue even if you close this page. You can come back to this page at any time to check the status."
   }
 }
