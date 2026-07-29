@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
+import { useEstimatedProgress } from "../hooks/useEstimatedProgress.ts";
 import { useJobPolling } from "../hooks/useJobPolling.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./JobProgress.module.css";
@@ -46,6 +47,10 @@ export function JobProgress({ jobId }: Props) {
  * （リプレイ情報カード + アクティビティログの2カラム構成）。全体の進捗は未実装のため省略。
  */
 export function JobProgressView({ job, loadError }: ViewProps) {
+  // ポーリングは3秒間隔のため、その間の進捗はサーバー値からの実時間経過をもとに推定する
+  // （録画中であることが体感できるよう、数値が滑らかに動き続ける必要があるため）。
+  const progress = useEstimatedProgress(job);
+
   // 初回ロード中（jobが未取得）はステータス別の表示を仮定せず、中立的な読み込み中表示に留める。
   // 既に完了しているジョブでも「準備をしています」等が一瞬表示されて紛らわしくなるのを防ぐ。
   if (!job) {
@@ -61,7 +66,6 @@ export function JobProgressView({ job, loadError }: ViewProps) {
   const meta = STATUS_META[status];
   const failed = status === "failed";
   const done = status === "done";
-  const progress = job.progress;
   const showProgress = typeof progress === "number" && !done && !failed;
   const estimatedDurationSeconds = job.replayInfo?.estimatedDurationSeconds ?? null;
 
