@@ -111,7 +111,7 @@ describe("UploadForm", () => {
   it(".rpy 以外を選ぶとエラー表示され、アップロードは行われない", () => {
     render(<UploadForm onMagicLinkSent={vi.fn()} />);
     selectFile("bad.txt");
-    expect(screen.getByText("リプレイファイル（.rpy）を選択してください")).toBeTruthy();
+    expect(screen.getByText("リプレイファイル (.rpy) を選択してください")).toBeTruthy();
     expect(mocked.createUpload).not.toHaveBeenCalled();
     expect(nextStepButton().disabled).toBe(true);
   });
