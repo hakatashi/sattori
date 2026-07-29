@@ -59,7 +59,6 @@ export function AboutPage() {
 
       <h2>{t("about.troubleHeading")}</h2>
       <p>{t("about.troubleText1")}</p>
-      <p className={staticStyles.disclaimer}>{t("about.troubleText2")}</p>
 
       <h2>{t("about.noTroubleHeading")}</h2>
       <p>{t("about.noTroubleText")}</p>

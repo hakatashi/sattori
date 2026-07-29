@@ -3,7 +3,7 @@
     "tagline": "東方リプレイ自動録画サービス",
     "logoAlt": "TouhouSattori logo",
     "wordmarkAlt": "TouhouSattori",
-    "footer": "TouhouSattori はファンメイドの非公式サービスです。東方Project © 上海アリス幻樂団",
+    "footer": "TouhouSattori はファンメイドの非公式サービスです。",
     "easterEgg": "「10点満点中、11点のサービスです」――とある館の主",
     "languageSwitcher": {
       "label": "言語",
@@ -22,7 +22,7 @@
       "東方原作を遊んで、プレイ動画を公開する人がもっと増えてほしい、という思いで制作されました。",
       "動画ファイルの扱いに詳しくなくても、面倒な処理をせずに気軽にリプレイの録画動画を作成し、各種動画サイトへ簡単にアップロードできるようにすることを目指しています。"
     ],
-    "disclaimer": "本サービスは、東方Project製作サークルである「上海アリス幻樂団」「上海アリスReprise」「黄昏フロンティア」、および代表のZUN様、その他版権を有する個人ならびに団体とは無関係な、ファンメイドによる非公式サービスです。本サービスに関するお問い合わせを上海アリス幻樂団様に行わないようお願いします。",
+    "disclaimer": "本サービスは、東方Project製作サークルである「上海アリス幻樂団」「上海アリスReprise」「黄昏フロンティア」、および代表のZUN様、その他版権を有する個人ならびに団体とは無関係な、ファンメイドによる非公式サービスです。本サービスの利用に関するお問い合わせを上海アリス幻樂団様に行わないようお願いします。",
     "authorHeading": "作者について",
     "authorName": "名前",
     "authorRace": "種族",
@@ -32,7 +32,6 @@
     "socialLinksHeading": "ソーシャルリンク",
     "troubleHeading": "困ったことがあったら",
     "troubleText1": "上記MastodonにDM、もしくはメールをお送りください。",
-    "troubleText2": "なお、極度の筆不精のため返信がたいへん遅くなる、または無視される可能性が大いにあることをご了承ください。",
     "noTroubleHeading": "困ったことが無かったら",
     "noTroubleText": "お楽しみ下さい。"
   },
@@ -48,7 +47,7 @@
     "dropzoneClick": "ここをクリック",
     "dropzoneRest": "してリプレイファイル (.rpy) をアップロード",
     "dropzoneOr": "もしくはドラッグ&ドロップ",
-    "invalidFileExtension": "リプレイファイル（.rpy）を選択してください",
+    "invalidFileExtension": "リプレイファイル (.rpy) を選択してください",
     "unexpectedError": "予期しないエラーが発生しました",
     "uploading": "アップロード中…",
     "parsing": "リプレイを解析しています…",
@@ -72,7 +71,7 @@
     "stage": "到達ステージ",
     "date": "記録日時",
     "clearedLabel": "クリア",
-    "duration": "プレイ時間（目安）",
+    "duration": "プレイ時間 (目安)",
     "durationFormat": "{{minutes}}分{{seconds}}秒"
   },
   "startJob": {
