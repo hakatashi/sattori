@@ -54,10 +54,10 @@ describe("JobProgressView のダウンロード", () => {
     expect(link.hasAttribute("download")).toBe(true);
   });
 
-  it("「元の解像度でダウンロード」は元解像度版のダウンロードURLへのリンクになる", () => {
+  it("「変換前の動画をダウンロード」は元解像度版のダウンロードURLへのリンクになる", () => {
     render(<JobProgressView job={buildDoneJob()} loadError={null} />);
 
-    const link = screen.getByText("元の解像度でダウンロード") as HTMLAnchorElement;
+    const link = screen.getByText("変換前の動画をダウンロード") as HTMLAnchorElement;
     expect(link.tagName).toBe("A");
     expect(link.href).toBe(buildDoneJob().downloadUrl);
     expect(link.hasAttribute("download")).toBe(true);
@@ -70,6 +70,6 @@ describe("JobProgressView のダウンロード", () => {
 
     const link = screen.getByText("動画をダウンロード") as HTMLAnchorElement;
     expect(link.href).toBe(buildDoneJob().downloadUrl);
-    expect(screen.queryByText("元の解像度でダウンロード")).toBeNull();
+    expect(screen.queryByText("変換前の動画をダウンロード")).toBeNull();
   });
 });
