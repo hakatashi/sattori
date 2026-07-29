@@ -73,6 +73,7 @@ describe("POST /magic-links", () => {
       status: "pending",
       email: "user@example.com",
       replayKey: "replays/abc.rpy",
+      language: "ja", // 未指定時は既定言語(ja)
     });
     expect(jobPut?.args[0].input.ConditionExpression).toBe("attribute_not_exists(jobId)");
 
@@ -83,6 +84,49 @@ describe("POST /magic-links", () => {
     const emailBody = sendCalls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
     expect(emailBody).toContain(`/jobs/${jobPut?.args[0].input.Item?.jobId}`);
     expect(emailBody).not.toContain("token=");
+  });
+
+  it("language: enを指定すればジョブに保存し、英語の文面・/enリンクでメールを送る", async () => {
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: "replays/abc.rpy",
+        options: { watermark: true },
+        email: "user@example.com",
+        language: "en",
+      }),
+      {} as never,
+      () => {},
+    );
+    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(202);
+
+    const putCalls = ddbMock.commandCalls(PutCommand);
+    const jobPut = putCalls.find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.language).toBe("en");
+
+    const sendCalls = sesMock.commandCalls(SendEmailCommand);
+    expect(sendCalls[0]?.args[0].input.Content?.Simple?.Subject?.Data).not.toMatch(/録画/);
+    const emailBody = sendCalls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
+    expect(emailBody).toContain(`/en/jobs/${jobPut?.args[0].input.Item?.jobId}`);
+  });
+
+  it("不正なlanguageが渡されれば既定言語(ja)にフォールバックする", async () => {
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: "replays/abc.rpy",
+        options: { watermark: true },
+        email: "user@example.com",
+        language: "fr",
+      }),
+      {} as never,
+      () => {},
+    );
+    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(202);
+
+    const putCalls = ddbMock.commandCalls(PutCommand);
+    const jobPut = putCalls.find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.language).toBe("ja");
   });
 
   it("replayInfoが渡されればジョブレコードにそのまま転記する", async () => {

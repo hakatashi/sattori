@@ -1,7 +1,7 @@
 import type { DynamoDBStreamHandler } from "aws-lambda";
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
-import type { JobRecord } from "@sattori/shared";
+import { DEFAULT_LANGUAGE, type JobRecord } from "@sattori/shared";
 import { loadConfig } from "../config.js";
 import { sendCompletionEmail } from "../ses.js";
 
@@ -45,6 +45,9 @@ export const handler: DynamoDBStreamHandler = async (event) => {
         to: newJob.email,
         webBaseUrl: config.webBaseUrl,
         jobId: newJob.jobId,
+        // この変更より前に作成されたジョブレコードには language が無いため、
+        // その場合は既定言語(ja)にフォールバックする。
+        language: newJob.language ?? DEFAULT_LANGUAGE,
       });
     } catch (err) {
       // 完了メールが送れなくても動画自体はジョブページから取得できるため、

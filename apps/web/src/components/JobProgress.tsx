@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { useTranslation } from "react-i18next";
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
 import { useEstimatedProgress } from "../hooks/useEstimatedProgress.ts";
 import { useJobPolling } from "../hooks/useJobPolling.ts";
@@ -14,18 +15,16 @@ interface ViewProps {
   loadError: string | null;
 }
 
-/** 各ステータスのユーザー向け表示文言と進捗段階（0..4）。 */
-const STATUS_META: Record<JobStatus, { label: string; step: number }> = {
-  pending: { label: "録画の準備をしています", step: 0 },
-  queued: { label: "録画の順番を待っています", step: 0 },
-  launching: { label: "録画用サーバーを起動しています", step: 1 },
-  recording: { label: "リプレイを録画しています", step: 2 },
-  converting: { label: "動画を変換しています", step: 3 },
-  done: { label: "録画が完了しました", step: 4 },
-  failed: { label: "録画に失敗しました", step: 4 },
+/** 各ステータスのユーザー向け表示文言（jobProgress.status.*）と進捗段階（0..4）。 */
+const STATUS_STEP: Record<JobStatus, number> = {
+  pending: 0,
+  queued: 0,
+  launching: 1,
+  recording: 2,
+  converting: 3,
+  done: 4,
+  failed: 4,
 };
-
-const STEPS = ["待機", "起動", "録画", "変換", "完了"];
 
 /** 秒数を "m:ss" 形式に整形する。 */
 function formatSeconds(totalSeconds: number): string {
@@ -47,23 +46,25 @@ export function JobProgress({ jobId }: Props) {
  * （リプレイ情報カード + アクティビティログの2カラム構成）。全体の進捗は未実装のため省略。
  */
 export function JobProgressView({ job, loadError }: ViewProps) {
+  const { t } = useTranslation();
   // ポーリングは3秒間隔のため、その間の進捗はサーバー値からの実時間経過をもとに推定する
   // （録画中であることが体感できるよう、数値が滑らかに動き続ける必要があるため）。
   const progress = useEstimatedProgress(job);
+  const steps = t("jobProgress.steps", { returnObjects: true }) as string[];
 
   // 初回ロード中（jobが未取得）はステータス別の表示を仮定せず、中立的な読み込み中表示に留める。
   // 既に完了しているジョブでも「準備をしています」等が一瞬表示されて紛らわしくなるのを防ぐ。
   if (!job) {
     return (
       <section className={styles.card}>
-        <h1 className={styles.heading}>読み込み中…</h1>
+        <h1 className={styles.heading}>{t("jobProgress.loading")}</h1>
         {loadError && <p className={styles.hint}>{loadError}</p>}
       </section>
     );
   }
 
   const status = job.status;
-  const meta = STATUS_META[status];
+  const step = STATUS_STEP[status];
   const failed = status === "failed";
   const done = status === "done";
   const showProgress = typeof progress === "number" && !done && !failed;
@@ -71,7 +72,7 @@ export function JobProgressView({ job, loadError }: ViewProps) {
 
   return (
     <section className={styles.card}>
-      <h1 className={styles.heading}>{meta.label}</h1>
+      <h1 className={styles.heading}>{t(`jobProgress.status.${status}`)}</h1>
       {loadError && <p className={styles.hint}>{loadError}</p>}
 
       <div className={clsx(styles.grid, !job.replayInfo && styles.gridSingle)}>
@@ -82,17 +83,17 @@ export function JobProgressView({ job, loadError }: ViewProps) {
         )}
 
         <div className={styles.logCard}>
-          <ol className={styles.logList} aria-label="録画の進捗">
-            {STEPS.map((name, index) => {
+          <ol className={styles.logList} aria-label={t("jobProgress.progressAriaLabel")}>
+            {steps.map((name, index) => {
               const state =
-                failed && index === meta.step
+                failed && index === step
                   ? "failed"
-                  : index < meta.step
+                  : index < step
                     ? "done"
-                    : index === meta.step
+                    : index === step
                       ? "active"
                       : "todo";
-              const showDetail = showProgress && index === meta.step && typeof progress === "number";
+              const showDetail = showProgress && index === step && typeof progress === "number";
 
               return (
                 <li key={name} className={styles.logItem} data-state={state}>
@@ -105,12 +106,14 @@ export function JobProgressView({ job, loadError }: ViewProps) {
                           <img
                             className={styles.logThumbnail}
                             src={job.previewImageUrl}
-                            alt="録画中のプレビュー"
+                            alt={t("jobProgress.previewAlt")}
                           />
                         )}
                         <div className={styles.logProgressWrap}>
                           {estimatedDurationSeconds === null ? (
-                            <p className={styles.logProgressText}>{formatSeconds(progress)} 経過</p>
+                            <p className={styles.logProgressText}>
+                              {t("jobProgress.elapsed", { time: formatSeconds(progress) })}
+                            </p>
                           ) : (
                             <>
                               <div className={styles.logProgressBar}>
@@ -137,7 +140,7 @@ export function JobProgressView({ job, loadError }: ViewProps) {
 
           {failed && (
             <p className={styles.error}>
-              {job.error ?? "録画中に問題が発生しました。もう一度お試しください。"}
+              {job.error ?? t("jobProgress.genericError")}
             </p>
           )}
 
@@ -148,11 +151,11 @@ export function JobProgressView({ job, loadError }: ViewProps) {
                 href={job.downloadUrl720p ?? job.downloadUrl ?? undefined}
                 download
               >
-                動画をダウンロード
+                {t("jobProgress.download")}
               </a>
               {job.downloadUrl720p && job.downloadUrl && (
                 <a className={styles.secondaryDownload} href={job.downloadUrl} download>
-                  変換前の動画をダウンロード
+                  {t("jobProgress.downloadOriginal")}
                 </a>
               )}
             </div>
@@ -162,7 +165,7 @@ export function JobProgressView({ job, loadError }: ViewProps) {
 
       {!done && !failed && (
         <p className={styles.hint}>
-          このページを閉じても録画・変換処理は中断されません。いつでもこのページに戻って状況を確認できます。
+          {t("jobProgress.hint")}
         </p>
       )}
     </section>

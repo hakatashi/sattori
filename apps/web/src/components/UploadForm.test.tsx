@@ -193,6 +193,7 @@ describe("UploadForm", () => {
       "replays/x.rpy",
       { watermark: true },
       "user@example.com",
+      "ja",
       SAMPLE_REPLAY_INFO,
     );
   });

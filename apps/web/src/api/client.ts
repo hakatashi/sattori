@@ -10,6 +10,7 @@ import type {
   RequestMagicLinkRequest,
   RequestMagicLinkResponse,
   StartJobResponse,
+  SupportedLanguage,
 } from "@sattori/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
@@ -72,6 +73,7 @@ export function requestMagicLink(
   replayKey: string,
   options: RecordingOptions,
   email: string,
+  language: SupportedLanguage,
   replayInfo?: ReplayInfo | null,
 ): Promise<RequestMagicLinkResponse> {
   const req: RequestMagicLinkRequest = {
@@ -81,6 +83,7 @@ export function requestMagicLink(
     game: replayInfo?.game,
     estimatedDurationSeconds: replayInfo?.estimatedDurationSeconds,
     replayInfo,
+    language,
   };
   return request<RequestMagicLinkResponse>("/magic-links", {
     method: "POST",

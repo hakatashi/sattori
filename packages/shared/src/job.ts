@@ -1,4 +1,5 @@
 import type { GameId } from "./games.js";
+import type { SupportedLanguage } from "./language.js";
 import type { ReplayInfo } from "./replay.js";
 
 /**
@@ -121,4 +122,11 @@ export interface JobRecord {
    * を参照する）。未取得・旧ジョブなら null。
    */
   replayInfo: ReplayInfo | null;
+  /**
+   * `POST /magic-links` 押下時点でユーザーが選択していた表示言語
+   * （`RequestMagicLinkRequest.language` をそのまま転記）。マジックリンク
+   * メール・完了メールの文面出し分けと、メール本文に載せるジョブページリンクの
+   * 言語（`/` = ja, `/en` = en）に使う。
+   */
+  language: SupportedLanguage;
 }
