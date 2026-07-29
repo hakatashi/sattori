@@ -11,9 +11,10 @@ export const LAUNCHING_BUDGET_SECONDS = 5 * 60;
 export const FALLBACK_ESTIMATED_DURATION_SECONDS = 10 * 60;
 
 /**
- * converting の悲観的下限速度(等倍)。useEstimatedProgress.ts と共有するためここに集約する。
+ * converting の悲観的下限速度。recordingの1/3の長さ(3倍速)で終わることを最悪ケースとする。
+ * useEstimatedProgress.ts のフェーズ内速度クランプの下限とも共有するためここに集約する。
  */
-export const MIN_CONVERTING_RATE = 1;
+export const MIN_CONVERTING_RATE = 3;
 
 /** done になるまで到達させない上限(%)。悲観バジェットぴったりで converting が終わっても、
  *  status がまだ converting のまま100%表示になって混乱を招くのを避けるため。 */
@@ -31,15 +32,17 @@ export interface PhaseBudgets {
 
 /**
  * ジョブ全体(launching + recording + converting)の悲観的な合計所要時間(秒)を計算する。
- * recording/converting はいずれも最悪ケース(等倍速)を仮定するため同じ値になる。
+ * recording は等倍速、converting は最悪ケースでも MIN_CONVERTING_RATE 倍速(recordingの1/3の長さ)
+ * で終わることを仮定する。
  */
 export function computePhaseBudgets(estimatedDurationSeconds: number | null): PhaseBudgets {
   const perPhase = estimatedDurationSeconds ?? FALLBACK_ESTIMATED_DURATION_SECONDS;
+  const converting = perPhase / MIN_CONVERTING_RATE;
   return {
     launching: LAUNCHING_BUDGET_SECONDS,
     recording: perPhase,
-    converting: perPhase,
-    total: LAUNCHING_BUDGET_SECONDS + perPhase * 2,
+    converting,
+    total: LAUNCHING_BUDGET_SECONDS + perPhase + converting,
   };
 }
 
