@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
 import { useEstimatedProgress } from "../hooks/useEstimatedProgress.ts";
 import { useJobPolling } from "../hooks/useJobPolling.ts";
+import { useOverallProgress } from "../hooks/useOverallProgress.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./JobProgress.module.css";
 
@@ -43,13 +44,16 @@ export function JobProgress({ jobId }: Props) {
  * ジョブ状態表示の純粋表示部分（ポーリングを持たない）。
  * `dev/JobProgressPlayground.tsx` から実データ無しで各状態を確認するために分離。
  * レイアウトは Claude Design 案「JobProgress 再設計案 1c」準拠
- * （リプレイ情報カード + アクティビティログの2カラム構成）。全体の進捗は未実装のため省略。
+ * （リプレイ情報カード + アクティビティログの2カラム構成）。
  */
 export function JobProgressView({ job, loadError }: ViewProps) {
   const { t } = useTranslation();
   // ポーリングは3秒間隔のため、その間の進捗はサーバー値からの実時間経過をもとに推定する
   // （録画中であることが体感できるよう、数値が滑らかに動き続ける必要があるため）。
   const progress = useEstimatedProgress(job);
+  // pending〜done全体の進捗(%)と悲観的な残り時間の見積もり。progressの二重計算を避けるため
+  // useEstimatedProgressの戻り値をそのまま渡す。
+  const overall = useOverallProgress(job, progress);
   const steps = t("jobProgress.steps", { returnObjects: true }) as string[];
 
   // 初回ロード中（jobが未取得）はステータス別の表示を仮定せず、中立的な読み込み中表示に留める。
@@ -74,6 +78,30 @@ export function JobProgressView({ job, loadError }: ViewProps) {
     <section className={styles.card}>
       <h1 className={styles.heading}>{t(`jobProgress.status.${status}`)}</h1>
       {loadError && <p className={styles.hint}>{loadError}</p>}
+
+      {!failed && (
+        <div className={styles.overallProgress}>
+          <div
+            className={styles.overallProgressBar}
+            role="progressbar"
+            aria-label={t("jobProgress.overallProgressAriaLabel")}
+            aria-valuenow={Math.round(overall.percent)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div className={styles.overallProgressFill} style={{ width: `${overall.percent}%` }} />
+          </div>
+          <div className={styles.overallProgressMeta}>
+            <span>{Math.round(overall.percent)}%</span>
+            {overall.remainingMinutes !== null && (
+              <span>{t("jobProgress.etaMinutes", { minutes: overall.remainingMinutes })}</span>
+            )}
+            {overall.retrySuspected && (
+              <span className={styles.retryHint}>{t("jobProgress.retryHint")}</span>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className={clsx(styles.grid, !job.replayInfo && styles.gridSingle)}>
         {job.replayInfo && (
