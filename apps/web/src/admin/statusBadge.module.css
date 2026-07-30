@@ -1,0 +1,35 @@
+/* ジョブ一覧・詳細で共通利用するステータスバッジ。既存の難易度バッジ
+   （global.cssの--difficulty-*）と同様、彩度の高い背景に白文字固定にする。 */
+.badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  color: var(--badge-text);
+  white-space: nowrap;
+}
+
+.pending,
+.queued {
+  background: #78909c;
+}
+
+.launching {
+  background: #0288d1;
+}
+
+.recording {
+  background: #fb8c00;
+}
+
+.converting {
+  background: #7b1fa2;
+}
+
+.done {
+  background: #43a047;
+}
+
+.failed {
+  background: var(--danger);
+}
