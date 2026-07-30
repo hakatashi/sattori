@@ -1,0 +1,28 @@
+.game {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.game:not(:first-of-type) {
+  margin-top: 1.5rem;
+}
+
+.icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.game h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.versions {
+  margin: 0.5rem 0 0 3.25rem;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
