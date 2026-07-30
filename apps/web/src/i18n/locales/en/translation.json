@@ -1,9 +1,9 @@
 {
   "app": {
     "tagline": "Automatic Touhou Replay Recording Service",
-    "logoAlt": "Sattori logo",
+    "logoAlt": "TouhouSattori logo",
     "wordmarkAlt": "TouhouSattori",
-    "footer": "Sattori is an unofficial, fan-made service. Touhou Project © Team Shanghai Alice",
+    "footer": "TouhouSattori is an unofficial, fan-made service. Touhou Project © Team Shanghai Alice",
     "easterEgg": "“Out of a possible ten points, this service rates an eleven.” — the mistress of a certain palace",
     "languageSwitcher": {
       "label": "Language",
