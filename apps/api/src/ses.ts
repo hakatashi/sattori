@@ -6,24 +6,24 @@ const ses = new SESv2Client({});
 // プレースホルダの文面。送信元・文言は運用開始前に調整する想定（Issue #9）。
 // 「次のステップ」押下時点で選択されていた言語（`JobRecord.language`）で出し分ける。
 const MAGIC_LINK_EMAIL_SUBJECT: Record<SupportedLanguage, string> = {
-  ja: "【Sattori】録画を開始するリンク",
-  en: "[Sattori] Link to start your recording",
+  ja: "【TouhouSattori】録画を開始するリンク",
+  en: "[TouhouSattori] Link to start your recording",
 };
 const MAGIC_LINK_EMAIL_BODY: Record<SupportedLanguage, (link: string) => string> = {
   ja: (link) =>
-    `Sattoriへのリクエストを受け付けました。\n\n` +
+    `TouhouSattoriへのリクエストを受け付けました。\n\n` +
     `以下のリンクをクリックすると録画を開始します（受付期限は24時間です）。\n${link}\n\n` +
     `このメールに心当たりがない場合は、このメールを無視してください。`,
   en: (link) =>
-    `We've received your request on Sattori.\n\n` +
+    `We've received your request on TouhouSattori.\n\n` +
     `Click the link below to start recording (this link expires in 24 hours).\n${link}\n\n` +
     `If you don't recognize this request, please ignore this email.`,
 };
 
 // プレースホルダの文面（Issue #10）。
 const COMPLETION_EMAIL_SUBJECT: Record<SupportedLanguage, string> = {
-  ja: "【Sattori】録画が完了しました",
-  en: "[Sattori] Your recording is ready",
+  ja: "【TouhouSattori】録画が完了しました",
+  en: "[TouhouSattori] Your recording is ready",
 };
 const COMPLETION_EMAIL_BODY: Record<SupportedLanguage, (link: string) => string> = {
   ja: (link) =>
