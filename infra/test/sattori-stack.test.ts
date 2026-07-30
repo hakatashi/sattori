@@ -77,6 +77,29 @@ describe("SattoriStack", () => {
     template.resourceCountIs("AWS::CloudFront::Distribution", 2);
   });
 
+  it("Web 配信は CloudFront Function で言語別に SPA フォールバックする(OGPの言語出し分け)", () => {
+    // errorResponses による全パス一律の /index.html フォールバックだと `/en/...` にも
+    // 日本語版HTMLが配られてしまうため、ビューワーリクエスト関数で振り分けている。
+    const functions = template.findResources("AWS::CloudFront::Function");
+    const codes = Object.values(functions).map(
+      (fn) => (fn.Properties as { FunctionCode: string }).FunctionCode,
+    );
+    expect(codes).toHaveLength(1);
+    expect(codes[0]).toContain("/en/index.html");
+
+    template.hasResourceProperties("AWS::CloudFront::Distribution", {
+      DistributionConfig: Match.objectLike({
+        Comment: "Sattori Web",
+        CustomErrorResponses: Match.absent(),
+        DefaultCacheBehavior: Match.objectLike({
+          FunctionAssociations: [
+            Match.objectLike({ EventType: "viewer-request" }),
+          ],
+        }),
+      }),
+    });
+  });
+
   it("HTTP API が定義されている", () => {
     template.hasResourceProperties("AWS::ApiGatewayV2::Api", {
       ProtocolType: "HTTP",
