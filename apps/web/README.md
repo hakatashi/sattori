@@ -72,6 +72,29 @@ fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
 - API（Lambda）が返すエラーメッセージ（`SattoriApiError.message`）は日本語固定
   （バックエンド側は未対応）。フロント側の文言のみが対象。
 
+### エントリHTML・OGPの言語出し分け
+
+クローラー（X/Discord/Slack等のunfurl bot）はJSを実行しないため、`<title>`・
+`description`・OGP・`<html lang>`はReact側からでは出し分けられない。そこで
+**エントリHTMLを言語ごとに実体として持つ**:
+
+- `index.html`（ja）と`en/index.html`（en）の2ファイル。Viteのマルチページ入力
+  （`vite.config.ts`の`build.rollupOptions.input`）で`dist/index.html`・
+  `dist/en/index.html`として出力する。JS/CSSのチャンクは共通のものを参照するので
+  バンドルは二重化しない。
+- 2ファイルは「言語依存のメタ情報だけが異なる同型のHTML」であること。
+  `src/test/htmlMeta.test.ts`が`<meta>`キー集合の一致・`lang`/`og:locale`/`og:url`の
+  言語別の正しさ・hreflangの相互参照を検証しているので、片方だけにタグを足すと落ちる。
+- **OGPにジョブ固有の情報を含めないこと**。`/jobs/{jobId}`にも同じHTMLが配られ、
+  `jobId`は認可の秘密値であるため、URLを貼った先のunfurl botがこのHTMLを取得しに来る。
+- `og:image`は絶対URL必須。実体は`public/og-image-{ja,en}.jpg`（1200x630）で、
+  キャッチコピー（`app.tagline`相当）を画像に焼いているため**言語ごとに別ファイル**。
+  ファイル名を変えたら両HTMLの`og:image`も直すこと（上記テストが`public/`配下の
+  実体の存在も検証しているので、リネームだけすると落ちる）。
+- どのURLでどちらのHTMLが配られるかは本番ではCloudFront Functionが決める
+  （`infra/README.md`参照）。開発サーバでも同じ振り分けになるよう、`vite.config.ts`の
+  `sattori:en-locale-spa-fallback`プラグインが`/en`配下を`en/index.html`へ書き換える。
+
 ## API クライアント（`src/api/client.ts`）
 
 `VITE_API_BASE`（既定 `/api`）を基点に`fetch`でAPIを呼ぶ薄いラッパー。エラーレスポンス
