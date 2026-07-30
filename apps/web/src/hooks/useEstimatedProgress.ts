@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
+import { MIN_CONVERTING_RATE } from "./jobProgressBudget.ts";
 
 /**
  * 録画フェーズはリプレイをそのまま等倍速で再生しながら録画するため、速度は常に1倍で確定している。
@@ -10,7 +11,6 @@ const FIXED_RATE: Partial<Record<JobStatus, number>> = {
   recording: 1,
 };
 const DEFAULT_CONVERTING_RATE = 4;
-const MIN_CONVERTING_RATE = 1;
 const MAX_CONVERTING_RATE = 8;
 
 /**

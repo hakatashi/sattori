@@ -73,3 +73,57 @@ describe("JobProgressView のダウンロード", () => {
     expect(screen.queryByText("変換前の動画をダウンロード")).toBeNull();
   });
 });
+
+function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
+  return {
+    jobId: "job-1",
+    game: "th11",
+    status: "recording",
+    downloadUrl: null,
+    downloadUrl720p: null,
+    error: null,
+    updatedAt: new Date().toISOString(),
+    progress: 100,
+    previewImageUrl: null,
+    replayInfo: REPLAY_INFO,
+    ...overrides,
+  };
+}
+
+describe("JobProgressView の全体進捗バー", () => {
+  it("recording中は全体進捗バーと「残り約○分」が表示される", () => {
+    render(<JobProgressView job={buildRecordingJob()} loadError={null} />);
+
+    const bar = screen.getByRole("progressbar", { name: "全体の進捗" });
+    expect(bar).toBeTruthy();
+    expect(screen.getByText(/残り約\d+分/)).toBeTruthy();
+  });
+
+  it("replayInfoのestimatedDurationSecondsが無い場合は「残り約」テキストが出ない", () => {
+    render(
+      <JobProgressView job={buildRecordingJob({ replayInfo: null })} loadError={null} />,
+    );
+
+    expect(screen.getByRole("progressbar", { name: "全体の進捗" })).toBeTruthy();
+    expect(screen.queryByText(/残り約\d+分/)).toBeNull();
+  });
+
+  it("failedでは全体進捗バーが表示されない", () => {
+    render(
+      <JobProgressView
+        job={buildRecordingJob({ status: "failed", error: "失敗しました" })}
+        loadError={null}
+      />,
+    );
+
+    expect(screen.queryByRole("progressbar", { name: "全体の進捗" })).toBeNull();
+  });
+
+  it("doneでは全体進捗バーが100%表示になる", () => {
+    render(<JobProgressView job={buildDoneJob()} loadError={null} />);
+
+    const bar = screen.getByRole("progressbar", { name: "全体の進捗" });
+    expect(bar.getAttribute("aria-valuenow")).toBe("100");
+    expect(screen.getByText("100%")).toBeTruthy();
+  });
+});
