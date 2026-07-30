@@ -47,6 +47,10 @@ DL→完了メール）はすべて実装済みで、現在は初回リリース
 [JobsTable DynamoDB Streams] → [Lambda: sendCompletionEmail] → SES で完了メール送信
 ```
 
+上記に加え、運用調査用の管理画面（`/admin`、共有トークン+Lambda Authorizerで保護、
+Issue #51）が同じ API Gateway / DynamoDB / S3 / Step Functions を参照専用で覗く。
+詳細は `apps/api/README.md`「管理API」・`apps/web/README.md`「管理画面」参照。
+
 各コンポーネントの詳細は次のREADMEに分割してある。
 
 | コンポーネント | 詳細 |
@@ -84,6 +88,12 @@ DL→完了メール）はすべて実装済みで、現在は初回リリース
 - **jobId 自体が認可の秘密値**（マジックリンクのトークンではなく jobId をそのまま
   使う設計）。メールを確認しないと分からない値であることを利用してbot/濫用対策と
   メール認証を兼ねている。
+- **管理画面（`/admin`）の認証はこれとは別系統**。管理者はサービス運営者1人固定で
+  今後複数ユーザーに拡張する予定がないため、Cognito等は使わず SSM Parameter Store
+  （SecureString）に置いた共有トークンを Lambda Authorizer で検証する方式にしている。
+  トークンは CDK ではなく `cdk deploy` の前に手動で SSM へ投入する運用（SecureString
+  は CloudFormation/CDK では作成できないAWS側の制約のため）。詳細は
+  `infra/README.md`「管理画面」・`CLAUDE.local.md`参照。
 - **インスタンスタイプ・録画パイプラインの変更は必ず実機検証を経ること**。
   「同スペック帯・同価格帯だから安全」という推測は繰り返し裏切られている
   （高クロック特化インスタンスでの重複フレーム率悪化、既存タイトルの命名則・
@@ -142,3 +152,6 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
   と推測しているが、実運用規模拡大時は要注意）。
 - 録画がリプレイと一致しているかの自動デシンク検知は未実装（目視のみ）。
 - レート制限・濫用対策の強化、コスト監視は継続課題。
+- 管理画面（Issue #51）は現状ジョブ一覧・詳細・ダウンロード導線のみ（参照系）。
+  workerのCloudWatchログ表示、ジョブの緊急停止・再実行、コスト推定・集計・可視化は
+  後続Issueに切り出し済みで未実装。

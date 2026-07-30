@@ -24,6 +24,7 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import { HttpLambdaAuthorizer, HttpLambdaResponseType } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
 import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
@@ -116,6 +117,19 @@ export class SattoriStack extends Stack {
       // 完了メール送信(SendCompletionEmailFn)がstatus:doneへの遷移を検知するために使う
       // (Issue #10)。新旧両方の値が要る(遷移の判定に旧statusが必要)ためNEW_AND_OLD_IMAGES。
       stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+    });
+
+    // 管理画面(`/admin`、Issue #51)のジョブ一覧取得用GSI。PK=status, SK=createdAt。
+    // status/createdAtは`putJob()`が必ず設定し、以降どの更新経路(updateJobStatus等)
+    // でもSETのみで消えない既存属性のため、GSIを追加するだけで既存レコードが自動的に
+    // インデックスへ載る(バックフィル不要)。Projectionは月1000ジョブ規模ではストレージ費
+    // が無視できる一方、INCLUDEは後から射影属性を増やせない(GSI再作成が必要)ため、
+    // 早すぎる最適化を避けALLにする。一覧取得ロジックは`apps/api/src/adminJobs.ts`参照。
+    jobsTable.addGlobalSecondaryIndex({
+      indexName: "StatusCreatedAtIndex",
+      partitionKey: { name: "status", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "createdAt", type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
     });
 
     // メール送信のレート制限(同一メール24時間5件まで、Issue #9)用カウンタ。
@@ -276,13 +290,15 @@ export class SattoriStack extends Stack {
       WEB_BASE_URL: `https://${webDomainName}`,
     };
 
-    const makeHandler = (name: string, entry: string) =>
+    // `environment`省略時は`commonEnv`を使う。管理画面のauthorizer(Issue #51)のように
+    // `commonEnv`とは無関係な環境変数だけを持たせたいLambdaのために上書きできるようにする。
+    const makeHandler = (name: string, entry: string, environment: Record<string, string> = commonEnv) =>
       new NodejsFunction(this, name, {
         entry: join(API_HANDLERS, entry),
         handler: "handler",
         runtime: lambda.Runtime.NODEJS_22_X,
         timeout: Duration.seconds(30),
-        environment: commonEnv,
+        environment,
         bundling: {
           // CJS で出力する。ESM 出力だと AWS SDK 内部の動的 require("node:https")
           // が Lambda(ESM) で "Dynamic require not supported" となり失敗するため。
@@ -473,11 +489,62 @@ export class SattoriStack extends Stack {
     // それらの環境変数がステートマシンARNを参照すると CloudFormation の循環依存になる。
     startJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
 
+    // --- 管理画面(`/admin`, Issue #51) --------------------------------------
+    // ユーザーは管理者1人固定のため、Cognito等ではなくSSM Parameter Store
+    // (SecureString)に置いた共有トークンをLambda Authorizerで検証する方式にする。
+    // SecureStringはCloudFormation/CDKでは作成できないため、ここでは名前で参照する
+    // だけで値には触れない(`cdk deploy`前に手動で`aws ssm put-parameter`する運用。
+    // 詳細は infra/README.md・CLAUDE.local.md 参照)。
+    const ADMIN_TOKEN_PARAMETER_NAME = "/sattori/admin/token";
+    const adminAuthorizerFn = makeHandler("AdminAuthorizerFn", "admin/authorizer.ts", {
+      ADMIN_TOKEN_PARAMETER_NAME,
+    });
+    const adminTokenParam = ssm.StringParameter.fromSecureStringParameterAttributes(
+      this,
+      "AdminTokenParam",
+      { parameterName: ADMIN_TOKEN_PARAMETER_NAME },
+    );
+    // `adminTokenParam.stringValue`は参照しないこと。参照するとCFnの動的参照
+    // (`{{resolve:ssm-secure:...}}`)が生成され、SecureStringの値が合成物(テンプレート)
+    // に染み出してしまう。`grantRead`はARNしか使わないため安全。
+    adminTokenParam.grantRead(adminAuthorizerFn);
+    adminAuthorizerFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["kms:Decrypt"],
+        // AWS管理キー(alias/aws/ssm)のキーIDは合成時に分からないため、
+        // kms:ViaServiceでSSM経由の復号のみに絞ることでResource:*を許容する。
+        resources: ["*"],
+        conditions: { StringEquals: { "kms:ViaService": `ssm.${this.region}.amazonaws.com` } },
+      }),
+    );
+    const adminAuthorizer = new HttpLambdaAuthorizer("AdminAuthorizer", adminAuthorizerFn, {
+      authorizerName: "AdminTokenAuthorizer",
+      identitySource: ["$request.header.Authorization"],
+      responseTypes: [HttpLambdaResponseType.SIMPLE],
+      // トークンローテーション時の失効反映が遅れるトレードオフと引き換えに、
+      // 一覧・詳細画面の頻繁なポーリング/遷移がAuthorizer Lambdaを都度起動しないようにする。
+      resultsCacheTtl: Duration.minutes(5),
+    });
+
+    const adminListJobsFn = makeHandler("AdminListJobsFn", "admin/listJobs.ts");
+    jobsTable.grantReadData(adminListJobsFn);
+
+    const adminGetJobDetailFn = makeHandler("AdminGetJobDetailFn", "admin/getJobDetail.ts");
+    jobsTable.grantReadData(adminGetJobDetailFn);
+    uploadBucket.grantRead(adminGetJobDetailFn); // .rpyの署名付きダウンロードURL発行のため
+
+    const adminGetExecutionFn = makeHandler("AdminGetExecutionFn", "admin/getExecution.ts");
+    stateMachine.grantRead(adminGetExecutionFn);
+    // STATE_MACHINE_ARN はstartJobFnと同様、循環依存回避のため個別付与する
+    // (ステートマシンは管理用Lambdaを呼び出さないため、実際には循環しないが
+    // commonEnvへ混ぜず用途を揃えておく)。
+    adminGetExecutionFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
+
     const httpApi = new apigw.HttpApi(this, "HttpApi", {
       corsPreflight: {
         allowOrigins: ["*"],
         allowMethods: [apigw.CorsHttpMethod.GET, apigw.CorsHttpMethod.POST],
-        allowHeaders: ["content-type"],
+        allowHeaders: ["content-type", "authorization"],
       },
     });
     httpApi.addRoutes({
@@ -504,6 +571,24 @@ export class SattoriStack extends Stack {
       path: "/jobs/{jobId}/start",
       methods: [apigw.HttpMethod.POST],
       integration: new HttpLambdaIntegration("StartJobInt", startJobFn),
+    });
+    httpApi.addRoutes({
+      path: "/admin/jobs",
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration("AdminListJobsInt", adminListJobsFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/jobs/{jobId}",
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration("AdminGetJobDetailInt", adminGetJobDetailFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/jobs/{jobId}/execution",
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration("AdminGetExecutionInt", adminGetExecutionFn),
+      authorizer: adminAuthorizer,
     });
 
     // --- 静的フロントエンド(S3 + CloudFront) ------------------------------

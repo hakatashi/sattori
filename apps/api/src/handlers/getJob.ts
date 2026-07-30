@@ -1,32 +1,9 @@
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
-import {
-  buildContentDispositionValue,
-  buildDownloadFilename,
-  type GetJobResponse,
-  type JobRecord,
-} from "@sattori/shared";
+import type { GetJobResponse } from "@sattori/shared";
 import { loadConfig } from "../config.js";
+import { buildVideoDownloadUrl } from "../downloads.js";
 import { error, json } from "../http.js";
 import { getJob } from "../jobs.js";
-
-/**
- * 動画のダウンロードURLを組み立てる。`response-content-disposition` クエリ
- * パラメータはS3のGetObject APIがそのままレスポンスヘッダーへエコーバックする
- * ため、これを付与するだけでブラウザ標準のダウンロード機構（進捗表示・タブを
- * 離れても継続・ディスクへの直接ストリーミング）を使わせられる（フロントエンド側の
- * fetch+Blob化が不要。詳細はAGENTS.md参照）。
- */
-function buildDownloadUrl(
-  cdnDomain: string,
-  outputPath: string,
-  job: JobRecord,
-  variant: "720p" | "original",
-): string {
-  const filename = buildDownloadFilename(job.jobId, job.replayInfo, variant);
-  const url = new URL(`https://${cdnDomain}/${outputPath}`);
-  url.searchParams.set("response-content-disposition", buildContentDispositionValue(filename));
-  return url.toString();
-}
 
 /**
  * GET /jobs/{jobId}
@@ -47,11 +24,11 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
 
   const downloadUrl =
     job.status === "done" && job.outputPath
-      ? buildDownloadUrl(config.cdnDomain, job.outputPath, job, "original")
+      ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath, job, "original")
       : null;
   const downloadUrl720p =
     job.status === "done" && job.outputPath720p
-      ? buildDownloadUrl(config.cdnDomain, job.outputPath720p, job, "720p")
+      ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath720p, job, "720p")
       : null;
   // プレビュー画像は録画・変換の進行中のみ意味を持つ(完了・失敗後は最新のダウンロード
   // 導線を優先し、古いスクリーンショットは表示しない)。

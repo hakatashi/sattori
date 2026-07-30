@@ -59,6 +59,23 @@ pending → queued → launching → recording → converting → done | failed
   日本語タイトル名。録画対応タイトルは `SUPPORTED_GAME_IDS` で別途絞り込む
   （パーサー対応と録画対応は別軸。詳細は `packages/replay-parser/README.md`）。
 
+## 管理API契約（`src/admin.ts`、Issue #51）
+
+`src/api.ts`とは意図的に別ファイルに分離している。`api.ts`は「ユーザー向け」契約で、
+`GetJobResponse`が`email`/`instanceId`等の内部データを意図的に除外しているのに対し、
+`admin.ts`は正反対の方針（`AdminJobDetailResponse.job`は`JobRecord`をほぼそのまま返す）
+を取るため。管理APIは`/admin/*`のLambda Authorizer（共有トークン）配下にしか
+存在しないため、内部データを含めても問題ない前提に立っている。
+
+| メソッド・パス | 用途 |
+| --- | --- |
+| `GET /admin/jobs` | ジョブ一覧（新しい順、`status`絞り込み、カーソルページング） |
+| `GET /admin/jobs/{jobId}` | ジョブ詳細（`JobRecord`全フィールド＋ダウンロード導線） |
+| `GET /admin/jobs/{jobId}/execution` | Step Functions実行の状態・履歴 |
+
+API側の実装詳細（GSI設計・authorizer・ダウンロードURLの発行方法等）は
+`apps/api/README.md`「管理API」、フロント側は`apps/web/README.md`「管理画面」を参照。
+
 ## ダウンロードファイル名・Content-Disposition（`src/download.ts`）
 
 `buildDownloadFilename()` がリプレイ内容（タイトル・難易度・キャラ・スコア・

@@ -23,7 +23,9 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。`SattoriStack`
   オリジナル解像度など異なるファイル名のリクエスト間でdispositionヘッダーの
   キャッシュが混線する。`apps/api/README.md`参照）。
 - **DynamoDB**: `JobsTable`（`jobId`パーティションキー、オンデマンド課金。
-  DynamoDB Streams `NEW_AND_OLD_IMAGES`を有効化し完了メール送信のトリガーに使う）、
+  DynamoDB Streams `NEW_AND_OLD_IMAGES`を有効化し完了メール送信のトリガーに使う。
+  管理画面のジョブ一覧取得用GSI`StatusCreatedAtIndex`（PK=`status`, SK=`createdAt`,
+  Projection=ALL）を追加済み、Issue #51。詳細は`apps/api/README.md`「管理API」）、
   `EmailRateLimitTable`（`normalizedEmail`パーティションキーのみ・1メール1item、
   TTL属性で自動削除。`apps/api/README.md`参照）。
 - **SES**: `EmailIdentity`（送信元ドメインのDKIM検証、マジックリンク・完了メール
@@ -61,12 +63,44 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。`SattoriStack`
 - **CloudWatch Logs**: `/sattori/worker`（2週間保持）。ワーカーコンテナが
   `awslogs`ドライバで書き込む。重複フレーム診断のため失敗時も残す。
 - **Lambda**（`NodejsFunction`、CJS出力。ESM出力だとAWS SDK内部の動的
-  `require("node:https")`がLambda(ESM)で失敗するため）× 8: createUpload /
+  `require("node:https")`がLambda(ESM)で失敗するため）× 12: createUpload /
   parseReplay / requestMagicLink / startJob / getJob / sendCompletionEmail /
-  sfn.launch / sfn.handleFailure。`sendCompletionEmail`のみHTTP APIではなく
+  sfn.launch / sfn.handleFailure / admin.authorizer / admin.listJobs /
+  admin.getJobDetail / admin.getExecution。`sendCompletionEmail`のみHTTP APIではなく
   `JobsTable`のDynamoDB Streams（`eventName: MODIFY`・`NewImage.status: "done"`
-  にフィルタ）をイベントソースとする。
+  にフィルタ）をイベントソースとする。管理系4本（`admin.*`）は`commonEnv`を使わず、
+  用途ごとの環境変数のみを個別付与する（下記「管理画面」参照）。
 - ワーカーAMIはSSMの ECS 最適化 AL2023（Docker同梱）を参照。
+
+## 管理画面（`/admin`、Issue #51）
+
+運用調査用のジョブ一覧・詳細画面。既存のWeb配信（`WebCdn`・CloudFront Function
+`WebRouting`）は拡張子の無いパスを`/index.html`へ落とすため、`/admin`配下も
+**追加インフラ無し**でSPAとして配信できる。フロント側の構成は
+`apps/web/README.md`「管理画面」、API側は`apps/api/README.md`「管理API」を参照。
+
+追加したインフラはAPI Gateway側のみ:
+
+- **Lambda Authorizer**（`admin/authorizer.ts`）: REQUEST型・simple response
+  （`HttpLambdaResponseType.SIMPLE`）。`identitySource`は
+  `$request.header.Authorization`のみ、`resultsCacheTtl`は5分。`corsPreflight`の
+  `allowHeaders`に`authorization`を追加している（`content-type`のみだった既存設定に
+  Bearerトークンを送るための拡張）。
+- **認可トークン**: SSM Parameter Store（`/sattori/admin/token`、SecureString）に
+  手動で置く。**SecureStringはCloudFormation/CDKでは作成できない**ため、CDK側は
+  `ssm.StringParameter.fromSecureStringParameterAttributes()`で名前を参照するのみで、
+  値には一切触れない（`.stringValue`を参照するとCFnの動的参照
+  `{{resolve:ssm-secure:...}}`が生成され値がテンプレートに染み出すため、`grantRead`
+  （ARNのみ使用）と、`kms:ViaService`条件付きの`kms:Decrypt`個別権限のみを付与する）。
+  **`cdk deploy`より前に手動でパラメータを作成すること**（無くてもデプロイ自体は
+  失敗しないが、作成するまで`/admin/*`は全て403になる）:
+  ```bash
+  aws ssm put-parameter --region us-east-1 --name /sattori/admin/token \
+    --type SecureString --value "$(openssl rand -hex 32)" --overwrite
+  ```
+  投入・ローテーション手順の詳細は`CLAUDE.local.md`参照。
+- **ルート**: `GET /admin/jobs`・`GET /admin/jobs/{jobId}`・
+  `GET /admin/jobs/{jobId}/execution`の3つ、いずれも上記authorizerで保護。
 
 ## デプロイ手順
 
@@ -76,6 +110,8 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra exec cdk bootstra
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの package.json 経由で cdk deploy を実行
 ```
 
+0. （初回のみ）管理画面用トークンをSSMへ手動で作成する（上記「管理画面」参照。
+   CDKでは作成できないSecureStringのため、忘れると`/admin/*`が403になり続ける）
 1. `pnpm build`（`apps/web/dist`が無いと`BucketDeployment`はスキップされる）
 2. `cdk bootstrap`（初回のみ）→ `pnpm run deploy`（`infra`の`deploy`スクリプト
    ＝`cdk deploy`を呼ぶ）
