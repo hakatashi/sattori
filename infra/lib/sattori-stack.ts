@@ -397,9 +397,11 @@ export class SattoriStack extends Stack {
         jobId: sfn.JsonPath.stringAt("$.jobId"),
         attempt: sfn.JsonPath.numberAt("$.attempt"),
       }),
-      // 録画ジョブ全体のフェイルセーフタイムアウト。60分を超えてもワーカーから
+      // 録画ジョブ全体のフェイルセーフタイムアウト。90分を超えてもワーカーから
       // taskTokenの応答が無ければ強制的に失敗させ、HandleFailureで後始末する。
-      taskTimeout: sfn.Timeout.duration(Duration.minutes(60)),
+      // 録画自体のタイムアウト(recording_common.TIMEOUT_SEC=60分)に、720pアップスケール
+      // 変換・S3アップロード・DynamoDB更新・taskToken通知の分の余裕(30分)を上乗せしている。
+      taskTimeout: sfn.Timeout.duration(Duration.minutes(90)),
       resultPath: sfn.JsonPath.DISCARD,
     });
 

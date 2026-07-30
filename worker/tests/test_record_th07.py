@@ -13,3 +13,5 @@ def test_build_config_uses_th07_canonical_slot_and_paths():
     assert config.canonical_slot == "th7_ud0000.rpy"
     assert config.injector_path.endswith("mods/common/build/injector.exe")
     assert config.hook_dll_path.endswith("mods/th07_replay_autoplay/build/th07_hook.dll")
+    # 桜点表示バグ修正(BugFixCherry)のためVsyncPatchを導入(th06と同様)。
+    assert config.extra_dlls == ("vpatch_th07.dll",)

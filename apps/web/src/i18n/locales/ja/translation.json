@@ -37,7 +37,8 @@
   },
   "gameInfo": {
     "heading": "対応タイトルの情報",
-    "vpatchApplied": "vpatch rev{{rev}} 適用済み"
+    "vpatchApplied": "vpatch rev{{rev}} 適用済み",
+    "cherryBugFix": "桜点表示バグ修正適用済み (BugFixCherry = 1)"
   },
   "uploadForm": {
     "supportedTitlesLabel": "現在録画対応中のタイトル ({{count}}作品)",
