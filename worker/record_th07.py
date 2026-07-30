@@ -10,6 +10,11 @@ touhou-recorder の PoC スクリプト
 は th08 と共通のため `recording_common.py` に集約されている(Issue #13 対応時に
 th08向けの検知・リトライ機構を両タイトル共通化した)。本ファイルはタイトル固有の
 パス設定(`GameConfig`)を組み立てて渡すだけの薄いラッパー。
+
+th07には桜点(画面左下の数値)が大きくなりすぎると表示が崩れる既知の不具合があり、
+ファン製パッチ「VsyncPatch」(`vpatch_th07.dll`)にはこれを修正する`BugFixCherry`
+オプションが含まれる(`games/th07/vpatch.ini`で有効化済み)。th06と同様に
+MOD本体(`th07_hook.dll`)より前に注入する(`GameConfig.extra_dlls`)。
 """
 import argparse
 import os
@@ -39,6 +44,8 @@ def build_config():
         canonical_slot="th7_ud0000.rpy",
         injector_path=f"{mod_dir}/common/build/injector.exe",
         hook_dll_path=f"{mod_dir}/th07_replay_autoplay/build/th07_hook.dll",
+        # 桜点表示バグ修正(BugFixCherry)のためVsyncPatchを導入。hook_dllより前に注入する。
+        extra_dlls=("vpatch_th07.dll",),
     )
 
 

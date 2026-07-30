@@ -26,3 +26,7 @@
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+
+.nestedItem {
+  margin-left: 1rem;
+}

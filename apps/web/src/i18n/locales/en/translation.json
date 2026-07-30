@@ -37,7 +37,8 @@
   },
   "gameInfo": {
     "heading": "Supported title info",
-    "vpatchApplied": "VsyncPatch rev{{rev}} applied"
+    "vpatchApplied": "VsyncPatch rev{{rev}} applied",
+    "cherryBugFix": "Cherry point display bug fix applied (BugFixCherry = 1)"
   },
   "uploadForm": {
     "supportedTitlesLabel": "Currently supported titles ({{count}})",
