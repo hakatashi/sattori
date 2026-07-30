@@ -62,8 +62,8 @@ li.supportedTitle.supported {
   height: 1.5rem;
   padding: 0 0.5rem;
   margin-right: 0.5rem;
-  background: color-mix(in hsl, var(--accent), #eee 80%);
-  color: color-mix(in hsl, var(--accent), #999 70%);
+  background: var(--step-badge-bg);
+  color: var(--step-badge-text);
   font-size: 0.9rem;
 }
 
@@ -80,6 +80,14 @@ li.supportedTitle.supported {
   text-align: center;
   font-size: 1.2rem;
   transition: min-height 0.25s ease, padding 0.25s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+/* 点線枠はCSS変数を参照できないSVGデータURIで描いているため、ダークモード時の
+   panel-border相当色(#46464e)を別途焼き込んだ画像に差し替える。 */
+@media (prefers-color-scheme: dark) {
+  .dropzone {
+    background-image: url("data:image/svg+xml,%3csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='100%25' height='100%25' fill='none' rx='12' ry='12' stroke='%2346464e' stroke-width='5' stroke-dasharray='15%2c 25' stroke-dashoffset='0' stroke-linecap='square'/%3e%3c/svg%3e");
+  }
 }
 
 .dropzone:hover {

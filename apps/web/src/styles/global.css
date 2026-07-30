@@ -14,7 +14,29 @@
   --difficulty-extra: #E53935;
   --difficulty-phantasm: #F06292;
   --radius: 6px;
+  /* 難易度バッジ等、彩度の高い背景の上に乗せる文字色。テーマに関わらず白固定
+     （--panelを流用すると、ダーク時にpanelが暗色化して文字が背景と同化するため）。 */
+  --badge-text: #fff;
+  /* リスト区切り線などの微細な境界線。背景色に対する相対的な濃淡で表現し、
+     ライト/ダーク双方で「わずかに浮く境界線」に見えるようにする。 */
+  --divider: rgba(0, 0, 0, 0.08);
+  --step-badge-bg: color-mix(in hsl, var(--accent), #eee 80%);
+  --step-badge-text: color-mix(in hsl, var(--accent), #999 70%);
+  color-scheme: light dark;
   font-family: "Noto Sans JP", Meiryo, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121214;
+    --panel: #1e1e22;
+    --panel-border: #46464e;
+    --text: #e6e6ea;
+    --text-muted: #9c9ca6;
+    --divider: rgba(255, 255, 255, 0.08);
+    --step-badge-bg: color-mix(in hsl, var(--accent), #000 78%);
+    --step-badge-text: color-mix(in hsl, var(--accent), #fff 25%);
+  }
 }
 
 * {

@@ -26,7 +26,7 @@
 .difficultyBadge {
   padding: 0.1rem 0.5rem;
   font-weight: 600;
-  color: var(--panel);
+  color: var(--badge-text);
   background: var(--panel-border);
   border-radius: 2px;
 

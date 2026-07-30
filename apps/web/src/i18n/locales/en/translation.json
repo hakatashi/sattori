@@ -9,7 +9,36 @@
       "label": "Language",
       "ja": "日本語",
       "en": "English"
+    },
+    "footerNav": {
+      "about": "About",
+      "gameInfo": "Supported title info"
     }
+  },
+  "about": {
+    "heading": "About Sattori",
+    "intro": [
+      "Sattori is a free service that automatically generates a recorded video just by uploading a Touhou Project replay file.",
+      "It was created with the hope that more people who play the original Touhou games will start publishing their playthrough videos.",
+      "The goal is to let anyone create a recorded video of a replay casually, without any tedious steps or video-editing knowledge, and easily upload it to video sites."
+    ],
+    "disclaimer": "This service is an unofficial, fan-made project unaffiliated with the Touhou Project's development circles — Team Shanghai Alice, Shanghai Alice Reprise, and Tasogare Frontier — their representative ZUN, or any other individuals or organizations holding related rights. Please do not contact Team Shanghai Alice with inquiries about this service.",
+    "authorHeading": "About the author",
+    "authorName": "Name",
+    "authorRace": "Race",
+    "authorRaceValue": "Human",
+    "authorAbility": "Ability",
+    "authorAbilityValue": "Capable of achieving no-continue clear of the Lunatic difficulty",
+    "socialLinksHeading": "Social links",
+    "troubleHeading": "If you run into trouble",
+    "troubleText1": "Please send a DM on the Mastodon account above, or an email.",
+    "troubleText2": "Please note that, due to being extremely bad at replying, responses may take a very long time, or may not come at all.",
+    "noTroubleHeading": "If you don't run into any trouble",
+    "noTroubleText": "Enjoy!"
+  },
+  "gameInfo": {
+    "heading": "Supported title info",
+    "vpatchApplied": "VsyncPatch rev{{rev}} applied"
   },
   "uploadForm": {
     "supportedTitlesLabel": "Currently supported titles ({{count}})",
