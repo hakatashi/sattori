@@ -95,6 +95,35 @@ def test_update_status_includes_optional_fields(monkeypatch):
     assert "#e = :e" in kwargs["UpdateExpression"]
 
 
+def test_update_status_sets_done_at_only_for_done(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status(
+        "job-1",
+        "done",
+        output_path="videos/job-1.mp4",
+        output_path_720p="videos/job-1_720p.mp4",
+    )
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "doneAt = :d" in kwargs["UpdateExpression"]
+    assert kwargs["ExpressionAttributeValues"][":d"] == kwargs["ExpressionAttributeValues"][":u"]
+
+
+def test_update_status_omits_done_at_for_other_statuses(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "converting", output_path="videos/job-1.mp4")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "doneAt" not in kwargs["UpdateExpression"]
+    assert ":d" not in kwargs["ExpressionAttributeValues"]
+
+
 def test_update_progress_skips_without_table(monkeypatch):
     monkeypatch.delenv("JOBS_TABLE", raising=False)
     mock_resource = mock_dynamodb_resource(monkeypatch)

@@ -28,6 +28,7 @@ function buildJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     status: "recording",
     downloadUrl: null,
     downloadUrl720p: null,
+    downloadExpiresAt: null,
     error: null,
     updatedAt: new Date().toISOString(),
     progress: 100,

@@ -45,6 +45,7 @@ const doneJob: JobRecord = {
   error: null,
   createdAt: "2026-07-18T00:00:00.000Z",
   updatedAt: "2026-07-18T00:00:00.000Z",
+  doneAt: "2026-07-18T00:00:00.000Z",
   email: "user@example.com",
   instanceId: "i-1234",
   instanceType: "c7i.2xlarge",
@@ -100,7 +101,27 @@ describe("GET /jobs/{jobId}", () => {
     expect(urlOriginal.searchParams.get("response-content-disposition")).not.toBe(disposition720p);
   });
 
-  it("録画中(done以外)のジョブはダウンロードURLを返さない", async () => {
+  it("完了ジョブは doneAt + OUTPUT_RETENTION_DAYS(7日) をダウンロード期限として返す", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: doneJob });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.downloadExpiresAt).toBe("2026-07-25T00:00:00.000Z");
+  });
+
+  it("doneAt未設定の旧ジョブはダウンロード期限を返さない", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...doneJob, doneAt: null } });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.downloadExpiresAt).toBeNull();
+  });
+
+  it("録画中(done以外)のジョブはダウンロードURL・期限を返さない", async () => {
     ddbMock.on(GetCommand).resolves({ Item: { ...doneJob, status: "recording" } });
 
     const { handler } = await import("./getJob.js");
@@ -109,6 +130,7 @@ describe("GET /jobs/{jobId}", () => {
 
     expect(body.downloadUrl).toBeNull();
     expect(body.downloadUrl720p).toBeNull();
+    expect(body.downloadExpiresAt).toBeNull();
   });
 
   it("ジョブが存在しなければ404を返す", async () => {
