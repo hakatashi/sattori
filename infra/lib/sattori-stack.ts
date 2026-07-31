@@ -543,6 +543,24 @@ export class SattoriStack extends Stack {
     // commonEnvへ混ぜず用途を揃えておく)。
     adminGetExecutionFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
 
+    // ワーカーのCloudWatch Logs閲覧(Issue #58)。`instanceId`はDynamoDBに持つ情報だが、
+    // getExecutionFnと同じ最小権限の考え方でjobsTable読み取り権限は持たせない
+    // (フロントが`GET /admin/jobs/{jobId}`で既に持つ値をクエリパラメータで渡す)。
+    const adminGetLogsFn = makeHandler("AdminGetLogsFn", "admin/getLogs.ts", {
+      WORKER_LOG_GROUP: workerLogGroup.logGroupName,
+    });
+    workerLogGroup.grantRead(adminGetLogsFn);
+    // UserData(bootstrap)段階の失敗はCloudWatch Logsに乗らないため、EC2コンソール出力を
+    // 代替表示するフォールバック用(`ec2.ts`のUserData内`trap`コメント参照)。
+    // GetConsoleOutputはリソースレベル権限に対応しているため、任意のインスタンスに限定する
+    // (Resource: "*" にはしない)。
+    adminGetLogsFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ec2:GetConsoleOutput"],
+        resources: [`arn:aws:ec2:${this.region}:${this.account}:instance/*`],
+      }),
+    );
+
     const httpApi = new apigw.HttpApi(this, "HttpApi", {
       corsPreflight: {
         allowOrigins: ["*"],
@@ -591,6 +609,12 @@ export class SattoriStack extends Stack {
       path: "/admin/jobs/{jobId}/execution",
       methods: [apigw.HttpMethod.GET],
       integration: new HttpLambdaIntegration("AdminGetExecutionInt", adminGetExecutionFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/jobs/{jobId}/logs",
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration("AdminGetLogsInt", adminGetLogsFn),
       authorizer: adminAuthorizer,
     });
 

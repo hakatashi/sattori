@@ -107,3 +107,34 @@ export interface AdminExecutionResponse {
   /** 履歴の続きを取得するためのトークン（将来のページング拡張用、現状フロントは未使用）。 */
   eventsNextToken: string | null;
 }
+
+/** CloudWatch Logsのログイベント1件（`GET /admin/jobs/{jobId}/logs`）。 */
+export interface AdminLogEvent {
+  /** epoch ミリ秒。取得できなければ null。 */
+  timestamp: number | null;
+  message: string;
+}
+
+/** GET /admin/jobs/{jobId}/logs のレスポンス（Issue #58）。 */
+export interface AdminLogsResponse {
+  /**
+   * falseの場合、ロググループ`/sattori/worker`に`jobId`名のログストリームが
+   * 存在しない（コンテナが一度も起動できずUserData段階で失敗した可能性が高い。
+   * AGENTS.md参照）。この場合`events`は常に空。
+   */
+  logStreamFound: boolean;
+  /** 古い順。Step Functionsのリトライを跨いで同一ストリームに追記されるため、複数回の試行ログが混在しうる。 */
+  events: AdminLogEvent[];
+  /**
+   * これより古いイベントを取得するためのトークン（`?cursor=`にそのまま渡す）。
+   * これ以上古いイベントが無ければ null。
+   */
+  nextBackwardToken: string | null;
+  /**
+   * `logStreamFound`がfalseの場合のフォールバック。UserData(bootstrap)段階の失敗は
+   * awslogsドライバに乗らないため、EC2のコンソール出力を代替表示する
+   * （リクエストで`instanceId`が渡され、かつインスタンスの終了から時間が経っておらず
+   * 取得できた場合のみ非null）。
+   */
+  consoleOutput: string | null;
+}
