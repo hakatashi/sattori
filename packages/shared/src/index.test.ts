@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isSupportedGame, isTerminalStatus, DEFAULT_RECORDING_OPTIONS } from "./index.js";
+import {
+  isSupportedGame,
+  isTerminalStatus,
+  DEFAULT_RECORDING_OPTIONS,
+  ADMIN_JOB_LIST_DEFAULT_LIMIT,
+  ADMIN_JOB_LIST_MAX_LIMIT,
+} from "./index.js";
 
 describe("shared", () => {
   it("th06・th07・th08・th11 が録画対応タイトル(Issue #13でth08、th06対応でth06、th11対応でth11を追加)", () => {
@@ -20,5 +26,10 @@ describe("shared", () => {
 
   it("ウォーターマークはデフォルトON", () => {
     expect(DEFAULT_RECORDING_OPTIONS.watermark).toBe(true);
+  });
+
+  it("管理API(admin.ts)の定数がindexからre-exportされている(Issue #51)", () => {
+    expect(ADMIN_JOB_LIST_DEFAULT_LIMIT).toBe(20);
+    expect(ADMIN_JOB_LIST_MAX_LIMIT).toBe(100);
   });
 });

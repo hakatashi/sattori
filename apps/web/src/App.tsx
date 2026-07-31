@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
 import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useMatch } from "react-router-dom";
@@ -13,6 +13,12 @@ import { LocaleContext } from "./i18n/LocaleContext.ts";
 import { toLocalizedPath } from "./i18n/paths.ts";
 import type { SupportedLanguage } from "./i18n/i18n.ts";
 import styles from "./App.module.css";
+
+// 管理画面(`/admin`、Issue #51)。一般ユーザーのバンドルサイズに影響させないよう
+// React.lazyで別チャンクに分離する。`lazy()`はdefault exportを要求するため、
+// このリポジトリの「名前付きexport」規約(named export)を保ったまま
+// `.then((m) => ({ default: m.AdminApp }))`で変換する。
+const AdminApp = lazy(() => import("./admin/AdminApp.tsx").then((m) => ({ default: m.AdminApp })));
 
 interface LayoutProps {
   lang: SupportedLanguage;
@@ -93,6 +99,18 @@ export function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* 管理画面(`/admin`)。ja/enツリーの catch-all(`<Route path="*">`)より後ろに
+            置くと`/admin`が"/"へ即リダイレクトされてしまうため、必ず先に置くこと。
+            日本語固定・i18n非適用のため独自のレイアウトを持ち、ja/enどちらのツリーにも
+            属さない(LanguageSwitcherが存在しない`/en/admin`へのリンクを出さないため)。 */}
+        <Route
+          path="/admin/*"
+          element={
+            <Suspense fallback={<p>読み込み中…</p>}>
+              <AdminApp />
+            </Suspense>
+          }
+        />
         {/* ja（既定言語）: プレフィックス無し。バックエンドが生成するマジックリンクは
             `/jobs/{jobId}`固定のため、このツリーは常にプレフィックス無しで到達可能である必要がある。 */}
         <Route path="/" element={<Layout lang="ja" />}>

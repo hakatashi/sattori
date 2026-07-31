@@ -157,7 +157,11 @@ describe("UploadForm", () => {
     mocked.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
     mocked.uploadReplay.mockResolvedValue(undefined);
     mocked.parseReplay.mockRejectedValue(
-      new client.SattoriApiError("unsupported_game", "東方星蓮船 ～ Undefined Fantastic Object. は現在録画に対応していません"),
+      new client.SattoriApiError(
+        "unsupported_game",
+        "東方星蓮船 ～ Undefined Fantastic Object. は現在録画に対応していません",
+        422,
+      ),
     );
 
     render(<UploadForm onMagicLinkSent={vi.fn()} />);
