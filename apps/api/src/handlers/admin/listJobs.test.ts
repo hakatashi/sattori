@@ -85,32 +85,37 @@ describe("GET /admin/jobs", () => {
     expect(res.statusCode).toBe(400);
   });
 
+  // Queryへ渡るLimitはhasMore判定のため常にlimit+1（`adminJobs.ts`参照）。
   it("limitのクランプ: 0は既定値(20)、101は上限(100)になる", async () => {
     ddbMock.on(QueryCommand).resolves({ Items: [] });
     const { handler } = await import("./listJobs.js");
 
     await handler(makeEvent({ status: "done", limit: "0" }), {} as never, () => {});
-    expect(ddbMock.commandCalls(QueryCommand)[0]?.args[0].input.Limit).toBe(20);
+    expect(ddbMock.commandCalls(QueryCommand)[0]?.args[0].input.Limit).toBe(21);
 
     ddbMock.resetHistory();
     await handler(makeEvent({ status: "done", limit: "101" }), {} as never, () => {});
-    expect(ddbMock.commandCalls(QueryCommand)[0]?.args[0].input.Limit).toBe(100);
+    expect(ddbMock.commandCalls(QueryCommand)[0]?.args[0].input.Limit).toBe(101);
   });
 
-  it("nextCursorを渡すとcreatedAt<=の条件になり境界アイテムが除外される", async () => {
+  it("cursorを渡すとそのstatusのExclusiveStartKeyになる", async () => {
     ddbMock.on(QueryCommand).resolves({
-      Items: [
-        summary("job-2", "2026-07-30T00:00:02.000Z"),
-        summary("job-1", "2026-07-30T00:00:01.000Z"),
-      ],
+      Items: [summary("job-1", "2026-07-30T00:00:01.000Z")],
     });
     const { handler } = await import("./listJobs.js");
 
-    const cursor = encodeCursor({ createdAt: "2026-07-30T00:00:02.000Z", jobId: "job-2" });
+    const cursor = encodeCursor({
+      done: { createdAt: "2026-07-30T00:00:02.000Z", jobId: "job-2" },
+    });
     const res = await handler(makeEvent({ status: "done", cursor }), {} as never, () => {});
     const body = parseBody(res as APIGatewayProxyStructuredResultV2);
 
     expect(body.items.map((i) => i.jobId)).toEqual(["job-1"]);
+    expect(ddbMock.commandCalls(QueryCommand)[0]?.args[0].input.ExclusiveStartKey).toEqual({
+      status: "done",
+      createdAt: "2026-07-30T00:00:02.000Z",
+      jobId: "job-2",
+    });
   });
 
   it("不正なcursorは400を返す", async () => {
