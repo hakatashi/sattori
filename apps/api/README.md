@@ -134,8 +134,16 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   一覧（`adminJobs.ts`の`listJobs()`）はstatus未指定時、GSIにソートキーが無い
   （PKがstatus固定）ため`JOB_STATUSES`ぶん並列にQueryしてcreatedAt降順でk-way
   マージする。status遷移中のジョブが複数ストリームに現れうるためjobIdでdedupeする。
-  ページを跨いだ重複・欠落は管理画面の性質上許容している。カーソルはDynamoDBの
-  `LastEvaluatedKey`をそのまま返さず、`base64url(createdAt|jobId)`の不透明文字列にする。
+  status遷移に起因するページを跨いだ重複・欠落は管理画面の性質上許容している。
+  **カーソルはページ境界の1点ではなく、status毎の再開位置**（そのstatusのGSIクエリの
+  `ExclusiveStartKey`）を持つ。単一の(createdAt, jobId)を全ストリーム共通の境界にして
+  `createdAt <= cursor`で絞り込む方式だと、カーソル自身が`Limit`の枠を消費して該当
+  ストリームが上位limit件を返せなくなり、ページ末尾が別ストリームの遥かに古いアイテムで
+  埋まる→カーソルが一気に過去へ飛んで**間のジョブが丸ごと欠落する**（`limit=1`では
+  2ページ目以降が常に空になる）。クエリの`Limit`は`limit + 1`にしている: DynamoDBは
+  `Limit`到達で打ち切ると後続が無くても`LastEvaluatedKey`を返すため、1件多く要求して
+  初めて「続きがある」を正確に判定でき、空ページへ進む「次へ」が出なくなる。
+  カーソルはクライアントに解釈させないよう`base64url(JSON)`の不透明文字列にする。
 - **Lambda Authorizer**（`admin/authorizer.ts`、ロジックは`adminAuth.ts`）:
   REQUEST型・simple response（`{isAuthorized}`）。`identitySource`は
   `$request.header.Authorization`のみ（ヘッダー自体が無ければAPI Gatewayが
@@ -155,7 +163,10 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   実行名にjobIdをそのまま使っているため`buildExecutionArn()`で決定的に導出できる。
   実行がまだ存在しない（pendingのまま起動していない）・Standard実行の履歴保持期間
   （90日）を過ぎている場合は404にせず`execution: null`を返す（ジョブ自体は存在し、
-  実行だけが無い状態を素直に表現するため）。ジョブ詳細（`admin/getJobDetail.ts`）とは
+  実行だけが無い状態を素直に表現するため）。同じ理由で`DescribeExecution`と
+  `GetExecutionHistory`は`allSettled`で切り離し、履歴取得だけが失敗（スロットリング等）
+  した場合は500にせず`events: []`へ縮退させる（調査で最も有用な実行のstatus/error/cause
+  は取れているのに画面が真っ白になるのを避けるため）。ジョブ詳細（`admin/getJobDetail.ts`）とは
   意図的に別エンドポイントにしている: SFNが不調でも詳細画面はDynamoDB由来の情報だけで
   描画できるべきで、詳細用Lambdaに`states:*`権限を持たせずに済む（最小権限）。
 

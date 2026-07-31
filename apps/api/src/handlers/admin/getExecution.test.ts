@@ -80,6 +80,30 @@ describe("GET /admin/jobs/{jobId}/execution", () => {
     expect(body.events).toEqual([]);
   });
 
+  it("履歴取得だけが失敗した場合は500にせず実行状態 + events:[] を返す", async () => {
+    sfnMock.on(DescribeExecutionCommand).resolves({
+      status: "FAILED",
+      error: "States.TaskFailed",
+      cause: "worker reported failure",
+    });
+    sfnMock.on(GetExecutionHistoryCommand).rejects(new Error("ThrottlingException"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { handler } = await import("./getExecution.js");
+    const res = (await handler(
+      makeEvent("job-1"),
+      {} as never,
+      () => {},
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = parseBody(res);
+
+    expect(res.statusCode).toBe(200);
+    expect(body.execution?.status).toBe("FAILED");
+    expect(body.execution?.cause).toBe("worker reported failure");
+    expect(body.events).toEqual([]);
+    expect(body.eventsNextToken).toBeNull();
+  });
+
   it("jobIdが無ければ400を返す", async () => {
     const { handler } = await import("./getExecution.js");
     const res = (await handler(

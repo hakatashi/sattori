@@ -122,7 +122,10 @@ API Gateway自身の形式で、このAPIの`ApiError`（code/message）形で�
   認可で、フロント側のログインゲート（`AdminApp.tsx`）はUX目的（未ログイン時は
   API呼び出し自体を発生させない）。401/403（`AdminUnauthorizedError`、`adminApi.ts`）を
   受けた画面は`AdminAuthContext.onUnauthorized`経由で`AdminApp`に伝わり、トークンを
-  クリアして再ログインを促す。
+  クリアして再ログインを促す。`localStorage`への読み書きは3関数とも`try`/`catch`で
+  包んである（プライベートブラウジング等で`setItem`が例外を投げると、`/admin`配下に
+  エラーバウンダリが無いためログイン操作だけで画面が白くなる。セッション限りの
+  ログインへ縮退させる）。
 - **構成**: `AdminApp.tsx`（認証ゲート＋内部`<Routes>`）→ `JobListPage.tsx`（一覧・
   status絞り込み・カーソルページング。状態は`useSearchParams`でURLに載せる）／
   `JobDetailPage.tsx`（`JobRecord`全フィールド＋ダウンロード導線）／
