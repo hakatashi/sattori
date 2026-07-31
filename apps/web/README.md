@@ -11,6 +11,11 @@
   （メールを確認しないと分からない秘密値。URLに他の認可情報は含まない）。
 - 上記2ルートは`/en`配下（`/en`・`/en/jobs/:jobId`）にも同型で存在する（英語版、
   詳細は下記「多言語対応」）。未定義パスはそれぞれ`/`・`/en`へリダイレクト。
+- `/admin/*` = 管理画面（`src/admin/`、Issue #51）。ja/enどちらのツリーにも属さない
+  独立ルートで、日本語固定・i18n非適用。`React.lazy`で別チャンクに分離しているため、
+  一般ユーザーのバンドルには含まれない。ja/enツリーの`catch-all(<Route path="*">)`より
+  **前**に定義する必要がある（後ろだと`/admin`が`/`へ即リダイレクトされてしまう）。
+  詳細は下記「管理画面」。
 - 共通レイアウト（ヘッダー・フッター）は`Layout`。ページBはページAより広い画面幅
   （2カラムのリプレイ情報+アクティビティログ）を活かすため、`useMatch`でページBのみ
   最大幅を広げている。
@@ -98,7 +103,39 @@ fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
 ## API クライアント（`src/api/client.ts`）
 
 `VITE_API_BASE`（既定 `/api`）を基点に`fetch`でAPIを呼ぶ薄いラッパー。エラーレスポンス
-（`ApiError`）は`SattoriApiError`（`code`/`message`）に変換して投げる。
+（`ApiError`）は`SattoriApiError`（`code`/`message`/`status`）に変換して投げる。`status`
+（HTTPステータスコード）は管理画面がAPI Gatewayのauthorizer拒否（401/403）を判別する
+ために追加した。authorizer拒否時のレスポンスは`{"message":"Unauthorized"}`のような
+API Gateway自身の形式で、このAPIの`ApiError`（code/message）形ではないため`code`では
+判別できない。`request<T>()`自体も`export`しており、管理画面用ラッパー
+（`src/admin/adminApi.ts`）が`Authorization`ヘッダー付きで呼び出すのに再利用する
+（fetchとエラー整形の実装を二重化しないため）。
+
+## 管理画面（`src/admin/`、Issue #51）
+
+運用調査用のジョブ一覧・詳細・ダウンロード導線。ユーザーは管理者1人固定。API側の詳細は
+`apps/api/README.md`「管理API」を参照。
+
+- **認証**: SSM Parameter Store（`/sattori/admin/token`）に置いた共有トークンを
+  `localStorage`（`adminToken.ts`、キー`sattori.adminToken`）に保持し、
+  `Authorization: Bearer <token>`で送る。API Gateway側のLambda Authorizerが本体の
+  認可で、フロント側のログインゲート（`AdminApp.tsx`）はUX目的（未ログイン時は
+  API呼び出し自体を発生させない）。401/403（`AdminUnauthorizedError`、`adminApi.ts`）を
+  受けた画面は`AdminAuthContext.onUnauthorized`経由で`AdminApp`に伝わり、トークンを
+  クリアして再ログインを促す。`localStorage`への読み書きは3関数とも`try`/`catch`で
+  包んである（プライベートブラウジング等で`setItem`が例外を投げると、`/admin`配下に
+  エラーバウンダリが無いためログイン操作だけで画面が白くなる。セッション限りの
+  ログインへ縮退させる）。
+- **構成**: `AdminApp.tsx`（認証ゲート＋内部`<Routes>`）→ `JobListPage.tsx`（一覧・
+  status絞り込み・カーソルページング。状態は`useSearchParams`でURLに載せる）／
+  `JobDetailPage.tsx`（`JobRecord`全フィールド＋ダウンロード導線）／
+  `ExecutionPanel.tsx`（Step Functions実行状態、`JobDetailPage`とは別にfetchする。
+  理由は`apps/api/README.md`参照）。データ取得は共通フック`useAdminResource.ts`
+  （`AdminUnauthorizedError`を検知して`onUnauthorized`を呼ぶ）に集約。
+- **レイアウト**: `AdminLayout.tsx`はユーザー向け`App.tsx`の`Layout`とは共有しない
+  専用シェル（`LanguageSwitcher`が存在しない`/en/admin`へのリンクを出してしまうことと、
+  ユーザー向け`main`幅(50rem)がジョブ一覧テーブルには狭すぎることが理由）。CSS Modules
+  + `global.css`の既存トークン（`--panel`等）を再利用し、`:root`自体は変更しない。
 
 ## 開発サーバ
 

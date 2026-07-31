@@ -43,7 +43,7 @@ describe("StartJob", () => {
 
   it("失敗時はエラーメッセージと再試行導線を表示する", async () => {
     mocked.startJob.mockRejectedValue(
-      new client.SattoriApiError("job_expired", "受付期限が切れています"),
+      new client.SattoriApiError("job_expired", "受付期限が切れています", 410),
     );
     const onStarted = vi.fn();
     const onReset = vi.fn();

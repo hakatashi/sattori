@@ -17,14 +17,26 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 export class SattoriApiError extends Error {
   readonly code: string;
-  constructor(code: string, message: string) {
+  /**
+   * HTTPステータスコード。管理画面(`src/admin/`)がAPI Gatewayの認可拒否(401/403)を
+   * 判別するために参照する。authorizerの拒否レスポンスは`{"message":"Unauthorized"}`
+   * のような形式で、このAPIの`ApiError`(code/message)形ではないため`code`では
+   * 判別できず、ステータスコードで判定する必要がある(Issue #51)。
+   */
+  readonly status: number;
+  constructor(code: string, message: string, status: number) {
     super(message);
     this.name = "SattoriApiError";
     this.code = code;
+    this.status = status;
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * `apps/web/src/admin/`（管理画面）が`Authorization`ヘッダー付きで叩けるよう export する。
+ * fetchとエラー整形の実装を二重化しないための共有。
+ */
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: { "content-type": "application/json", ...init?.headers },
@@ -34,6 +46,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new SattoriApiError(
       body?.code ?? "http_error",
       body?.message ?? `リクエストに失敗しました (${res.status})`,
+      res.status,
     );
   }
   return (await res.json()) as T;
@@ -55,7 +68,7 @@ export async function uploadReplay(uploadUrl: string, file: File): Promise<void>
     body: file,
   });
   if (!res.ok) {
-    throw new SattoriApiError("upload_failed", "リプレイファイルのアップロードに失敗しました");
+    throw new SattoriApiError("upload_failed", "リプレイファイルのアップロードに失敗しました", res.status);
   }
 }
 

@@ -173,7 +173,7 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("StartJob Lambda に STATE_MACHINE_ARN 環境変数が設定されている", () => {
+  it("STATE_MACHINE_ARN 環境変数を個別付与されているLambdaはStartJobとAdminGetExecutionの2つ(循環依存回避のためcommonEnvに含めていない)", () => {
     const startJobResources = template.findResources("AWS::Lambda::Function", {
       Properties: {
         Environment: {
@@ -183,7 +183,7 @@ describe("SattoriStack", () => {
         },
       },
     });
-    expect(Object.keys(startJobResources).length).toBe(1);
+    expect(Object.keys(startJobResources).length).toBe(2);
   });
 
   it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {
@@ -256,6 +256,90 @@ describe("SattoriStack", () => {
                 dynamodb: { NewImage: { status: { S: ["done"] } } },
               }),
             ),
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("JobsTableに管理画面(Issue #51)用のGSI(PK=status, SK=createdAt, Projection=ALL)が存在する", () => {
+    template.hasResourceProperties("AWS::DynamoDB::Table", {
+      GlobalSecondaryIndexes: Match.arrayWith([
+        Match.objectLike({
+          IndexName: "StatusCreatedAtIndex",
+          KeySchema: [
+            { AttributeName: "status", KeyType: "HASH" },
+            { AttributeName: "createdAt", KeyType: "RANGE" },
+          ],
+          Projection: { ProjectionType: "ALL" },
+        }),
+      ]),
+    });
+    // GSI追加はテーブル数を変えない(既存の「テーブルはjobsTable/emailRateLimitTableの2つ」
+    // というアサーションと矛盾しないことの確認を兼ねる)。
+    template.resourceCountIs("AWS::DynamoDB::Table", 2);
+  });
+
+  it("管理画面(`/admin/*`)のHTTP APIルートがLambda Authorizerで保護されている", () => {
+    const routes = template.findResources("AWS::ApiGatewayV2::Route");
+    const routeEntries = Object.values(routes) as {
+      Properties: { RouteKey: string; AuthorizationType?: string; AuthorizerId?: unknown };
+    }[];
+
+    const adminRouteKeys = [
+      "GET /admin/jobs",
+      "GET /admin/jobs/{jobId}",
+      "GET /admin/jobs/{jobId}/execution",
+    ];
+    for (const routeKey of adminRouteKeys) {
+      const route = routeEntries.find((r) => r.Properties.RouteKey === routeKey);
+      expect(route, `route ${routeKey} が見つからない`).toBeTruthy();
+      expect(route?.Properties.AuthorizationType).toBe("CUSTOM");
+      expect(route?.Properties.AuthorizerId).toBeTruthy();
+    }
+
+    // 既存のユーザー向けルートには誤ってauthorizerが付いていないことを確認する。
+    const publicRouteKeys = ["GET /jobs/{jobId}", "POST /jobs/{jobId}/start", "POST /magic-links"];
+    for (const routeKey of publicRouteKeys) {
+      const route = routeEntries.find((r) => r.Properties.RouteKey === routeKey);
+      expect(route?.Properties.AuthorizerId).toBeFalsy();
+    }
+  });
+
+  it("管理画面用Lambda Authorizerがsimple response形式で定義されている", () => {
+    template.hasResourceProperties("AWS::ApiGatewayV2::Authorizer", {
+      AuthorizerType: "REQUEST",
+      AuthorizerPayloadFormatVersion: "2.0",
+      EnableSimpleResponses: true,
+      IdentitySource: ["$request.header.Authorization"],
+      AuthorizerResultTtlInSeconds: 300,
+    });
+  });
+
+  it("HTTP APIのCORSがAuthorizationヘッダーを許可している(管理画面のBearerトークン用)", () => {
+    template.hasResourceProperties("AWS::ApiGatewayV2::Api", {
+      CorsConfiguration: Match.objectLike({
+        AllowHeaders: Match.arrayWith(["authorization"]),
+      }),
+    });
+  });
+
+  it("管理画面Authorizer LambdaにSSM読み取りとKMS復号権限が付与されている", () => {
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith(["ssm:GetParameter"]),
+          }),
+        ]),
+      },
+    });
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: "kms:Decrypt",
+            Condition: { StringEquals: { "kms:ViaService": Match.anyValue() } },
           }),
         ]),
       },

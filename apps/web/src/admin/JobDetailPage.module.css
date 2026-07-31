@@ -1,0 +1,73 @@
+.heading {
+  font-size: 1.25rem;
+  font-family: monospace;
+  margin: 0 0 1rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1.5rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+}
+
+.panelHeading {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.fields dt {
+  color: var(--text-muted);
+}
+
+.fields dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.downloadList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.downloadLink {
+  display: inline-block;
+}
+
+.downloadDisabled {
+  color: var(--text-muted);
+}
+
+.staleNotice {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 0.5rem 0 0;
+}
+
+.previewImage {
+  max-width: 100%;
+  border-radius: var(--radius);
+  margin-top: 0.5rem;
+}

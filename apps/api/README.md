@@ -16,6 +16,10 @@ API契約自体は `packages/shared/README.md` を参照。
 | `sendCompletionEmail.ts` | JobsTableのDynamoDB Streams | ジョブが`done`に遷移した瞬間を検知しSESで完了メール送信 |
 | `sfn/launch.ts` | Step Functions `Launch`タスク | EC2 Fleetでワーカーを1台起動（`waitForTaskToken`。成否確定はワーカー自身が行う） |
 | `sfn/handleFailure.ts` | Step Functions `HandleFailure`タスク | 孤児インスタンスをterminateしつつリトライ可否を判定 |
+| `admin/authorizer.ts` | `/admin/*` の Lambda Authorizer | 共有トークンの検証（後述「管理API」） |
+| `admin/listJobs.ts` | `GET /admin/jobs` | ジョブ一覧（新しい順・status絞り込み・カーソルページング） |
+| `admin/getJobDetail.ts` | `GET /admin/jobs/{jobId}` | `JobRecord`全フィールド＋ダウンロード導線 |
+| `admin/getExecution.ts` | `GET /admin/jobs/{jobId}/execution` | Step Functions実行の状態・履歴 |
 
 ## ジョブ起動〜Step Functionsの流れ
 
@@ -113,15 +117,70 @@ UserDataスクリプトの要点:
 （含めないと720p/オリジナル解像度など異なるファイル名のリクエスト間でキャッシュが
 混線する。`infra/README.md`参照）。
 
+## 管理API（`/admin/*`、Issue #51）
+
+運用調査用の管理画面（`apps/web/src/admin/`）向け。ユーザーは管理者1人固定のため、
+Cognito等ではなくSSM Parameter Store(SecureString)に置いた共有トークンを
+Lambda Authorizerで検証する方式にしている。jobId自体を秘密値として使う
+ユーザー向けの認可方式（`startJob.ts`、AGENTS.md）とは別系統。
+
+- **一覧取得**: `JobsTable`はPK`jobId`のみでGSIが無かったため、`StatusCreatedAtIndex`
+  （PK=`status`, SK=`createdAt`, Projection=ALL）を追加した
+  （`infra/lib/sattori-stack.ts`）。`status`/`createdAt`は`jobs.ts`の`putJob()`が必ず
+  設定し、以降の更新経路（`updateJobStatus`等）もSETのみで消えない既存属性のため、
+  GSI追加だけで既存レコードが自動的にインデックスへ載る（バックフィル不要）。
+  **`JobRecord`を新規作成する経路を今後追加する場合、`status`/`createdAt`はGSIの
+  キー属性なので必ず設定すること**（欠けると無言でインデックスから漏れる）。
+  一覧（`adminJobs.ts`の`listJobs()`）はstatus未指定時、GSIにソートキーが無い
+  （PKがstatus固定）ため`JOB_STATUSES`ぶん並列にQueryしてcreatedAt降順でk-way
+  マージする。status遷移中のジョブが複数ストリームに現れうるためjobIdでdedupeする。
+  status遷移に起因するページを跨いだ重複・欠落は管理画面の性質上許容している。
+  **カーソルはページ境界の1点ではなく、status毎の再開位置**（そのstatusのGSIクエリの
+  `ExclusiveStartKey`）を持つ。単一の(createdAt, jobId)を全ストリーム共通の境界にして
+  `createdAt <= cursor`で絞り込む方式だと、カーソル自身が`Limit`の枠を消費して該当
+  ストリームが上位limit件を返せなくなり、ページ末尾が別ストリームの遥かに古いアイテムで
+  埋まる→カーソルが一気に過去へ飛んで**間のジョブが丸ごと欠落する**（`limit=1`では
+  2ページ目以降が常に空になる）。クエリの`Limit`は`limit + 1`にしている: DynamoDBは
+  `Limit`到達で打ち切ると後続が無くても`LastEvaluatedKey`を返すため、1件多く要求して
+  初めて「続きがある」を正確に判定でき、空ページへ進む「次へ」が出なくなる。
+  カーソルはクライアントに解釈させないよう`base64url(JSON)`の不透明文字列にする。
+- **Lambda Authorizer**（`admin/authorizer.ts`、ロジックは`adminAuth.ts`）:
+  REQUEST型・simple response（`{isAuthorized}`）。`identitySource`は
+  `$request.header.Authorization`のみ（ヘッダー自体が無ければAPI Gatewayが
+  Lambdaを起動せず401を返す）。トークン比較はSHA-256を経由した固定長の
+  `timingSafeEqual`（長さ不一致による`RangeError`回避と定数時間比較を両立）。
+  SSMから取得したトークンは実行コンテキストに5分TTLでキャッシュし、authorizer自体の
+  `resultsCacheTtl`（5分）と合わせて、トークンローテーション後の失効反映は
+  **最大10分遅れる**（許容トレードオフ。ローテーション手順は`CLAUDE.local.md`）。
+- **ダウンロード**（`downloads.ts`）: 動画URLの組み立て（`buildVideoDownloadUrl`）は
+  `getJob.ts`から移設して共有。ユーザー向け`GET /jobs/{jobId}`と異なり、statusが
+  `done`でなくても`outputPath`/`outputPath720p`があればURLを返す（`converting`中の
+  生動画チェックポイントを取得したい運用ニーズのため）。`.rpy`は`UploadBucket`が
+  CloudFront配信されていない`BLOCK_ALL`バケットのため、動画とは別にS3署名付き
+  GET URL（`createPresignedReplayDownloadUrl`、TTL 900秒）を発行する。
+- **Step Functions実行**（`admin/getExecution.ts`、`stepFunctions.ts`）:
+  `executionArn`はDBに保存していないが、`startJob.ts`が`StartExecutionCommand`の
+  実行名にjobIdをそのまま使っているため`buildExecutionArn()`で決定的に導出できる。
+  実行がまだ存在しない（pendingのまま起動していない）・Standard実行の履歴保持期間
+  （90日）を過ぎている場合は404にせず`execution: null`を返す（ジョブ自体は存在し、
+  実行だけが無い状態を素直に表現するため）。同じ理由で`DescribeExecution`と
+  `GetExecutionHistory`は`allSettled`で切り離し、履歴取得だけが失敗（スロットリング等）
+  した場合は500にせず`events: []`へ縮退させる（調査で最も有用な実行のstatus/error/cause
+  は取れているのに画面が真っ白になるのを避けるため）。ジョブ詳細（`admin/getJobDetail.ts`）とは
+  意図的に別エンドポイントにしている: SFNが不調でも詳細画面はDynamoDB由来の情報だけで
+  描画できるべきで、詳細用Lambdaに`states:*`権限を持たせずに済む（最小権限）。
+
 ## 環境変数（`config.ts`）
 
-すべて `infra/lib/sattori-stack.ts` の `commonEnv`（+ `startJob.ts`専用の
-`STATE_MACHINE_ARN`）から注入される。`loadConfig()`が必須環境変数の存在を検証する。
+すべて `infra/lib/sattori-stack.ts` の `commonEnv`（+ `startJob.ts`/
+`admin/getExecution.ts`専用の`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
+`ADMIN_TOKEN_PARAMETER_NAME`）から注入される。`loadConfig()`が必須環境変数の存在を
+検証する（管理API用Lambdaは`commonEnv`を使わず個別の環境変数のみを持つ）。
 
 `STATE_MACHINE_ARN`が`commonEnv`に含まれない理由: ステートマシンは`launchFn`/
 `handleFailureFn`（Lambda ARN）を呼び出すため、これらのLambdaの環境変数がステート
-マシンARNを参照するとCloudFormationの循環依存になる。`StartExecution`を呼ぶ
-`startJob.ts`だけが個別の環境変数として受け取る。
+マシンARNを参照するとCloudFormationの循環依存になる。`StartExecution`/`DescribeExecution`
+系を呼ぶ`startJob.ts`・`admin/getExecution.ts`だけが個別の環境変数として受け取る。
 
 ## テスト
 
