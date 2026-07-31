@@ -35,6 +35,7 @@ const recordingJob: JobRecord = {
   error: null,
   createdAt: "2026-07-18T00:00:00.000Z",
   updatedAt: "2026-07-18T00:00:00.000Z",
+  doneAt: null,
   email: "user@example.com",
   instanceId: "i-1234",
   instanceType: "c7i.2xlarge",

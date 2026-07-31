@@ -106,6 +106,7 @@
     "genericError": "A problem occurred while recording. Please try again.",
     "download": "Download video",
     "downloadOriginal": "Download video before conversion",
+    "downloadExpiresAt": "The video will be available for download until {{date}}",
     "hint": "Recording and conversion continue even if you close this page. You can come back to this page at any time to check the status."
   }
 }

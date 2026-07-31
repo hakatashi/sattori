@@ -1,5 +1,5 @@
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
-import type { GetJobResponse } from "@sattori/shared";
+import { calculateDownloadExpiresAt, type GetJobResponse } from "@sattori/shared";
 import { loadConfig } from "../config.js";
 import { buildVideoDownloadUrl } from "../downloads.js";
 import { error, json } from "../http.js";
@@ -43,6 +43,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     status: job.status,
     downloadUrl,
     downloadUrl720p,
+    downloadExpiresAt: job.status === "done" ? calculateDownloadExpiresAt(job.doneAt) : null,
     error: job.error,
     updatedAt: job.updatedAt,
     progress: job.progress,

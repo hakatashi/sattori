@@ -13,7 +13,10 @@ const SAMPLE_REPLAY_INFO: ReplayInfo = {
   estimatedDurationSeconds: 1800,
 };
 
-const BASE: Omit<GetJobResponse, "status" | "downloadUrl" | "downloadUrl720p" | "error" | "progress" | "previewImageUrl"> = {
+const BASE: Omit<
+  GetJobResponse,
+  "status" | "downloadUrl" | "downloadUrl720p" | "downloadExpiresAt" | "error" | "progress" | "previewImageUrl"
+> = {
   jobId: "sample-job-id",
   game: "th07",
   updatedAt: new Date().toISOString(),
@@ -25,6 +28,7 @@ function buildJob(overrides: Partial<GetJobResponse> & { status: JobStatus }): G
     ...BASE,
     downloadUrl: null,
     downloadUrl720p: null,
+    downloadExpiresAt: null,
     error: null,
     progress: null,
     previewImageUrl: null,
@@ -58,6 +62,7 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
       status: "done",
       downloadUrl: "https://example.com/sample.mp4",
       downloadUrl720p: "https://example.com/sample-720p.mp4",
+      downloadExpiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
     }),
   },
   {

@@ -35,6 +35,7 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     // このURLへの単純な<a>リンクを描画するだけでよい（filenameを自前で組み立てない）。
     downloadUrl: "https://media.example/original.mp4?response-content-disposition=attachment%3B...",
     downloadUrl720p: "https://media.example/720p.mp4?response-content-disposition=attachment%3B...",
+    downloadExpiresAt: "2026-07-25T00:00:00.000Z",
     error: null,
     updatedAt: new Date().toISOString(),
     progress: null,
@@ -72,6 +73,18 @@ describe("JobProgressView のダウンロード", () => {
     expect(link.href).toBe(buildDoneJob().downloadUrl);
     expect(screen.queryByText("変換前の動画をダウンロード")).toBeNull();
   });
+
+  it("downloadExpiresAtがあればダウンロード期限が表示される", () => {
+    render(<JobProgressView job={buildDoneJob()} loadError={null} />);
+
+    expect(screen.getByText(/までダウンロードできます/)).toBeTruthy();
+  });
+
+  it("downloadExpiresAtが無ければダウンロード期限は表示されない", () => {
+    render(<JobProgressView job={buildDoneJob({ downloadExpiresAt: null })} loadError={null} />);
+
+    expect(screen.queryByText(/までダウンロードできます/)).toBeNull();
+  });
 });
 
 function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
@@ -81,6 +94,7 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     status: "recording",
     downloadUrl: null,
     downloadUrl720p: null,
+    downloadExpiresAt: null,
     error: null,
     updatedAt: new Date().toISOString(),
     progress: 100,

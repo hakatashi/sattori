@@ -1,4 +1,5 @@
 import { GAME_TITLES } from "./games.js";
+import { OUTPUT_RETENTION_DAYS } from "./job.js";
 import type { ReplayInfo } from "./replay.js";
 
 const HASHTAG = "#TouhouSattori";
@@ -80,4 +81,20 @@ function encodeRfc5987ValueChars(value: string): string {
 export function buildContentDispositionValue(filename: string): string {
   const asciiFallback = filename.replaceAll('"', "'").replace(/[^\x20-\x7E]/g, "_");
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeRfc5987ValueChars(filename)}`;
+}
+
+/**
+ * 出力バケットのライフサイクルルール（`OUTPUT_RETENTION_DAYS`日で自動削除）に基づく
+ * ダウンロード期限を算出する。起点は動画アップロード時刻そのものではなく `doneAt`
+ * （status "done" 遷移時刻、ほぼ同時刻に確定する）。`doneAt` 未設定（旧ジョブ・
+ * 未完了）なら null。ジョブ画面（`apps/api/src/handlers/getJob.ts`）と完了メール
+ * （`apps/api/src/ses.ts`）の両方で同じ値を表示するために共有する。
+ */
+export function calculateDownloadExpiresAt(doneAt: string | null): string | null {
+  if (!doneAt) {
+    return null;
+  }
+  const expiresAt = new Date(doneAt);
+  expiresAt.setUTCDate(expiresAt.getUTCDate() + OUTPUT_RETENTION_DAYS);
+  return expiresAt.toISOString();
 }
