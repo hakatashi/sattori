@@ -1,23 +1,16 @@
 import { Link, useParams } from "react-router-dom";
+import { calculateDownloadExpiresAt, OUTPUT_RETENTION_DAYS } from "@sattori/shared";
 import { fetchAdminJobDetail } from "./adminApi.ts";
 import { useAdminResource } from "./useAdminResource.ts";
 import { StatusBadge } from "./StatusBadge.tsx";
 import { ExecutionPanel } from "./ExecutionPanel.tsx";
 import styles from "./JobDetailPage.module.css";
 
-/** OutputBucket(動画・プレビュー画像)のライフサイクルルール(`infra/lib/sattori-stack.ts`)。 */
-const OUTPUT_BUCKET_RETENTION_DAYS = 7;
-
 function formatDateTime(iso: string | null): string {
   if (!iso) {
     return "-";
   }
   return new Date(iso).toLocaleString("ja-JP");
-}
-
-function isOlderThanRetention(createdAt: string): boolean {
-  const ageMs = Date.now() - new Date(createdAt).getTime();
-  return ageMs > OUTPUT_BUCKET_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 }
 
 /**
@@ -65,6 +58,8 @@ export function JobDetailPage() {
                 <dd>{formatDateTime(data.job.createdAt)}</dd>
                 <dt>updatedAt</dt>
                 <dd>{formatDateTime(data.job.updatedAt)}</dd>
+                <dt>doneAt</dt>
+                <dd>{formatDateTime(data.job.doneAt)}</dd>
                 <dt>pendingExpiresAt</dt>
                 <dd>{formatDateTime(data.job.pendingExpiresAt)}</dd>
                 <dt>replayKey</dt>
@@ -149,12 +144,24 @@ export function JobDetailPage() {
                   )}
                 </li>
               </ul>
-              {isOlderThanRetention(data.job.createdAt) && (
-                <p className={styles.staleNotice}>
-                  出力バケットの保持期間({OUTPUT_BUCKET_RETENTION_DAYS}日)を過ぎているため、
-                  動画は削除済みの可能性があります。
-                </p>
-              )}
+              {(() => {
+                // 出力バケットは`OUTPUT_RETENTION_DAYS`日でオブジェクトを自動削除する。
+                // 起点はアップロード時刻ではなく`doneAt`(status "done"遷移時刻。ほぼ同時刻に
+                // 確定する)。ユーザー向けページ・完了メールと同じ計算(`calculateDownloadExpiresAt`)
+                // を使うことで表示がずれないようにする(main合流時にIssue #56で追加)。
+                const expiresAt = calculateDownloadExpiresAt(data.job.doneAt);
+                if (!expiresAt) {
+                  return null;
+                }
+                const expired = new Date(expiresAt).getTime() < Date.now();
+                return (
+                  <p className={styles.staleNotice}>
+                    {expired
+                      ? `出力バケットの保持期間(${OUTPUT_RETENTION_DAYS}日)を過ぎているため、動画は削除済みの可能性があります。`
+                      : `ダウンロード期限: ${formatDateTime(expiresAt)}（出力バケットの保持期間${OUTPUT_RETENTION_DAYS}日）`}
+                  </p>
+                );
+              })()}
               {data.downloads.previewImageUrl && (
                 <img
                   className={styles.previewImage}

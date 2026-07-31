@@ -25,6 +25,7 @@ const job: JobRecord = {
   error: null,
   createdAt: "2026-07-30T00:00:00.000Z",
   updatedAt: "2026-07-30T00:00:00.000Z",
+  doneAt: null,
   email: "user@example.com",
   instanceId: "i-1234",
   instanceType: "c7i.2xlarge",
@@ -104,5 +105,24 @@ describe("JobDetailPage", () => {
         ),
       ).toBeTruthy(),
     );
+  });
+
+  it("doneAtが設定されたジョブはdoneAtフィールドとダウンロード期限を表示する", async () => {
+    const doneJob: JobRecord = { ...job, status: "done", doneAt: "2026-07-30T00:10:00.000Z" };
+    mocked.fetchAdminJobDetail.mockResolvedValue({ ...detailResponse, job: doneJob });
+    renderJobDetailPage();
+
+    await waitFor(() => expect(screen.getByText(new Date(doneJob.doneAt as string).toLocaleString("ja-JP"))).toBeTruthy());
+    // ダウンロード期限 = doneAt + OUTPUT_RETENTION_DAYS(7日) は未来のためexpired表示ではない。
+    expect(screen.getByText(/^ダウンロード期限: /)).toBeTruthy();
+  });
+
+  it("doneAtが未設定のジョブはdoneAtフィールドに「-」を表示し、ダウンロード期限は表示しない", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+    renderJobDetailPage();
+
+    await waitFor(() => expect(screen.getByText("i-1234")).toBeTruthy());
+    expect(screen.queryByText(/^ダウンロード期限: /)).toBeNull();
+    expect(screen.queryByText(/出力バケットの保持期間/)).toBeNull();
   });
 });
