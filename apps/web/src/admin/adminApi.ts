@@ -2,6 +2,7 @@ import type {
   AdminExecutionResponse,
   AdminJobDetailResponse,
   AdminJobListResponse,
+  AdminLogsResponse,
   JobStatus,
 } from "@sattori/shared";
 import { request, SattoriApiError } from "../api/client.ts";
@@ -62,5 +63,31 @@ export function fetchAdminExecution(token: string, jobId: string): Promise<Admin
   return adminRequest<AdminExecutionResponse>(
     token,
     `/admin/jobs/${encodeURIComponent(jobId)}/execution`,
+  );
+}
+
+export interface FetchAdminLogsParams {
+  /** 続きから古いイベントを取得する場合に前回レスポンスの`nextBackwardToken`を渡す。 */
+  cursor?: string;
+  /** ログストリームが見つからない場合のコンソール出力フォールバック用。 */
+  instanceId?: string | null;
+}
+
+export function fetchAdminLogs(
+  token: string,
+  jobId: string,
+  params: FetchAdminLogsParams = {},
+): Promise<AdminLogsResponse> {
+  const query = new URLSearchParams();
+  if (params.cursor) {
+    query.set("cursor", params.cursor);
+  }
+  if (params.instanceId) {
+    query.set("instanceId", params.instanceId);
+  }
+  const queryString = query.toString();
+  return adminRequest<AdminLogsResponse>(
+    token,
+    `/admin/jobs/${encodeURIComponent(jobId)}/logs${queryString ? `?${queryString}` : ""}`,
   );
 }

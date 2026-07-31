@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import type { AdminExecutionResponse, AdminJobDetailResponse, JobRecord } from "@sattori/shared";
+import type {
+  AdminExecutionResponse,
+  AdminJobDetailResponse,
+  AdminLogsResponse,
+  JobRecord,
+} from "@sattori/shared";
 import { JobDetailPage } from "./JobDetailPage.tsx";
 import { AdminAuthContext } from "./AdminAuthContext.ts";
 import * as adminApi from "./adminApi.ts";
@@ -10,6 +15,7 @@ vi.mock("./adminApi.ts", () => ({
   AdminUnauthorizedError: class extends Error {},
   fetchAdminJobDetail: vi.fn(),
   fetchAdminExecution: vi.fn(),
+  fetchAdminLogs: vi.fn(),
 }));
 
 const mocked = vi.mocked(adminApi);
@@ -54,6 +60,13 @@ const executionResponse: AdminExecutionResponse = {
   eventsNextToken: null,
 };
 
+const logsResponse: AdminLogsResponse = {
+  logStreamFound: true,
+  events: [],
+  nextBackwardToken: null,
+  consoleOutput: null,
+};
+
 function renderJobDetailPage() {
   return render(
     <MemoryRouter initialEntries={["/admin/jobs/job-1"]}>
@@ -70,6 +83,7 @@ describe("JobDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocked.fetchAdminExecution.mockResolvedValue(executionResponse);
+    mocked.fetchAdminLogs.mockResolvedValue(logsResponse);
   });
 
   it("JobRecordの各フィールド(instanceId/instanceType/AZ/email/progress)を描画する", async () => {
@@ -124,5 +138,33 @@ describe("JobDetailPage", () => {
     await waitFor(() => expect(screen.getByText("i-1234")).toBeTruthy());
     expect(screen.queryByText(/^ダウンロード期限: /)).toBeNull();
     expect(screen.queryByText(/出力バケットの保持期間/)).toBeNull();
+  });
+
+  it("ワーカーログをinstanceId付きで取得し、イベントを表示する", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+    mocked.fetchAdminLogs.mockResolvedValue({
+      logStreamFound: true,
+      events: [{ timestamp: 1753833600000, message: "recording started" }],
+      nextBackwardToken: null,
+      consoleOutput: null,
+    });
+    renderJobDetailPage();
+
+    await waitFor(() => expect(screen.getByText(/recording started/)).toBeTruthy());
+    expect(mocked.fetchAdminLogs).toHaveBeenCalledWith("token", "job-1", { instanceId: "i-1234" });
+  });
+
+  it("ログストリームが見つからない場合はコンソール出力へフォールバックする", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+    mocked.fetchAdminLogs.mockResolvedValue({
+      logStreamFound: false,
+      events: [],
+      nextBackwardToken: null,
+      consoleOutput: "boot failed: ECR login error",
+    });
+    renderJobDetailPage();
+
+    await waitFor(() => expect(screen.getByText(/boot failed: ECR login error/)).toBeTruthy());
+    expect(screen.getByText(/ログストリームが見つかりません/)).toBeTruthy();
   });
 });
