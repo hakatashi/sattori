@@ -35,6 +35,13 @@ function formatSeconds(totalSeconds: number): string {
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
+/** ダウンロード期限（ISO 8601）を表示用の日時文字列に整形する。 */
+function formatExpiresAt(isoString: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(
+    new Date(isoString),
+  );
+}
+
 export function JobProgress({ jobId }: Props) {
   const { job, loadError } = useJobPolling(jobId);
   return <JobProgressView job={job} loadError={loadError} />;
@@ -47,7 +54,7 @@ export function JobProgress({ jobId }: Props) {
  * （リプレイ情報カード + アクティビティログの2カラム構成）。
  */
 export function JobProgressView({ job, loadError }: ViewProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // ポーリングは3秒間隔のため、その間の進捗はサーバー値からの実時間経過をもとに推定する
   // （録画中であることが体感できるよう、数値が滑らかに動き続ける必要があるため）。
   const progress = useEstimatedProgress(job);
@@ -174,17 +181,26 @@ export function JobProgressView({ job, loadError }: ViewProps) {
 
           {done && (job.downloadUrl720p ?? job.downloadUrl) && (
             <div className={styles.doneActions}>
-              <a
-                className={styles.download}
-                href={job.downloadUrl720p ?? job.downloadUrl ?? undefined}
-                download
-              >
-                {t("jobProgress.download")}
-              </a>
-              {job.downloadUrl720p && job.downloadUrl && (
-                <a className={styles.secondaryDownload} href={job.downloadUrl} download>
-                  {t("jobProgress.downloadOriginal")}
+              <div className={styles.downloadButtons}>
+                <a
+                  className={styles.download}
+                  href={job.downloadUrl720p ?? job.downloadUrl ?? undefined}
+                  download
+                >
+                  {t("jobProgress.download")}
                 </a>
+                {job.downloadUrl720p && job.downloadUrl && (
+                  <a className={styles.secondaryDownload} href={job.downloadUrl} download>
+                    {t("jobProgress.downloadOriginal")}
+                  </a>
+                )}
+              </div>
+              {job.downloadExpiresAt && (
+                <p className={styles.downloadExpiresAt}>
+                  {t("jobProgress.downloadExpiresAt", {
+                    date: formatExpiresAt(job.downloadExpiresAt, i18n.language),
+                  })}
+                </p>
               )}
             </div>
           )}

@@ -105,6 +105,12 @@ export interface GetJobResponse {
    * YouTube等での60fps認識のため、ページBの主要ダウンロードボタンはこちらを既定とする。
    */
   downloadUrl720p: string | null;
+  /**
+   * ダウンロード可能な期限（ISO 8601、CloudFront/S3のキャッシュではなく出力バケットの
+   * ライフサイクルルールによる自動削除時刻）。完了（`doneAt`が確定している）ジョブの
+   * みで値を持ち、未完了・`doneAt`未設定の旧ジョブでは null。
+   */
+  downloadExpiresAt: string | null;
   error: string | null;
   updatedAt: string;
   /**

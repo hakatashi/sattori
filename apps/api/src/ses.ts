@@ -1,5 +1,5 @@
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
-import { DEFAULT_LANGUAGE, type SupportedLanguage } from "@sattori/shared";
+import { calculateDownloadExpiresAt, DEFAULT_LANGUAGE, type SupportedLanguage } from "@sattori/shared";
 
 const ses = new SESv2Client({});
 
@@ -25,16 +25,38 @@ const COMPLETION_EMAIL_SUBJECT: Record<SupportedLanguage, string> = {
   ja: "【TouhouSattori】録画が完了しました",
   en: "[TouhouSattori] Your recording is ready",
 };
-const COMPLETION_EMAIL_BODY: Record<SupportedLanguage, (link: string) => string> = {
-  ja: (link) =>
+const COMPLETION_EMAIL_BODY: Record<SupportedLanguage, (link: string, expiresAtText: string | null) => string> = {
+  ja: (link, expiresAtText) =>
     `リプレイの録画が完了しました。\n\n` +
-    `以下のリンクから動画をダウンロードできます。\n${link}\n\n` +
-    `このメールに心当たりがない場合は、このメールを無視してください。`,
-  en: (link) =>
+    `以下のリンクから動画をダウンロードできます。\n${link}\n` +
+    (expiresAtText ? `（動画は${expiresAtText}までダウンロードできます）\n` : "") +
+    `\nこのメールに心当たりがない場合は、このメールを無視してください。`,
+  en: (link, expiresAtText) =>
     `Your replay recording is complete.\n\n` +
-    `You can download the video from the link below.\n${link}\n\n` +
-    `If you don't recognize this request, please ignore this email.`,
+    `You can download the video from the link below.\n${link}\n` +
+    (expiresAtText ? `(The video will be available for download until ${expiresAtText})\n` : "") +
+    `\nIf you don't recognize this request, please ignore this email.`,
 };
+
+/**
+ * ダウンロード期限を完了メール用に整形する。メール本文はブラウザ（ジョブ画面）と
+ * 異なり閲覧者のタイムゾーンが分からないため、常にUTC表記で明示する
+ * （`timeZoneName: "short"` で末尾に"UTC"が付く）。
+ */
+function formatExpiresAtForEmail(expiresAt: string, language: SupportedLanguage): string {
+  const locale = language === "en" ? "en-US" : "ja-JP";
+  // dateStyle/timeStyle と timeZoneName は ECMA-402 上同時指定できないため、
+  // 個別フィールド指定で組み立てる。
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    timeZone: "UTC",
+    timeZoneName: "short",
+  }).format(new Date(expiresAt));
+}
 
 /**
  * ジョブページのURLを組み立てる。jobId自体がこのメールを確認しないと分からない
@@ -80,7 +102,8 @@ export async function sendMagicLinkEmail(params: {
  * 録画完了メールを送信する（Issue #10）。ジョブが "done" に遷移したタイミングで
  * DynamoDB Streams 経由（`handlers/sendCompletionEmail.ts`）で1回だけ呼ばれる。
  * ダウンロードURL（720p/元解像度）はジョブの状態次第で変わり得るため直接メールに
- * 含めず、常に最新の状態を返すジョブページへのリンクを案内する。
+ * 含めず、常に最新の状態を返すジョブページへのリンクを案内する。ダウンロード期限
+ * （出力バケットのライフサイクルルール由来）は `doneAt` から算出し、あわせて案内する。
  */
 export async function sendCompletionEmail(params: {
   from: string;
@@ -88,8 +111,12 @@ export async function sendCompletionEmail(params: {
   webBaseUrl: string;
   jobId: string;
   language: SupportedLanguage;
+  /** JobRecord.doneAt（status "done" 遷移時刻、ISO 8601）。未設定なら期限は案内しない。 */
+  doneAt: string | null;
 }): Promise<void> {
   const link = buildJobPageUrl(params.webBaseUrl, params.jobId, params.language);
+  const expiresAt = calculateDownloadExpiresAt(params.doneAt);
+  const expiresAtText = expiresAt ? formatExpiresAtForEmail(expiresAt, params.language) : null;
   await ses.send(
     new SendEmailCommand({
       FromEmailAddress: params.from,
@@ -97,7 +124,7 @@ export async function sendCompletionEmail(params: {
       Content: {
         Simple: {
           Subject: { Data: COMPLETION_EMAIL_SUBJECT[params.language] },
-          Body: { Text: { Data: COMPLETION_EMAIL_BODY[params.language](link) } },
+          Body: { Text: { Data: COMPLETION_EMAIL_BODY[params.language](link, expiresAtText) } },
         },
       },
     }),

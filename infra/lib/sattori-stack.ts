@@ -26,6 +26,7 @@ import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
+import { OUTPUT_RETENTION_DAYS } from "@sattori/shared";
 import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import type { Construct } from "constructs";
 
@@ -67,11 +68,13 @@ export class SattoriStack extends Stack {
       ],
     });
 
-    // 録画済み動画の出力バケット(7日で自動削除, CloudFront オリジン)。
+    // 録画済み動画の出力バケット(OUTPUT_RETENTION_DAYS日で自動削除, CloudFront オリジン)。
+    // 日数は @sattori/shared の定数と共有し、getJob.ts が返すダウンロード期限表示
+    // (ジョブ画面・完了メール)とずれないようにする。
     const outputBucket = new s3.Bucket(this, "OutputBucket", {
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      lifecycleRules: [{ expiration: Duration.days(7) }],
+      lifecycleRules: [{ expiration: Duration.days(OUTPUT_RETENTION_DAYS) }],
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
