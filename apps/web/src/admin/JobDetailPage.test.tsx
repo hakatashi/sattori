@@ -51,6 +51,7 @@ const detailResponse: AdminJobDetailResponse = {
     videoUrl: "https://cdn.example.net/videos/job-1.mp4",
     video720pUrl: null,
     previewImageUrl: "https://cdn.example.net/progress/job-1/1234.jpg",
+    ffmpegLogUrl: null,
   },
 };
 
@@ -173,6 +174,27 @@ describe("JobDetailPage", () => {
 
     fireEvent.click(screen.getByRole("checkbox"));
     expect(screen.getByText(/\[ffmpeg\] frame=/)).toBeTruthy();
+  });
+
+  it("ffmpegLogUrlがあればS3のffmpeg生ログへのダウンロードリンクを表示する", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue({
+      ...detailResponse,
+      downloads: {
+        ...detailResponse.downloads,
+        ffmpegLogUrl: "https://out-bucket.s3.amazonaws.com/worker-logs/job-1/ffmpeg-upscale.log?sig=1",
+      },
+    });
+    renderJobDetailPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("720p変換のffmpeg生ログ(全行)をダウンロード")).toBeTruthy(),
+    );
+    const link = screen.getByText(
+      "720p変換のffmpeg生ログ(全行)をダウンロード",
+    ) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe(
+      "https://out-bucket.s3.amazonaws.com/worker-logs/job-1/ffmpeg-upscale.log?sig=1",
+    );
   });
 
   it("ログストリームが見つからない場合はコンソール出力へフォールバックする", async () => {

@@ -7,6 +7,13 @@ import styles from "./LogsPanel.module.css";
 interface Props {
   jobId: string;
   instanceId: string | null;
+  /**
+   * 720p変換のffmpeg生ログ(S3署名付きGET URL)。ワーカーが再デプロイ済みのジョブでは
+   * CloudWatchへ流さずここへ退避されるため、下のチェックボックス(過去のジョブ向け、
+   * ノートを参照)ではなくこちらが主なアクセス手段になる(Issue #58フォローアップ)。
+   * 未取得/削除済み(3日で自動削除)なら null。
+   */
+  ffmpegLogUrl: string | null;
 }
 
 function formatTimestamp(ts: number | null): string {
@@ -39,7 +46,7 @@ function isFfmpegNoise(message: string): boolean {
  * 「さらに古いログを読み込む」は前ページの`nextBackwardToken`を`cursor`に渡して先頭へ
  * 積み増す(`useAdminResource`は依存配列変更での再取得しか扱えないため、ここだけ自前で状態管理する)。
  */
-export function LogsPanel({ jobId, instanceId }: Props) {
+export function LogsPanel({ jobId, instanceId, ffmpegLogUrl }: Props) {
   const { token, onUnauthorized } = useAdminAuth();
   const [events, setEvents] = useState<AdminLogEvent[]>([]);
   const [logStreamFound, setLogStreamFound] = useState(true);
@@ -113,6 +120,14 @@ export function LogsPanel({ jobId, instanceId }: Props) {
       <h2 className={styles.heading}>ワーカーログ</h2>
       {loading && <p>読み込み中…</p>}
       {error && <p className={styles.error}>{error}</p>}
+      {ffmpegLogUrl && (
+        <p className={styles.note}>
+          <a href={ffmpegLogUrl} download>
+            720p変換のffmpeg生ログ(全行)をダウンロード
+          </a>
+          （S3に3日間だけ保存されます）
+        </p>
+      )}
 
       {!loading && logStreamFound && (
         <>

@@ -174,7 +174,11 @@ export function JobDetailPage() {
           </div>
 
           <ExecutionPanel jobId={jobId} />
-          <LogsPanel jobId={jobId} instanceId={data.job.instanceId} />
+          <LogsPanel
+            jobId={jobId}
+            instanceId={data.job.instanceId}
+            ffmpegLogUrl={data.downloads.ffmpegLogUrl}
+          />
         </>
       )}
     </section>

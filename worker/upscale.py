@@ -47,7 +47,7 @@ def probe_resolution(input_path):
 
 
 def upscale_to_720p(input_path, output_path, watermark_path=None, watermark_width=428,
-                     on_progress=None, log=print):
+                     on_progress=None, log=print, ffmpeg_log_path=None):
     """input_path の動画をアスペクト比を保ったまま高さ720pxへ変換する。
     watermark_path を指定すると、変換と同時にウォーターマークも合成する(モジュール
     docstring参照)。
@@ -56,6 +56,15 @@ def upscale_to_720p(input_path, output_path, watermark_path=None, watermark_widt
     およそ PROGRESS_REPORT_INTERVAL_SEC 秒間隔で呼び出す(全体の長さに対する割合では
     ない。呼び出し側で総尺に対する割合を表示したい場合はこの値を分子として自前で
     算出すること)。
+
+    ffmpeg_log_path を指定すると、`-progress` の生出力(frame=/fps=/bitrate=等、
+    out_time_ms以外の全キー)をこのファイルへ書き出す。CloudWatch Logsへ全行流すと
+    1ジョブで数千行に達し他のログを埋もれさせるため(Issue #58フォローアップ、実機の
+    管理画面ログビューアで発覚)、`recording_common.py`のffmpeg_video.log/
+    ffmpeg_audio.logと同じ方針でファイルへ退避し、呼び出し側(entrypoint.py)が
+    変換完了後にS3(期限付き)へアップロードする。変換が失敗した場合のみ、診断のため
+    末尾を`log()`(CloudWatch行き)にも残す。Noneの場合はファイルへ書き出さない
+    (テスト等、呼び出し側がログを気にしない場合向け)。
     """
     width, height = probe_resolution(input_path)
     target_width = round(width * TARGET_HEIGHT / height / 2) * 2
@@ -94,25 +103,38 @@ def upscale_to_720p(input_path, output_path, watermark_path=None, watermark_widt
         [*cmd[:-1], "-progress", "pipe:1", "-nostats", cmd[-1]],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
+    ffmpeg_log_file = open(ffmpeg_log_path, "w") if ffmpeg_log_path else None
     last_reported = 0.0
-    for line in proc.stdout:
-        line = line.strip()
-        if not line:
-            continue
-        if not line.startswith("out_time_ms="):
-            log(f"[ffmpeg] {line}")
-            continue
-        try:
-            # ffmpeg の `-progress` 出力は `out_time_ms` という名前だが、実体は
-            # マイクロ秒単位(ffmpeg既知の命名の癖)。
-            out_time_us = int(line.split("=", 1)[1])
-        except ValueError:
-            continue
-        now = time.monotonic()
-        if now - last_reported < PROGRESS_REPORT_INTERVAL_SEC:
-            continue
-        last_reported = now
-        on_progress(out_time_us / 1_000_000)
+    try:
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            if ffmpeg_log_file:
+                ffmpeg_log_file.write(line + "\n")
+            if not line.startswith("out_time_ms="):
+                continue
+            try:
+                # ffmpeg の `-progress` 出力は `out_time_ms` という名前だが、実体は
+                # マイクロ秒単位(ffmpeg既知の命名の癖)。
+                out_time_us = int(line.split("=", 1)[1])
+            except ValueError:
+                continue
+            now = time.monotonic()
+            if now - last_reported < PROGRESS_REPORT_INTERVAL_SEC:
+                continue
+            last_reported = now
+            on_progress(out_time_us / 1_000_000)
+    finally:
+        if ffmpeg_log_file:
+            ffmpeg_log_file.close()
     proc.wait()
     if proc.returncode != 0:
+        if ffmpeg_log_path:
+            try:
+                with open(ffmpeg_log_path, "rb") as f:
+                    tail = f.read()[-2000:]
+                log(f"ffmpeg(720p変換)ログ末尾: {tail.decode(errors='replace')}")
+            except OSError:
+                pass
         raise RuntimeError(f"ffmpeg によるアップスケール変換に失敗しました (exit_code={proc.returncode})")
