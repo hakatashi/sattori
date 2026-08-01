@@ -109,6 +109,34 @@ describe("GET /admin/jobs/{jobId}", () => {
     expect(body.downloads.replayUrl).toBeNull();
   });
 
+  it("ffmpegログのHeadObjectが成功すれば署名付きffmpegLogUrlを返す", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: recordingJob });
+    s3Mock.on(HeadObjectCommand).resolves({});
+
+    const { handler } = await import("./getJobDetail.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.downloads.ffmpegLogUrl).toBeTruthy();
+    const url = new URL(body.downloads.ffmpegLogUrl as string);
+    expect(url.pathname).toContain("worker-logs/job-1/ffmpeg-upscale.log");
+  });
+
+  it("ffmpegログが存在しない場合はffmpegLogUrl: nullを返す(他のダウンロードURLには影響しない)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: recordingJob });
+    s3Mock.on(HeadObjectCommand).resolves({});
+    s3Mock
+      .on(HeadObjectCommand, { Bucket: "out-bucket", Key: "worker-logs/job-1/ffmpeg-upscale.log" })
+      .rejects(new Error("NotFound"));
+
+    const { handler } = await import("./getJobDetail.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.downloads.ffmpegLogUrl).toBeNull();
+    expect(body.downloads.replayUrl).toBeTruthy();
+  });
+
   it("ジョブが存在しなければ404を返す", async () => {
     ddbMock.on(GetCommand).resolves({});
     const { handler } = await import("./getJobDetail.js");

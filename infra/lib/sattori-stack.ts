@@ -75,7 +75,15 @@ export class SattoriStack extends Stack {
     const outputBucket = new s3.Bucket(this, "OutputBucket", {
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      lifecycleRules: [{ expiration: Duration.days(OUTPUT_RETENTION_DAYS) }],
+      lifecycleRules: [
+        { expiration: Duration.days(OUTPUT_RETENTION_DAYS) },
+        // 720p変換のffmpeg生ログ(`worker/entrypoint.py`のFFMPEG_UPSCALE_LOG_KEY、
+        // Issue #58フォローアップ)。CloudWatch Logsのノイズ対策として退避した診断用
+        // データに過ぎず動画本体より価値が低いため、上記の既定ルールより短く失効させる
+        // (どちらのルールもマッチするが、より早い失効が優先されるため`worker-logs/`配下は
+        // 実質3日で消える)。
+        { prefix: "worker-logs/", expiration: Duration.days(3) },
+      ],
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
@@ -535,6 +543,10 @@ export class SattoriStack extends Stack {
     const adminGetJobDetailFn = makeHandler("AdminGetJobDetailFn", "admin/getJobDetail.ts");
     jobsTable.grantReadData(adminGetJobDetailFn);
     uploadBucket.grantRead(adminGetJobDetailFn); // .rpyの署名付きダウンロードURL発行のため
+    // 720p変換のffmpeg生ログ(worker-logs/プレフィックス)の存在確認・署名付きURL発行のため
+    // (Issue #58フォローアップ)。動画本体のURLはbuildVideoDownloadUrlでCDN URLを組み立てる
+    // だけなので不要だが、こちらはCDN配信しない診断用データのためS3署名付きURLを使う。
+    outputBucket.grantRead(adminGetJobDetailFn);
 
     const adminGetExecutionFn = makeHandler("AdminGetExecutionFn", "admin/getExecution.ts");
     stateMachine.grantRead(adminGetExecutionFn);

@@ -63,6 +63,24 @@ export async function createPresignedReplayDownloadUrl(
 }
 
 /**
+ * 720p変換のffmpeg生ログ（`worker/entrypoint.py`の`FFMPEG_UPSCALE_LOG_KEY`、
+ * Issue #58フォローアップ）のS3キーを組み立てる。jobIdから決定的に導出できるため、
+ * `stepFunctions.ts`の`buildExecutionArn`と同様にDynamoDBには保存しない。
+ */
+export function buildFfmpegUpscaleLogKey(jobId: string): string {
+  return `worker-logs/${jobId}/ffmpeg-upscale.log`;
+}
+
+/**
+ * ffmpeg生ログへの署名付きGET URLを発行する（管理画面専用）。動画と違いCDN配信は
+ * しない（一般ユーザー向け配信物ではなく、ライフサイクルルールで3日と短命なため）。
+ */
+export async function createPresignedFfmpegLogDownloadUrl(bucket: string, key: string): Promise<string> {
+  const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+  return getSignedUrl(s3, command, { expiresIn: REPLAY_DOWNLOAD_URL_TTL_SEC });
+}
+
+/**
  * S3オブジェクトの存在確認（HeadObject）。手動削除等で実体が無い場合に
  * 死んだダウンロードリンクを出さないようにするために使う。
  */

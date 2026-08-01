@@ -56,6 +56,12 @@ export interface AdminJobDownloads {
   video720pUrl: string | null;
   /** 録画中の進捗プレビュー画像（CloudFront配信、未取得なら null）。 */
   previewImageUrl: string | null;
+  /**
+   * 720p変換中のffmpeg生ログ（S3署名付きGET URL、Issue #58フォローアップ）。
+   * CloudWatch Logsへ全行流すとノイズになるため退避したテキストファイルで、
+   * ライフサイクルルールにより3日で自動削除される（未取得/削除済みなら null）。
+   */
+  ffmpegLogUrl: string | null;
 }
 
 /** GET /admin/jobs/{jobId} のレスポンス。 */
