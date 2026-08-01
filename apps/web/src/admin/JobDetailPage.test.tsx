@@ -160,7 +160,7 @@ describe("JobDetailPage", () => {
       logStreamFound: true,
       events: [
         { timestamp: 1753833600000, message: "recording started" },
-        { timestamp: 1753833601000, message: "[ffmpeg] frame=  120 fps=60 q=18.0 size=..." },
+        { timestamp: 1753833601000, message: "[entrypoint 10:12:57] [ffmpeg] frame=97119" },
       ],
       nextBackwardToken: null,
       consoleOutput: null,
