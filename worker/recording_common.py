@@ -122,6 +122,13 @@ FPS_MONITOR_HZ_RE = re.compile(r"FpsMonitor:.*\(([\d.]+) Hz\)")
 FPS_RUNAWAY_HZ_THRESHOLD = 300.0
 FPS_RUNAWAY_CONSECUTIVE_REQUIRED = 2
 
+# ウィンドウ座標(x11grabのクロップ座標)を確定させる際の安定判定。wait_for_stable_geometry()
+# がこの間隔でfind_window()を繰り返し、2回連続で同じ座標が返るまで待つ。
+GEOMETRY_SETTLE_SEC = 0.3
+GEOMETRY_SETTLE_TIMEOUT_SEC = 10.0
+# windowmove後の再確認に使う短いタイムアウト(最大20回リトライするため、1回あたりは短くする)。
+GEOMETRY_SETTLE_TIMEOUT_AFTER_MOVE_SEC = 3.0
+
 MAX_ATTEMPTS_DEFAULT = 3
 MAX_DUPLICATE_RATE_DEFAULT = 30.0
 
@@ -272,6 +279,34 @@ def find_window(config, env, pid):
         if wd and wd > 100 and ht and ht > 100:
             return x, y, wd, ht, w
     return None
+
+
+def wait_for_stable_geometry(config, env, pid, log=print,
+                             settle_sec=GEOMETRY_SETTLE_SEC,
+                             timeout=GEOMETRY_SETTLE_TIMEOUT_SEC):
+    """find_window()をsettle_sec間隔で繰り返し、2回連続で同じ座標が返るまで待つ。
+
+    xwininfoの単発の取得結果は、ウィンドウが移動中だと信用できない。ゲームが
+    初期化中に自分でウィンドウを再配置している最中に取得すると、移動前・移動後・
+    その中間のいずれとも異なる座標が返ってくる(th11の本番ジョブ・ローカル実測で
+    (133,119)(142,137)(159,119)(168,136)(172,197)(197,196)(200,202)と毎回異なる値を
+    観測。安定後の真の座標は常に(185,211))。1回の取得結果をそのままクロップ座標に
+    採用すると、ズレたまま録画し続けることになる(Issue: th11のジョブ
+    a5c36a30-548a-421d-abc7-b4a7fdffc914で、実ウィンドウ(185,211)に対して
+    (159,119)を録画し、タイトルバーが写り込み右下26x92pxが欠ける不具合として発覚)。
+
+    タイムアウトした場合は最後に取得できた座標を返す(Noneのこともある)。呼び出し側は
+    Noneを失敗として扱うこと。"""
+    t0 = time.time()
+    prev = None
+    while time.time() - t0 < timeout:
+        geom = find_window(config, env, pid)
+        if geom and prev and geom[:4] == prev[:4]:
+            return geom
+        prev = geom
+        time.sleep(settle_sec)
+    log(f"WARNING: ウィンドウ座標が{timeout}秒以内に安定しませんでした (最後の取得値={prev})")
+    return prev
 
 
 def find_live_game_pid(process_name):
@@ -620,58 +655,18 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     if not geom:
         log("ERROR: ゲームウィンドウが検出できませんでした")
         return _failure_result(config, env, log)
-    x, y, w, h, winid = geom
-    log(f"ウィンドウ検出: x={x} y={y} w={w} h={h} (winid={winid})")
+    log(f"ウィンドウを検出しました: x={geom[0]} y={geom[1]} w={geom[2]} h={geom[3]} "
+        f"(winid={geom[4]}。この時点の座標はまだ確定値ではない)")
 
-    # openboxの初期配置によっては、ウィンドウがXVFB_SCREEN(800x600)の範囲外にはみ出す
-    # 位置に置かれることがある(th11実機検証で、y=159+height=480=639が800x600の高さ600を
-    # 超えてx11grabが起動失敗する事象を確認、touhou-recorder reports/35)。クロップ座標に
-    # 依存せず常に録画・スクリーンショットが機能するよう、範囲外の場合のみ検出後に
-    # 左上(0,0)へ強制移動する。
-    # 移動後の実座標は必ず再取得すること: xdotool windowmoveは(装飾のあるウィンドウの場合)
-    # ウィンドウ枠を(0,0)へ移動するため、xwininfoが返すクライアント領域のAbsolute
-    # upper-leftは(0,0)にならないことがある(th11実機検証で、タイトルバー分ずれて録画
-    # される不具合として発覚、touhou-recorder reports/37)。さらにxdotool windowmoveの
-    # 反映は非同期で、直後に再取得すると移動前の座標がまだ返ることがある(AWS実機検証で
-    # 確認)。座標がXVFB_SCREENの範囲内に収まるまでwindowmoveを最大20回(0.1秒間隔)
-    # 再試行する。
-    # 既に範囲内に収まっている場合はwindowmove自体を呼ばない: openboxが装飾込みの
-    # ウィンドウ枠を画面内に収めようとする再配置(タイミングはWM側の内部状態に依存し
-    # 非決定的)と衝突し、xwininfoが一時的にクライアント領域のAbsolute upper-leftとして
-    # (0,0)(=装飾抜きの見かけ上の位置)を返した直後、実際の装飾入り再配置が確定する前に
-    # ループがそれを「安定した」座標として採用してしまうことがある。この場合、録画開始
-    # 時点では装飾(タイトルバー)が画面内に戻っておりゲーム画面の下端と重なって欠ける
-    # (sattori側の実機検証で2026-07-28にth07/th08で再現・確認、`AGENTS.md`参照)。
-    # 既に範囲内のwindowを不要に動かさなければこの競合自体を避けられる。
-    #
-    # 実際に移動が必要な場合(th11等、はみ出し配置)はこの競合を避けられないため、
-    # 「画面内に収まる」だけでなく直後の再取得(0.3秒後)でも同じ座標が返ることを
-    # 確認してから確定する(1回の取得だけだと、上記の一時的な(0,0)を掴んだまま
-    # 確定してしまう可能性があるため。sattori側の実機検証で2026-07-28、th11の
-    # windowmoveでは偶然再現しなかったが、原理的にth07/08と同じ競合が起こりうる)。
-    screen_w, screen_h = (int(v) for v in XVFB_SCREEN.split("x")[:2])
-    if x + w > screen_w or y + h > screen_h:
-        for _ in range(20):
-            subprocess.run(["xdotool", "windowmove", winid, "0", "0"], env=env)
-            time.sleep(0.1)
-            moved_geom = find_window(config, env, game_pid)
-            if not moved_geom:
-                continue
-            mx, my, mw, mh, _ = moved_geom
-            if mx + mw > screen_w or my + mh > screen_h:
-                continue
-            time.sleep(0.3)
-            confirm_geom = find_window(config, env, game_pid)
-            if confirm_geom and confirm_geom[:4] == (mx, my, mw, mh):
-                x, y, w, h = mx, my, mw, mh
-                break
-        else:
-            log(f"WARNING: ウィンドウが画面内に収まりませんでした (x={x} y={y} w={w} h={h})")
-        log(f"移動後のウィンドウ座標: x={x} y={y} w={w} h={h}")
-    else:
-        log(f"ウィンドウは既に画面内に収まっているため移動をスキップします: x={x} y={y} w={w} h={h}")
-    still_mask = build_still_mask(config.still_detect_exclude_rect, w, h)
-
+    # ここで得た座標をそのままクロップ座標に使ってはならない。この検出はウィンドウが
+    # Xサーバー上でviewableになった直後に成立するが、ゲームによってはその後さらに自分で
+    # ウィンドウを再配置する。th11(地霊殿)は openbox の初期配置 client=(159,119)
+    # (=800x600に収まるようクランプされた位置)でviewableになった直後に、自身で
+    # client=(185,211)(=画面右下にはみ出す位置)へ移動する。実測で両者の間隔は
+    # 40msしかなく、負荷の高いEC2上ではこの隙間で検出が成立してしまう
+    # (ローカル再現試験でCPUに負荷をかけると8試行中7回発生)。
+    # th08は起動から約2.5秒後にウィンドウ自体を破棄・再生成する(座標は同じ(3,29))。
+    # そのため、MOD側のWaitForStableWindowが安定を報告するまで待ってから座標を取り直す。
     seen_lines = set()
     stable_time = wait_for_log_marker(
         config.log_path, "WaitForStableWindow: stable", timeout=20, poll_interval=0.1,
@@ -680,7 +675,49 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     if stable_time is None:
         log("ERROR: ウィンドウの安定を確認できませんでした")
         return _failure_result(config, env, log)
-    log("ウィンドウの安定を確認しました。録画を開始します")
+    log("ウィンドウの安定を確認しました。クロップ座標を確定します")
+
+    # MOD側のWaitForStableWindowはHWNDの同一性しか見ておらず(mods/common/window_wait.cpp)、
+    # 位置・サイズの安定までは保証しない。座標そのものが落ち着いたことは
+    # wait_for_stable_geometry()で別途確認する。
+    geom = wait_for_stable_geometry(config, env, game_pid, log=log)
+    if not geom:
+        log("ERROR: ウィンドウ座標を確定できませんでした")
+        return _failure_result(config, env, log)
+    x, y, w, h, winid = geom
+    log(f"クロップ座標を確定: x={x} y={y} w={w} h={h} (winid={winid})")
+
+    # 確定した座標がXVFB_SCREEN(800x600)の範囲外にはみ出す場合は左上(0,0)へ移動する
+    # (th11の安定位置(185,211)は 185+640=825 > 800 で範囲外。この状態のままだと
+    # x11grabが起動に失敗する、touhou-recorder reports/35)。
+    # 移動後の実座標は必ず再取得すること: xdotool windowmoveは(装飾のあるウィンドウの場合)
+    # ウィンドウ枠を(0,0)へ移動するため、xwininfoが返すクライアント領域のAbsolute
+    # upper-leftは(0,0)にならない(th11実機検証で、タイトルバー分ずれて録画される
+    # 不具合として発覚、touhou-recorder reports/37)。さらにxdotool windowmoveの反映は
+    # 非同期なので、ここでもwait_for_stable_geometry()で座標が落ち着くのを待ってから
+    # 画面内に収まったかを判定し、収まるまで最大20回リトライする。
+    screen_w, screen_h = (int(v) for v in XVFB_SCREEN.split("x")[:2])
+    if x + w > screen_w or y + h > screen_h:
+        for _ in range(20):
+            subprocess.run(["xdotool", "windowmove", winid, "0", "0"], env=env)
+            moved_geom = wait_for_stable_geometry(
+                config, env, game_pid, log=log,
+                timeout=GEOMETRY_SETTLE_TIMEOUT_AFTER_MOVE_SEC,
+            )
+            if not moved_geom:
+                continue
+            mx, my, mw, mh, _ = moved_geom
+            if mx + mw > screen_w or my + mh > screen_h:
+                continue
+            x, y, w, h = mx, my, mw, mh
+            break
+        else:
+            log(f"WARNING: ウィンドウが画面内に収まりませんでした (x={x} y={y} w={w} h={h})")
+        log(f"移動後のウィンドウ座標: x={x} y={y} w={w} h={h}")
+    else:
+        log(f"ウィンドウは既に画面内に収まっているため移動をスキップします: x={x} y={y} w={w} h={h}")
+    still_mask = build_still_mask(config.still_detect_exclude_rect, w, h)
+    log("録画を開始します")
 
     base, _ext = os.path.splitext(output_path)
     video_target = f"{base}.video.mp4"
