@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type {
   AdminExecutionResponse,
@@ -152,6 +152,27 @@ describe("JobDetailPage", () => {
 
     await waitFor(() => expect(screen.getByText(/recording started/)).toBeTruthy());
     expect(mocked.fetchAdminLogs).toHaveBeenCalledWith("token", "job-1", { instanceId: "i-1234" });
+  });
+
+  it("[ffmpeg]プレフィックスの進捗ログはデフォルトで非表示にし、チェックボックスで表示できる", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+    mocked.fetchAdminLogs.mockResolvedValue({
+      logStreamFound: true,
+      events: [
+        { timestamp: 1753833600000, message: "recording started" },
+        { timestamp: 1753833601000, message: "[ffmpeg] frame=  120 fps=60 q=18.0 size=..." },
+      ],
+      nextBackwardToken: null,
+      consoleOutput: null,
+    });
+    renderJobDetailPage();
+
+    await waitFor(() => expect(screen.getByText(/recording started/)).toBeTruthy());
+    expect(screen.queryByText(/\[ffmpeg\] frame=/)).toBeNull();
+    expect(screen.getByText(/1件非表示中/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.getByText(/\[ffmpeg\] frame=/)).toBeTruthy();
   });
 
   it("ログストリームが見つからない場合はコンソール出力へフォールバックする", async () => {
