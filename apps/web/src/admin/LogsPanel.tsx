@@ -22,12 +22,15 @@ function toErrorMessage(err: unknown): string {
 
 /**
  * `worker/upscale.py`が720p変換中のffmpeg進捗行(frame=/fps=/bitrate=等、`-progress`の
- * out_time_ms以外の全キー)をそのまま`[ffmpeg] `プレフィックス付きで1行ずつログに
- * 流しているため、1ジョブで数千行に達し他のログを埋もれさせる。exit_code等の要約行
+ * out_time_ms以外の全キー)を`[ffmpeg] `プレフィックス付きで1行ずつログに流しているため、
+ * 1ジョブで数千行に達し他のログを埋もれさせる。exit_code等の要約行
  * （`ffmpeg(映像) exit_code=...`）は別プレフィックスでノイズではないため対象外にする。
+ * `[ffmpeg] `は`worker/entrypoint.py`の`log()`が付ける`[entrypoint HH:MM:SS] `に
+ * 後続する形で書き込まれ先頭には来ない(実例:
+ * `[entrypoint 10:12:57] [ffmpeg] frame=97119`)ため`startsWith`ではなく`includes`で判定する。
  */
 function isFfmpegNoise(message: string): boolean {
-  return message.startsWith("[ffmpeg] ");
+  return message.includes("[ffmpeg] ");
 }
 
 /**
