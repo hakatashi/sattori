@@ -21,6 +21,16 @@ function toErrorMessage(err: unknown): string {
 }
 
 /**
+ * `worker/upscale.py`が720p変換中のffmpeg進捗行(frame=/fps=/bitrate=等、`-progress`の
+ * out_time_ms以外の全キー)をそのまま`[ffmpeg] `プレフィックス付きで1行ずつログに
+ * 流しているため、1ジョブで数千行に達し他のログを埋もれさせる。exit_code等の要約行
+ * （`ffmpeg(映像) exit_code=...`）は別プレフィックスでノイズではないため対象外にする。
+ */
+function isFfmpegNoise(message: string): boolean {
+  return message.startsWith("[ffmpeg] ");
+}
+
+/**
  * ワーカーコンテナのCloudWatch Logs(`GET /admin/jobs/{jobId}/logs`、Issue #58)。
  * ロググループは固定(`/sattori/worker`)、ログストリーム名はjobIdなのでAPI側で解決する。
  * 「さらに古いログを読み込む」は前ページの`nextBackwardToken`を`cursor`に渡して先頭へ
@@ -35,6 +45,7 @@ export function LogsPanel({ jobId, instanceId }: Props) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showFfmpegNoise, setShowFfmpegNoise] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +102,9 @@ export function LogsPanel({ jobId, instanceId }: Props) {
       });
   };
 
+  const visibleEvents = showFfmpegNoise ? events : events.filter((e) => !isFfmpegNoise(e.message));
+  const hiddenNoiseCount = events.length - visibleEvents.length;
+
   return (
     <section className={styles.section}>
       <h2 className={styles.heading}>ワーカーログ</h2>
@@ -102,6 +116,15 @@ export function LogsPanel({ jobId, instanceId }: Props) {
           <p className={styles.note}>
             Step Functionsのリトライが発生した場合、複数回の試行のログが同一ストリームに混在します。
           </p>
+          <label className={styles.checkboxLabel}>
+            <input
+              type="checkbox"
+              checked={showFfmpegNoise}
+              onChange={(e) => setShowFfmpegNoise(e.target.checked)}
+            />
+            720p変換中のffmpeg進捗ログを表示する
+            {hiddenNoiseCount > 0 && !showFfmpegNoise && `（${hiddenNoiseCount}件非表示中）`}
+          </label>
           {nextBackwardToken && (
             <button
               type="button"
@@ -113,9 +136,11 @@ export function LogsPanel({ jobId, instanceId }: Props) {
             </button>
           )}
           <pre className={styles.log}>
-            {events.length === 0
-              ? "(ログがありません)"
-              : events
+            {visibleEvents.length === 0
+              ? events.length === 0
+                ? "(ログがありません)"
+                : "(ffmpeg進捗ログのみです。表示するには上のチェックボックスをオンにしてください)"
+              : visibleEvents
                   .map((e) => `[${formatTimestamp(e.timestamp)}] ${e.message}`)
                   .join("\n")}
           </pre>
