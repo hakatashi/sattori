@@ -75,7 +75,15 @@ export class SattoriStack extends Stack {
     const outputBucket = new s3.Bucket(this, "OutputBucket", {
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      lifecycleRules: [{ expiration: Duration.days(OUTPUT_RETENTION_DAYS) }],
+      lifecycleRules: [
+        { expiration: Duration.days(OUTPUT_RETENTION_DAYS) },
+        // 720p変換のffmpeg生ログ(`worker/entrypoint.py`のFFMPEG_UPSCALE_LOG_KEY、
+        // Issue #58フォローアップ)。CloudWatch Logsのノイズ対策として退避した診断用
+        // データに過ぎず動画本体より価値が低いため、上記の既定ルールより短く失効させる
+        // (どちらのルールもマッチするが、より早い失効が優先されるため`worker-logs/`配下は
+        // 実質3日で消える)。
+        { prefix: "worker-logs/", expiration: Duration.days(3) },
+      ],
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
@@ -535,6 +543,10 @@ export class SattoriStack extends Stack {
     const adminGetJobDetailFn = makeHandler("AdminGetJobDetailFn", "admin/getJobDetail.ts");
     jobsTable.grantReadData(adminGetJobDetailFn);
     uploadBucket.grantRead(adminGetJobDetailFn); // .rpyの署名付きダウンロードURL発行のため
+    // 720p変換のffmpeg生ログ(worker-logs/プレフィックス)の存在確認・署名付きURL発行のため
+    // (Issue #58フォローアップ)。動画本体のURLはbuildVideoDownloadUrlでCDN URLを組み立てる
+    // だけなので不要だが、こちらはCDN配信しない診断用データのためS3署名付きURLを使う。
+    outputBucket.grantRead(adminGetJobDetailFn);
 
     const adminGetExecutionFn = makeHandler("AdminGetExecutionFn", "admin/getExecution.ts");
     stateMachine.grantRead(adminGetExecutionFn);
@@ -542,6 +554,24 @@ export class SattoriStack extends Stack {
     // (ステートマシンは管理用Lambdaを呼び出さないため、実際には循環しないが
     // commonEnvへ混ぜず用途を揃えておく)。
     adminGetExecutionFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
+
+    // ワーカーのCloudWatch Logs閲覧(Issue #58)。`instanceId`はDynamoDBに持つ情報だが、
+    // getExecutionFnと同じ最小権限の考え方でjobsTable読み取り権限は持たせない
+    // (フロントが`GET /admin/jobs/{jobId}`で既に持つ値をクエリパラメータで渡す)。
+    const adminGetLogsFn = makeHandler("AdminGetLogsFn", "admin/getLogs.ts", {
+      WORKER_LOG_GROUP: workerLogGroup.logGroupName,
+    });
+    workerLogGroup.grantRead(adminGetLogsFn);
+    // UserData(bootstrap)段階の失敗はCloudWatch Logsに乗らないため、EC2コンソール出力を
+    // 代替表示するフォールバック用(`ec2.ts`のUserData内`trap`コメント参照)。
+    // GetConsoleOutputはリソースレベル権限に対応しているため、任意のインスタンスに限定する
+    // (Resource: "*" にはしない)。
+    adminGetLogsFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ec2:GetConsoleOutput"],
+        resources: [`arn:aws:ec2:${this.region}:${this.account}:instance/*`],
+      }),
+    );
 
     const httpApi = new apigw.HttpApi(this, "HttpApi", {
       corsPreflight: {
@@ -591,6 +621,12 @@ export class SattoriStack extends Stack {
       path: "/admin/jobs/{jobId}/execution",
       methods: [apigw.HttpMethod.GET],
       integration: new HttpLambdaIntegration("AdminGetExecutionInt", adminGetExecutionFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/jobs/{jobId}/logs",
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration("AdminGetLogsInt", adminGetLogsFn),
       authorizer: adminAuthorizer,
     });
 

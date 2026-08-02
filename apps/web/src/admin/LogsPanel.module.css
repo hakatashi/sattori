@@ -1,0 +1,41 @@
+.section {
+  margin-top: 1.5rem;
+}
+
+.heading {
+  font-size: 1rem;
+  margin: 0 0 0.5rem;
+}
+
+.note {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.checkboxLabel {
+  display: block;
+  font-size: 0.8125rem;
+  margin-bottom: 0.5rem;
+}
+
+.loadMore {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.log {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 0.8125rem;
+}

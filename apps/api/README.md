@@ -20,6 +20,7 @@ API契約自体は `packages/shared/README.md` を参照。
 | `admin/listJobs.ts` | `GET /admin/jobs` | ジョブ一覧（新しい順・status絞り込み・カーソルページング） |
 | `admin/getJobDetail.ts` | `GET /admin/jobs/{jobId}` | `JobRecord`全フィールド＋ダウンロード導線 |
 | `admin/getExecution.ts` | `GET /admin/jobs/{jobId}/execution` | Step Functions実行の状態・履歴 |
+| `admin/getLogs.ts` | `GET /admin/jobs/{jobId}/logs` | ワーカーコンテナのCloudWatch Logs（見つからない場合はEC2コンソール出力にフォールバック） |
 
 ## ジョブ起動〜Step Functionsの流れ
 
@@ -158,6 +159,12 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   生動画チェックポイントを取得したい運用ニーズのため）。`.rpy`は`UploadBucket`が
   CloudFront配信されていない`BLOCK_ALL`バケットのため、動画とは別にS3署名付き
   GET URL（`createPresignedReplayDownloadUrl`、TTL 900秒）を発行する。
+  720p変換のffmpeg生ログ（`ffmpegLogUrl`、Issue #58フォローアップ）も同様にS3署名付き
+  URL（`createPresignedFfmpegLogDownloadUrl`）で配る。CDN配信しないのは一般ユーザー
+  向け配信物ではないため。S3キー（`worker-logs/{jobId}/ffmpeg-upscale.log`）は
+  `executionArn`と同じ考え方でjobIdから決定的に導出し（`buildFfmpegUpscaleLogKey`）
+  DynamoDBには保存しない。`OutputBucket`に短命（3日）なライフサイクルルールを
+  別途設定している（`infra/lib/sattori-stack.ts`）。
 - **Step Functions実行**（`admin/getExecution.ts`、`stepFunctions.ts`）:
   `executionArn`はDBに保存していないが、`startJob.ts`が`StartExecutionCommand`の
   実行名にjobIdをそのまま使っているため`buildExecutionArn()`で決定的に導出できる。
@@ -169,12 +176,37 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   は取れているのに画面が真っ白になるのを避けるため）。ジョブ詳細（`admin/getJobDetail.ts`）とは
   意図的に別エンドポイントにしている: SFNが不調でも詳細画面はDynamoDB由来の情報だけで
   描画できるべきで、詳細用Lambdaに`states:*`権限を持たせずに済む（最小権限）。
+- **ワーカーログ**（`admin/getLogs.ts`、Issue #58）: ロググループは固定
+  （`/sattori/worker`、環境変数`WORKER_LOG_GROUP`）、ログストリーム名は`jobId`
+  （`ec2.ts`の`buildUserData()`が`docker run --log-opt awslogs-stream=${job.jobId}`
+  で対応させる）ため、`GetLogEvents`をそのまま呼べる。新しい方から`limit`件取得し、
+  `?cursor=`にレスポンスの`nextBackwardToken`を渡すことで古いイベントへページングする
+  （`nextBackwardToken`が要求時の`cursor`と一致 or 0件なら「これ以上古いイベントは無い」
+  としてnullへ縮退させる）。Step Functionsのリトライ（最大10回）を跨いでも同じ
+  ストリームに追記されるため、複数回の試行ログが混在しうる点はフロント側で注記する。
+  ログストリームが存在しない（`ResourceNotFoundException`）場合、UserData(bootstrap)
+  段階の失敗（ECRログイン/pull失敗等、コンテナが一度も起動できなかった）を疑い、
+  クエリパラメータで渡された`instanceId`を使って`GetConsoleOutput`にフォールバックする。
+  `instanceId`はDynamoDBの情報だが、`getExecution.ts`と同じ最小権限の考え方でこの
+  LambdaにはjobsTable読み取り権限を持たせず、既に`GET /admin/jobs/{jobId}`を叩いている
+  フロントからクエリパラメータで受け取る。インスタンスが終了済みだと出力が取得できず
+  `consoleOutput: null`に縮退することがある（500にはしない）。
+  当初、720p変換の`worker/upscale.py`がffmpegの`-progress`生出力（frame=/fps=/
+  bitrate=等）を全行このログストリームへ流していたが、1ジョブで数千行に達し
+  実機の管理画面で他のログを埋もれさせる問題が判明した。クライアント側フィルタ
+  （後述）だけでは`GetLogEvents`のページ自体がノイズで埋まる問題は解決しないため、
+  最終的にworker側でCloudWatchへ送らずファイル退避＋S3アップロードに変更した
+  （`downloads.ts`の`ffmpegLogUrl`、`worker/README.md`参照）。以前のジョブ・
+  ワーカーイメージ再デプロイ前のログには依然ノイズが残るため、フロント
+  （`LogsPanel.tsx`）側の「`[ffmpeg] `を含む行を既定で非表示にする」フィルタは
+  後方互換のため残している。
 
 ## 環境変数（`config.ts`）
 
 すべて `infra/lib/sattori-stack.ts` の `commonEnv`（+ `startJob.ts`/
 `admin/getExecution.ts`専用の`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
-`ADMIN_TOKEN_PARAMETER_NAME`）から注入される。`loadConfig()`が必須環境変数の存在を
+`ADMIN_TOKEN_PARAMETER_NAME`、`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定）
+から注入される。`loadConfig()`が必須環境変数の存在を
 検証する（管理API用Lambdaは`commonEnv`を使わず個別の環境変数のみを持つ）。
 
 `STATE_MACHINE_ARN`が`commonEnv`に含まれない理由: ステートマシンは`launchFn`/

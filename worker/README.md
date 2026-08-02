@@ -480,6 +480,22 @@ reports/21)。th06・th07(640x480)のような低解像度録画はそのまま�
 | `progress/{jobId}/{unixMillis}.jpg` | 録画中の進捗スクリーンショット(DynamoDB
   `previewImagePath`)。スナップショット毎にユニークなキーを使う(CloudFrontの
   長期キャッシュで古い画像が返り続けるのを避けるため) |
+| `worker-logs/{jobId}/ffmpeg-upscale.log` | 720p変換のffmpeg生ログ(下記「720p変換の
+  ffmpegログ」参照)。診断用データのため`OutputBucket`内で3日の短いライフサイクル
+  ルールが別途設定されており、DynamoDBにも保存しない(jobIdから決定的に導出可能、
+  `apps/api/src/downloads.ts`の`buildFfmpegUpscaleLogKey`) |
+
+### 720p変換のffmpegログ(Issue #58フォローアップ)
+
+`upscale.py`は720p変換中、ffmpegの`-progress`生出力(`frame=`/`fps=`/`bitrate=`等、
+`out_time_ms`以外の全キー)を1行ずつ受け取る。当初はこれをそのままCloudWatch Logsへ
+流していたが、1ジョブで数千行に達し管理画面のログビューア(Issue #58)で他のログを
+埋もれさせる実害が判明した。録画本体のffmpeg(`recording_common.py`の映像/音声プロセス、
+下記「映像/音声を別プロセスで録画」)は元々ファイル出力＋失敗時のみ末尾をCloudWatchに
+残す方式だったため、`upscale_to_720p()`もこれに合わせ、`ffmpeg_log_path`引数で渡された
+ローカルファイルへ書き出す方式に変更した。変換の成否にかかわらず(`entrypoint.py`が
+`finally`で)そのファイルをS3(`worker-logs/{jobId}/ffmpeg-upscale.log`)へアップロード
+する。CloudWatchには変換失敗時のみ末尾2000バイトを残す(録画側と同じ方針)。
 
 ## Spot中断時のリトライと再開(Issue #11)
 

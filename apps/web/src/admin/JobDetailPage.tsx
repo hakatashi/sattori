@@ -4,6 +4,7 @@ import { fetchAdminJobDetail } from "./adminApi.ts";
 import { useAdminResource } from "./useAdminResource.ts";
 import { StatusBadge } from "./StatusBadge.tsx";
 import { ExecutionPanel } from "./ExecutionPanel.tsx";
+import { LogsPanel } from "./LogsPanel.tsx";
 import styles from "./JobDetailPage.module.css";
 
 function formatDateTime(iso: string | null): string {
@@ -173,6 +174,11 @@ export function JobDetailPage() {
           </div>
 
           <ExecutionPanel jobId={jobId} />
+          <LogsPanel
+            jobId={jobId}
+            instanceId={data.job.instanceId}
+            ffmpegLogUrl={data.downloads.ffmpegLogUrl}
+          />
         </>
       )}
     </section>

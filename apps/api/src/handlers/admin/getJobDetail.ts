@@ -3,7 +3,9 @@ import type { AdminJobDetailResponse, AdminJobDownloads } from "@sattori/shared"
 import { loadConfig } from "../../config.js";
 import {
   buildCdnUrl,
+  buildFfmpegUpscaleLogKey,
   buildVideoDownloadUrl,
+  createPresignedFfmpegLogDownloadUrl,
   createPresignedReplayDownloadUrl,
   objectExists,
 } from "../../downloads.js";
@@ -43,11 +45,17 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     ? buildCdnUrl(config.cdnDomain, job.previewImagePath)
     : null;
 
+  const ffmpegLogKey = buildFfmpegUpscaleLogKey(job.jobId);
+  const ffmpegLogUrl = (await objectExists(config.outputBucket, ffmpegLogKey))
+    ? await createPresignedFfmpegLogDownloadUrl(config.outputBucket, ffmpegLogKey)
+    : null;
+
   const downloads: AdminJobDownloads = {
     replayUrl,
     videoUrl,
     video720pUrl,
     previewImageUrl,
+    ffmpegLogUrl,
   };
 
   const response: AdminJobDetailResponse = { job, downloads };
