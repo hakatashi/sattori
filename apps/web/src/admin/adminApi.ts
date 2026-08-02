@@ -1,10 +1,12 @@
 import type {
+  AdminCostSummaryResponse,
   AdminExecutionResponse,
   AdminJobDetailResponse,
   AdminJobListResponse,
   AdminLogsResponse,
   AdminRetryJobResponse,
   AdminStopJobResponse,
+  CostGranularity,
   JobStatus,
 } from "@sattori/shared";
 import { request, SattoriApiError } from "../api/client.ts";
@@ -93,6 +95,28 @@ export function fetchAdminLogs(
     token,
     `/admin/jobs/${encodeURIComponent(jobId)}/logs${queryString ? `?${queryString}` : ""}`,
   );
+}
+
+export interface FetchAdminCostsParams {
+  granularity: CostGranularity;
+  /** 返すバケット数（新しい順）。省略時はAPI側の既定値。 */
+  limit?: number;
+}
+
+/**
+ * コスト推定の期間集計（Issue #60）。返るのは**請求額ではなく推定値**で、
+ * 単価と算出モデルは`@sattori/shared`の`cost.ts`にある（ジョブ詳細のコスト
+ * パネルと同じ実装を共有している）。
+ */
+export function fetchAdminCosts(
+  token: string,
+  params: FetchAdminCostsParams,
+): Promise<AdminCostSummaryResponse> {
+  const query = new URLSearchParams({ granularity: params.granularity });
+  if (params.limit) {
+    query.set("limit", String(params.limit));
+  }
+  return adminRequest<AdminCostSummaryResponse>(token, `/admin/costs?${query.toString()}`);
 }
 
 /**

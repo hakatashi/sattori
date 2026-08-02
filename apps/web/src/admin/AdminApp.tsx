@@ -6,6 +6,7 @@ import { AdminLogin } from "./AdminLogin.tsx";
 import { clearAdminToken, loadAdminToken, saveAdminToken } from "./adminToken.ts";
 import { JobListPage } from "./JobListPage.tsx";
 import { JobDetailPage } from "./JobDetailPage.tsx";
+import { CostsPage } from "./CostsPage.tsx";
 
 /**
  * 管理画面(`/admin`, Issue #51)のルート。`../App.tsx`から`React.lazy`で遅延ロードされる。
@@ -46,6 +47,7 @@ export function AdminApp() {
         <Routes>
           <Route index element={<JobListPage />} />
           <Route path="jobs/:jobId" element={<JobDetailPage />} />
+          <Route path="costs" element={<CostsPage />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </AdminLayout>

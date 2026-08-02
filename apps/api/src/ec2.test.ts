@@ -3,6 +3,7 @@ import {
   CreateFleetCommand,
   CreateLaunchTemplateVersionCommand,
   DescribeInstancesCommand,
+  DescribeSpotPriceHistoryCommand,
   EC2Client,
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
@@ -10,6 +11,7 @@ import { mockClient } from "aws-sdk-client-mock";
 import type { JobRecord } from "@sattori/shared";
 import {
   buildUserData,
+  fetchSpotPrice,
   findJobInstanceIds,
   launchRecordingInstance,
   terminateInstance,
@@ -53,6 +55,10 @@ const job: JobRecord = {
   instanceId: null,
   instanceType: null,
   availabilityZone: null,
+  spotPricePerHour: null,
+  launchedAt: null,
+  outputBytes: null,
+  outputBytes720p: null,
   estimatedDurationSeconds: 900,
   progress: null,
   previewImagePath: null,
@@ -128,12 +134,17 @@ describe("launchRecordingInstance", () => {
       ],
     });
 
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({
+      SpotPriceHistory: [{ SpotPrice: "0.0612" }],
+    });
+
     const instance = await launchRecordingInstance(config, job, "task-token-abc");
 
     expect(instance).toEqual({
       instanceId: "i-0123456789abcdef0",
       instanceType: "c7i.xlarge",
       availabilityZone: "ap-northeast-1a",
+      spotPricePerHour: 0.0612,
     });
 
     const versionCall = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[0];
@@ -268,5 +279,46 @@ describe("findJobInstanceIds", () => {
   it("該当インスタンスが無ければ空配列", async () => {
     ec2Mock.on(DescribeInstancesCommand).resolves({});
     await expect(findJobInstanceIds("job-1")).resolves.toEqual([]);
+  });
+});
+
+describe("fetchSpotPrice", () => {
+  beforeEach(() => {
+    ec2Mock.reset();
+  });
+
+  it("直近1件のSpot価格履歴を数値で返す", async () => {
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({
+      SpotPriceHistory: [{ SpotPrice: "0.058300" }],
+    });
+
+    await expect(fetchSpotPrice("c7i.xlarge", "us-east-1a")).resolves.toBe(0.0583);
+    expect(ec2Mock.commandCalls(DescribeSpotPriceHistoryCommand)[0]?.args[0].input).toMatchObject({
+      InstanceTypes: ["c7i.xlarge"],
+      AvailabilityZone: "us-east-1a",
+      ProductDescriptions: ["Linux/UNIX"],
+      MaxResults: 1,
+    });
+  });
+
+  it("インスタンスタイプ・AZが不明ならAPIを呼ばずにnull", async () => {
+    await expect(fetchSpotPrice(null, "us-east-1a")).resolves.toBeNull();
+    await expect(fetchSpotPrice("c7i.xlarge", null)).resolves.toBeNull();
+    expect(ec2Mock.commandCalls(DescribeSpotPriceHistoryCommand)).toHaveLength(0);
+  });
+
+  it("履歴が空・数値でない場合はnull", async () => {
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+    await expect(fetchSpotPrice("c7i.xlarge", "us-east-1a")).resolves.toBeNull();
+
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({
+      SpotPriceHistory: [{ SpotPrice: "N/A" }],
+    });
+    await expect(fetchSpotPrice("c7i.xlarge", "us-east-1a")).resolves.toBeNull();
+  });
+
+  it("APIが失敗しても例外を投げずnullを返す（録画そのものを落とさないため）", async () => {
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).rejects(new Error("throttled"));
+    await expect(fetchSpotPrice("c7i.xlarge", "us-east-1a")).resolves.toBeNull();
   });
 });

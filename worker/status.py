@@ -39,8 +39,16 @@ def get_job(job_id):
     return result.get("Item")
 
 
-def update_status(job_id, status, *, output_path=None, output_path_720p=None, error=None):
-    """ジョブの status(と任意で outputPath / outputPath720p / error)を更新する。"""
+def update_status(
+    job_id, status, *,
+    output_path=None, output_path_720p=None,
+    output_bytes=None, output_bytes_720p=None,
+    error=None,
+):
+    """ジョブの status(と任意で outputPath / outputPath720p / 出力サイズ / error)を更新する。
+
+    output_bytes / output_bytes_720p は管理画面のコスト推定(Issue #60)の入力。
+    """
     table_name = os.environ.get("JOBS_TABLE")
     if not table_name:
         # ローカル検証等でテーブル未設定なら DynamoDB 更新はスキップする。
@@ -58,6 +66,12 @@ def update_status(job_id, status, *, output_path=None, output_path_720p=None, er
     if output_path_720p is not None:
         expr += ", outputPath720p = :o720"
         values[":o720"] = output_path_720p
+    if output_bytes is not None:
+        expr += ", outputBytes = :ob"
+        values[":ob"] = int(output_bytes)
+    if output_bytes_720p is not None:
+        expr += ", outputBytes720p = :ob720"
+        values[":ob720"] = int(output_bytes_720p)
     if error is not None:
         expr += ", #e = :e"
         names["#e"] = "error"

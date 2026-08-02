@@ -49,7 +49,8 @@ DL→完了メール）はすべて実装済みで、現在は初回リリース
 
 上記に加え、運用調査用の管理画面（`/admin`、共有トークン+Lambda Authorizerで保護、
 Issue #51）が同じ API Gateway / DynamoDB / S3 / Step Functions を覗く（参照系に加え、
-ジョブの緊急停止・再実行のみ更新系。Issue #59）。
+ジョブの緊急停止・再実行のみ更新系。Issue #59）。コスト推定・集計（Issue #60）も
+同じ DynamoDB のジョブレコードから算出する。
 詳細は `apps/api/README.md`「管理API」・`apps/web/README.md`「管理画面」参照。
 
 各コンポーネントの詳細は次のREADMEに分割してある。
@@ -154,5 +155,11 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 - 録画がリプレイと一致しているかの自動デシンク検知は未実装（目視のみ）。
 - レート制限・濫用対策の強化、コスト監視は継続課題。
 - 管理画面（Issue #51）はジョブ一覧・詳細・ダウンロード導線・workerのCloudWatch
-  ログ表示（Issue #58）・ジョブの緊急停止/再実行（Issue #59）まで実装済み。
-  コスト推定・集計・可視化は後続Issueに切り出し済みで未実装。
+  ログ表示（Issue #58）・ジョブの緊急停止/再実行（Issue #59）・コスト推定と
+  日次/週次/月次集計（Issue #60）まで実装済み。
+- **コスト表示は推定値であって請求額ではない**（`packages/shared/src/cost.ts`、
+  単価は`docs/aws-region-cost-analysis.md`のus-east-1・2026-07-27時点）。
+  リージョンや候補インスタンスタイプを変える場合は単価定数も併せて見直すこと。
+  CloudFrontの無料枠(1TB/月)は月1000録画でほぼ使い切る水準にあり、超えた時点で
+  リージョン差など一瞬で吹き飛ぶ規模の課金が始まる（同 §6）。管理画面のコストページで
+  枠の消化率を監視できるようにしてある。

@@ -23,6 +23,7 @@ API契約自体は `packages/shared/README.md` を参照。
 | `admin/getLogs.ts` | `GET /admin/jobs/{jobId}/logs` | ワーカーコンテナのCloudWatch Logs（見つからない場合はEC2コンソール出力にフォールバック） |
 | `admin/stopJob.ts` | `POST /admin/jobs/{jobId}/stop` | 暴走ジョブの緊急停止（実行停止→インスタンス終了→`failed`確定） |
 | `admin/retryJob.ts` | `POST /admin/jobs/{jobId}/retry` | 失敗ジョブの再実行（**新しいjobId**へ複製して起動） |
+| `admin/getCosts.ts` | `GET /admin/costs` | コスト推定の日次/週次/月次集計（全件Scan + アプリ側集計） |
 
 ## ジョブ起動〜Step Functionsの流れ
 
@@ -75,6 +76,20 @@ API契約自体は `packages/shared/README.md` を参照。
 そのまま取得でき、追加の`DescribeInstances`呼び出しは不要。`JobRecord.instanceType`/
 `.availabilityZone`として記録する（`jobs.ts`の`updateJobInstance()`）。これは録画品質の
 分析・運用調査用の内部データで、ユーザー向けAPI（`GetJobResponse`）には含めない。
+
+**Spot単価だけは`CreateFleet`のレスポンスに含まれない**ため、コスト推定（Issue #60）用に
+`fetchSpotPrice()`が確保できた`instanceType`×`availabilityZone`で
+`DescribeSpotPriceHistory`を1回だけ引いて`JobRecord.spotPricePerHour`へ記録する。
+**この取得の失敗で録画ジョブを落とさない**（例外を握りつぶしてnullを返し、コスト推定側が
+フォールバック単価へ縮退する）——単価は運用把握のための付随情報にすぎず、これを理由に
+起動を失敗させるとリトライ枠（最大10回）を無駄に消費してユーザーの録画そのものを
+落としてしまうため。
+
+同時に`sfn/launch.ts`が`markJobLaunched()`で`JobRecord.launchedAt`（コスト推定の
+課金起点）を記録する。**既に値があれば書き換えない**条件付き更新にしているのが要点で、
+Step Functionsのリトライで`Launch`は最大10回走るため、毎回上書きすると
+それ以前の試行で稼働していたEC2の課金時間が推定から丸ごと抜け落ちる
+（＝失敗を繰り返した高コストなジョブほど安く見えるという、監視として最悪の挙動になる）。
 
 ## ワーカー起動スクリプト（UserData, `ec2.ts` の `buildUserData()`）
 
@@ -255,6 +270,25 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   完了メールは新ジョブが`done`に遷移した時点で引き継いだ`email`宛に届き、本文の
   リンクも新jobIdのジョブページになる（ユーザーは古いマジックリンクのままでも
   新しいメールから辿れる）。
+- **コスト集計**（`admin/getCosts.ts`、`adminCosts.ts`、Issue #60）: ジョブ単位の
+  コスト推定（`@sattori/shared`の`estimateJobCost()`。単価・モデルの詳細は
+  `packages/shared/README.md`「コスト推定」）を日次/週次/月次で積み上げて返す。
+  **`JobsTable`の素朴な全件Scan + アプリ側集計**で、集計結果テーブルもAthena等の
+  分析基盤も持たない。想定規模は月1000ジョブでTTLも無いため1年運用しても1万件強に
+  しかならず、「増えたら考える」ほうが総コストが低いという判断（Issue #60の設計メモ）。
+  `StatusCreatedAtIndex`を使わないのは、GSIのPKが`status`固定で全ステータス横断の
+  期間クエリにならず、7本のQueryを束ねても結局全件読むことになるため。件数に比例して
+  実行時間が伸びるので、このLambdaだけタイムアウト60秒・メモリ512MBに広げてある。
+  バケットの基準時刻は`launchedAt ?? createdAt`（＝コストが発生した時刻。`createdAt`は
+  マジックリンク送信要求の時点なので、日付をまたいで起動されたジョブでは1日ずれる）。
+  バケットのキーは**すべてUTC**で作る（AWSの請求自体がUTC日付区切りなので、
+  ローカルタイムゾーンを持ち込まないほうが請求書と突き合わせやすい）。
+  CloudFrontの配信料だけは`granularity`によらず常に月次で返す——無料枠1TB/月が
+  アカウント単位・月単位でしか判定できず、日次・週次バケットへは原理的に配分できない。
+  レスポンスには`quality`（フォールバックを使ったジョブ数）を含める。コスト算出用
+  フィールドはIssue #60で追加したもので**それ以前のジョブは値を持たない**ため、
+  「表示中の数字にどれだけ仮定が混ざっているか」を画面に出せないと、運用者が推定値を
+  実績として読んでしまう。
 
 ## 環境変数（`config.ts`）
 
