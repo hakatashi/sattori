@@ -11,6 +11,8 @@ import {
   FALLBACK_SPOT_PRICE_USD_PER_HOUR,
   MISC_USD_PER_JOB,
   sumCostBreakdown,
+  usdToJpy,
+  USD_TO_JPY_RATE,
 } from "./cost.js";
 import type { JobCostInput } from "./cost.js";
 
@@ -198,5 +200,13 @@ describe("addCostBreakdown", () => {
     const a = { ec2Spot: 1, ebs: 2, publicIpv4: 3, s3Storage: 4, misc: 5 };
     expect(addCostBreakdown(emptyCostBreakdown(), a)).toEqual(a);
     expect(sumCostBreakdown(addCostBreakdown(a, a))).toBe(30);
+  });
+});
+
+describe("usdToJpy", () => {
+  it("固定レートで円に換算する", () => {
+    expect(usdToJpy(1)).toBeCloseTo(USD_TO_JPY_RATE, 10);
+    expect(usdToJpy(0.05)).toBeCloseTo(0.05 * USD_TO_JPY_RATE, 10);
+    expect(usdToJpy(0)).toBe(0);
   });
 });
