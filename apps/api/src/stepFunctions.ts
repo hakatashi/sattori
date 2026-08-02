@@ -1,4 +1,9 @@
-import type { HistoryEvent } from "@aws-sdk/client-sfn";
+import {
+  DescribeExecutionCommand,
+  ExecutionDoesNotExist,
+  type HistoryEvent,
+  type SFNClient,
+} from "@aws-sdk/client-sfn";
 import type { AdminExecutionEvent } from "@sattori/shared";
 
 /**
@@ -17,6 +22,44 @@ export function buildExecutionArn(stateMachineArn: string, executionName: string
   parts[5] = "execution";
   parts.push(executionName);
   return parts.join(":");
+}
+
+/**
+ * ジョブのStep Functions実行が今も動いているか。
+ * - `running`: 実行中（`DescribeExecution`のstatusが`RUNNING`）。
+ * - `finished`: 既に終了している（SUCCEEDED/FAILED/TIMED_OUT/ABORTED）。
+ * - `absent`: 実行がそもそも存在しない（`pending`のまま起動していない、または
+ *   Standard実行の履歴保持期間(90日)切れ）。
+ */
+export type ExecutionLiveness = "running" | "finished" | "absent";
+
+/**
+ * ジョブのStep Functions実行が生きているかを問い合わせる（Issue #59のレビュー指摘）。
+ *
+ * **`JobRecord.status`を「実行が終わったか」の代理条件にしてはならない**。ワーカーは
+ * 内部エラー時に`SendTaskFailure`より先に`status: "failed"`を書き込み
+ * （`worker/entrypoint.py`）、ステートマシンはその後`WaitBeforeCheck`(3分)を挟んで
+ * `HandleFailure`へ進み、`attempt < MAX_ATTEMPTS`(10)なら`Launch`をやり直す
+ * （`handlers/sfn/handleFailure.ts`は`status === "done"`のときしか中断しない）。
+ * つまり**DynamoDB上は終端状態なのに実行は生きていて新しいインスタンスを起動し続ける**
+ * 窓が毎回存在する。緊急停止の可否・再実行の可否はこの関数で判定する。
+ *
+ * 実行が存在しない場合のみ`absent`を返し、それ以外の失敗（スロットリング等）は
+ * そのまま投げる（「判定不能」を呼び出し側が安全な側へ倒せるようにするため）。
+ */
+export async function getExecutionLiveness(
+  sfn: SFNClient,
+  executionArn: string,
+): Promise<ExecutionLiveness> {
+  try {
+    const result = await sfn.send(new DescribeExecutionCommand({ executionArn }));
+    return result.status === "RUNNING" ? "running" : "finished";
+  } catch (err) {
+    if (err instanceof ExecutionDoesNotExist) {
+      return "absent";
+    }
+    throw err;
+  }
 }
 
 /**

@@ -1,4 +1,10 @@
-import { GetObjectCommand, HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  NoSuchKey,
+  NotFound,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { buildContentDispositionValue, buildDownloadFilename } from "@sattori/shared";
 import type { JobRecord } from "@sattori/shared";
@@ -82,13 +88,47 @@ export async function createPresignedFfmpegLogDownloadUrl(bucket: string, key: s
 
 /**
  * S3オブジェクトの存在確認（HeadObject）。手動削除等で実体が無い場合に
- * 死んだダウンロードリンクを出さないようにするために使う。
+ * 死んだダウンロードリンクを出さないようにするために使う。表示の分岐にしか
+ * 使わないため、失敗の理由を問わず「無い」に倒す（＝リンクを出さない）。
+ *
+ * 「無いこと」を根拠に処理そのものを止める側（`retryJob.ts`）は、一時障害を
+ * 「削除済み」と誤断定しないよう`objectExistsStrict()`を使うこと。
  */
 export async function objectExists(bucket: string, key: string): Promise<boolean> {
   try {
-    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
-    return true;
+    return await objectExistsStrict(bucket, key);
   } catch {
     return false;
+  }
+}
+
+/**
+ * S3オブジェクトの存在確認（HeadObject）。`objectExists()`と違い、404以外の失敗
+ * （スロットリング・5xx・権限/KMSエラー等）はそのまま投げる。
+ *
+ * 呼び出し側が「オブジェクトが無い」ことをユーザー（管理者）への断定的な説明や
+ * 処理の中断理由にする場合、一時障害を「削除済み」と report してしまうと運用者を
+ * 誤った原因調査へ誘導するため（Issue #59のレビュー指摘）。
+ */
+export async function objectExistsStrict(bucket: string, key: string): Promise<boolean> {
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch (err) {
+    // HeadObjectはボディを返さないため、SDKは`NoSuchKey`ではなく汎用の`NotFound`
+    // （404）を投げる。バケット自体が無い場合の`NoSuchBucket`は「削除済み」ではなく
+    // 設定異常なので、ここでは404だけを「無い」として扱う。
+    if (err instanceof NotFound || err instanceof NoSuchKey) {
+      return false;
+    }
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "$metadata" in err &&
+      (err.$metadata as { httpStatusCode?: number } | undefined)?.httpStatusCode === 404
+    ) {
+      return false;
+    }
+    throw err;
   }
 }

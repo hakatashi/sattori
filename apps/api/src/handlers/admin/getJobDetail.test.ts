@@ -45,6 +45,8 @@ const recordingJob: JobRecord = {
   previewImagePath: "progress/job-1/1234.jpg",
   replayInfo: null,
   pendingExpiresAt: null,
+  retriedToJobId: null,
+  retriedFromJobId: null,
   language: "ja",
 };
 

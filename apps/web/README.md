@@ -113,7 +113,8 @@ API Gateway自身の形式で、このAPIの`ApiError`（code/message）形で�
 
 ## 管理画面（`src/admin/`、Issue #51）
 
-運用調査用のジョブ一覧・詳細・ダウンロード導線。ユーザーは管理者1人固定。API側の詳細は
+運用調査用のジョブ一覧・詳細・ダウンロード導線と、ジョブの緊急停止・再実行
+（Issue #59）。ユーザーは管理者1人固定。API側の詳細は
 `apps/api/README.md`「管理API」を参照。
 
 - **認証**: SSM Parameter Store（`/sattori/admin/token`）に置いた共有トークンを
@@ -132,6 +133,21 @@ API Gateway自身の形式で、このAPIの`ApiError`（code/message）形で�
   `ExecutionPanel.tsx`（Step Functions実行状態、`JobDetailPage`とは別にfetchする。
   理由は`apps/api/README.md`参照）。データ取得は共通フック`useAdminResource.ts`
   （`AdminUnauthorizedError`を検知して`onUnauthorized`を呼ぶ）に集約。
+- **操作パネル**（`JobActionsPanel.tsx`、Issue #59）: ジョブ詳細画面から緊急停止
+  （`done`以外のときに活性）と再実行（終端状態かつ未再実行のときのみ活性）を行う。
+  緊急停止を`failed`でも押せるようにしているのは、ワーカーが`SendTaskFailure`より先に
+  `failed`を書くため「statusは`failed`なのにステートマシンはリトライ中＝EC2が起動し
+  続けている」状態がありうるため（`apps/api/README.md`参照。停止可否の最終判断は
+  API側がStep Functionsの実行状態を見て行い、止めるものが無ければ409）。逆に再実行は
+  `retriedToJobId`が既にあると押せない（同一リプレイの二重録画を避けるため。API側も
+  原子的に排他する）。どちらも
+  取り返しのつかない操作（EC2の強制終了・新規インスタンス起動による課金）なので
+  `window.confirm`での確認を必須にしている。再実行は**新しいjobIdのジョブ**が作られる
+  ため、結果メッセージからその詳細画面へのリンクを出す（元ジョブ側の
+  `retriedToJobId`／新ジョブ側の`retriedFromJobId`フィールドからも相互に辿れる）。
+  操作後は`useAdminResource`の`reload()`でジョブ詳細を取り直す。`reload()`は
+  deps変更時と違い取得中も直前の`data`を保持する（パネルが一瞬アンマウントされて
+  実行結果メッセージが消えるのを避けるため）。
 - **レイアウト**: `AdminLayout.tsx`はユーザー向け`App.tsx`の`Layout`とは共有しない
   専用シェル（`LanguageSwitcher`が存在しない`/en/admin`へのリンクを出してしまうことと、
   ユーザー向け`main`幅(50rem)がジョブ一覧テーブルには狭すぎることが理由）。CSS Modules

@@ -2,12 +2,18 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   CreateFleetCommand,
   CreateLaunchTemplateVersionCommand,
+  DescribeInstancesCommand,
   EC2Client,
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import { mockClient } from "aws-sdk-client-mock";
 import type { JobRecord } from "@sattori/shared";
-import { buildUserData, launchRecordingInstance, terminateInstance } from "./ec2.js";
+import {
+  buildUserData,
+  findJobInstanceIds,
+  launchRecordingInstance,
+  terminateInstance,
+} from "./ec2.js";
 import type { ApiConfig } from "./config.js";
 
 const ec2Mock = mockClient(EC2Client);
@@ -52,6 +58,8 @@ const job: JobRecord = {
   previewImagePath: null,
   replayInfo: null,
   pendingExpiresAt: null,
+  retriedToJobId: null,
+  retriedFromJobId: null,
   language: "ja",
 };
 
@@ -231,5 +239,34 @@ describe("terminateInstance", () => {
     const err = Object.assign(new Error("boom"), { name: "SomeOtherError" });
     ec2Mock.on(TerminateInstancesCommand).rejects(err);
     await expect(terminateInstance("i-0123456789abcdef0")).rejects.toThrow("boom");
+  });
+});
+
+describe("findJobInstanceIds", () => {
+  beforeEach(() => {
+    ec2Mock.reset();
+  });
+
+  it("タグ(sattori:jobId)と未終了の状態でフィルタして全インスタンスIDを返す", async () => {
+    // Step Functionsのリトライで複数台が孤児化していることもあるため、
+    // Reservationを跨いで平坦化して返す。
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [
+        { Instances: [{ InstanceId: "i-aaa" }, { InstanceId: undefined }] },
+        { Instances: [{ InstanceId: "i-bbb" }] },
+        {},
+      ],
+    });
+
+    await expect(findJobInstanceIds("job-1")).resolves.toEqual(["i-aaa", "i-bbb"]);
+    expect(ec2Mock.commandCalls(DescribeInstancesCommand)[0]?.args[0].input.Filters).toEqual([
+      { Name: "tag:sattori:jobId", Values: ["job-1"] },
+      { Name: "instance-state-name", Values: ["pending", "running", "stopping", "stopped"] },
+    ]);
+  });
+
+  it("該当インスタンスが無ければ空配列", async () => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({});
+    await expect(findJobInstanceIds("job-1")).resolves.toEqual([]);
   });
 });
