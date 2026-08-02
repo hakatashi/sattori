@@ -31,15 +31,6 @@ export const JOB_ID_TAG_KEY = "sattori:jobId";
  * 使っていた`c6a`/`c6i`/`c5a`系は削除した(eu-south-2に存在しない、
  * `describe-instance-type-offerings`で確認済み)。以下4タイプはすべてeu-south-2実機で
  * 検証済み（touhou-recorder reports/42・43）。
- *
- * 【重要】reports/43で、これとは別にth08（および恐らくth07）のリプレイ終了検知
- * テンプレート画像がタイトルバー分ずれており、テンプレート照合が機能しない
- * （インスタンスタイプによらず全タイプで発生）既存バグが見つかった。このバグは
- * インスタンスタイプ選定とは無関係だが、修正されるまではth08/th07のジョブが
- * TIMEOUT_SEC（`recording_common.py`）到達まで録画し続け、動画末尾に静止画面が
- * 付く形で完了する可能性がある。`worker/assets/replay_end_templates/th08.png`・
- * `th07.png`がこの問題を抱えていないか確認・修正することを推奨する（詳細は
- * touhou-recorder reports/43参照）。
  */
 const DEFAULT_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
   "c7i.xlarge", // Intel Sapphire Rapids。reports/42実測で重複フレーム率0.1〜0.2%、第一候補
