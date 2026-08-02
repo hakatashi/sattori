@@ -65,6 +65,12 @@ PROGRESS_DIR = f"{WORK_DIR}/progress"
 OUTPUT_KEY = f"videos/{JOB_ID}.mp4"
 OUTPUT_KEY_720P = f"videos/{JOB_ID}_720p.mp4"
 WATERMARK_ASSET = f"{REPO}/assets/watermark/watermark-60fps.webm"
+# 720p変換中のffmpeg生ログ(frame=/fps=/bitrate=等)の退避先。CloudWatch Logsには
+# 全行流さず(Issue #58フォローアップ)、ここへ書き出してから完了後にS3(期限付き)へ
+# アップロードする。CloudFrontでは配信しない診断用データのため、動画とは別プレフィックス
+# にする(infra/lib/sattori-stack.tsで短めのライフサイクルルールを設定)。
+FFMPEG_UPSCALE_LOG = f"{WORK_DIR}/ffmpeg_upscale.log"
+FFMPEG_UPSCALE_LOG_KEY = f"worker-logs/{JOB_ID}/ffmpeg-upscale.log"
 
 # GAME に応じたタイトル固有の録画スクリプト(Issue #13でth08、th06対応・th11対応で追加)。
 # 辞書で明示的に許可した値のみを使うことで、job.game由来のGAME環境変数から
@@ -154,6 +160,24 @@ def upload_video(s3, path, key):
     )
 
 
+def upload_ffmpeg_upscale_log_if_present(s3):
+    """720p変換のffmpeg生ログをS3へアップロードする(存在する場合のみ)。変換の
+    成功/失敗どちらでも診断に使えるため、呼び出し側はupscale_to_720pの成否に
+    かかわらず(finallyで)呼ぶ。アップロード自体の失敗はジョブ全体を失敗させない
+    (診断データの欠落より、既に完了した変換結果を無駄にする方が損失が大きいため)。
+    """
+    if not os.path.exists(FFMPEG_UPSCALE_LOG):
+        return
+    log(f"ffmpeg変換ログをアップロード: s3://{OUTPUT_BUCKET}/{FFMPEG_UPSCALE_LOG_KEY}")
+    try:
+        s3.upload_file(
+            FFMPEG_UPSCALE_LOG, OUTPUT_BUCKET, FFMPEG_UPSCALE_LOG_KEY,
+            ExtraArgs={"ContentType": "text/plain; charset=utf-8"},
+        )
+    except Exception as err:  # noqa: BLE001 - 診断ログのアップロード失敗でジョブ全体を失敗させない
+        log(f"ffmpeg変換ログのアップロードに失敗しました(継続): {err}")
+
+
 def record(s3):
     """録画を実行し、完了直後に生動画をS3へチェックポイントとしてアップロードする。"""
     ensure_title_assets(s3, TITLE_ASSETS_BUCKET, GAME, log=log)
@@ -198,11 +222,16 @@ def convert_and_upload(s3):
     def on_convert_progress(seconds):
         update_progress(JOB_ID, round(seconds))
 
-    upscale_to_720p(
-        OUTPUT_VIDEO, OUTPUT_VIDEO_720P,
-        watermark_path=WATERMARK_ASSET if WATERMARK else None,
-        on_progress=on_convert_progress, log=log,
-    )
+    try:
+        upscale_to_720p(
+            OUTPUT_VIDEO, OUTPUT_VIDEO_720P,
+            watermark_path=WATERMARK_ASSET if WATERMARK else None,
+            on_progress=on_convert_progress, log=log,
+            ffmpeg_log_path=FFMPEG_UPSCALE_LOG,
+        )
+    finally:
+        # 変換の成否にかかわらずアップロードする(失敗時こそ診断に必要なため)。
+        upload_ffmpeg_upscale_log_if_present(s3)
     upload_video(s3, OUTPUT_VIDEO_720P, OUTPUT_KEY_720P)
     update_status(JOB_ID, "done", output_path=OUTPUT_KEY, output_path_720p=OUTPUT_KEY_720P)
 

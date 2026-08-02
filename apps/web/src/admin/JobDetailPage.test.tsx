@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import type { AdminExecutionResponse, AdminJobDetailResponse, JobRecord } from "@sattori/shared";
+import type {
+  AdminExecutionResponse,
+  AdminJobDetailResponse,
+  AdminLogsResponse,
+  JobRecord,
+} from "@sattori/shared";
 import { JobDetailPage } from "./JobDetailPage.tsx";
 import { AdminAuthContext } from "./AdminAuthContext.ts";
 import * as adminApi from "./adminApi.ts";
@@ -10,6 +15,7 @@ vi.mock("./adminApi.ts", () => ({
   AdminUnauthorizedError: class extends Error {},
   fetchAdminJobDetail: vi.fn(),
   fetchAdminExecution: vi.fn(),
+  fetchAdminLogs: vi.fn(),
 }));
 
 const mocked = vi.mocked(adminApi);
@@ -45,6 +51,7 @@ const detailResponse: AdminJobDetailResponse = {
     videoUrl: "https://cdn.example.net/videos/job-1.mp4",
     video720pUrl: null,
     previewImageUrl: "https://cdn.example.net/progress/job-1/1234.jpg",
+    ffmpegLogUrl: null,
   },
 };
 
@@ -52,6 +59,13 @@ const executionResponse: AdminExecutionResponse = {
   execution: null,
   events: [],
   eventsNextToken: null,
+};
+
+const logsResponse: AdminLogsResponse = {
+  logStreamFound: true,
+  events: [],
+  nextBackwardToken: null,
+  consoleOutput: null,
 };
 
 function renderJobDetailPage() {
@@ -70,6 +84,7 @@ describe("JobDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocked.fetchAdminExecution.mockResolvedValue(executionResponse);
+    mocked.fetchAdminLogs.mockResolvedValue(logsResponse);
   });
 
   it("JobRecordの各フィールド(instanceId/instanceType/AZ/email/progress)を描画する", async () => {
@@ -124,5 +139,75 @@ describe("JobDetailPage", () => {
     await waitFor(() => expect(screen.getByText("i-1234")).toBeTruthy());
     expect(screen.queryByText(/^ダウンロード期限: /)).toBeNull();
     expect(screen.queryByText(/出力バケットの保持期間/)).toBeNull();
+  });
+
+  it("ワーカーログをinstanceId付きで取得し、イベントを表示する", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+    mocked.fetchAdminLogs.mockResolvedValue({
+      logStreamFound: true,
+      events: [{ timestamp: 1753833600000, message: "recording started" }],
+      nextBackwardToken: null,
+      consoleOutput: null,
+    });
+    renderJobDetailPage();
+
+    await waitFor(() => expect(screen.getByText(/recording started/)).toBeTruthy());
+    expect(mocked.fetchAdminLogs).toHaveBeenCalledWith("token", "job-1", { instanceId: "i-1234" });
+  });
+
+  it("[ffmpeg]プレフィックスの進捗ログはデフォルトで非表示にし、チェックボックスで表示できる", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+    mocked.fetchAdminLogs.mockResolvedValue({
+      logStreamFound: true,
+      events: [
+        { timestamp: 1753833600000, message: "recording started" },
+        { timestamp: 1753833601000, message: "[entrypoint 10:12:57] [ffmpeg] frame=97119" },
+      ],
+      nextBackwardToken: null,
+      consoleOutput: null,
+    });
+    renderJobDetailPage();
+
+    await waitFor(() => expect(screen.getByText(/recording started/)).toBeTruthy());
+    expect(screen.queryByText(/\[ffmpeg\] frame=/)).toBeNull();
+    expect(screen.getByText(/1件非表示中/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.getByText(/\[ffmpeg\] frame=/)).toBeTruthy();
+  });
+
+  it("ffmpegLogUrlがあればS3のffmpeg生ログへのダウンロードリンクを表示する", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue({
+      ...detailResponse,
+      downloads: {
+        ...detailResponse.downloads,
+        ffmpegLogUrl: "https://out-bucket.s3.amazonaws.com/worker-logs/job-1/ffmpeg-upscale.log?sig=1",
+      },
+    });
+    renderJobDetailPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("720p変換のffmpeg生ログ(全行)をダウンロード")).toBeTruthy(),
+    );
+    const link = screen.getByText(
+      "720p変換のffmpeg生ログ(全行)をダウンロード",
+    ) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe(
+      "https://out-bucket.s3.amazonaws.com/worker-logs/job-1/ffmpeg-upscale.log?sig=1",
+    );
+  });
+
+  it("ログストリームが見つからない場合はコンソール出力へフォールバックする", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+    mocked.fetchAdminLogs.mockResolvedValue({
+      logStreamFound: false,
+      events: [],
+      nextBackwardToken: null,
+      consoleOutput: "boot failed: ECR login error",
+    });
+    renderJobDetailPage();
+
+    await waitFor(() => expect(screen.getByText(/boot failed: ECR login error/)).toBeTruthy());
+    expect(screen.getByText(/ログストリームが見つかりません/)).toBeTruthy();
   });
 });

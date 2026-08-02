@@ -130,3 +130,65 @@ def test_upscale_raises_on_ffmpeg_failure(monkeypatch):
 
     with pytest.raises(RuntimeError):
         upscale.upscale_to_720p("in.mp4", "out.mp4", on_progress=lambda p: None)
+
+
+def test_upscale_writes_raw_progress_lines_to_ffmpeg_log_path_when_given(tmp_path, monkeypatch):
+    # -progress の生出力(frame=/fps=/bitrate=等)をCloudWatchへ全行流すと1ジョブで
+    # 数千行に達しノイズになるため(Issue #58フォローアップ)、ファイルへ書き出す。
+    # 正常終了時はlog()(CloudWatch行き)には何も残さない。
+    monkeypatch.setattr(upscale, "probe_resolution", lambda path: (640, 480))
+    monkeypatch.setattr(upscale.time, "monotonic", lambda: 100.0)
+
+    fake_proc = MagicMock()
+    fake_proc.stdout = iter(["frame=10 fps=30\n", "out_time_ms=1000000\n"])
+    fake_proc.returncode = 0
+    monkeypatch.setattr(upscale.subprocess, "Popen", MagicMock(return_value=fake_proc))
+
+    log_path = tmp_path / "ffmpeg_upscale.log"
+    logged = []
+    upscale.upscale_to_720p(
+        "in.mp4", "out.mp4", on_progress=lambda p: None,
+        log=logged.append, ffmpeg_log_path=str(log_path),
+    )
+
+    content = log_path.read_text()
+    assert "frame=10 fps=30" in content
+    assert "out_time_ms=1000000" in content
+    assert logged == []
+
+
+def test_upscale_tails_ffmpeg_log_to_log_on_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(upscale, "probe_resolution", lambda path: (640, 480))
+    monkeypatch.setattr(upscale.time, "monotonic", lambda: 100.0)
+
+    fake_proc = MagicMock()
+    fake_proc.stdout = iter(["Error: something bad happened\n"])
+    fake_proc.returncode = 1
+    monkeypatch.setattr(upscale.subprocess, "Popen", MagicMock(return_value=fake_proc))
+
+    log_path = tmp_path / "ffmpeg_upscale.log"
+    logged = []
+    with pytest.raises(RuntimeError):
+        upscale.upscale_to_720p(
+            "in.mp4", "out.mp4", on_progress=lambda p: None,
+            log=logged.append, ffmpeg_log_path=str(log_path),
+        )
+
+    assert any("something bad happened" in msg for msg in logged)
+
+
+def test_upscale_without_ffmpeg_log_path_does_not_write_a_file(monkeypatch, tmp_path):
+    # 呼び出し側がffmpeg_log_pathを渡さない場合(既存のテスト・ローカル単体実行等)は
+    # ファイルへの書き出しを一切行わない。
+    monkeypatch.setattr(upscale, "probe_resolution", lambda path: (640, 480))
+    monkeypatch.setattr(upscale.time, "monotonic", lambda: 100.0)
+    monkeypatch.chdir(tmp_path)
+
+    fake_proc = MagicMock()
+    fake_proc.stdout = iter(["frame=10 fps=30\n", "out_time_ms=1000000\n"])
+    fake_proc.returncode = 0
+    monkeypatch.setattr(upscale.subprocess, "Popen", MagicMock(return_value=fake_proc))
+
+    upscale.upscale_to_720p("in.mp4", "out.mp4", on_progress=lambda p: None)
+
+    assert list(tmp_path.iterdir()) == []
