@@ -84,10 +84,13 @@ export const CLOUDFRONT_USD_PER_GB = 0.085;
  * 候補タイプは`price-capacity-optimized`で選ばれるためどれが確保されるか事前に
  * 決まらず、同帯なら価格差も小さいので、帯の代表値で十分という判断。
  *
- * 暫定値: 2026-08-03時点の直近3日間のSpot価格履歴の単純平均から算出。
- * us-east-1時代（`docs/aws-region-cost-analysis.md` §2）と同様の30日間・
- * 時間重み付き平均（TWA）での再計測がまだのため、実際の値とは数%ずれうる。
- * 次にこの定数を見直す際はTWAで再計測すること。
+ * 暫定値: 2026-08-03時点の直近3日間のSpot価格履歴の単純平均から算出（`c7i`/`c7a`/
+ * `c7i-flex`の3タイプ平均）。この後`apps/api/src/ec2.ts`の候補に追加した`m7i`系も、
+ * touhou-recorder reports/43の実測（$0.043〜0.104/時間の範囲）を見る限り同じ帯に
+ * 収まっており、この定数を大きく動かす必要はないと判断した。ただしus-east-1時代
+ * （`docs/aws-region-cost-analysis.md` §2）と同様の30日間・時間重み付き平均（TWA）
+ * での再計測がまだのため、実際の値とは数%ずれうる。次にこの定数を見直す際は
+ * TWAで再計測すること。
  */
 export const FALLBACK_SPOT_PRICE_USD_PER_HOUR = {
   xlarge: 0.045,

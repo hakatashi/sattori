@@ -29,16 +29,23 @@ export const JOB_ID_TAG_KEY = "sattori:jobId";
  *
  * リージョンをeu-south-2(スペイン)へ移設(2026-08)したことに伴い、旧us-east-1で
  * 使っていた`c6a`/`c6i`/`c5a`系は削除した(eu-south-2に存在しない、
- * `describe-instance-type-offerings`で確認済み)。
+ * `describe-instance-type-offerings`で確認済み)。以下4タイプはすべてeu-south-2実機で
+ * 検証済み（touhou-recorder reports/42・43）。
+ *
+ * 【重要】reports/43で、これとは別にth08（および恐らくth07）のリプレイ終了検知
+ * テンプレート画像がタイトルバー分ずれており、テンプレート照合が機能しない
+ * （インスタンスタイプによらず全タイプで発生）既存バグが見つかった。このバグは
+ * インスタンスタイプ選定とは無関係だが、修正されるまではth08/th07のジョブが
+ * TIMEOUT_SEC（`recording_common.py`）到達まで録画し続け、動画末尾に静止画面が
+ * 付く形で完了する可能性がある。`worker/assets/replay_end_templates/th08.png`・
+ * `th07.png`がこの問題を抱えていないか確認・修正することを推奨する（詳細は
+ * touhou-recorder reports/43参照）。
  */
 const DEFAULT_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "c7i.xlarge", // Intel Sapphire Rapids。eu-south-2実機検証済み(reports/42、重複フレーム率0.1〜0.2%)、第一候補
-  // 以下2つはus-east-1では実機検証済み(reports/27、重複フレーム率3.1%/1.2%)だが、
-  // eu-south-2での実機検証はまだ行っていない(移設計画のPhase 0として要実施)。
-  // 起動失敗耐性(Issue #29)のプール数確保のため暫定的に候補へ残しているが、
-  // 実機検証が完了するまで本番トラフィックの主力にはしないこと。
-  "c7a.xlarge", // AMD Genoa
-  "c7i-flex.xlarge", // Intel現行世代のburstableオプション
+  "c7i.xlarge", // Intel Sapphire Rapids。reports/42実測で重複フレーム率0.1〜0.2%、第一候補
+  "c7a.xlarge", // AMD Genoa。reports/43実測で重複フレーム率1.4%（実ゲームプレイ区間）
+  "c7i-flex.xlarge", // Intel現行世代のburstableオプション。reports/43実測で重複フレーム率5.0%（同上）
+  "m7i.xlarge", // Intel Sapphire Rapids(メモリ倍増版)。reports/43実測で重複フレーム率2.7%（同上）
 ];
 
 /**
@@ -51,14 +58,13 @@ const DEFAULT_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
  * 管理する。
  *
  * eu-south-2には`c6i`/`c6a`系が存在しないため、旧リストの`c6i.2xlarge`/`c6a.2xlarge`は
- * 削除した。
+ * 削除した。以下3タイプはすべてeu-south-2実機で検証済み（touhou-recorder
+ * reports/42・43）で、いずれも想定尺どおりの自然終了・良好な重複フレーム率を確認済み。
  */
 const TH11_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "c7i.2xlarge", // Intel Sapphire Rapids。eu-south-2実機検証済み(reports/42、重複フレーム率4.5%)、第一候補
-  // DEFAULT側のc7a.xlargeに対応する.2xlarge帯。us-east-1・eu-south-2いずれでも
-  // このタイプ自体の実機検証は未実施(xlarge帯からの類推)。プール数確保のための
-  // 暫定候補であり、実機検証が完了するまで本番トラフィックの主力にはしないこと。
-  "c7a.2xlarge", // AMD Genoa
+  "c7i.2xlarge", // Intel Sapphire Rapids。reports/42実測で重複フレーム率4.5%、第一候補
+  "c7a.2xlarge", // AMD Genoa。reports/43実測で重複フレーム率0.4%
+  "m7i.2xlarge", // Intel Sapphire Rapids(メモリ倍増版)。reports/43実測で重複フレーム率3.7%
 ];
 
 function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
