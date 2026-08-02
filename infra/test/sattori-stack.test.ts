@@ -7,6 +7,9 @@ function synth(): Template {
   const app = new App();
   const stack = new SattoriStack(app, "TestStack", {
     env: { account: "123456789012", region: "ap-northeast-1" },
+    webDomainName: "sattori.hakatashi.com",
+    webCertificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/dummy",
+    sesRegion: "us-east-1",
   });
   return Template.fromStack(stack);
 }
@@ -201,10 +204,8 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("SESのメールIDが検証済みドメイン向けに存在する(Issue #9)", () => {
-    template.hasResourceProperties("AWS::SES::EmailIdentity", {
-      EmailIdentity: "sattori.hakatashi.com",
-    });
+  it("SESのEmailIdentityはSattoriEdgeStack側に存在し、SattoriStackには無い(eu-south-2にSESが無いため)", () => {
+    template.resourceCountIs("AWS::SES::EmailIdentity", 0);
   });
 
   it("マジックリンク関連のHTTP APIルートが定義されている(tokenを使わないjobId単独の起動方式)", () => {
