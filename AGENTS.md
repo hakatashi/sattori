@@ -160,6 +160,9 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 - **コスト表示は推定値であって請求額ではない**（`packages/shared/src/cost.ts`、
   単価は`docs/aws-region-cost-analysis.md`のus-east-1・2026-07-27時点）。
   リージョンや候補インスタンスタイプを変える場合は単価定数も併せて見直すこと。
+  管理画面はUSD/円を切り替えて表示できるが、**円換算は固定レート定数**
+  （`USD_TO_JPY_RATE`、2026-08-03時点）による概算で、計算・API応答はすべてUSDのまま
+  （換算は表示の直前だけ）。
   CloudFrontの無料枠(1TB/月)は月1000録画でほぼ使い切る水準にあり、超えた時点で
   リージョン差など一瞬で吹き飛ぶ規模の課金が始まる（同 §6）。管理画面のコストページで
   枠の消化率を監視できるようにしてある。

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { JobRecord } from "@sattori/shared";
+import { USD_TO_JPY_RATE } from "@sattori/shared";
 import { JobCostPanel } from "./JobCostPanel.tsx";
+import { CostCurrencyContext } from "./adminCurrency.ts";
 
 function makeJob(overrides: Partial<JobRecord> = {}): JobRecord {
   return {
@@ -92,5 +94,19 @@ describe("JobCostPanel", () => {
     expect(screen.getByText("（EC2未起動）")).toBeTruthy();
     // その他(Lambda/SES等)の定数ぶんだけが残る。
     expect(screen.getAllByText("$0.0020").length).toBeGreaterThan(0);
+  });
+
+  it("表示通貨に円を選ぶと円換算して表示する", () => {
+    render(
+      <CostCurrencyContext.Provider value={{ currency: "jpy", setCurrency: () => {} }}>
+        <JobCostPanel job={makeJob()} />
+      </CostCurrencyContext.Provider>,
+    );
+
+    // EC2 Spot = 0.06 USD/h × 0.6h = 0.036 USD（円は小数2桁まで）。
+    const ec2Jpy = (0.036 * USD_TO_JPY_RATE).toFixed(2);
+    expect(screen.getByText(`¥${ec2Jpy}`)).toBeTruthy();
+    expect(screen.queryByText("$0.0360")).toBeNull();
+    expect(screen.getByText(/固定レートで換算した概算/)).toBeTruthy();
   });
 });
