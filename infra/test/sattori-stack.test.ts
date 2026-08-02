@@ -312,11 +312,14 @@ describe("SattoriStack", () => {
   });
 
   it("緊急停止Lambdaに実行停止(states:StopExecution)とインスタンス終了権限が付与されている(Issue #59)", () => {
+    // DescribeExecutionも必須。ジョブのstatusは「実行が終わったか」の代理条件に
+    // ならない（ワーカーがSendTaskFailureより先にfailedを書く）ため、停止可否は
+    // 実行の生死を直接問い合わせて判定している。
     template.hasResourceProperties("AWS::IAM::Policy", {
       PolicyDocument: {
         Statement: Match.arrayWith([
           Match.objectLike({
-            Action: "states:StopExecution",
+            Action: ["states:StopExecution", "states:DescribeExecution"],
           }),
         ]),
       },
@@ -325,12 +328,36 @@ describe("SattoriStack", () => {
       PolicyDocument: {
         Statement: Match.arrayWith([
           Match.objectLike({
-            Action: "ec2:TerminateInstances",
+            // DescribeInstancesは孤児インスタンスをタグから探すため（instanceIdは
+            // CreateFleetの後に書かれるので、起動直後の停止では未記録でありうる）。
+            Action: ["ec2:TerminateInstances", "ec2:DescribeInstances"],
             Resource: "*",
           }),
         ]),
       },
     });
+  });
+
+  it("再実行Lambdaに元ジョブの実行状態確認(states:DescribeExecution)権限が付与されている(Issue #59)", () => {
+    // statusがfailedでもリトライループの最中でありうるため、複製前に実行の生死を
+    // 確認して二重録画（EC2の二重課金）を防いでいる。
+    const policies = template.findResources("AWS::IAM::Policy", {
+      Properties: {
+        PolicyDocument: {
+          Statement: Match.arrayWith([Match.objectLike({ Action: "states:StartExecution" })]),
+        },
+      },
+    });
+    const retryPolicy = Object.entries(policies).find(([logicalId]) =>
+      logicalId.startsWith("AdminRetryJobFn"),
+    );
+    expect(retryPolicy, "AdminRetryJobFnのポリシーが見つからない").toBeTruthy();
+    const statements = (
+      retryPolicy?.[1] as { Properties: { PolicyDocument: { Statement: { Action: unknown }[] } } }
+    ).Properties.PolicyDocument.Statement;
+    expect(statements.some((statement) => statement.Action === "states:DescribeExecution")).toBe(
+      true,
+    );
   });
 
   it("管理画面用Lambda Authorizerがsimple response形式で定義されている", () => {

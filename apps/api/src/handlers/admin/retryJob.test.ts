@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import { HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
+import { HeadObjectCommand, NotFound, S3Client } from "@aws-sdk/client-s3";
+import { DescribeExecutionCommand, SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import type { AdminRetryJobResponse, JobRecord } from "@sattori/shared";
@@ -107,6 +108,8 @@ describe("POST /admin/jobs/{jobId}/retry", () => {
     vi.stubEnv("AWS_ACCESS_KEY_ID", "dummy");
     vi.stubEnv("AWS_SECRET_ACCESS_KEY", "dummy");
     vi.stubEnv("AWS_REGION", "us-east-1");
+    // 既定では「元ジョブの実行は終わっている」。
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "FAILED" });
   });
 
   it("新しいjobIdでジョブを複製し、Step Functionsを起動して元ジョブにリンクを記録する", async () => {
@@ -138,10 +141,13 @@ describe("POST /admin/jobs/{jobId}/retry", () => {
       attempt: 1,
     });
 
-    // 元ジョブ側にretriedToJobIdを記録する（詳細画面から新ジョブへ辿るため）。
+    // 元ジョブ側のretriedToJobIdは「ジョブを作る前」に条件付きで予約する
+    // （詳細画面から新ジョブへ辿るリンクであると同時に多重再実行の排他を兼ねる）。
     const updateCall = ddbMock.commandCalls(UpdateCommand)[0];
     expect(updateCall?.args[0].input.Key).toEqual({ jobId: "job-1" });
     expect(updateCall?.args[0].input.ExpressionAttributeValues?.[":r"]).toBe(body.jobId);
+    expect(updateCall?.args[0].input.ConditionExpression).toContain("attribute_not_exists");
+    expect(ddbMock.commandCalls(PutCommand)[0]?.args[0].input.Item).toBeTruthy();
   });
 
   it("doneのジョブも再実行できる", async () => {
@@ -149,6 +155,7 @@ describe("POST /admin/jobs/{jobId}/retry", () => {
     ddbMock.on(PutCommand).resolves({});
     ddbMock.on(UpdateCommand).resolves({});
     s3Mock.on(HeadObjectCommand).resolves({});
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "SUCCEEDED" });
     sfnMock.on(StartExecutionCommand).resolves({});
 
     expect((await invoke("job-1")).statusCode).toBe(200);
@@ -164,9 +171,34 @@ describe("POST /admin/jobs/{jobId}/retry", () => {
     expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(0);
   });
 
+  it("statusがfailedでも実行が動いていれば409で拒否する(リトライループ中の二重録画を避ける)", async () => {
+    // ワーカーはSendTaskFailureより先にfailedを書き、ステートマシンはその後も
+    // 最大10回までLaunchをやり直す。statusのガードだけでは二重録画を防げない。
+    ddbMock.on(GetCommand).resolves({ Item: failedJob });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "RUNNING" });
+
+    const res = await invoke("job-1");
+
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body ?? "{}").code).toBe("source_execution_running");
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+    expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(0);
+  });
+
+  it("元ジョブの実行状態を確認できなければ502で中止する(安全側に倒す)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: failedJob });
+    sfnMock.on(DescribeExecutionCommand).rejects(new Error("throttled"));
+
+    const res = await invoke("job-1");
+
+    expect(res.statusCode).toBe(502);
+    expect(JSON.parse(res.body ?? "{}").code).toBe("execution_check_failed");
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
   it("元の.rpyが残っていなければ409で拒否し、ジョブを作らない", async () => {
     ddbMock.on(GetCommand).resolves({ Item: failedJob });
-    s3Mock.on(HeadObjectCommand).rejects(new Error("NotFound"));
+    s3Mock.on(HeadObjectCommand).rejects(new NotFound({ message: "Not Found", $metadata: {} }));
 
     const res = await invoke("job-1");
 
@@ -176,7 +208,34 @@ describe("POST /admin/jobs/{jobId}/retry", () => {
     expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(0);
   });
 
-  it("StartExecutionに失敗したら新ジョブをfailedに落として502を返す", async () => {
+  it("HeadObjectが404以外で失敗したら502を返す(削除済みと誤断定しない)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: failedJob });
+    s3Mock.on(HeadObjectCommand).rejects(new Error("SlowDown"));
+
+    const res = await invoke("job-1");
+
+    expect(res.statusCode).toBe(502);
+    expect(JSON.parse(res.body ?? "{}").code).toBe("replay_check_failed");
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it("既に再実行済みのジョブは409で拒否する(多重再実行による二重録画を避ける)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...failedJob, retriedToJobId: "job-2" } });
+    s3Mock.on(HeadObjectCommand).resolves({});
+    ddbMock
+      .on(UpdateCommand)
+      .rejects(new ConditionalCheckFailedException({ message: "conditional", $metadata: {} }));
+
+    const res = await invoke("job-1");
+
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.body ?? "{}").code).toBe("job_already_retried");
+    // 予約はジョブを作る前に行うため、レコードもStep Functions実行も作られない。
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+    expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(0);
+  });
+
+  it("StartExecutionに失敗したら新ジョブをfailedに落とし、予約を取り消して502を返す", async () => {
     ddbMock.on(GetCommand).resolves({ Item: failedJob });
     ddbMock.on(PutCommand).resolves({});
     ddbMock.on(UpdateCommand).resolves({});
@@ -187,19 +246,13 @@ describe("POST /admin/jobs/{jobId}/retry", () => {
 
     expect(res.statusCode).toBe(502);
     const newJobId = (ddbMock.commandCalls(PutCommand)[0]?.args[0].input.Item as JobRecord).jobId;
-    const updateCall = ddbMock.commandCalls(UpdateCommand)[0];
-    expect(updateCall?.args[0].input.Key).toEqual({ jobId: newJobId });
-    expect(updateCall?.args[0].input.ExpressionAttributeValues?.[":s"]).toBe("failed");
-  });
-
-  it("元ジョブへのリンク記録に失敗しても再実行自体は成功として返す", async () => {
-    ddbMock.on(GetCommand).resolves({ Item: failedJob });
-    ddbMock.on(PutCommand).resolves({});
-    ddbMock.on(UpdateCommand).rejects(new Error("throttled"));
-    s3Mock.on(HeadObjectCommand).resolves({});
-    sfnMock.on(StartExecutionCommand).resolves({});
-
-    expect((await invoke("job-1")).statusCode).toBe(200);
+    const updateCalls = ddbMock.commandCalls(UpdateCommand);
+    // 1件目は予約、2件目が新ジョブのfailed化、3件目が予約の取り消し。
+    expect(updateCalls[1]?.args[0].input.Key).toEqual({ jobId: newJobId });
+    expect(updateCalls[1]?.args[0].input.ExpressionAttributeValues?.[":s"]).toBe("failed");
+    // 起動できなかった予約を残すと以後の再実行が永久に弾かれるため、必ず戻す。
+    expect(updateCalls[2]?.args[0].input.Key).toEqual({ jobId: "job-1" });
+    expect(updateCalls[2]?.args[0].input.ExpressionAttributeValues?.[":null"]).toBeNull();
   });
 
   it("ジョブが存在しなければ404を返す", async () => {

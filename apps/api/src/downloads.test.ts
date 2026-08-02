@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { HeadObjectCommand, NotFound, S3Client } from "@aws-sdk/client-s3";
 import { mockClient } from "aws-sdk-client-mock";
 import type { ReplayInfo } from "@sattori/shared";
 
@@ -66,5 +66,27 @@ describe("downloads", () => {
     s3Mock.on(HeadObjectCommand).rejects(new Error("NotFound"));
     const { objectExists } = await import("./downloads.js");
     await expect(objectExists("up-bucket", "replays/missing.rpy")).resolves.toBe(false);
+  });
+
+  it("objectExistsStrict: 404はfalse", async () => {
+    s3Mock.on(HeadObjectCommand).rejects(new NotFound({ message: "Not Found", $metadata: {} }));
+    const { objectExistsStrict } = await import("./downloads.js");
+    await expect(objectExistsStrict("up-bucket", "replays/missing.rpy")).resolves.toBe(false);
+  });
+
+  it("objectExistsStrict: httpStatusCode 404の汎用エラーもfalse", async () => {
+    s3Mock
+      .on(HeadObjectCommand)
+      .rejects(Object.assign(new Error("NotFound"), { $metadata: { httpStatusCode: 404 } }));
+    const { objectExistsStrict } = await import("./downloads.js");
+    await expect(objectExistsStrict("up-bucket", "replays/missing.rpy")).resolves.toBe(false);
+  });
+
+  it("objectExistsStrict: 404以外の失敗はそのまま投げる(削除済みと誤断定しない)", async () => {
+    s3Mock
+      .on(HeadObjectCommand)
+      .rejects(Object.assign(new Error("SlowDown"), { $metadata: { httpStatusCode: 503 } }));
+    const { objectExistsStrict } = await import("./downloads.js");
+    await expect(objectExistsStrict("up-bucket", "replays/job-1.rpy")).rejects.toThrow("SlowDown");
   });
 });

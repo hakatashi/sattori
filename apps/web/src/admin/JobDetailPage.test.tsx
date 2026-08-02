@@ -240,6 +240,48 @@ describe("JobDetailPage", () => {
       expect(screen.getByRole("button", { name: "緊急停止" }).hasAttribute("disabled")).toBe(true);
     });
 
+    it("statusがfailedでも緊急停止は押せる(実行がリトライ中の可能性があるため)", async () => {
+      // ワーカーはSendTaskFailureより先にfailedを書くため、statusがfailedでも
+      // ステートマシンが最大10回までEC2を起動し直していることがある。UIで
+      // 押せなくしてしまうと、その暴走を止める手段が無くなる。
+      const failedJob: JobRecord = { ...job, status: "failed", error: "録画に失敗しました" };
+      mocked.fetchAdminJobDetail.mockResolvedValue({ ...detailResponse, job: failedJob });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "緊急停止" })).toBeTruthy());
+      expect(screen.getByRole("button", { name: "緊急停止" }).hasAttribute("disabled")).toBe(false);
+      expect(screen.getByText(/Step\s+Functionsがリトライ中/)).toBeTruthy();
+    });
+
+    it("再実行済みのジョブでは再実行を押せない(二重録画を避ける)", async () => {
+      mocked.fetchAdminJobDetail.mockResolvedValue({
+        ...detailResponse,
+        job: { ...doneJob, retriedToJobId: "job-2" },
+      });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "再実行" })).toBeTruthy());
+      expect(screen.getByRole("button", { name: "再実行" }).hasAttribute("disabled")).toBe(true);
+      expect(screen.getByText(/既に再実行済みです/)).toBeTruthy();
+    });
+
+    it("停止処理中に録画が完了していた場合はstatusがdoneのままであることを伝える", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+      mocked.stopAdminJob.mockResolvedValue({
+        jobId: "job-1",
+        status: "done",
+        executionStopped: true,
+        instanceTerminated: true,
+      });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "緊急停止" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "緊急停止" }));
+
+      await waitFor(() => expect(screen.getByText(/statusはdoneのままです/)).toBeTruthy());
+    });
+
     it("確認ダイアログをキャンセルすると停止APIを呼ばない", async () => {
       vi.spyOn(window, "confirm").mockReturnValue(false);
       mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
