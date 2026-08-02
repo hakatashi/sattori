@@ -6,7 +6,7 @@
 import { spawnSync } from "node:child_process";
 
 const STACK_NAME = "SattoriStack";
-const REGION = "us-east-1";
+const REGION = "eu-south-2";
 
 function resolveApiBase() {
   if (process.env.VITE_API_BASE) return process.env.VITE_API_BASE;

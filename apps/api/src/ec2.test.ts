@@ -174,7 +174,7 @@ describe("launchRecordingInstance", () => {
         { SubnetId: "subnet-aaaa", InstanceType: "c7i.xlarge" },
         { SubnetId: "subnet-bbbb", InstanceType: "c7i.xlarge" },
         { SubnetId: "subnet-aaaa", InstanceType: "c7a.xlarge" },
-        { SubnetId: "subnet-bbbb", InstanceType: "c5a.xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "c7i-flex.xlarge" },
       ]),
     );
     expect(fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]).toMatchObject({
@@ -200,9 +200,9 @@ describe("launchRecordingInstance", () => {
     // th11は8vCPU/16GiB以上(.2xlarge帯)が必要（本番の処理落ち実測、touhou-recorder reports/40）
     expect(overrides).toEqual(
       expect.arrayContaining([
-        { SubnetId: "subnet-aaaa", InstanceType: "c6i.2xlarge" },
-        { SubnetId: "subnet-bbbb", InstanceType: "c6a.2xlarge" },
         { SubnetId: "subnet-aaaa", InstanceType: "c7i.2xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "c7i.2xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "c7a.2xlarge" },
         { SubnetId: "subnet-bbbb", InstanceType: "c7a.2xlarge" },
       ]),
     );

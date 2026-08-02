@@ -24,17 +24,21 @@ export const JOB_ID_TAG_KEY = "sattori:jobId";
  * ただしインスタンスタイプの変更は録画品質（Wine+Xvfb+ffmpegの重複フレーム率）に
  * 直結するリスクがあり、「同スペック帯・同価格帯だから安全」とは限らない
  * （`z1d.xlarge` は高クロック特化ゆえに悪化した実績がある、AGENTS.md参照）。
- * このリストは touhou-recorder `reports/27` で th08 の重複フレーム率を実測検証
- * （いずれも1〜4%台の良好な値）した上で選定したもの。追加する際は必ず同様の
- * 実機検証を経ること。
+ * さらにリージョンが変わればハードウェア世代も変わりうるため、あるリージョンでの
+ * 実機検証結果を無条件に他リージョンへ適用してはいけない。
+ *
+ * リージョンをeu-south-2(スペイン)へ移設(2026-08)したことに伴い、旧us-east-1で
+ * 使っていた`c6a`/`c6i`/`c5a`系は削除した(eu-south-2に存在しない、
+ * `describe-instance-type-offerings`で確認済み)。
  */
 const DEFAULT_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "c7i.xlarge", // Intel Sapphire Rapids(現行世代、本番実績あり)
-  "c7a.xlarge", // AMD Genoa(現行世代、重複フレーム率3.1%)
-  "c6a.xlarge", // AMD Milan(前世代、重複フレーム率2.1%)
-  "c6i.xlarge", // Intel Ice Lake(前世代、重複フレーム率4.0%)
-  "c7i-flex.xlarge", // Intel現行世代のburstableオプション、重複フレーム率1.2%
-  "c5a.xlarge", // AMD旧世代、重複フレーム率3.7%
+  "c7i.xlarge", // Intel Sapphire Rapids。eu-south-2実機検証済み(reports/42、重複フレーム率0.1〜0.2%)、第一候補
+  // 以下2つはus-east-1では実機検証済み(reports/27、重複フレーム率3.1%/1.2%)だが、
+  // eu-south-2での実機検証はまだ行っていない(移設計画のPhase 0として要実施)。
+  // 起動失敗耐性(Issue #29)のプール数確保のため暫定的に候補へ残しているが、
+  // 実機検証が完了するまで本番トラフィックの主力にはしないこと。
+  "c7a.xlarge", // AMD Genoa
+  "c7i-flex.xlarge", // Intel現行世代のburstableオプション
 ];
 
 /**
@@ -42,15 +46,19 @@ const DEFAULT_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
  * （ゲーム内fps表示が最悪35fps程度まで低下する、コマ落ちではなくゲームプレイ自体の
  * 実時間伸長）が発生した。touhou-recorder `reports/40` の実機検証で、原因は
  * CPU世代ではなくvCPU数の不足であることが判明し、8vCPU/16GiB以上(`.2xlarge`帯)に
- * すると重複フレーム率が明確に改善する（`c6i.xlarge`16.5%→`c6i.2xlarge`4.0%等）
- * ことを確認した。th06/07/08向けの`DEFAULT_CANDIDATE_INSTANCE_TYPES`とは
- * インスタンスタイプの重なりがない別リストとして管理する。
+ * すると重複フレーム率が明確に改善することを確認した。th06/07/08向けの
+ * `DEFAULT_CANDIDATE_INSTANCE_TYPES`とはインスタンスタイプの重なりがない別リストとして
+ * 管理する。
+ *
+ * eu-south-2には`c6i`/`c6a`系が存在しないため、旧リストの`c6i.2xlarge`/`c6a.2xlarge`は
+ * 削除した。
  */
 const TH11_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "c6i.2xlarge", // Intel Ice Lake、reports/40実測で重複フレーム率4.0%
-  "c6a.2xlarge", // AMD Milan(DEFAULT側のc6a.xlargeに対応する.2xlarge帯)
-  "c7i.2xlarge", // Intel Sapphire Rapids、reports/40実測で重複フレーム率5.4%、第一候補
-  "c7a.2xlarge", // AMD Genoa(DEFAULT側のc7a.xlargeに対応する.2xlarge帯)
+  "c7i.2xlarge", // Intel Sapphire Rapids。eu-south-2実機検証済み(reports/42、重複フレーム率4.5%)、第一候補
+  // DEFAULT側のc7a.xlargeに対応する.2xlarge帯。us-east-1・eu-south-2いずれでも
+  // このタイプ自体の実機検証は未実施(xlarge帯からの類推)。プール数確保のための
+  // 暫定候補であり、実機検証が完了するまで本番トラフィックの主力にはしないこと。
+  "c7a.2xlarge", // AMD Genoa
 ];
 
 function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {

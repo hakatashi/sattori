@@ -1,7 +1,19 @@
 # infra
 
-AWS CDK（TypeScript）による Sattori のインフラ定義。`SattoriStack`
-（`lib/sattori-stack.ts`）一つに集約している。
+AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-south-2移設に伴い、
+**2スタック構成**になっている。
+
+- **`SattoriStack`**（`lib/sattori-stack.ts`、**eu-south-2**固定）: 録画基盤・API・
+  DynamoDB・VPC・Web配信など、ほぼ全てのリソース。
+- **`SattoriEdgeStack`**（`lib/sattori-edge-stack.ts`、**us-east-1**固定）: ACM証明書
+  （CloudFrontにアタッチする証明書はus-east-1必須）とSES（eu-south-2には存在しない
+  ため、2026-08-03時点確認）だけを持つ小さな付帯スタック。`SattoriStack`は
+  `crossRegionReferences`経由でこの証明書ARNを受け取り、Lambda側は`SES_REGION`
+  環境変数でこのリージョンのSESを明示して呼ぶ（`apps/api/src/ses.ts`）。
+
+両スタックは`bin/sattori.ts`から起こし、`pnpm run deploy`（＝`cdk deploy --all`）で
+まとめてデプロイする。単体でどちらかだけをデプロイしたい場合は
+`cdk deploy SattoriEdgeStack` / `cdk deploy SattoriStack` のようにスタックIDを指定する。
 
 ## リソース一覧
 
@@ -29,18 +41,23 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。`SattoriStack`
   `EmailRateLimitTable`（`normalizedEmail`パーティションキーのみ・1メール1item、
   TTL属性で自動削除。`apps/api/README.md`参照）。
 - **SES**: `EmailIdentity`（送信元ドメインのDKIM検証、マジックリンク・完了メール
-  送信用）。DKIM用CNAMEは`cdk deploy`後にCfnOutputの値を外部DNSへ手動追加する
+  送信用）は**`SattoriEdgeStack`（us-east-1）側**にある（eu-south-2にはSESが存在
+  しないため）。DKIM用CNAMEは`cdk deploy`後にCfnOutputの値を外部DNSへ手動追加する
   必要がある。また実際にサンドボックス外へ送信するには別途AWSへ申請が必要
-  （コードでは自動化できない）。
+  （コードでは自動化できない）。`SattoriStack`側のLambda（`RequestMagicLinkFn`・
+  `SendCompletionEmailFn`）は`SES_REGION`環境変数（値は`us-east-1`）で
+  `SESv2Client`のリージョンを明示して呼ぶ（`apps/api/src/ses.ts`）。IAMポリシーの
+  `resources`も`arn:aws:ses:${props.sesRegion}:...`とSESのリージョンに合わせている。
 - **ECR**: `sattori-worker`（`maxImageCount: 2`でストレージコストを抑制。
   ワーカーイメージはタイトル数に依存しない共通部分のみで構成するため、Issue #22で
   タイトル固有アセットをS3側へ分離済み）。
-- **VPC**: NATなし公開サブネット×6AZ（`maxAzs: 6`、us-east-1の全AZ数に合わせている。
-  ワーカーは外向き通信のみのためNAT不要=コスト増なしでAZを広げられる）+ SG
-  （egressのみ）。**us-east-1eは本番AWSアカウントではレガシーAZ**で現行世代
-  インスタンスタイプを一切提供しないため、VPC自体は変えず`WORKER_SUBNET_IDS`の
-  組み立て時に除外している（Issue #29。VPCの`availabilityZones`明示指定での除外は
-  CloudFormationのサブネット差し替えでCIDR重複エラーになり不可、コメント参照）。
+- **VPC**: NATなし公開サブネット×最大6AZ（`maxAzs: 6`。実際に作られる数は
+  リージョンの提供AZ数とのmin。eu-south-2は現状3AZなので3つ）+ SG（egressのみ）。
+  ワーカーは外向き通信のみのためNAT不要=コスト増なしでAZを広げられる。
+  us-east-1運用時代はレガシーAZ（`us-east-1e`）を`WORKER_SUBNET_IDS`の組み立て時に
+  除外していたが（Issue #29。VPCの`availabilityZones`明示指定での除外は
+  CloudFormationのサブネット差し替えでCIDR重複エラーになり不可だったための対応）、
+  eu-south-2にはレガシーAZが無いため現在はフィルタリングを行っていない。
 - **EC2 Launch Template**: ワーカー起動の基点（AMI/インスタンスタイプ/IAM/SG固定）。
   ジョブ固有のUserDataは**CDKではなく実行時にAWS SDKで**`CreateLaunchTemplateVersion`
   により上書きする（`AGENTS.md`の設計判断参照。ここでのUserDataはプレースホルダで
@@ -95,7 +112,7 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。`SattoriStack`
   **`cdk deploy`より前に手動でパラメータを作成すること**（無くてもデプロイ自体は
   失敗しないが、作成するまで`/admin/*`は全て403になる）:
   ```bash
-  aws ssm put-parameter --region us-east-1 --name /sattori/admin/token \
+  aws ssm put-parameter --region eu-south-2 --name /sattori/admin/token \
     --type SecureString --value "$(openssl rand -hex 32)" --overwrite
   ```
   投入・ローテーション手順の詳細は`CLAUDE.local.md`参照。
@@ -126,14 +143,18 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの 
 ```
 
 0. （初回のみ）管理画面用トークンをSSMへ手動で作成する（上記「管理画面」参照。
-   CDKでは作成できないSecureStringのため、忘れると`/admin/*`が403になり続ける）
+   CDKでは作成できないSecureStringのため、忘れると`/admin/*`が403になり続ける。
+   `--region eu-south-2`を指定すること）
 1. `pnpm build`（`apps/web/dist`が無いと`BucketDeployment`はスキップされる）
-2. `cdk bootstrap`（初回のみ）→ `pnpm run deploy`（`infra`の`deploy`スクリプト
-   ＝`cdk deploy`を呼ぶ）
-3. ワーカーイメージをECRへ push（`docker build worker/` → `docker push`）
-4. ACM証明書のDNS検証用CNAME・SESのDKIM用CNAMEを、`cdk deploy`完了後のCfnOutput
-   を確認して外部DNSへ手動追加する（`hakatashi.com`はRoute 53以外で管理しているため
-   自動検証はできない）
+2. `cdk bootstrap`（初回のみ。`SattoriEdgeStack`用にus-east-1でも必要。
+   `cdk bootstrap aws://<account>/us-east-1 aws://<account>/eu-south-2`）→
+   `pnpm run deploy`（`infra`の`deploy`スクリプト＝`cdk deploy --all`を呼び、
+   `SattoriEdgeStack`→`SattoriStack`の順にデプロイする）
+3. ワーカーイメージをECRへ push（`docker build worker/` → `docker push`。
+   ECRリポジトリはeu-south-2側）
+4. ACM証明書のDNS検証用CNAME・SESのDKIM用CNAMEを、`cdk deploy`完了後の
+   `SattoriEdgeStack`のCfnOutputを確認して外部DNSへ手動追加する
+   （`hakatashi.com`はRoute 53以外で管理しているため自動検証はできない）
 5. タイトル資産（ゲーム本体+WINEPREFIX+MOD）をS3へアップロードする
    （`worker/README.md`「タイトル資産のS3アップロード手順」参照）
 
@@ -142,6 +163,9 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの 
 ```bash
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth
 ```
+
+`cdk synth`はスタックIDを省略すると両スタックとも`cdk.out`へ合成するが、標準出力への
+テンプレート表示にはスタックID（`SattoriEdgeStack`または`SattoriStack`）の指定が要る。
 
 > 注: この環境はasdfのpnpmを使う。CDKの`NodejsFunction`は**リポジトリルートから
 > `esbuild`をexecする**ため、ルート`devDependencies`に`esbuild`を置いてある。
