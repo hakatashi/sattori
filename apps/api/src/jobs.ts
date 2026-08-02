@@ -126,6 +126,29 @@ export async function startPendingJob(table: string, jobId: string): Promise<voi
 }
 
 /**
+ * 元ジョブに「管理画面から再実行して作成した新しいジョブのID」を記録する
+ * （Issue #59）。元ジョブ詳細から新ジョブへ辿るための運用調査用リンクで、
+ * 記録に失敗しても新ジョブの実行自体には影響しない（呼び出し側で握りつぶす）。
+ */
+export async function updateJobRetryLink(
+  table: string,
+  jobId: string,
+  retriedToJobId: string,
+): Promise<void> {
+  await client.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { jobId },
+      UpdateExpression: "SET retriedToJobId = :r, updatedAt = :u",
+      ExpressionAttributeValues: {
+        ":r": retriedToJobId,
+        ":u": new Date().toISOString(),
+      },
+    }),
+  );
+}
+
+/**
  * ジョブに紐づく実行中の EC2 インスタンスの情報（インスタンスID・実際に確保された
  * インスタンスタイプ・アベイラビリティゾーン）を記録する。instanceId は Step Functions
  * の失敗ハンドラ（handleFailure）がリトライ/タイムアウト時にどのインスタンスを

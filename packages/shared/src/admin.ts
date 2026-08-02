@@ -1,4 +1,4 @@
-import type { JobRecord } from "./job.js";
+import type { JobRecord, JobStatus } from "./job.js";
 
 /**
  * 管理画面（`/admin`、Issue #51）向けのAPI契約。`api.ts` の契約は「ユーザー向け」で
@@ -143,4 +143,37 @@ export interface AdminLogsResponse {
    * 取得できた場合のみ非null）。
    */
   consoleOutput: string | null;
+}
+
+/**
+ * 管理画面から緊急停止したジョブに記録するエラー文言（`JobRecord.error`）。
+ * ワーカー自身やStep Functionsの失敗と区別できるよう、専用の文言を定数化する。
+ */
+export const ADMIN_STOPPED_JOB_ERROR = "管理者により停止されました";
+
+/** POST /admin/jobs/{jobId}/stop のレスポンス（Issue #59）。 */
+export interface AdminStopJobResponse {
+  jobId: string;
+  /** 停止後のジョブ状態（常に `failed`）。 */
+  status: JobStatus;
+  /**
+   * Step Functions実行に`StopExecution`を発行したか。実行がまだ存在しない
+   * （`pending`のまま起動していない・履歴保持期間切れ）場合は false。
+   */
+  executionStopped: boolean;
+  /**
+   * EC2インスタンスに`TerminateInstances`を発行したか。`instanceId`が未記録
+   * （まだ起動していない）の場合は false。
+   */
+  instanceTerminated: boolean;
+}
+
+/** POST /admin/jobs/{jobId}/retry のレスポンス（Issue #59）。 */
+export interface AdminRetryJobResponse {
+  /** 複製元（＝リクエストしたパスの）ジョブID。 */
+  sourceJobId: string;
+  /** 新しく作成して起動したジョブID。管理画面はこのIDの詳細画面へ誘導する。 */
+  jobId: string;
+  /** 新しいジョブの状態（常に `queued`）。 */
+  status: JobStatus;
 }

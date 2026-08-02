@@ -173,7 +173,9 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("STATE_MACHINE_ARN 環境変数を個別付与されているLambdaはStartJobとAdminGetExecutionの2つ(循環依存回避のためcommonEnvに含めていない)", () => {
+  it("STATE_MACHINE_ARN 環境変数を個別付与されているLambdaは4つ(循環依存回避のためcommonEnvに含めていない)", () => {
+    // StartJob / AdminGetExecution / AdminStopJob / AdminRetryJob
+    // (後ろ2つはIssue #59のジョブ緊急停止・再実行)。
     const startJobResources = template.findResources("AWS::Lambda::Function", {
       Properties: {
         Environment: {
@@ -183,7 +185,7 @@ describe("SattoriStack", () => {
         },
       },
     });
-    expect(Object.keys(startJobResources).length).toBe(2);
+    expect(Object.keys(startJobResources).length).toBe(4);
   });
 
   it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {
@@ -290,6 +292,9 @@ describe("SattoriStack", () => {
       "GET /admin/jobs",
       "GET /admin/jobs/{jobId}",
       "GET /admin/jobs/{jobId}/execution",
+      // Issue #59。DELETEを使うとcorsPreflight.allowMethodsの拡張も要るためPOSTに揃えている。
+      "POST /admin/jobs/{jobId}/stop",
+      "POST /admin/jobs/{jobId}/retry",
     ];
     for (const routeKey of adminRouteKeys) {
       const route = routeEntries.find((r) => r.Properties.RouteKey === routeKey);
@@ -304,6 +309,28 @@ describe("SattoriStack", () => {
       const route = routeEntries.find((r) => r.Properties.RouteKey === routeKey);
       expect(route?.Properties.AuthorizerId).toBeFalsy();
     }
+  });
+
+  it("緊急停止Lambdaに実行停止(states:StopExecution)とインスタンス終了権限が付与されている(Issue #59)", () => {
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: "states:StopExecution",
+          }),
+        ]),
+      },
+    });
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: "ec2:TerminateInstances",
+            Resource: "*",
+          }),
+        ]),
+      },
+    });
   });
 
   it("管理画面用Lambda Authorizerがsimple response形式で定義されている", () => {

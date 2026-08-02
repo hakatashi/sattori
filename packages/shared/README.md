@@ -42,7 +42,9 @@ pending → queued → launching → recording → converting → done | failed
 `JobRecord`（DynamoDB `JobsTable` の1アイテムに対応する型）は状態そのものに加え、
 `instanceId`/`instanceType`/`availabilityZone`（実際に確保されたEC2インスタンスの
 運用調査用データ、ユーザー向けAPIには含めない）、`replayInfo`（解析済みリプレイ内容の
-転記、ページBでの表示用）等を持つ。フィールドごとの詳細はソースのコメントを参照。
+転記、ページBでの表示用）、`retriedToJobId`/`retriedFromJobId`（管理画面からの
+再実行で複製された元ジョブ⇄新ジョブの相互リンク、Issue #59）等を持つ。
+フィールドごとの詳細はソースのコメントを参照。
 
 ## リプレイ情報（`src/replay.ts`, `src/games.ts`）
 
@@ -72,6 +74,13 @@ pending → queued → launching → recording → converting → done | failed
 | `GET /admin/jobs` | ジョブ一覧（新しい順、`status`絞り込み、カーソルページング） |
 | `GET /admin/jobs/{jobId}` | ジョブ詳細（`JobRecord`全フィールド＋ダウンロード導線） |
 | `GET /admin/jobs/{jobId}/execution` | Step Functions実行の状態・履歴 |
+| `GET /admin/jobs/{jobId}/logs` | ワーカーコンテナのCloudWatch Logs（Issue #58） |
+| `POST /admin/jobs/{jobId}/stop` | ジョブの緊急停止（Issue #59） |
+| `POST /admin/jobs/{jobId}/retry` | ジョブの再実行（Issue #59。**新しいjobIdのジョブとして複製・起動**するため、レスポンスの`jobId`はパスのそれとは別物） |
+
+参照系の3本と違い停止・再実行は状態を変えるため`POST`（`DELETE`にすると
+`corsPreflight.allowMethods`の拡張も要る）。再実行の複製元/複製先は
+`JobRecord.retriedFromJobId`/`.retriedToJobId`で相互に辿れる。
 
 API側の実装詳細（GSI設計・authorizer・ダウンロードURLの発行方法等）は
 `apps/api/README.md`「管理API」、フロント側は`apps/web/README.md`「管理画面」を参照。
