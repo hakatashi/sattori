@@ -573,6 +573,38 @@ export class SattoriStack extends Stack {
       }),
     );
 
+    // ジョブの緊急停止・再実行（Issue #59）。参照系の管理APIと違い状態を変える
+    // ため、フロント側で確認ダイアログを挟んだ上でPOSTさせる（DELETEを使うと
+    // `corsPreflight.allowMethods`の拡張も必要になるため、POSTに揃える）。
+    const adminStopJobFn = makeHandler("AdminStopJobFn", "admin/stopJob.ts");
+    jobsTable.grantReadWriteData(adminStopJobFn);
+    // DescribeExecutionは停止可否の判定に使う。ジョブのstatusは「実行が終わったか」の
+    // 代理条件にならない（ワーカーがSendTaskFailureより先にfailedを書くため）ので、
+    // 実行の生死を直接問い合わせる必要がある。
+    stateMachine.grantExecution(adminStopJobFn, "states:StopExecution", "states:DescribeExecution");
+    adminStopJobFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        // handleFailureFnと同じく、対象インスタンスは実行時にしか決まらないため
+        // TerminateInstancesはResource:*で付与する。DescribeInstancesは孤児
+        // インスタンスをタグ(sattori:jobId)から探すため（そもそもリソースレベルの
+        // 権限指定に非対応）。
+        actions: ["ec2:TerminateInstances", "ec2:DescribeInstances"],
+        resources: ["*"],
+      }),
+    );
+    adminStopJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
+
+    // 再実行は元ジョブを新しいjobIdへ複製して起動する（同一jobIdでの再起動は
+    // startPendingJobの冪等性前提とStep Functionsの実行名の一意性を壊すため。
+    // `apps/api/src/handlers/admin/retryJob.ts`参照）。
+    const adminRetryJobFn = makeHandler("AdminRetryJobFn", "admin/retryJob.ts");
+    jobsTable.grantReadWriteData(adminRetryJobFn);
+    stateMachine.grantStartExecution(adminRetryJobFn);
+    // 元ジョブの実行がまだ動いていないか（＝複製すると二重録画になるか）の確認用。
+    stateMachine.grantExecution(adminRetryJobFn, "states:DescribeExecution");
+    uploadBucket.grantRead(adminRetryJobFn); // 元の.rpyが残っているかの確認のため
+    adminRetryJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
+
     const httpApi = new apigw.HttpApi(this, "HttpApi", {
       corsPreflight: {
         allowOrigins: ["*"],
@@ -627,6 +659,18 @@ export class SattoriStack extends Stack {
       path: "/admin/jobs/{jobId}/logs",
       methods: [apigw.HttpMethod.GET],
       integration: new HttpLambdaIntegration("AdminGetLogsInt", adminGetLogsFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/jobs/{jobId}/stop",
+      methods: [apigw.HttpMethod.POST],
+      integration: new HttpLambdaIntegration("AdminStopJobInt", adminStopJobFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/jobs/{jobId}/retry",
+      methods: [apigw.HttpMethod.POST],
+      integration: new HttpLambdaIntegration("AdminRetryJobInt", adminRetryJobFn),
       authorizer: adminAuthorizer,
     });
 

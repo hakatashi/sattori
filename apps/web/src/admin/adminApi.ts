@@ -3,6 +3,8 @@ import type {
   AdminJobDetailResponse,
   AdminJobListResponse,
   AdminLogsResponse,
+  AdminRetryJobResponse,
+  AdminStopJobResponse,
   JobStatus,
 } from "@sattori/shared";
 import { request, SattoriApiError } from "../api/client.ts";
@@ -15,9 +17,10 @@ import { request, SattoriApiError } from "../api/client.ts";
  */
 export class AdminUnauthorizedError extends Error {}
 
-async function adminRequest<T>(token: string, path: string): Promise<T> {
+async function adminRequest<T>(token: string, path: string, init?: RequestInit): Promise<T> {
   try {
     return await request<T>(path, {
+      ...init,
       headers: { authorization: `Bearer ${token}` },
     });
   } catch (err) {
@@ -89,5 +92,31 @@ export function fetchAdminLogs(
   return adminRequest<AdminLogsResponse>(
     token,
     `/admin/jobs/${encodeURIComponent(jobId)}/logs${queryString ? `?${queryString}` : ""}`,
+  );
+}
+
+/**
+ * 暴走ジョブの緊急停止（Issue #59）。Step Functions実行の停止 → EC2インスタンスの
+ * terminate → ジョブを`failed`に確定、までをAPI側が一括で行う破壊的操作のため、
+ * 呼び出し側は必ず確認ダイアログを挟むこと。
+ */
+export function stopAdminJob(token: string, jobId: string): Promise<AdminStopJobResponse> {
+  return adminRequest<AdminStopJobResponse>(
+    token,
+    `/admin/jobs/${encodeURIComponent(jobId)}/stop`,
+    { method: "POST" },
+  );
+}
+
+/**
+ * 失敗ジョブの再実行（Issue #59）。元ジョブは変更せず、**新しいjobIdのジョブ**を
+ * 複製して起動する（レスポンスの`jobId`が新しい方）。EC2を起動する＝課金が発生する
+ * 操作のため、呼び出し側は必ず確認ダイアログを挟むこと。
+ */
+export function retryAdminJob(token: string, jobId: string): Promise<AdminRetryJobResponse> {
+  return adminRequest<AdminRetryJobResponse>(
+    token,
+    `/admin/jobs/${encodeURIComponent(jobId)}/retry`,
+    { method: "POST" },
   );
 }

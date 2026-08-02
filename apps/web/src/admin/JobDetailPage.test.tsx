@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type {
@@ -16,6 +16,8 @@ vi.mock("./adminApi.ts", () => ({
   fetchAdminJobDetail: vi.fn(),
   fetchAdminExecution: vi.fn(),
   fetchAdminLogs: vi.fn(),
+  stopAdminJob: vi.fn(),
+  retryAdminJob: vi.fn(),
 }));
 
 const mocked = vi.mocked(adminApi);
@@ -41,6 +43,8 @@ const job: JobRecord = {
   previewImagePath: "progress/job-1/1234.jpg",
   replayInfo: null,
   pendingExpiresAt: null,
+  retriedToJobId: null,
+  retriedFromJobId: null,
   language: "ja",
 };
 
@@ -209,5 +213,153 @@ describe("JobDetailPage", () => {
 
     await waitFor(() => expect(screen.getByText(/boot failed: ECR login error/)).toBeTruthy());
     expect(screen.getByText(/ログストリームが見つかりません/)).toBeTruthy();
+  });
+
+  describe("操作パネル(Issue #59)", () => {
+    const doneJob: JobRecord = { ...job, status: "done", doneAt: "2026-07-30T00:10:00.000Z" };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("実行中のジョブでは緊急停止だけが押せる", async () => {
+      mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "緊急停止" })).toBeTruthy());
+      expect(screen.getByRole("button", { name: "緊急停止" }).hasAttribute("disabled")).toBe(false);
+      expect(screen.getByRole("button", { name: "再実行" }).hasAttribute("disabled")).toBe(true);
+    });
+
+    it("終了済みのジョブでは再実行だけが押せる", async () => {
+      mocked.fetchAdminJobDetail.mockResolvedValue({ ...detailResponse, job: doneJob });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "再実行" })).toBeTruthy());
+      expect(screen.getByRole("button", { name: "再実行" }).hasAttribute("disabled")).toBe(false);
+      expect(screen.getByRole("button", { name: "緊急停止" }).hasAttribute("disabled")).toBe(true);
+    });
+
+    it("statusがfailedでも緊急停止は押せる(実行がリトライ中の可能性があるため)", async () => {
+      // ワーカーはSendTaskFailureより先にfailedを書くため、statusがfailedでも
+      // ステートマシンが最大10回までEC2を起動し直していることがある。UIで
+      // 押せなくしてしまうと、その暴走を止める手段が無くなる。
+      const failedJob: JobRecord = { ...job, status: "failed", error: "録画に失敗しました" };
+      mocked.fetchAdminJobDetail.mockResolvedValue({ ...detailResponse, job: failedJob });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "緊急停止" })).toBeTruthy());
+      expect(screen.getByRole("button", { name: "緊急停止" }).hasAttribute("disabled")).toBe(false);
+      expect(screen.getByText(/Step\s+Functionsがリトライ中/)).toBeTruthy();
+    });
+
+    it("再実行済みのジョブでは再実行を押せない(二重録画を避ける)", async () => {
+      mocked.fetchAdminJobDetail.mockResolvedValue({
+        ...detailResponse,
+        job: { ...doneJob, retriedToJobId: "job-2" },
+      });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "再実行" })).toBeTruthy());
+      expect(screen.getByRole("button", { name: "再実行" }).hasAttribute("disabled")).toBe(true);
+      expect(screen.getByText(/既に再実行済みです/)).toBeTruthy();
+    });
+
+    it("停止処理中に録画が完了していた場合はstatusがdoneのままであることを伝える", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+      mocked.stopAdminJob.mockResolvedValue({
+        jobId: "job-1",
+        status: "done",
+        executionStopped: true,
+        instanceTerminated: true,
+      });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "緊急停止" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "緊急停止" }));
+
+      await waitFor(() => expect(screen.getByText(/statusはdoneのままです/)).toBeTruthy());
+    });
+
+    it("確認ダイアログをキャンセルすると停止APIを呼ばない", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(false);
+      mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "緊急停止" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "緊急停止" }));
+
+      expect(window.confirm).toHaveBeenCalled();
+      expect(mocked.stopAdminJob).not.toHaveBeenCalled();
+    });
+
+    it("停止に成功したら結果を表示し、ジョブ詳細を取り直す", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+      mocked.stopAdminJob.mockResolvedValue({
+        jobId: "job-1",
+        status: "failed",
+        executionStopped: true,
+        instanceTerminated: true,
+      });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "緊急停止" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "緊急停止" }));
+
+      await waitFor(() => expect(screen.getByText(/停止しました/)).toBeTruthy());
+      expect(mocked.stopAdminJob).toHaveBeenCalledWith("token", "job-1");
+      // 初回取得 + 停止後の再取得。
+      expect(mocked.fetchAdminJobDetail).toHaveBeenCalledTimes(2);
+    });
+
+    it("再実行に成功したら新しいjobIdへのリンクを表示する", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      mocked.fetchAdminJobDetail.mockResolvedValue({ ...detailResponse, job: doneJob });
+      mocked.retryAdminJob.mockResolvedValue({
+        sourceJobId: "job-1",
+        jobId: "job-2",
+        status: "queued",
+      });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "再実行" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "再実行" }));
+
+      await waitFor(() => expect(screen.getByText("job-2")).toBeTruthy());
+      expect(mocked.retryAdminJob).toHaveBeenCalledWith("token", "job-1");
+      expect((screen.getByText("job-2") as HTMLAnchorElement).getAttribute("href")).toBe(
+        "/admin/jobs/job-2",
+      );
+    });
+
+    it("失敗時はエラーメッセージを表示する", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+      mocked.stopAdminJob.mockRejectedValue(new Error("Step Functions実行の停止に失敗しました"));
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "緊急停止" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "緊急停止" }));
+
+      await waitFor(() =>
+        expect(screen.getByText("Step Functions実行の停止に失敗しました")).toBeTruthy(),
+      );
+      expect(mocked.fetchAdminJobDetail).toHaveBeenCalledTimes(1);
+    });
+
+    it("retriedToJobIdがあれば再実行後のジョブ詳細へのリンクを出す", async () => {
+      mocked.fetchAdminJobDetail.mockResolvedValue({
+        ...detailResponse,
+        job: { ...doneJob, retriedToJobId: "job-2" },
+      });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByText("job-2")).toBeTruthy());
+      expect((screen.getByText("job-2") as HTMLAnchorElement).getAttribute("href")).toBe(
+        "/admin/jobs/job-2",
+      );
+    });
   });
 });

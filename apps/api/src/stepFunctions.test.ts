@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
-import type { HistoryEvent } from "@aws-sdk/client-sfn";
-import { buildExecutionArn, toAdminExecutionEvent } from "./stepFunctions.js";
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  DescribeExecutionCommand,
+  ExecutionDoesNotExist,
+  type ExecutionStatus,
+  type HistoryEvent,
+  SFNClient,
+} from "@aws-sdk/client-sfn";
+import { mockClient } from "aws-sdk-client-mock";
+import { buildExecutionArn, getExecutionLiveness, toAdminExecutionEvent } from "./stepFunctions.js";
 
 describe("buildExecutionArn", () => {
   it("ステートマシンARNの:stateMachine:部分を:execution:NAME:{jobId}に置き換える", () => {
@@ -18,6 +25,41 @@ describe("buildExecutionArn", () => {
     expect(() =>
       buildExecutionArn("arn:aws:states:us-east-1:123456789012:activity:foo", "job-1"),
     ).toThrow();
+  });
+});
+
+describe("getExecutionLiveness", () => {
+  const sfnMock = mockClient(SFNClient);
+  const sfn = new SFNClient({});
+  const executionArn = "arn:aws:states:us-east-1:123456789012:execution:StateMachine:job-1";
+
+  beforeEach(() => {
+    sfnMock.reset();
+  });
+
+  it("RUNNINGならrunning", async () => {
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "RUNNING" });
+    await expect(getExecutionLiveness(sfn, executionArn)).resolves.toBe("running");
+  });
+
+  it("終了済みのstatusはfinished", async () => {
+    const statuses: ExecutionStatus[] = ["SUCCEEDED", "FAILED", "TIMED_OUT", "ABORTED"];
+    for (const status of statuses) {
+      sfnMock.on(DescribeExecutionCommand).resolves({ status });
+      await expect(getExecutionLiveness(sfn, executionArn)).resolves.toBe("finished");
+    }
+  });
+
+  it("実行が存在しなければabsent", async () => {
+    sfnMock
+      .on(DescribeExecutionCommand)
+      .rejects(new ExecutionDoesNotExist({ message: "does not exist", $metadata: {} }));
+    await expect(getExecutionLiveness(sfn, executionArn)).resolves.toBe("absent");
+  });
+
+  it("それ以外の失敗はそのまま投げる(呼び出し側が安全側に倒せるようにするため)", async () => {
+    sfnMock.on(DescribeExecutionCommand).rejects(new Error("throttled"));
+    await expect(getExecutionLiveness(sfn, executionArn)).rejects.toThrow("throttled");
   });
 });
 

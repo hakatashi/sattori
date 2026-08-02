@@ -173,7 +173,9 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("STATE_MACHINE_ARN 環境変数を個別付与されているLambdaはStartJobとAdminGetExecutionの2つ(循環依存回避のためcommonEnvに含めていない)", () => {
+  it("STATE_MACHINE_ARN 環境変数を個別付与されているLambdaは4つ(循環依存回避のためcommonEnvに含めていない)", () => {
+    // StartJob / AdminGetExecution / AdminStopJob / AdminRetryJob
+    // (後ろ2つはIssue #59のジョブ緊急停止・再実行)。
     const startJobResources = template.findResources("AWS::Lambda::Function", {
       Properties: {
         Environment: {
@@ -183,7 +185,7 @@ describe("SattoriStack", () => {
         },
       },
     });
-    expect(Object.keys(startJobResources).length).toBe(2);
+    expect(Object.keys(startJobResources).length).toBe(4);
   });
 
   it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {
@@ -290,6 +292,9 @@ describe("SattoriStack", () => {
       "GET /admin/jobs",
       "GET /admin/jobs/{jobId}",
       "GET /admin/jobs/{jobId}/execution",
+      // Issue #59。DELETEを使うとcorsPreflight.allowMethodsの拡張も要るためPOSTに揃えている。
+      "POST /admin/jobs/{jobId}/stop",
+      "POST /admin/jobs/{jobId}/retry",
     ];
     for (const routeKey of adminRouteKeys) {
       const route = routeEntries.find((r) => r.Properties.RouteKey === routeKey);
@@ -304,6 +309,55 @@ describe("SattoriStack", () => {
       const route = routeEntries.find((r) => r.Properties.RouteKey === routeKey);
       expect(route?.Properties.AuthorizerId).toBeFalsy();
     }
+  });
+
+  it("緊急停止Lambdaに実行停止(states:StopExecution)とインスタンス終了権限が付与されている(Issue #59)", () => {
+    // DescribeExecutionも必須。ジョブのstatusは「実行が終わったか」の代理条件に
+    // ならない（ワーカーがSendTaskFailureより先にfailedを書く）ため、停止可否は
+    // 実行の生死を直接問い合わせて判定している。
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: ["states:StopExecution", "states:DescribeExecution"],
+          }),
+        ]),
+      },
+    });
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            // DescribeInstancesは孤児インスタンスをタグから探すため（instanceIdは
+            // CreateFleetの後に書かれるので、起動直後の停止では未記録でありうる）。
+            Action: ["ec2:TerminateInstances", "ec2:DescribeInstances"],
+            Resource: "*",
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("再実行Lambdaに元ジョブの実行状態確認(states:DescribeExecution)権限が付与されている(Issue #59)", () => {
+    // statusがfailedでもリトライループの最中でありうるため、複製前に実行の生死を
+    // 確認して二重録画（EC2の二重課金）を防いでいる。
+    const policies = template.findResources("AWS::IAM::Policy", {
+      Properties: {
+        PolicyDocument: {
+          Statement: Match.arrayWith([Match.objectLike({ Action: "states:StartExecution" })]),
+        },
+      },
+    });
+    const retryPolicy = Object.entries(policies).find(([logicalId]) =>
+      logicalId.startsWith("AdminRetryJobFn"),
+    );
+    expect(retryPolicy, "AdminRetryJobFnのポリシーが見つからない").toBeTruthy();
+    const statements = (
+      retryPolicy?.[1] as { Properties: { PolicyDocument: { Statement: { Action: unknown }[] } } }
+    ).Properties.PolicyDocument.Statement;
+    expect(statements.some((statement) => statement.Action === "states:DescribeExecution")).toBe(
+      true,
+    );
   });
 
   it("管理画面用Lambda Authorizerがsimple response形式で定義されている", () => {

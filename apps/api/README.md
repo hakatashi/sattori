@@ -21,6 +21,8 @@ API契約自体は `packages/shared/README.md` を参照。
 | `admin/getJobDetail.ts` | `GET /admin/jobs/{jobId}` | `JobRecord`全フィールド＋ダウンロード導線 |
 | `admin/getExecution.ts` | `GET /admin/jobs/{jobId}/execution` | Step Functions実行の状態・履歴 |
 | `admin/getLogs.ts` | `GET /admin/jobs/{jobId}/logs` | ワーカーコンテナのCloudWatch Logs（見つからない場合はEC2コンソール出力にフォールバック） |
+| `admin/stopJob.ts` | `POST /admin/jobs/{jobId}/stop` | 暴走ジョブの緊急停止（実行停止→インスタンス終了→`failed`確定） |
+| `admin/retryJob.ts` | `POST /admin/jobs/{jobId}/retry` | 失敗ジョブの再実行（**新しいjobId**へ複製して起動） |
 
 ## ジョブ起動〜Step Functionsの流れ
 
@@ -200,11 +202,65 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   ワーカーイメージ再デプロイ前のログには依然ノイズが残るため、フロント
   （`LogsPanel.tsx`）側の「`[ffmpeg] `を含む行を既定で非表示にする」フィルタは
   後方互換のため残している。
+- **`JobRecord.status`は「実行が終わったか」の代理条件にならない**（停止・再実行の
+  両方に効く前提）。ワーカーは内部エラー時に`SendTaskFailure`より先に
+  `status: "failed"`を書き（`worker/entrypoint.py`）、ステートマシンはその後
+  `WaitBeforeCheck`（3分）を挟んで`HandleFailure`へ進み、`attempt < MAX_ATTEMPTS`
+  なら`Launch`をやり直す（`handleFailure.ts`は`status === "done"`のときしか
+  中断しない）。つまり**DynamoDB上は終端状態なのに実行は生きていて、新しいEC2を
+  起動し続ける**窓が毎回ある。停止・再実行の可否は`stepFunctions.ts`の
+  `getExecutionLiveness()`（`DescribeExecution`）で判定する。
+- **緊急停止**（`admin/stopJob.ts`、Issue #59）: 「ジョブが終端状態」**かつ**
+  「実行も生きていない」場合のみ409。逆に言えば`failed`でも実行が`RUNNING`なら
+  停止でき（上記のリトライ暴走を止めるのが本機能の主目的）、非終端のまま固まった
+  ジョブも停止（＝`failed`確定）できる。`DescribeExecution`自体が失敗して判定不能な
+  場合は「止められる余地がある」側に倒して停止処理へ進む。
+  **(1) `StopExecution` → (2) `TerminateInstances` → (3)
+  `updateJobStatus(failed)` の順序が重要**で、先にインスタンスをterminateすると
+  taskToken応答が来なくなった実行がタスクタイムアウト（90分）後に`HandleFailure`
+  経由でリトライへ回り、**止めたはずのジョブが別インスタンスで再起動してしまう**。
+  各段階の失敗はそこで打ち切って502を返し、ジョブ状態は書き換えない（実際には
+  止まっていないのに`failed`と表示されるのが最も危険なため）。`StopExecution`は
+  停止済み実行に対しても成功する冪等なAPIなので、管理者はそのまま再実行できる。
+  実行がまだ存在しない（pendingのまま起動していない）場合は`ExecutionDoesNotExist`
+  を握りつぶして`executionStopped: false`で先へ進む。
+  terminate対象は`JobRecord.instanceId`だけでなく**タグ`sattori:jobId`からも探す**
+  （`ec2.ts`の`findJobInstanceIds()`）。instanceIdはLaunch Lambdaが`CreateFleet`の
+  **後**に書き込むため、起動直後のジョブではDynamoDBを読んだ時点で未記録のことがあり
+  （Step Functionsは実行中のLambda呼び出しをキャンセルしない）、取り逃すと孤児
+  インスタンスが最大90分課金され続ける。最後の`failed`確定は`status`が`done`でない
+  ことを条件にした原子的更新にしている（停止処理中にワーカーが完走し、完了メールまで
+  飛んだのに画面は`failed`という食い違いを避けるため。この場合レスポンスの`status`は
+  `done`になる）。
+- **再実行**（`admin/retryJob.ts`、Issue #59）: **同一jobIdでは再実行しない**。
+  `startPendingJob()`は「statusがpendingであること」を条件にした原子的更新が前提で、
+  Step Functionsの実行名もjobIdそのものを使っている（同名の`StartExecution`は
+  `ExecutionAlreadyExists`になりうる）ため、既存の冪等性前提を壊さないよう
+  **新しいjobIdでジョブレコードを複製して起動する**。複製の内訳は`buildRetryJob()`
+  （入力側＝`replayKey`/`game`/`options`/`email`/`language`等を引き継ぎ、結果側＝
+  出力パス・進捗・インスタンス情報・エラーを初期化。`status`はマジックリンク確認済み
+  のため`pending`を経由せず`queued`から開始）。
+  **二重録画（＝EC2の二重課金）を防ぐガードは3段**: (1) 元ジョブのstatusが終端で
+  あること、(2) 元ジョブのStep Functions実行が動いていないこと（statusが`failed`でも
+  リトライループの最中でありうるため。判定不能な場合は安全側＝502で中止）、
+  (3) まだ再実行していないこと（`claimJobRetryLink()`による原子的な予約。二重クリック
+  やリクエスト再送でクローンが2本走ると、片方は元ジョブから辿れない追跡不能な
+  ジョブになる）。EC2を起動する前に元の`.rpy`が`UploadBucket`に残っているかを
+  `objectExistsStrict()`で確認する（404以外の失敗を「削除済み」と誤報して運用者を
+  誤った原因調査へ誘導しないよう、一時障害は502として区別する）。元ジョブには
+  `retriedToJobId`、新ジョブには`retriedFromJobId`を記録して相互に辿れるようにする
+  （`retriedToJobId`は上記(3)の排他を兼ねるため**ジョブレコードを作る前**に予約し、
+  `StartExecution`に失敗したら`releaseJobRetryLink()`で取り消す。取り消さないと
+  以後の再実行が永久に409で弾かれてしまう）。
+  完了メールは新ジョブが`done`に遷移した時点で引き継いだ`email`宛に届き、本文の
+  リンクも新jobIdのジョブページになる（ユーザーは古いマジックリンクのままでも
+  新しいメールから辿れる）。
 
 ## 環境変数（`config.ts`）
 
 すべて `infra/lib/sattori-stack.ts` の `commonEnv`（+ `startJob.ts`/
-`admin/getExecution.ts`専用の`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
+`admin/getExecution.ts`/`admin/stopJob.ts`/`admin/retryJob.ts`専用の
+`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
 `ADMIN_TOKEN_PARAMETER_NAME`、`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定）
 から注入される。`loadConfig()`が必須環境変数の存在を
 検証する（管理API用Lambdaは`commonEnv`を使わず個別の環境変数のみを持つ）。

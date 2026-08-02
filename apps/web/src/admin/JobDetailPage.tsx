@@ -3,6 +3,7 @@ import { calculateDownloadExpiresAt, OUTPUT_RETENTION_DAYS } from "@sattori/shar
 import { fetchAdminJobDetail } from "./adminApi.ts";
 import { useAdminResource } from "./useAdminResource.ts";
 import { StatusBadge } from "./StatusBadge.tsx";
+import { JobActionsPanel } from "./JobActionsPanel.tsx";
 import { ExecutionPanel } from "./ExecutionPanel.tsx";
 import { LogsPanel } from "./LogsPanel.tsx";
 import styles from "./JobDetailPage.module.css";
@@ -20,7 +21,7 @@ function formatDateTime(iso: string | null): string {
  */
 export function JobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>();
-  const { data, loading, error } = useAdminResource(
+  const { data, loading, error, reload } = useAdminResource(
     (token) => fetchAdminJobDetail(token, jobId ?? ""),
     [jobId],
   );
@@ -65,6 +66,26 @@ export function JobDetailPage() {
                 <dd>{formatDateTime(data.job.pendingExpiresAt)}</dd>
                 <dt>replayKey</dt>
                 <dd>{data.job.replayKey}</dd>
+                <dt>retriedToJobId</dt>
+                <dd>
+                  {data.job.retriedToJobId ? (
+                    <Link to={`/admin/jobs/${encodeURIComponent(data.job.retriedToJobId)}`}>
+                      {data.job.retriedToJobId}
+                    </Link>
+                  ) : (
+                    "-"
+                  )}
+                </dd>
+                <dt>retriedFromJobId</dt>
+                <dd>
+                  {data.job.retriedFromJobId ? (
+                    <Link to={`/admin/jobs/${encodeURIComponent(data.job.retriedFromJobId)}`}>
+                      {data.job.retriedFromJobId}
+                    </Link>
+                  ) : (
+                    "-"
+                  )}
+                </dd>
                 <dt>watermark</dt>
                 <dd>{data.job.options.watermark ? "true" : "false"}</dd>
                 <dt>progress</dt>
@@ -78,6 +99,11 @@ export function JobDetailPage() {
                   </>
                 )}
               </dl>
+            </div>
+
+            <div className={styles.panel}>
+              <h2 className={styles.panelHeading}>操作</h2>
+              <JobActionsPanel job={data.job} onJobChanged={reload} />
             </div>
 
             <div className={styles.panel}>
