@@ -153,11 +153,20 @@ def download_checkpoint_video(s3):
 
 
 def upload_video(s3, path, key):
-    log(f"動画をアップロード: s3://{OUTPUT_BUCKET}/{key}")
+    """動画をS3へアップロードし、そのバイト数を返す。
+
+    サイズは管理画面のコスト推定(Issue #60、packages/shared/src/cost.ts)で
+    S3保管料とCloudFront配信量の入力になる。動画サイズは本サービスのコスト構造で
+    最大のレバレッジ(docs/aws-region-cost-analysis.md §6)なので、平均値で丸めず
+    ジョブ単位の実測をDynamoDBへ残す。
+    """
+    size = os.path.getsize(path)
+    log(f"動画をアップロード: s3://{OUTPUT_BUCKET}/{key} ({size}バイト)")
     s3.upload_file(
         path, OUTPUT_BUCKET, key,
         ExtraArgs={"ContentType": "video/mp4"},
     )
+    return size
 
 
 def upload_ffmpeg_upscale_log_if_present(s3):
@@ -210,8 +219,8 @@ def record(s3):
 
     # 変換前に生動画をチェックポイントとしてアップロードする。以降Spot中断で
     # リトライになっても、次の試行はここから(変換のみ)再開できる。
-    upload_video(s3, OUTPUT_VIDEO, OUTPUT_KEY)
-    update_status(JOB_ID, "converting", output_path=OUTPUT_KEY)
+    output_bytes = upload_video(s3, OUTPUT_VIDEO, OUTPUT_KEY)
+    update_status(JOB_ID, "converting", output_path=OUTPUT_KEY, output_bytes=output_bytes)
 
 
 def convert_and_upload(s3):
@@ -232,8 +241,16 @@ def convert_and_upload(s3):
     finally:
         # 変換の成否にかかわらずアップロードする(失敗時こそ診断に必要なため)。
         upload_ffmpeg_upscale_log_if_present(s3)
-    upload_video(s3, OUTPUT_VIDEO_720P, OUTPUT_KEY_720P)
-    update_status(JOB_ID, "done", output_path=OUTPUT_KEY, output_path_720p=OUTPUT_KEY_720P)
+    output_bytes_720p = upload_video(s3, OUTPUT_VIDEO_720P, OUTPUT_KEY_720P)
+    update_status(
+        JOB_ID, "done",
+        output_path=OUTPUT_KEY, output_path_720p=OUTPUT_KEY_720P,
+        # 生動画のサイズもここで併せて記録する。チェックポイントから再開した場合
+        # (record()を通らず download_checkpoint_video() で取得した場合)は
+        # record() 側の記録が走らないため。
+        output_bytes=os.path.getsize(OUTPUT_VIDEO),
+        output_bytes_720p=output_bytes_720p,
+    )
 
 
 def main():

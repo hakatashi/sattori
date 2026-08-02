@@ -239,20 +239,65 @@ export async function releaseJobRetryLink(
 export async function updateJobInstance(
   table: string,
   jobId: string,
-  instance: { instanceId: string; instanceType: string | null; availabilityZone: string | null },
+  instance: {
+    instanceId: string;
+    instanceType: string | null;
+    availabilityZone: string | null;
+    spotPricePerHour: number | null;
+  },
 ): Promise<void> {
   await client.send(
     new UpdateCommand({
       TableName: table,
       Key: { jobId },
       UpdateExpression:
-        "SET instanceId = :i, instanceType = :t, availabilityZone = :az, updatedAt = :u",
+        "SET instanceId = :i, instanceType = :t, availabilityZone = :az, spotPricePerHour = :sp, updatedAt = :u",
       ExpressionAttributeValues: {
         ":i": instance.instanceId,
         ":t": instance.instanceType,
         ":az": instance.availabilityZone,
+        ":sp": instance.spotPricePerHour,
         ":u": new Date().toISOString(),
       },
     }),
   );
+}
+
+/**
+ * 「最初にEC2の起動に成功した時刻」(`launchedAt`)を記録する（Issue #60）。
+ * コスト推定における課金対象時間の起点で、`createdAt`（マジックリンク送信要求時点。
+ * `pending`のまま最大24時間放置されうる）では代用できないため専用に持つ。
+ *
+ * **既に値があれば書き換えない**（`attribute_not_exists`による条件付き更新）。
+ * Step Functionsのリトライで`Launch`は最大10回走るが、そのたびに上書きすると
+ * それ以前の試行で稼働していたEC2の課金時間が推定から丸ごと抜け落ちる
+ * （＝失敗を繰り返した高コストなジョブほど安く見えるという、監視として最悪の
+ * 挙動になる）。条件不成立は正常系なので握りつぶす。
+ */
+export async function markJobLaunched(table: string, jobId: string): Promise<void> {
+  const now = new Date().toISOString();
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: table,
+        Key: { jobId },
+        UpdateExpression: "SET launchedAt = :l, updatedAt = :u",
+        // 新規作成時に明示的なnull(DynamoDBのNULL型)が入っているため、
+        // `attribute_not_exists`だけでなくNULL型も「未設定」として扱う
+        // （`claimJobRetryLink`と同じ理由）。
+        ConditionExpression:
+          "attribute_not_exists(launchedAt) OR attribute_type(launchedAt, :nullType)",
+        ExpressionAttributeValues: {
+          ":l": now,
+          ":u": now,
+          ":nullType": "NULL",
+        },
+      }),
+    );
+  } catch (err) {
+    if (err instanceof ConditionalCheckFailedException) {
+      return;
+    }
+    throw err;
+  }
 }

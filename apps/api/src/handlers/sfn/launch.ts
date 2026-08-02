@@ -1,6 +1,6 @@
 import { loadConfig } from "../../config.js";
 import { launchRecordingInstance } from "../../ec2.js";
-import { getJob, updateJobInstance, updateJobStatus } from "../../jobs.js";
+import { getJob, markJobLaunched, updateJobInstance, updateJobStatus } from "../../jobs.js";
 
 /**
  * Step Functions の `Launch` ステート（`waitForTaskToken` パターン）から呼ばれる Lambda。
@@ -31,4 +31,6 @@ export const handler = async (event: LaunchTaskEvent): Promise<void> => {
   const instance = await launchRecordingInstance(config, job, event.taskToken);
   await updateJobStatus(config.jobsTable, event.jobId, "launching");
   await updateJobInstance(config.jobsTable, event.jobId, instance);
+  // コスト推定の課金起点（Issue #60）。リトライで再入しても最初の1回しか記録されない。
+  await markJobLaunched(config.jobsTable, event.jobId);
 };

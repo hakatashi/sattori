@@ -43,8 +43,17 @@ pending → queued → launching → recording → converting → done | failed
 `instanceId`/`instanceType`/`availabilityZone`（実際に確保されたEC2インスタンスの
 運用調査用データ、ユーザー向けAPIには含めない）、`replayInfo`（解析済みリプレイ内容の
 転記、ページBでの表示用）、`retriedToJobId`/`retriedFromJobId`（管理画面からの
-再実行で複製された元ジョブ⇄新ジョブの相互リンク、Issue #59）等を持つ。
+再実行で複製された元ジョブ⇄新ジョブの相互リンク、Issue #59）、
+`launchedAt`/`spotPricePerHour`/`outputBytes`/`outputBytes720p`（コスト推定の入力、
+Issue #60。後述「コスト推定」）等を持つ。
 フィールドごとの詳細はソースのコメントを参照。
+
+> **`JobRecord`にフィールドを足すときの注意**: `apps/api`の`requestMagicLink.ts`
+> （新規作成）と`admin/retryJob.ts`の`buildRetryJob()`（再実行時の複製）の両方が
+> 全フィールドを明示的に埋めるため、型エラーとして必ず気付ける。ただし
+> `buildRetryJob()`は元ジョブをスプレッドで引き継ぐので、**実行結果に属する
+> フィールド（出力・インスタンス情報・時刻）は明示的にnullへ初期化すること**
+> （引き継ぐと新ジョブが元ジョブの結果を持ったまま起動する）。
 
 ## リプレイ情報（`src/replay.ts`, `src/games.ts`）
 
@@ -77,13 +86,41 @@ pending → queued → launching → recording → converting → done | failed
 | `GET /admin/jobs/{jobId}/logs` | ワーカーコンテナのCloudWatch Logs（Issue #58） |
 | `POST /admin/jobs/{jobId}/stop` | ジョブの緊急停止（Issue #59） |
 | `POST /admin/jobs/{jobId}/retry` | ジョブの再実行（Issue #59。**新しいjobIdのジョブとして複製・起動**するため、レスポンスの`jobId`はパスのそれとは別物） |
+| `GET /admin/costs` | コスト推定の日次/週次/月次集計（Issue #60。後述「コスト推定」） |
 
-参照系の3本と違い停止・再実行は状態を変えるため`POST`（`DELETE`にすると
+参照系と違い停止・再実行は状態を変えるため`POST`（`DELETE`にすると
 `corsPreflight.allowMethods`の拡張も要る）。再実行の複製元/複製先は
 `JobRecord.retriedFromJobId`/`.retriedToJobId`で相互に辿れる。
 
 API側の実装詳細（GSI設計・authorizer・ダウンロードURLの発行方法等）は
 `apps/api/README.md`「管理API」、フロント側は`apps/web/README.md`「管理画面」を参照。
+
+## コスト推定（`src/cost.ts`、Issue #60）
+
+管理画面がジョブ単位・期間単位のコストを表示するための**推定ロジックと単価定数**。
+ジョブ詳細のコストパネル（フロント）と集計API（Lambda）の両方がこの1本を共有する
+（画面ごとに再実装して数字が食い違う事故を避けるため）。
+
+- `estimateJobCost(job, now)`: 1ジョブぶんの内訳（`ec2Spot` / `ebs` / `publicIpv4` /
+  `s3Storage` / `misc`）と合計を返す純関数。`now`を引数に取るのは、実行中ジョブの
+  推定値をテストで固定できるようにするため。
+- 単価は**us-east-1・2026-07-27時点**（`docs/aws-region-cost-analysis.md`）。
+  リージョンを移す場合はここの定数も入れ替える。
+- **課金対象時間は`launchedAt`〜終了時刻の実時間**。試行間の待機（`WaitBeforeCheck`の
+  3分など）もEC2稼働として数えるため、リトライしたジョブでは**過大側**に出る。
+  試行ごとの正確な稼働区間を持つにはLaunch/Terminateの時刻を全試行ぶん記録する必要が
+  あり、月1000ジョブ規模の運用把握という目的には割に合わないという判断。
+- 値が無い旧ジョブ（`launchedAt`/`spotPricePerHour`/`outputBytes`はIssue #60で追加した
+  フィールド）は実績平均・サイズ帯の平均単価へ縮退する。どのフォールバックを使ったかは
+  `billedDurationSource`/`spotPriceSource`/`outputSizeUnknown`で返し、**UIが「これは
+  仮定だ」と明示できる**ようにしている（推定値を実績として読ませないため）。
+- **CloudFrontの配信料だけは`breakdown`に含めない**。無料枠(1TB/月)がアカウント単位・
+  月単位でしか判定できず、ジョブ単位には原理的に配分できないため。ジョブ側は
+  「このジョブが生む配信量(`deliveryBytes`)」だけを返し、月次の超過分の課金は
+  集計API側（`estimateCloudFrontCost()`）が算出する。
+
+**これは請求額ではなく推定値**である。用途は「どのジョブが異常に高いか」「月次で
+いくら使っているか」の運用把握であり、会計用途ではない。
 
 ## ダウンロードファイル名・Content-Disposition（`src/download.ts`）
 
