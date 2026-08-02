@@ -175,6 +175,7 @@ describe("launchRecordingInstance", () => {
         { SubnetId: "subnet-bbbb", InstanceType: "c7i.xlarge" },
         { SubnetId: "subnet-aaaa", InstanceType: "c7a.xlarge" },
         { SubnetId: "subnet-bbbb", InstanceType: "c7i-flex.xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "m7i.xlarge" },
       ]),
     );
     expect(fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]).toMatchObject({
@@ -204,6 +205,7 @@ describe("launchRecordingInstance", () => {
         { SubnetId: "subnet-bbbb", InstanceType: "c7i.2xlarge" },
         { SubnetId: "subnet-aaaa", InstanceType: "c7a.2xlarge" },
         { SubnetId: "subnet-bbbb", InstanceType: "c7a.2xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "m7i.2xlarge" },
       ]),
     );
     // th06/07/08向けの.xlarge帯は含まれない
