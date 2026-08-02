@@ -5,12 +5,14 @@ import {
   OUTPUT_RETENTION_DAYS,
 } from "@sattori/shared";
 import type { JobRecord } from "@sattori/shared";
+import { useCostCurrency } from "./adminCurrency.ts";
 import {
   BILLED_DURATION_LABEL,
   COST_ITEM_LABELS,
   formatBytes,
   formatDuration,
-  formatUsd,
+  formatMoney,
+  JPY_RATE_NOTE,
   SPOT_PRICE_LABEL,
 } from "./costFormat.ts";
 import styles from "./JobCostPanel.module.css";
@@ -31,6 +33,7 @@ interface Props {
  * 「このジョブが生む配信量」として出す。
  */
 export function JobCostPanel({ job }: Props) {
+  const { currency } = useCostCurrency();
   const estimate = estimateJobCost(job);
 
   return (
@@ -38,7 +41,7 @@ export function JobCostPanel({ job }: Props) {
       <h2 className={styles.panelHeading}>コスト推定</h2>
 
       <p className={styles.total}>
-        <span className={styles.totalValue}>{formatUsd(estimate.totalUsd)}</span>
+        <span className={styles.totalValue}>{formatMoney(estimate.totalUsd, currency)}</span>
         <span className={styles.totalUnit}>/ このジョブ</span>
       </p>
 
@@ -47,12 +50,12 @@ export function JobCostPanel({ job }: Props) {
           {COST_ITEM_LABELS.map(([key, label]) => (
             <tr key={key}>
               <th scope="row">{label}</th>
-              <td className={styles.amount}>{formatUsd(estimate.breakdown[key])}</td>
+              <td className={styles.amount}>{formatMoney(estimate.breakdown[key], currency)}</td>
             </tr>
           ))}
           <tr className={styles.totalRow}>
             <th scope="row">合計</th>
-            <td className={styles.amount}>{formatUsd(estimate.totalUsd)}</td>
+            <td className={styles.amount}>{formatMoney(estimate.totalUsd, currency)}</td>
           </tr>
         </tbody>
       </table>
@@ -67,7 +70,7 @@ export function JobCostPanel({ job }: Props) {
         </dd>
         <dt>Spot単価</dt>
         <dd>
-          ${estimate.spotPricePerHour.toFixed(4)}/時
+          {formatMoney(estimate.spotPricePerHour, currency)}/時
           <span className={styles.note}>（{SPOT_PRICE_LABEL[estimate.spotPriceSource]}）</span>
         </dd>
         <dt>出力サイズ</dt>
@@ -94,6 +97,7 @@ export function JobCostPanel({ job }: Props) {
         {COST_PRICING_REGION}の単価（{COST_PRICING_AS_OF}時点）に基づく推定値で、実際の請求額
         ではありません。試行間の待機時間もEC2稼働として数えるため、リトライしたジョブでは
         過大に出ます。
+        {currency === "jpy" && <> {JPY_RATE_NOTE}</>}
       </p>
     </div>
   );
