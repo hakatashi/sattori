@@ -1,3 +1,4 @@
+import type { CostBreakdown, CostGranularity } from "./cost.js";
 import type { JobRecord, JobStatus } from "./job.js";
 
 /**
@@ -181,4 +182,75 @@ export interface AdminRetryJobResponse {
   jobId: string;
   /** 新しいジョブの状態（常に `queued`）。 */
   status: JobStatus;
+}
+
+/** GET /admin/costs の既定・上限バケット数。 */
+export const ADMIN_COST_BUCKET_DEFAULT_LIMIT = 30;
+export const ADMIN_COST_BUCKET_MAX_LIMIT = 120;
+
+/** コスト集計の1バケット（1日・1週・1ヶ月ぶん）。 */
+export interface AdminCostBucket {
+  /**
+   * バケットのキー（`costBucketKey()`。daily/weeklyは`YYYY-MM-DD`、
+   * weeklyはその週の月曜日、monthlyは`YYYY-MM`。すべてUTC基準）。
+   */
+  key: string;
+  /** このバケットに属するジョブ数。 */
+  jobCount: number;
+  /** うち`done`で終わったジョブ数。 */
+  doneCount: number;
+  /** うち`failed`で終わったジョブ数。 */
+  failedCount: number;
+  breakdown: CostBreakdown;
+  /** `breakdown`の合計（USD）。CloudFrontの配信料は含まない（`cloudFront`参照）。 */
+  totalUsd: number;
+  /** 課金対象と見なしたEC2稼働時間の合計（秒）。 */
+  billedSeconds: number;
+  /** CloudFront配信量の見積り合計（バイト）。 */
+  deliveryBytes: number;
+  /** S3保管対象の出力動画サイズ合計（バイト）。 */
+  storedBytes: number;
+}
+
+/**
+ * CloudFrontの月次配信量と無料枠超過（`granularity`によらず常に月次で返す）。
+ * 無料枠1TB/月はアカウント単位・月単位でしか判定できず、日次・週次バケットへは
+ * 原理的に配分できないため、バケットとは別系統の情報として持つ。
+ */
+export interface AdminCloudFrontMonth {
+  /** `YYYY-MM`（UTC）。 */
+  month: string;
+  deliveryBytes: number;
+  deliveryGb: number;
+  /** 無料枠を超えた分（GB）。0なら課金は発生していない見込み。 */
+  overageGb: number;
+  usd: number;
+}
+
+/**
+ * 推定の確からしさ。コスト算出用フィールド（`launchedAt`・`spotPricePerHour`・
+ * `outputBytes`）はIssue #60で追加したもので、それ以前のジョブは値を持たない。
+ * 「いま見ている数字のうちどれだけが実測でどれだけが仮定か」を画面に出すために返す。
+ */
+export interface AdminCostQuality {
+  /** `launchedAt`が無く、稼働時間をフォールバック値で代用したジョブ数。 */
+  assumedDurationJobs: number;
+  /** `spotPricePerHour`が無く、フォールバック単価を使ったジョブ数。 */
+  fallbackSpotPriceJobs: number;
+  /** 出力動画があるのにサイズが記録されておらず、S3/配信量が過小になるジョブ数。 */
+  unknownOutputSizeJobs: number;
+}
+
+/** GET /admin/costs のレスポンス（Issue #60）。 */
+export interface AdminCostSummaryResponse {
+  granularity: CostGranularity;
+  /** 集計対象になったジョブ総数（返したバケットに含まれるものだけを数える）。 */
+  jobCount: number;
+  /** 新しい順。最大`limit`件。 */
+  buckets: AdminCostBucket[];
+  /** 新しい順、最大12ヶ月ぶん。 */
+  cloudFront: AdminCloudFrontMonth[];
+  quality: AdminCostQuality;
+  /** 全期間（返したバケットの範囲外も含む）のジョブ数。取りこぼしの検知用。 */
+  totalJobCount: number;
 }

@@ -23,6 +23,30 @@
   text-decoration: none;
 }
 
+.nav {
+  display: flex;
+  gap: 1rem;
+  /* タイトルとログアウトの間を埋め、ナビゲーションを左寄せにする。 */
+  margin-right: auto;
+  font-size: 0.9375rem;
+}
+
+.navLink,
+.navLinkActive {
+  text-decoration: none;
+  padding: 0.25rem 0;
+  border-bottom: 2px solid transparent;
+}
+
+.navLink {
+  color: var(--text-muted);
+}
+
+.navLinkActive {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
 .logout {
   padding: 0.375rem 0.75rem;
   border: 1px solid var(--panel-border);

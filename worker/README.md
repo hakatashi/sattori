@@ -502,6 +502,14 @@ reports/21)。th06・th07(640x480)のような低解像度録画はそのまま�
   ルールが別途設定されており、DynamoDBにも保存しない(jobIdから決定的に導出可能、
   `apps/api/src/downloads.ts`の`buildFfmpegUpscaleLogKey`) |
 
+動画のアップロード時には**そのバイト数も DynamoDB へ記録する**
+(`outputBytes`/`outputBytes720p`、`entrypoint.py`の`upload_video()`が
+`os.path.getsize()`の値を返し`status.py`の`update_status()`が書き込む。Issue #60)。
+管理画面のコスト推定でS3保管料とCloudFront配信量の入力になる。動画サイズは本サービスの
+コスト構造で最大のレバレッジ(`docs/aws-region-cost-analysis.md` §6)なので、平均値で
+丸めずジョブ単位の実測を残す。生動画のサイズは`done`遷移時にも併せて書く
+(チェックポイントから再開したジョブは`record()`を通らないため)。
+
 ### 720p変換のffmpegログ(Issue #58フォローアップ)
 
 `upscale.py`は720p変換中、ffmpegの`-progress`生出力(`frame=`/`fps=`/`bitrate=`等、

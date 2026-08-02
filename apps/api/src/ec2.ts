@@ -2,6 +2,7 @@ import {
   CreateFleetCommand,
   CreateLaunchTemplateVersionCommand,
   DescribeInstancesCommand,
+  DescribeSpotPriceHistoryCommand,
   EC2Client,
   type _InstanceType as InstanceType,
   TerminateInstancesCommand,
@@ -162,6 +163,60 @@ export interface LaunchedInstance {
   instanceType: string | null;
   /** `CreateFleet` レスポンスに含まれなかった場合は null。 */
   availabilityZone: string | null;
+  /**
+   * 起動時点の Spot 単価（USD/時、`fetchSpotPrice()`）。取得できなければ null
+   * （コスト推定側がフォールバック単価へ縮退する）。
+   */
+  spotPricePerHour: number | null;
+}
+
+/**
+ * 確保できたインスタンスタイプ×AZの現在のSpot単価（USD/時）を取得する。
+ * `CreateFleet` のレスポンスには単価が含まれないため、コスト推定（Issue #60、
+ * `packages/shared/src/cost.ts`）のために別途1回だけ引く。
+ *
+ * `DescribeSpotPriceHistory` は「価格が変わった瞬間のイベント列」を新しい順に返す
+ * ので、先頭1件が現在の単価。`StartTime` に現在時刻を渡して直近のイベントに絞る。
+ *
+ * **失敗しても録画ジョブは止めない**。単価はあくまで運用把握のための付随情報で、
+ * これが取れないことを理由に起動を失敗させるとリトライ（最大10回）を無駄に消費し、
+ * ユーザーの録画そのものを落としてしまうため、例外は握りつぶして null を返す。
+ */
+export async function fetchSpotPrice(
+  instanceType: string | null,
+  availabilityZone: string | null,
+): Promise<number | null> {
+  if (instanceType === null || availabilityZone === null) {
+    return null;
+  }
+  try {
+    const result = await ec2.send(
+      new DescribeSpotPriceHistoryCommand({
+        InstanceTypes: [instanceType as InstanceType],
+        AvailabilityZone: availabilityZone,
+        // ワーカーAMIはAmazon Linux系（ECS最適化AL2023）なので Linux/UNIX 帯。
+        ProductDescriptions: ["Linux/UNIX"],
+        StartTime: new Date(),
+        MaxResults: 1,
+      }),
+    );
+    const price = result.SpotPriceHistory?.[0]?.SpotPrice;
+    if (price === undefined) {
+      return null;
+    }
+    const parsed = Number(price);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  } catch (err) {
+    console.warn(
+      JSON.stringify({
+        event: "spot_price_lookup_failed",
+        instanceType,
+        availabilityZone,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    return null;
+  }
 }
 
 /**
@@ -178,7 +233,8 @@ export interface LaunchedInstance {
  * ことで、単一AZ・単一インスタンスタイプでのSpot枯渇に対する耐性を持たせる
  * （PoC reports/17、Issue #29）。実際にどの候補が確保されたかは `CreateFleet` の
  * レスポンス（`result.Instances[0]`）からそのまま読み取れ、追加の `DescribeInstances`
- * 呼び出しは不要。
+ * 呼び出しは不要。ただし**Spot単価だけはレスポンスに含まれない**ため、コスト推定
+ * （Issue #60）用に `fetchSpotPrice()` で1回だけ別途取得する。
  */
 export async function launchRecordingInstance(
   config: ApiConfig,
@@ -247,10 +303,13 @@ export async function launchRecordingInstance(
       `EC2 Fleet でのインスタンス起動に失敗しました（InstanceId 不明）${reason ? `: ${reason}` : ""}`,
     );
   }
+  const instanceType = launchedInstance.InstanceType ?? null;
+  const availabilityZone = launchedInstance.AvailabilityZone ?? null;
   return {
     instanceId,
-    instanceType: launchedInstance.InstanceType ?? null,
-    availabilityZone: launchedInstance.AvailabilityZone ?? null,
+    instanceType,
+    availabilityZone,
+    spotPricePerHour: await fetchSpotPrice(instanceType, availabilityZone),
   };
 }
 

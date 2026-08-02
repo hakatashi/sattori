@@ -129,7 +129,8 @@ API Gateway自身の形式で、このAPIの`ApiError`（code/message）形で�
   ログインへ縮退させる）。
 - **構成**: `AdminApp.tsx`（認証ゲート＋内部`<Routes>`）→ `JobListPage.tsx`（一覧・
   status絞り込み・カーソルページング。状態は`useSearchParams`でURLに載せる）／
-  `JobDetailPage.tsx`（`JobRecord`全フィールド＋ダウンロード導線）／
+  `JobDetailPage.tsx`（`JobRecord`全フィールド＋ダウンロード導線＋コスト推定）／
+  `CostsPage.tsx`（コスト集計、Issue #60）／
   `ExecutionPanel.tsx`（Step Functions実行状態、`JobDetailPage`とは別にfetchする。
   理由は`apps/api/README.md`参照）。データ取得は共通フック`useAdminResource.ts`
   （`AdminUnauthorizedError`を検知して`onUnauthorized`を呼ぶ）に集約。
@@ -148,6 +149,18 @@ API Gateway自身の形式で、このAPIの`ApiError`（code/message）形で�
   操作後は`useAdminResource`の`reload()`でジョブ詳細を取り直す。`reload()`は
   deps変更時と違い取得中も直前の`data`を保持する（パネルが一瞬アンマウントされて
   実行結果メッセージが消えるのを避けるため）。
+- **コスト表示**（Issue #60）: ジョブ詳細の`JobCostPanel.tsx`（1ジョブぶんの内訳）と
+  `CostsPage.tsx`（`/admin/costs`、日次/週次/月次の集計と推移）。計算は
+  `@sattori/shared`の`estimateJobCost()`をそのまま呼ぶ（集計APIと同じ実装を共有し、
+  画面ごとに数字が食い違わないようにする）。**ジョブ詳細のコストはサーバーに計算させて
+  いない**——`AdminJobDetailResponse`は`JobRecord`をそのまま返すので、フロントで
+  推定関数を呼べば足り、APIの契約を増やさずに済むため。
+  積み上げ棒はCSSのflexで描き、チャートライブラリは入れていない（この規模の図に
+  依存を1本増やす価値がない）。系列色は色覚特性・ライト/ダーク双方のコントラストを
+  検証済みのカテゴリカルパレットを固定順で割り当てており（`CostsPage.module.css`
+  冒頭のコメント参照）、**順番の入れ替えや循環をしないこと**。棒の色だけに情報を
+  持たせないよう、凡例に系列名と期間合計の数値を併記し、各行に合計金額を出す。
+  表示が推定値であること・仮定が混ざっている件数（`quality`）は必ず画面に出す。
 - **レイアウト**: `AdminLayout.tsx`はユーザー向け`App.tsx`の`Layout`とは共有しない
   専用シェル（`LanguageSwitcher`が存在しない`/en/admin`へのリンクを出してしまうことと、
   ユーザー向け`main`幅(50rem)がジョブ一覧テーブルには狭すぎることが理由）。CSS Modules

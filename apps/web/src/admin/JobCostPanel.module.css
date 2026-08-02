@@ -1,0 +1,87 @@
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+}
+
+.panelHeading {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.total {
+  margin: 0 0 0.75rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.totalValue {
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.totalUnit {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.breakdown {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
+.breakdown th,
+.breakdown td {
+  padding: 0.25rem 0;
+  text-align: left;
+  font-weight: normal;
+  border-bottom: 1px solid var(--divider);
+}
+
+.breakdown th {
+  color: var(--text-muted);
+}
+
+.amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.totalRow th,
+.totalRow td {
+  border-bottom: none;
+  font-weight: bold;
+  color: var(--text);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.fields dt {
+  color: var(--text-muted);
+}
+
+.fields dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.note {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.disclaimer {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0.75rem 0 0;
+}
