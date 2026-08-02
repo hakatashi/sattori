@@ -578,12 +578,17 @@ export class SattoriStack extends Stack {
     // `corsPreflight.allowMethods`の拡張も必要になるため、POSTに揃える）。
     const adminStopJobFn = makeHandler("AdminStopJobFn", "admin/stopJob.ts");
     jobsTable.grantReadWriteData(adminStopJobFn);
-    stateMachine.grantExecution(adminStopJobFn, "states:StopExecution");
+    // DescribeExecutionは停止可否の判定に使う。ジョブのstatusは「実行が終わったか」の
+    // 代理条件にならない（ワーカーがSendTaskFailureより先にfailedを書くため）ので、
+    // 実行の生死を直接問い合わせる必要がある。
+    stateMachine.grantExecution(adminStopJobFn, "states:StopExecution", "states:DescribeExecution");
     adminStopJobFn.addToRolePolicy(
       new iam.PolicyStatement({
         // handleFailureFnと同じく、対象インスタンスは実行時にしか決まらないため
-        // TerminateInstancesはResource:*で付与する。
-        actions: ["ec2:TerminateInstances"],
+        // TerminateInstancesはResource:*で付与する。DescribeInstancesは孤児
+        // インスタンスをタグ(sattori:jobId)から探すため（そもそもリソースレベルの
+        // 権限指定に非対応）。
+        actions: ["ec2:TerminateInstances", "ec2:DescribeInstances"],
         resources: ["*"],
       }),
     );
@@ -595,6 +600,8 @@ export class SattoriStack extends Stack {
     const adminRetryJobFn = makeHandler("AdminRetryJobFn", "admin/retryJob.ts");
     jobsTable.grantReadWriteData(adminRetryJobFn);
     stateMachine.grantStartExecution(adminRetryJobFn);
+    // 元ジョブの実行がまだ動いていないか（＝複製すると二重録画になるか）の確認用。
+    stateMachine.grantExecution(adminRetryJobFn, "states:DescribeExecution");
     uploadBucket.grantRead(adminRetryJobFn); // 元の.rpyが残っているかの確認のため
     adminRetryJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
 

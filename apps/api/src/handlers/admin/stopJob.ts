@@ -3,10 +3,11 @@ import { ExecutionDoesNotExist, SFNClient, StopExecutionCommand } from "@aws-sdk
 import { ADMIN_STOPPED_JOB_ERROR, isTerminalStatus } from "@sattori/shared";
 import type { AdminStopJobResponse } from "@sattori/shared";
 import { loadConfig, required } from "../../config.js";
-import { terminateInstance } from "../../ec2.js";
+import { findJobInstanceIds, terminateInstance } from "../../ec2.js";
 import { error, json } from "../../http.js";
 import { getJob, updateJobStatus } from "../../jobs.js";
-import { buildExecutionArn } from "../../stepFunctions.js";
+import { buildExecutionArn, getExecutionLiveness } from "../../stepFunctions.js";
+import type { ExecutionLiveness } from "../../stepFunctions.js";
 
 const sfn = new SFNClient({});
 
@@ -14,6 +15,12 @@ const sfn = new SFNClient({});
  * POST /admin/jobs/{jobId}/stop
  * 暴走ジョブの緊急停止（管理画面。Issue #59）。認可はAPI Gateway側のLambda
  * Authorizerが担う。
+ *
+ * **停止可否は`JobRecord.status`ではなくStep Functions実行の生死で判定する**。
+ * ワーカーは内部エラー時に`SendTaskFailure`より先に`status: "failed"`を書くため、
+ * 「DynamoDB上は終端状態なのに実行は生きていて、最大10回まで新しいインスタンスを
+ * 起動し続ける」窓が常に存在する（`stepFunctions.ts`の`getExecutionLiveness`参照）。
+ * statusだけで弾くと、まさにこの機能が止めたい暴走ジョブを止められない。
  *
  * **順序が重要**: (1) Step Functions実行の停止 → (2) EC2インスタンスのterminate →
  * (3) ジョブを`failed`に確定、の順で行う。先にインスタンスをterminateすると、
@@ -36,7 +43,64 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   if (!job) {
     return error(404, "not_found", "ジョブが見つかりません");
   }
-  if (isTerminalStatus(job.status)) {
+
+  const executionArn = buildExecutionArn(required("STATE_MACHINE_ARN"), jobId);
+  // 判定不能（DescribeExecutionの一時障害）のときは「止められる余地がある」側に倒す。
+  // 止めるものが無いのに停止処理を走らせる害（冪等なStopExecutionと空振りの
+  // terminate）より、止めたいものを止められない害の方がはるかに大きい。
+  let liveness: ExecutionLiveness | "unknown";
+  try {
+    liveness = await getExecutionLiveness(sfn, executionArn);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "admin_describe_execution_failed",
+        jobId,
+        executionArn,
+        name: err instanceof Error ? err.name : undefined,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    liveness = "unknown";
+  }
+
+  /**
+   * ジョブに紐づく「まだ生きている」インスタンスをタグから探す。`JobRecord.instanceId`
+   * だけに頼らないのは、instanceIdをLaunch Lambdaが`CreateFleet`の**後**に書き込む
+   * ため、起動直後のジョブでは上の`getJob`の時点でまだ未記録のことがあるため。
+   * 取り逃すと、停止済み表示のまま孤児インスタンスが最大90分課金され続ける。
+   * 検索の失敗自体は致命ではない（記録済みinstanceIdでの終了処理は続けられる）ので、
+   * 例外にせず`failed`フラグで返す。
+   */
+  const lookupLiveInstances = async (): Promise<{ ids: string[]; failed: boolean }> => {
+    try {
+      return { ids: await findJobInstanceIds(jobId), failed: false };
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          event: "admin_describe_instances_failed",
+          jobId,
+          name: err instanceof Error ? err.name : undefined,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      return { ids: [], failed: true };
+    }
+  };
+
+  const instancesBeforeStop = await lookupLiveInstances();
+
+  // 「ジョブも終端・実行も生きていない・生きたインスタンスも無い」ときだけ、止める
+  // ものが無いとして拒否する。生存インスタンスまで見るのは、`StopExecution`は成功
+  // したがterminateに失敗して502を返した後の再実行を弾かないため（実行はもう
+  // 終わっているので、生きたインスタンスだけが停止対象として残る）。逆に非終端の
+  // まま固まったジョブ（statusが`recording`のまま実行だけ消えている等）は
+  // 停止＝`failed`への確定に意味があるので通す。
+  const nothingToStop =
+    (liveness === "finished" || liveness === "absent") &&
+    instancesBeforeStop.ids.length === 0 &&
+    !instancesBeforeStop.failed;
+  if (isTerminalStatus(job.status) && nothingToStop) {
     return error(
       409,
       "job_already_terminal",
@@ -44,7 +108,6 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     );
   }
 
-  const executionArn = buildExecutionArn(required("STATE_MACHINE_ARN"), jobId);
   let executionStopped = false;
   try {
     await sfn.send(
@@ -76,17 +139,29 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     // 止めるべきものが無いだけなので、インスタンス終了と状態確定へ進む。
   }
 
-  let instanceTerminated = false;
+  // タグ検索は`StopExecution`の後にもう一度行う。Step Functionsは実行中のLambda
+  // 呼び出しをキャンセルしないため、停止を要求した後に`CreateFleet`が完了して
+  // インスタンスが生まれることがあるため。記録済みのinstanceIdも対象に含める
+  // （`DescribeInstances`は結果整合で、起動直後のインスタンスが一時的に見えない
+  // ことがある）。既に終了済みのインスタンスへの`TerminateInstances`は冪等な
+  // 空振りで済むので、対象を広めに取ることのコストは無い。
+  const instancesAfterStop = await lookupLiveInstances();
+  const instanceIds = new Set([...instancesBeforeStop.ids, ...instancesAfterStop.ids]);
   if (job.instanceId) {
+    instanceIds.add(job.instanceId);
+  }
+
+  let instanceTerminated = false;
+  for (const instanceId of instanceIds) {
     try {
-      await terminateInstance(job.instanceId);
+      await terminateInstance(instanceId);
       instanceTerminated = true;
     } catch (err) {
       console.error(
         JSON.stringify({
           event: "admin_terminate_instance_failed",
           jobId,
-          instanceId: job.instanceId,
+          instanceId,
           name: err instanceof Error ? err.name : undefined,
           message: err instanceof Error ? err.message : String(err),
         }),
@@ -99,21 +174,34 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     }
   }
 
-  await updateJobStatus(config.jobsTable, jobId, "failed", ADMIN_STOPPED_JOB_ERROR);
+  // ここまでの間にワーカーが完走している可能性がある（例: `converting`のジョブを
+  // 停止した直後に720pのアップロードが終わり、`done`とdoneAtが書かれて完了メールも
+  // 飛ぶ）。無条件に上書きすると「完了メールは届いたのに画面はfailed」という最悪の
+  // 食い違いになるため、`done`でない場合のみ`failed`を書く（handleFailure.tsが
+  // 同じ競合に対して行っているガードと同じ方針）。
+  const statusUpdated = await updateJobStatus(
+    config.jobsTable,
+    jobId,
+    "failed",
+    ADMIN_STOPPED_JOB_ERROR,
+    { unlessDone: true },
+  );
 
   console.log(
     JSON.stringify({
       event: "admin_job_stopped",
       jobId,
       previousStatus: job.status,
+      executionLiveness: liveness,
       executionStopped,
-      instanceTerminated,
+      terminatedInstanceIds: [...instanceIds],
+      statusUpdated,
     }),
   );
 
   const response: AdminStopJobResponse = {
     jobId,
-    status: "failed",
+    status: statusUpdated ? "failed" : "done",
     executionStopped,
     instanceTerminated,
   };

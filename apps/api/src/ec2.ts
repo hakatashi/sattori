@@ -1,6 +1,7 @@
 import {
   CreateFleetCommand,
   CreateLaunchTemplateVersionCommand,
+  DescribeInstancesCommand,
   EC2Client,
   type _InstanceType as InstanceType,
   TerminateInstancesCommand,
@@ -9,6 +10,9 @@ import type { JobRecord } from "@sattori/shared";
 import type { ApiConfig } from "./config.js";
 
 const ec2 = new EC2Client({});
+
+/** インスタンスに付与しているジョブ識別用のタグキー（`buildCreateFleetInput`と対で使う）。 */
+export const JOB_ID_TAG_KEY = "sattori:jobId";
 
 /**
  * Spot Fleet に含める候補インスタンスタイプ（th11以外）。`c7i.xlarge` 単独だと、
@@ -228,7 +232,7 @@ export async function launchRecordingInstance(
           ResourceType: "instance",
           Tags: [
             { Key: "Name", Value: "sattori-recorder" },
-            { Key: "sattori:jobId", Value: job.jobId },
+            { Key: JOB_ID_TAG_KEY, Value: job.jobId },
           ],
         },
       ],
@@ -265,4 +269,32 @@ export async function terminateInstance(instanceId: string): Promise<void> {
     }
     throw err;
   }
+}
+
+/**
+ * ジョブに紐づく「まだ終了していない」EC2インスタンスをタグ(`sattori:jobId`)から探す
+ * （Issue #59のレビュー指摘）。
+ *
+ * `JobRecord.instanceId` は Launch Lambda が `CreateFleet` の**後**に書き込むため、
+ * 起動直後（`queued`/`launching`）のジョブを緊急停止すると、DynamoDBを読んだ時点では
+ * まだ未記録で、直後に書き込まれたインスタンスを取り逃す（Step Functionsは実行中の
+ * Lambda呼び出しをキャンセルしないため、`StopExecution`後も`CreateFleet`は完了しうる）。
+ * タグはインスタンス作成時に`TagSpecifications`で付くのでDynamoDBへの書き込みを
+ * 待たずに発見でき、Step Functionsのリトライで複数台が孤児化した場合もまとめて拾える。
+ */
+export async function findJobInstanceIds(jobId: string): Promise<string[]> {
+  const result = await ec2.send(
+    new DescribeInstancesCommand({
+      Filters: [
+        { Name: `tag:${JOB_ID_TAG_KEY}`, Values: [jobId] },
+        // terminated/shutting-down は既に課金が止まっているので対象外。
+        { Name: "instance-state-name", Values: ["pending", "running", "stopping", "stopped"] },
+      ],
+    }),
+  );
+  return (result.Reservations ?? []).flatMap((reservation) =>
+    (reservation.Instances ?? [])
+      .map((instance) => instance.InstanceId)
+      .filter((instanceId): instanceId is string => instanceId !== undefined),
+  );
 }

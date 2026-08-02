@@ -105,11 +105,17 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。`SattoriStack`
   6つ、いずれも上記authorizerで保護。停止・再実行は状態を変えるため`POST`にしている
   （`DELETE`を使うと`corsPreflight.allowMethods`（現状`GET`/`POST`のみ）の拡張も要る）。
 - **停止・再実行Lambdaの権限**（Issue #59）: `AdminStopJobFn`には
-  `stateMachine.grantExecution(fn, "states:StopExecution")`と`ec2:TerminateInstances`
-  （対象インスタンスは実行時にしか決まらないため`handleFailureFn`と同じくResource:*）、
-  `AdminRetryJobFn`には`grantStartExecution`と`UploadBucket`の読み取り（元の`.rpy`が
-  残っているかの確認用）。どちらも`jobsTable`は読み書き、`STATE_MACHINE_ARN`は
-  `startJobFn`と同様に個別付与する。
+  `stateMachine.grantExecution(fn, "states:StopExecution", "states:DescribeExecution")`
+  と`ec2:TerminateInstances`・`ec2:DescribeInstances`（前者は対象インスタンスが実行時
+  にしか決まらないため`handleFailureFn`と同じくResource:*、後者はそもそも
+  リソースレベルの権限指定に非対応）、`AdminRetryJobFn`には`grantStartExecution`と
+  `states:DescribeExecution`、`UploadBucket`の読み取り（元の`.rpy`が残っているかの
+  確認用）。どちらも`jobsTable`は読み書き、`STATE_MACHINE_ARN`は`startJobFn`と同様に
+  個別付与する。`DescribeExecution`が両方に要るのは、**ジョブの`status`が「実行が
+  終わったか」の代理条件にならない**ため（ワーカーが`SendTaskFailure`より先に
+  `failed`を書き、ステートマシンはその後もリトライを続ける。`apps/api/README.md`参照）。
+  `DescribeInstances`は、`instanceId`が未記録のまま起動した孤児インスタンスを
+  タグ`sattori:jobId`から回収するために使う。
 
 ## デプロイ手順
 

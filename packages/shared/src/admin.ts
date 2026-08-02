@@ -154,7 +154,12 @@ export const ADMIN_STOPPED_JOB_ERROR = "管理者により停止されました"
 /** POST /admin/jobs/{jobId}/stop のレスポンス（Issue #59）。 */
 export interface AdminStopJobResponse {
   jobId: string;
-  /** 停止後のジョブ状態（常に `failed`）。 */
+  /**
+   * 停止後のジョブ状態。通常は `failed` だが、停止処理中にワーカーが完走していた
+   * 場合のみ `done`（確定した完了を後から `failed` で潰さないため、API側は
+   * `done` のジョブ状態を上書きしない。Step Functions実行の停止とインスタンスの
+   * 終了自体は実施済み）。
+   */
   status: JobStatus;
   /**
    * Step Functions実行に`StopExecution`を発行したか。実行がまだ存在しない
