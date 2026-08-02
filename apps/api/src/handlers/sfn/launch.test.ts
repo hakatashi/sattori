@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CreateFleetCommand, CreateLaunchTemplateVersionCommand, EC2Client } from "@aws-sdk/client-ec2";
+import {
+  CreateFleetCommand,
+  CreateLaunchTemplateVersionCommand,
+  DescribeSpotPriceHistoryCommand,
+  EC2Client,
+} from "@aws-sdk/client-ec2";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
@@ -31,14 +36,18 @@ const job: JobRecord = {
   options: { watermark: true },
   outputPath: null,
   outputPath720p: null,
+  outputBytes: null,
+  outputBytes720p: null,
   error: null,
   createdAt: "2026-07-17T00:00:00.000Z",
   updatedAt: "2026-07-17T00:00:00.000Z",
+  launchedAt: null,
   doneAt: null,
   email: null,
   instanceId: null,
   instanceType: null,
   availabilityZone: null,
+  spotPricePerHour: null,
   estimatedDurationSeconds: 900,
   progress: null,
   previewImagePath: null,
@@ -59,7 +68,7 @@ beforeEach(() => {
 });
 
 describe("sfn/launch handler", () => {
-  it("ジョブを取得しEC2 Fleetで起動、status・instanceId・instanceType・availabilityZoneを更新する", async () => {
+  it("ジョブを取得しEC2 Fleetで起動、status・インスタンス情報・launchedAtを更新する", async () => {
     ddbMock.on(GetCommand).resolves({ Item: job });
     ec2Mock
       .on(CreateLaunchTemplateVersionCommand)
@@ -73,6 +82,9 @@ describe("sfn/launch handler", () => {
         },
       ],
     });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({
+      SpotPriceHistory: [{ SpotPrice: "0.0583" }],
+    });
     ddbMock.on(UpdateCommand).resolves({});
 
     const { handler } = await import("./launch.js");
@@ -80,7 +92,7 @@ describe("sfn/launch handler", () => {
 
     expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
     const updateCalls = ddbMock.commandCalls(UpdateCommand);
-    expect(updateCalls.length).toBe(2);
+    expect(updateCalls.length).toBe(3);
     const updatedFields = updateCalls.map((call) => call.args[0].input.ExpressionAttributeValues);
     expect(updatedFields).toEqual(
       expect.arrayContaining([
@@ -89,8 +101,33 @@ describe("sfn/launch handler", () => {
           ":i": "i-abc123",
           ":t": "c7i.xlarge",
           ":az": "us-east-1a",
+          ":sp": 0.0583,
         }),
+        // launchedAt（コスト推定の課金起点、Issue #60）は未設定のときだけ書き込む。
+        expect.objectContaining({ ":nullType": "NULL" }),
       ]),
+    );
+  });
+
+  it("Spot単価が取得できなくても起動は続行しnullで記録する", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: job });
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-abc123"], InstanceType: "c7i.xlarge", AvailabilityZone: "us-east-1a" }],
+    });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).rejects(new Error("throttled"));
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    const updatedFields = ddbMock
+      .commandCalls(UpdateCommand)
+      .map((call) => call.args[0].input.ExpressionAttributeValues);
+    expect(updatedFields).toEqual(
+      expect.arrayContaining([expect.objectContaining({ ":i": "i-abc123", ":sp": null })]),
     );
   });
 

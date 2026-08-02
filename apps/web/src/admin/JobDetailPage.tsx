@@ -4,6 +4,7 @@ import { fetchAdminJobDetail } from "./adminApi.ts";
 import { useAdminResource } from "./useAdminResource.ts";
 import { StatusBadge } from "./StatusBadge.tsx";
 import { JobActionsPanel } from "./JobActionsPanel.tsx";
+import { JobCostPanel } from "./JobCostPanel.tsx";
 import { ExecutionPanel } from "./ExecutionPanel.tsx";
 import { LogsPanel } from "./LogsPanel.tsx";
 import styles from "./JobDetailPage.module.css";
@@ -60,6 +61,8 @@ export function JobDetailPage() {
                 <dd>{formatDateTime(data.job.createdAt)}</dd>
                 <dt>updatedAt</dt>
                 <dd>{formatDateTime(data.job.updatedAt)}</dd>
+                <dt>launchedAt</dt>
+                <dd>{formatDateTime(data.job.launchedAt)}</dd>
                 <dt>doneAt</dt>
                 <dd>{formatDateTime(data.job.doneAt)}</dd>
                 <dt>pendingExpiresAt</dt>
@@ -115,8 +118,12 @@ export function JobDetailPage() {
                 <dd>{data.job.instanceType ?? "-"}</dd>
                 <dt>availabilityZone</dt>
                 <dd>{data.job.availabilityZone ?? "-"}</dd>
+                <dt>spotPricePerHour</dt>
+                <dd>{data.job.spotPricePerHour === null ? "-" : `$${data.job.spotPricePerHour}`}</dd>
               </dl>
             </div>
+
+            <JobCostPanel job={data.job} />
 
             {data.job.replayInfo && (
               <div className={styles.panel}>

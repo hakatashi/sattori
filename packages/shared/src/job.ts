@@ -69,11 +69,34 @@ export interface JobRecord {
    * 高さ720pxへ変換した版を別ファイルとして併せて提供する。
    */
   outputPath720p: string | null;
+  /**
+   * `outputPath`の動画のバイト数（未アップロードなら null）。ワーカーが
+   * アップロード時に記録する（`worker/entrypoint.py`）。
+   * S3保管料・CloudFront転送量のコスト推定（`cost.ts`）に使う。動画サイズは
+   * 本サービスのコスト構造で最大のレバレッジ（`docs/aws-region-cost-analysis.md` §6）
+   * なので、平均値で丸めずジョブ単位の実測を残す。旧ジョブでは null。
+   */
+  outputBytes: number | null;
+  /** `outputPath720p`の動画のバイト数（未アップロード・旧ジョブなら null）。 */
+  outputBytes720p: number | null;
   /** 失敗時のエラー概要（ユーザー表示用の簡潔な文言）。 */
   error: string | null;
   /** ISO 8601。 */
   createdAt: string;
   updatedAt: string;
+  /**
+   * **最初に**EC2ワーカーの起動に成功した時刻（ISO 8601、`launching`遷移時刻）。
+   * コスト推定（`cost.ts`）における課金対象時間の起点。`createdAt`はマジックリンク
+   * 送信要求の時点で、`pending`のまま最大24時間放置されうるため課金の起点には使えない。
+   *
+   * Step Functionsのリトライで`Launch`が複数回走っても**上書きしない**（起動の度に
+   * 上書きすると、それ以前の試行で稼働していたEC2の課金時間が推定から丸ごと
+   * 抜け落ちるため）。裏を返すと、`launchedAt`から終了時刻までの実時間には
+   * 試行間の待機（インフラ側の`WaitBeforeCheck`、3分）のようなEC2が動いていない
+   * 区間も含まれる＝推定は僅かに過大側に倒れる。詳細は`cost.ts`。
+   * 未起動、またはこのフィールド追加より前に起動した旧ジョブでは null。
+   */
+  launchedAt: string | null;
   /**
    * status が "done" に遷移した時刻（ISO 8601）。ワーカーが status を "done" に
    * 更新する際に一度だけ設定する（`worker/status.py`）。出力バケットのライフサイクル
@@ -113,6 +136,20 @@ export interface JobRecord {
    * 未起動なら null。
    */
   availabilityZone: string | null;
+  /**
+   * 起動時点で観測した Spot 単価（USD/時）。`CreateFleet`のレスポンスには単価が
+   * 含まれないため、確保できた`instanceType`×`availabilityZone`で
+   * `DescribeSpotPriceHistory`を1回引いて記録する（`apps/api/src/ec2.ts`）。
+   * 実際の請求額は起動〜終了の間に変動した価格の積分だが、1ジョブは1時間未満で
+   * 終わるうえ Spot 価格の変動間隔はそれより長いことがほとんどなので、起動時点の
+   * スナップショットで十分という判断。
+   *
+   * `launchedAt`と同じく最初の起動時のみ記録し、リトライでは上書きしない
+   * （試行ごとに違うタイプが確保されうるが、代表値を1つ持てば足りる）。
+   * 取得に失敗した場合・旧ジョブでは null で、コスト推定は`instanceType`に応じた
+   * フォールバック単価（`cost.ts`）へ縮退する。
+   */
+  spotPricePerHour: number | null;
   /**
    * リプレイの推定再生時間（秒）。`ReplayInfo.estimatedDurationSeconds` の値を
    * ジョブ作成時に転記したもの。ワーカーが録画フェーズの進捗率算出に使う

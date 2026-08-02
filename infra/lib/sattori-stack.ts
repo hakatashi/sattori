@@ -21,7 +21,7 @@ import * as ses from "aws-cdk-lib/aws-ses";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
-import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { NodejsFunction, type NodejsFunctionProps } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { HttpLambdaAuthorizer, HttpLambdaResponseType } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
@@ -303,13 +303,21 @@ export class SattoriStack extends Stack {
 
     // `environment`省略時は`commonEnv`を使う。管理画面のauthorizer(Issue #51)のように
     // `commonEnv`とは無関係な環境変数だけを持たせたいLambdaのために上書きできるようにする。
-    const makeHandler = (name: string, entry: string, environment: Record<string, string> = commonEnv) =>
+    const makeHandler = (
+      name: string,
+      entry: string,
+      environment: Record<string, string> = commonEnv,
+      // メモリ・タイムアウトだけ既定と変えたいハンドラ向けの上書き（全件Scanで
+      // 集計する`admin/getCosts.ts`など）。既定値で足りるハンドラは渡さないこと。
+      overrides: Pick<NodejsFunctionProps, "memorySize" | "timeout"> = {},
+    ) =>
       new NodejsFunction(this, name, {
         entry: join(API_HANDLERS, entry),
         handler: "handler",
         runtime: lambda.Runtime.NODEJS_22_X,
         timeout: Duration.seconds(30),
         environment,
+        ...overrides,
         bundling: {
           // CJS で出力する。ESM 出力だと AWS SDK 内部の動的 require("node:https")
           // が Lambda(ESM) で "Dynamic require not supported" となり失敗するため。
@@ -397,6 +405,9 @@ export class SattoriStack extends Stack {
           "ec2:CreateLaunchTemplateVersion",
           "ec2:RunInstances",
           "ec2:CreateTags",
+          // 確保できたインスタンスのSpot単価をJobRecordへ記録するため(Issue #60、
+          // コスト推定の入力)。リソース単位の絞り込みができない読み取り専用API。
+          "ec2:DescribeSpotPriceHistory",
         ],
         resources: ["*"],
       }),
@@ -605,6 +616,15 @@ export class SattoriStack extends Stack {
     uploadBucket.grantRead(adminRetryJobFn); // 元の.rpyが残っているかの確認のため
     adminRetryJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
 
+    // コスト集計（Issue #60）はJobsTableの全件Scan + アプリ側集計。月1000ジョブ規模
+    // では素朴なScanで十分だが、件数に比例して実行時間が伸びるためタイムアウトと
+    // メモリだけ既定より広げておく（`apps/api/src/adminCosts.ts`参照）。
+    const adminGetCostsFn = makeHandler("AdminGetCostsFn", "admin/getCosts.ts", commonEnv, {
+      timeout: Duration.seconds(60),
+      memorySize: 512,
+    });
+    jobsTable.grantReadData(adminGetCostsFn);
+
     const httpApi = new apigw.HttpApi(this, "HttpApi", {
       corsPreflight: {
         allowOrigins: ["*"],
@@ -671,6 +691,12 @@ export class SattoriStack extends Stack {
       path: "/admin/jobs/{jobId}/retry",
       methods: [apigw.HttpMethod.POST],
       integration: new HttpLambdaIntegration("AdminRetryJobInt", adminRetryJobFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/costs",
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration("AdminGetCostsInt", adminGetCostsFn),
       authorizer: adminAuthorizer,
     });
 

@@ -116,7 +116,12 @@ describe("SattoriStack", () => {
       PolicyDocument: {
         Statement: Match.arrayWith([
           Match.objectLike({
-            Action: Match.arrayWith(["ec2:CreateFleet", "ec2:RunInstances"]),
+            Action: Match.arrayWith([
+              "ec2:CreateFleet",
+              "ec2:RunInstances",
+              // 確保したインスタンスのSpot単価をコスト推定用に記録する(Issue #60)。
+              "ec2:DescribeSpotPriceHistory",
+            ]),
           }),
         ]),
       },
@@ -295,6 +300,8 @@ describe("SattoriStack", () => {
       // Issue #59。DELETEを使うとcorsPreflight.allowMethodsの拡張も要るためPOSTに揃えている。
       "POST /admin/jobs/{jobId}/stop",
       "POST /admin/jobs/{jobId}/retry",
+      // Issue #60。コスト推定の日次/週次/月次集計。
+      "GET /admin/costs",
     ];
     for (const routeKey of adminRouteKeys) {
       const route = routeEntries.find((r) => r.Properties.RouteKey === routeKey);

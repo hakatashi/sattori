@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import styles from "./AdminLayout.module.css";
 
 interface Props {
@@ -25,6 +25,23 @@ export function AdminLayout({ children, onLogout }: Props) {
         <p className={styles.title}>
           <Link to="/admin">Sattori 管理画面</Link>
         </p>
+        <nav className={styles.nav}>
+          {/* `end`はジョブ一覧(index)だけに付ける。付けないと詳細ページでも
+              一覧が現在地扱いになる。 */}
+          <NavLink
+            to="/admin"
+            end
+            className={({ isActive }) => (isActive ? styles.navLinkActive : styles.navLink)}
+          >
+            ジョブ
+          </NavLink>
+          <NavLink
+            to="/admin/costs"
+            className={({ isActive }) => (isActive ? styles.navLinkActive : styles.navLink)}
+          >
+            コスト
+          </NavLink>
+        </nav>
         <button className={styles.logout} type="button" onClick={onLogout}>
           ログアウト
         </button>
