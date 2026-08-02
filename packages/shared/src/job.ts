@@ -140,6 +140,19 @@ export interface JobRecord {
    */
   replayInfo: ReplayInfo | null;
   /**
+   * 管理画面から「再実行」（Issue #59）でこのジョブを複製した際に作成された、
+   * 新しいジョブのID。再実行していなければ null。同一jobIdでの再起動は
+   * `startPendingJob()` の冪等性前提とStep Functionsの実行名(=jobId)の一意性を
+   * 壊すため、再実行は必ず新しいjobIdへの複製として行う。この2フィールドで
+   * 元ジョブ⇄新ジョブを相互に辿れるようにする（運用調査用）。
+   */
+  retriedToJobId: string | null;
+  /**
+   * このジョブが管理画面からの再実行で作られた場合の、複製元ジョブのID
+   * （通常のジョブでは null）。
+   */
+  retriedFromJobId: string | null;
+  /**
    * `POST /magic-links` 押下時点でユーザーが選択していた表示言語
    * （`RequestMagicLinkRequest.language` をそのまま転記）。マジックリンク
    * メール・完了メールの文面出し分けと、メール本文に載せるジョブページリンクの

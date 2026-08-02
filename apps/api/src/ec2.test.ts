@@ -52,6 +52,8 @@ const job: JobRecord = {
   previewImagePath: null,
   replayInfo: null,
   pendingExpiresAt: null,
+  retriedToJobId: null,
+  retriedFromJobId: null,
   language: "ja",
 };
 

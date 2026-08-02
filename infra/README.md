@@ -100,7 +100,16 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。`SattoriStack`
   ```
   投入・ローテーション手順の詳細は`CLAUDE.local.md`参照。
 - **ルート**: `GET /admin/jobs`・`GET /admin/jobs/{jobId}`・
-  `GET /admin/jobs/{jobId}/execution`の3つ、いずれも上記authorizerで保護。
+  `GET /admin/jobs/{jobId}/execution`・`GET /admin/jobs/{jobId}/logs`（Issue #58）・
+  `POST /admin/jobs/{jobId}/stop`・`POST /admin/jobs/{jobId}/retry`（Issue #59）の
+  6つ、いずれも上記authorizerで保護。停止・再実行は状態を変えるため`POST`にしている
+  （`DELETE`を使うと`corsPreflight.allowMethods`（現状`GET`/`POST`のみ）の拡張も要る）。
+- **停止・再実行Lambdaの権限**（Issue #59）: `AdminStopJobFn`には
+  `stateMachine.grantExecution(fn, "states:StopExecution")`と`ec2:TerminateInstances`
+  （対象インスタンスは実行時にしか決まらないため`handleFailureFn`と同じくResource:*）、
+  `AdminRetryJobFn`には`grantStartExecution`と`UploadBucket`の読み取り（元の`.rpy`が
+  残っているかの確認用）。どちらも`jobsTable`は読み書き、`STATE_MACHINE_ARN`は
+  `startJobFn`と同様に個別付与する。
 
 ## デプロイ手順
 

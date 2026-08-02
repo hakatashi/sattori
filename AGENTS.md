@@ -48,7 +48,8 @@ DL→完了メール）はすべて実装済みで、現在は初回リリース
 ```
 
 上記に加え、運用調査用の管理画面（`/admin`、共有トークン+Lambda Authorizerで保護、
-Issue #51）が同じ API Gateway / DynamoDB / S3 / Step Functions を参照専用で覗く。
+Issue #51）が同じ API Gateway / DynamoDB / S3 / Step Functions を覗く（参照系に加え、
+ジョブの緊急停止・再実行のみ更新系。Issue #59）。
 詳細は `apps/api/README.md`「管理API」・`apps/web/README.md`「管理画面」参照。
 
 各コンポーネントの詳細は次のREADMEに分割してある。
@@ -152,6 +153,6 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
   と推測しているが、実運用規模拡大時は要注意）。
 - 録画がリプレイと一致しているかの自動デシンク検知は未実装（目視のみ）。
 - レート制限・濫用対策の強化、コスト監視は継続課題。
-- 管理画面（Issue #51）は現状ジョブ一覧・詳細・ダウンロード導線・workerの
-  CloudWatchログ表示（Issue #58）のみ（参照系）。ジョブの緊急停止・再実行、
+- 管理画面（Issue #51）はジョブ一覧・詳細・ダウンロード導線・workerのCloudWatch
+  ログ表示（Issue #58）・ジョブの緊急停止/再実行（Issue #59）まで実装済み。
   コスト推定・集計・可視化は後続Issueに切り出し済みで未実装。

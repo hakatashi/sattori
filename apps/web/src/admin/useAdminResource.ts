@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AdminUnauthorizedError } from "./adminApi.ts";
 import { useAdminAuth } from "./AdminAuthContext.ts";
 
@@ -6,6 +6,16 @@ interface AdminResourceState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
+}
+
+interface AdminResource<T> extends AdminResourceState<T> {
+  /**
+   * 同じリソースを取り直す（ジョブの停止・再実行など、画面から状態を変えた直後に
+   * 最新のジョブレコードを反映させるため。Issue #59）。deps変更時と違い、
+   * 取得中も直前の`data`を保持したままにする（操作パネルが一瞬アンマウントされて
+   * 実行結果のメッセージが消えるのを避けるため）。
+   */
+  reload: () => void;
 }
 
 /**
@@ -17,17 +27,28 @@ interface AdminResourceState<T> {
 export function useAdminResource<T>(
   fetcher: (token: string) => Promise<T>,
   deps: unknown[],
-): AdminResourceState<T> {
+): AdminResource<T> {
   const { token, onUnauthorized } = useAdminAuth();
   const [state, setState] = useState<AdminResourceState<T>>({
     data: null,
     loading: true,
     error: null,
   });
+  const [reloadCount, setReloadCount] = useState(0);
+  // この実行が`reload()`起因か（＝取得中も既存dataを残してよいか）を伝える。
+  // deps変更（別ジョブへの遷移など）では別リソースの内容が残らないようクリアする。
+  const isReloadRef = useRef(false);
+
+  const reload = useCallback(() => {
+    isReloadRef.current = true;
+    setReloadCount((count) => count + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    setState({ data: null, loading: true, error: null });
+    const keepData = isReloadRef.current;
+    isReloadRef.current = false;
+    setState((prev) => ({ data: keepData ? prev.data : null, loading: true, error: null }));
 
     fetcher(token)
       .then((data) => {
@@ -52,7 +73,7 @@ export function useAdminResource<T>(
     };
     // depsは呼び出し側が明示的に指定する（fetcherの参照そのものは含めない設計のため、
     // 通常のReact Hooksのexhaustive-deps検査とは意図的にズレる）。
-  }, deps);
+  }, [...deps, reloadCount]);
 
-  return state;
+  return { ...state, reload };
 }

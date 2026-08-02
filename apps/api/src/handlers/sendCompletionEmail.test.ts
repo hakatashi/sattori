@@ -44,6 +44,8 @@ function baseJob(overrides: Partial<JobRecord>): JobRecord {
     previewImagePath: null,
     replayInfo: null,
     pendingExpiresAt: null,
+    retriedToJobId: null,
+    retriedFromJobId: null,
     language: "ja",
     ...overrides,
   };

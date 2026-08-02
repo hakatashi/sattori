@@ -21,6 +21,8 @@ API契約自体は `packages/shared/README.md` を参照。
 | `admin/getJobDetail.ts` | `GET /admin/jobs/{jobId}` | `JobRecord`全フィールド＋ダウンロード導線 |
 | `admin/getExecution.ts` | `GET /admin/jobs/{jobId}/execution` | Step Functions実行の状態・履歴 |
 | `admin/getLogs.ts` | `GET /admin/jobs/{jobId}/logs` | ワーカーコンテナのCloudWatch Logs（見つからない場合はEC2コンソール出力にフォールバック） |
+| `admin/stopJob.ts` | `POST /admin/jobs/{jobId}/stop` | 暴走ジョブの緊急停止（実行停止→インスタンス終了→`failed`確定） |
+| `admin/retryJob.ts` | `POST /admin/jobs/{jobId}/retry` | 失敗ジョブの再実行（**新しいjobId**へ複製して起動） |
 
 ## ジョブ起動〜Step Functionsの流れ
 
@@ -200,11 +202,37 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   ワーカーイメージ再デプロイ前のログには依然ノイズが残るため、フロント
   （`LogsPanel.tsx`）側の「`[ffmpeg] `を含む行を既定で非表示にする」フィルタは
   後方互換のため残している。
+- **緊急停止**（`admin/stopJob.ts`、Issue #59）: 非終端状態のジョブのみ対象
+  （終端なら409）。**(1) `StopExecution` → (2) `TerminateInstances` → (3)
+  `updateJobStatus(failed)` の順序が重要**で、先にインスタンスをterminateすると
+  taskToken応答が来なくなった実行がタスクタイムアウト（90分）後に`HandleFailure`
+  経由でリトライへ回り、**止めたはずのジョブが別インスタンスで再起動してしまう**。
+  各段階の失敗はそこで打ち切って502を返し、ジョブ状態は書き換えない（実際には
+  止まっていないのに`failed`と表示されるのが最も危険なため）。`StopExecution`は
+  停止済み実行に対しても成功する冪等なAPIなので、管理者はそのまま再実行できる。
+  実行がまだ存在しない（pendingのまま起動していない）場合は`ExecutionDoesNotExist`
+  を握りつぶして`executionStopped: false`で先へ進む。
+- **再実行**（`admin/retryJob.ts`、Issue #59）: **同一jobIdでは再実行しない**。
+  `startPendingJob()`は「statusがpendingであること」を条件にした原子的更新が前提で、
+  Step Functionsの実行名もjobIdそのものを使っている（同名の`StartExecution`は
+  `ExecutionAlreadyExists`になりうる）ため、既存の冪等性前提を壊さないよう
+  **新しいjobIdでジョブレコードを複製して起動する**。複製の内訳は`buildRetryJob()`
+  （入力側＝`replayKey`/`game`/`options`/`email`/`language`等を引き継ぎ、結果側＝
+  出力パス・進捗・インスタンス情報・エラーを初期化。`status`はマジックリンク確認済み
+  のため`pending`を経由せず`queued`から開始）。対象は終端状態のジョブのみ（実行中の
+  複製は同一リプレイの二重録画＝二重課金になるため409）。EC2を起動する前に元の`.rpy`
+  が`UploadBucket`に残っているかを`objectExists()`で確認する。元ジョブには
+  `retriedToJobId`、新ジョブには`retriedFromJobId`を記録して相互に辿れるようにする
+  （このリンク記録の失敗は既に起動した実行を巻き戻す理由にならないためログのみ）。
+  完了メールは新ジョブが`done`に遷移した時点で引き継いだ`email`宛に届き、本文の
+  リンクも新jobIdのジョブページになる（ユーザーは古いマジックリンクのままでも
+  新しいメールから辿れる）。
 
 ## 環境変数（`config.ts`）
 
 すべて `infra/lib/sattori-stack.ts` の `commonEnv`（+ `startJob.ts`/
-`admin/getExecution.ts`専用の`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
+`admin/getExecution.ts`/`admin/stopJob.ts`/`admin/retryJob.ts`専用の
+`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
 `ADMIN_TOKEN_PARAMETER_NAME`、`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定）
 から注入される。`loadConfig()`が必須環境変数の存在を
 検証する（管理API用Lambdaは`commonEnv`を使わず個別の環境変数のみを持つ）。
