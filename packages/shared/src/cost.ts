@@ -96,6 +96,25 @@ export const FALLBACK_SPOT_PRICE_USD_PER_HOUR = {
  */
 export const FALLBACK_BILLED_HOURS = 0.6 * 1.1;
 
+/**
+ * 円換算に使う為替レート（JPY/USD）。管理画面の通貨切り替え用。
+ *
+ * AWSの請求はUSD建てで、実際の請求額は「AWSがその月に適用したレート」で円に
+ * 換算される（さらにカード会社の手数料が乗る）ため、ここで固定レートを使う
+ * 時点で数%の誤差は避けられない。コスト推定そのものが桁を掴むための概算である
+ * 以上、日次でレートを取得する仕組み（外部API・Lambda・キャッシュ）を足す価値は
+ * 無いと判断して**定数で持つ**。ズレが気になったらこの値を書き換えるだけでよい。
+ */
+export const USD_TO_JPY_RATE = 157;
+
+/** `USD_TO_JPY_RATE` を最後に確認した日付。UIに添えて鮮度を明示する。 */
+export const USD_TO_JPY_RATE_AS_OF = "2026-08-03";
+
+/** USDを円に換算する（`USD_TO_JPY_RATE`による概算）。 */
+export function usdToJpy(usd: number): number {
+  return usd * USD_TO_JPY_RATE;
+}
+
 /** コスト推定に必要な `JobRecord` のフィールドだけを抜き出した入力型。 */
 export type JobCostInput = Pick<
   JobRecord,

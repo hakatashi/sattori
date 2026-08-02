@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AdminAuthContext } from "./AdminAuthContext.ts";
+import { CostCurrencyContext, loadCostCurrency, saveCostCurrency } from "./adminCurrency.ts";
+import type { CostCurrency } from "./adminCurrency.ts";
 import { AdminLayout } from "./AdminLayout.tsx";
 import { AdminLogin } from "./AdminLogin.tsx";
 import { clearAdminToken, loadAdminToken, saveAdminToken } from "./adminToken.ts";
@@ -18,6 +20,13 @@ import { CostsPage } from "./CostsPage.tsx";
 export function AdminApp() {
   const [token, setToken] = useState<string | null>(() => loadAdminToken());
   const [invalidTokenNotice, setInvalidTokenNotice] = useState(false);
+  const [currency, setCurrencyState] = useState<CostCurrency>(() => loadCostCurrency());
+
+  const setCurrency = useCallback((next: CostCurrency) => {
+    saveCostCurrency(next);
+    setCurrencyState(next);
+  }, []);
+  const currencyValue = useMemo(() => ({ currency, setCurrency }), [currency, setCurrency]);
 
   function handleLogin(next: string) {
     saveAdminToken(next);
@@ -43,14 +52,16 @@ export function AdminApp() {
 
   return (
     <AdminAuthContext.Provider value={{ token, onUnauthorized: handleUnauthorized }}>
-      <AdminLayout onLogout={handleLogout}>
-        <Routes>
-          <Route index element={<JobListPage />} />
-          <Route path="jobs/:jobId" element={<JobDetailPage />} />
-          <Route path="costs" element={<CostsPage />} />
-          <Route path="*" element={<Navigate to="/admin" replace />} />
-        </Routes>
-      </AdminLayout>
+      <CostCurrencyContext.Provider value={currencyValue}>
+        <AdminLayout onLogout={handleLogout}>
+          <Routes>
+            <Route index element={<JobListPage />} />
+            <Route path="jobs/:jobId" element={<JobDetailPage />} />
+            <Route path="costs" element={<CostsPage />} />
+            <Route path="*" element={<Navigate to="/admin" replace />} />
+          </Routes>
+        </AdminLayout>
+      </CostCurrencyContext.Provider>
     </AdminAuthContext.Provider>
   );
 }

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { BYTES_PER_GB, CLOUDFRONT_FREE_TIER_GB_PER_MONTH } from "@sattori/shared";
+import { BYTES_PER_GB, CLOUDFRONT_FREE_TIER_GB_PER_MONTH, USD_TO_JPY_RATE } from "@sattori/shared";
 import type { AdminCostSummaryResponse } from "@sattori/shared";
 import { CostsPage } from "./CostsPage.tsx";
 import { AdminAuthContext } from "./AdminAuthContext.ts";
+import { CostCurrencyContext } from "./adminCurrency.ts";
+import type { CostCurrency } from "./adminCurrency.ts";
 import * as adminApi from "./adminApi.ts";
 
 vi.mock("./adminApi.ts", () => ({
@@ -58,12 +60,14 @@ const response: AdminCostSummaryResponse = {
   },
 };
 
-function renderPage(initialEntry = "/admin/costs") {
+function renderPage(initialEntry = "/admin/costs", currency: CostCurrency = "usd") {
   return render(
     <AdminAuthContext.Provider value={{ token: "token", onUnauthorized: vi.fn() }}>
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <CostsPage />
-      </MemoryRouter>
+      <CostCurrencyContext.Provider value={{ currency, setCurrency: vi.fn() }}>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <CostsPage />
+        </MemoryRouter>
+      </CostCurrencyContext.Provider>
     </AdminAuthContext.Provider>,
   );
 }
@@ -158,5 +162,25 @@ describe("CostsPage", () => {
 
     expect(await screen.findByText("該当するジョブがありません")).toBeTruthy();
     expect(screen.getByText("配信量の記録がありません")).toBeTruthy();
+  });
+
+  it("表示通貨に円を選ぶと合計・凡例・CloudFrontを円換算する", async () => {
+    renderPage("/admin/costs", "jpy");
+
+    // 表示期間の合計 = (0.114 + 0.057) USD。円は小数0桁（$表示の2桁から2桁落とす）。
+    const totalJpy = Math.round(0.171 * USD_TO_JPY_RATE).toLocaleString("ja-JP");
+    expect(await screen.findByText(`¥${totalJpy}`)).toBeTruthy();
+    // CloudFront超過分 8.5 USD。
+    const cloudFrontJpy = Math.round(8.5 * USD_TO_JPY_RATE).toLocaleString("ja-JP");
+    expect(screen.getByText(`¥${cloudFrontJpy}`)).toBeTruthy();
+    expect(screen.queryByText("$0.17")).toBeNull();
+    expect(screen.getByText(/固定レートで換算した概算/)).toBeTruthy();
+  });
+
+  it("既定のUSD表示では為替レートの注記を出さない", async () => {
+    renderPage();
+
+    await screen.findByText("2026-07");
+    expect(screen.queryByText(/固定レートで換算した概算/)).toBeNull();
   });
 });
