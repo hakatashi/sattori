@@ -53,6 +53,14 @@ Issue #51）が同じ API Gateway / DynamoDB / S3 / Step Functions を覗く（�
 同じ DynamoDB のジョブレコードから算出する。
 詳細は `apps/api/README.md`「管理API」・`apps/web/README.md`「管理画面」参照。
 
+**本体のAWSリージョンは `eu-south-2`（スペイン）**（2026-08移設、Spot単価が実測
+最安のため。`docs/aws-region-cost-analysis.md`参照）。ただし **SESだけ`us-east-1`に
+残している**（eu-south-2にはSESが存在しないため）。マジックリンク・完了メールを
+送るLambdaは`SES_REGION`環境変数でus-east-1を明示して`SESv2Client`を呼ぶ
+（`apps/api/src/ses.ts`）。CloudFrontにアタッチするACM証明書もus-east-1必須のため、
+SESと合わせて`SattoriEdgeStack`（us-east-1固定の付帯スタック、`infra/README.md`
+参照）にまとめてある。
+
 各コンポーネントの詳細は次のREADMEに分割してある。
 
 | コンポーネント | 詳細 |
@@ -96,6 +104,15 @@ Issue #51）が同じ API Gateway / DynamoDB / S3 / Step Functions を覗く（�
   トークンは CDK ではなく `cdk deploy` の前に手動で SSM へ投入する運用（SecureString
   は CloudFormation/CDK では作成できないAWS側の制約のため）。詳細は
   `infra/README.md`「管理画面」・`CLAUDE.local.md`参照。
+- **単一クラウドに寄せて運用を単純化する方針の唯一の例外がSES**。eu-south-2には
+  SESが存在しないため、メール送信だけus-east-1のSESをクロスリージョンで呼んでいる
+  （上記§2参照）。障害切り分けの際はこの例外を忘れないこと。また、eu-south-2は
+  `c6i`/`c6a`/`c5a`系のインスタンスタイプが存在せず、us-east-1運用時（Issue #29で
+  確保した30プール/6タイプ、th11は20プール/4タイプ）に比べてEC2 FleetのSpot
+  キャパシティプール数が後退している（th06/07/08は12プール/4タイプ、th11は
+  9プール/3タイプ。`c7i`/`c7a`/`c7i-flex`/`m7i`はいずれもeu-south-2実機検証済み、
+  touhou-recorder reports/42・43、`apps/api/src/ec2.ts`参照）。起動失敗率が有意に
+  悪化していないか移設後しばらくは監視すること。
 - **インスタンスタイプ・録画パイプラインの変更は必ず実機検証を経ること**。
   「同スペック帯・同価格帯だから安全」という推測は繰り返し裏切られている
   （高クロック特化インスタンスでの重複フレーム率悪化、既存タイトルの命名則・
@@ -158,7 +175,7 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
   ログ表示（Issue #58）・ジョブの緊急停止/再実行（Issue #59）・コスト推定と
   日次/週次/月次集計（Issue #60）まで実装済み。
 - **コスト表示は推定値であって請求額ではない**（`packages/shared/src/cost.ts`、
-  単価は`docs/aws-region-cost-analysis.md`のus-east-1・2026-07-27時点）。
+  単価は`docs/aws-region-cost-analysis.md`のeu-south-2・2026-08-03時点）。
   リージョンや候補インスタンスタイプを変える場合は単価定数も併せて見直すこと。
   管理画面はUSD/円を切り替えて表示できるが、**円換算は固定レート定数**
   （`USD_TO_JPY_RATE`、2026-08-03時点）による概算で、計算・API応答はすべてUSDのまま

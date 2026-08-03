@@ -1,7 +1,18 @@
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { calculateDownloadExpiresAt, DEFAULT_LANGUAGE, type SupportedLanguage } from "@sattori/shared";
 
-const ses = new SESv2Client({});
+// SESクライアントは遅延生成する。Lambda実行リージョン(eu-south-2)にはSESが
+// 存在しないため、`SES_REGION`環境変数(infra/lib/sattori-stack.tsが設定、
+// 実体は`SattoriEdgeStack`のus-east-1)を明示してクライアントを向ける必要がある。
+// モジュール読み込み時点でこれを解決すると、テスト側の`vi.stubEnv`より先に
+// 評価されてしまう順序依存が生まれるため、初回呼び出し時まで生成を遅らせる。
+let _ses: SESv2Client | null = null;
+function sesClient(): SESv2Client {
+  if (!_ses) {
+    _ses = new SESv2Client({ region: process.env.SES_REGION ?? "us-east-1" });
+  }
+  return _ses;
+}
 
 // プレースホルダの文面。送信元・文言は運用開始前に調整する想定（Issue #9）。
 // 「次のステップ」押下時点で選択されていた言語（`JobRecord.language`）で出し分ける。
@@ -84,7 +95,7 @@ export async function sendMagicLinkEmail(params: {
   language: SupportedLanguage;
 }): Promise<void> {
   const link = buildJobPageUrl(params.webBaseUrl, params.jobId, params.language);
-  await ses.send(
+  await sesClient().send(
     new SendEmailCommand({
       FromEmailAddress: params.from,
       Destination: { ToAddresses: [params.to] },
@@ -117,7 +128,7 @@ export async function sendCompletionEmail(params: {
   const link = buildJobPageUrl(params.webBaseUrl, params.jobId, params.language);
   const expiresAt = calculateDownloadExpiresAt(params.doneAt);
   const expiresAtText = expiresAt ? formatExpiresAtForEmail(expiresAt, params.language) : null;
-  await ses.send(
+  await sesClient().send(
     new SendEmailCommand({
       FromEmailAddress: params.from,
       Destination: { ToAddresses: [params.to] },
