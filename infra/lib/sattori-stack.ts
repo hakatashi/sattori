@@ -17,7 +17,6 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as ses from "aws-cdk-lib/aws-ses";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
@@ -35,19 +34,39 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const API_HANDLERS = join(HERE, "../../apps/api/src/handlers");
 const WEB_DIST = join(HERE, "../../apps/web/dist");
 
+export interface SattoriStackProps extends StackProps {
+  /** Web/メールで共通して使うカスタムドメイン(SattoriEdgeStackと同じ値を渡すこと)。 */
+  webDomainName: string;
+  /**
+   * CloudFront(WebCdn)にアタッチするACM証明書のARN。CloudFront用証明書はus-east-1
+   * 必須のため、このスタック(eu-south-2)では作成できず、`SattoriEdgeStack`
+   * (us-east-1)が作った証明書のARNを`crossRegionReferences`経由で受け取る。
+   */
+  webCertificateArn: string;
+  /**
+   * SESクライアントが実際に呼ぶリージョン。eu-south-2にはSESが存在しないため
+   * (2026-08-03時点確認)、`SattoriEdgeStack`が検証済みドメインを持つus-east-1を渡す。
+   * Lambda側(apps/api/src/ses.ts)がこの値を`SES_REGION`環境変数経由で読み、
+   * `SESv2Client`にリージョンを明示する。
+   */
+  sesRegion: string;
+}
+
 /**
  * Sattori フェーズ1のインフラ一式。
  * 録画基盤(S3/CloudFront/ECR/EC2 Spot)＋ サーバーレス API(Lambda/API Gateway/DynamoDB)。
  * EC2 Spot の起動はここでは行わず、API Lambda が実行時に AWS SDK で起動する
  * (terraform-provider-aws の Spot ハング問題を避ける方針, PoC reports/16)。
+ * ACM証明書とSESだけは`SattoriEdgeStack`(us-east-1固定)が持つ。理由は同スタックの
+ * コメント参照。
  */
 export class SattoriStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props: SattoriStackProps) {
     super(scope, id, props);
 
     // Web/メールで共通して使うカスタムドメイン。CloudFront(WebCdn)とSES送信元アドレス
     // (no-reply@<このドメイン>)の両方で使うため、コンストラクタ先頭で定義しておく。
-    const webDomainName = "sattori.hakatashi.com";
+    const webDomainName = props.webDomainName;
 
     // --- ストレージ ---------------------------------------------------------
 
@@ -155,14 +174,11 @@ export class SattoriStack extends Stack {
     });
 
     // --- メール送信(SES, マジックリンク認証 Issue #9) -----------------------
-    // webDomainName配下から送信する(no-reply@<webDomainName>)。DKIM用のCNAMEは
-    // ACM証明書のDNS検証と同様、`cdk deploy`実行後にCfnOutputの値を外部DNSへ
-    // 手動追加する必要がある。また実際にサンドボックス外へ送信するには、別途
-    // AWSへサンドボックス解除を申請する必要がある(コードでは自動化できない)。
+    // webDomainName配下から送信する(no-reply@<webDomainName>)。ドメイン検証・DKIM・
+    // EmailIdentity自体は`SattoriEdgeStack`(us-east-1、eu-south-2にはSESが存在しない
+    // ため)が持つ。ここでは送信元アドレスの文字列と、SESクライアントを向けるリージョン
+    // (`props.sesRegion`)だけを扱う。
     const sesFromAddress = `no-reply@${webDomainName}`;
-    const sesIdentity = new ses.EmailIdentity(this, "SesIdentity", {
-      identity: ses.Identity.domain(webDomainName),
-    });
 
     // --- 録画ワーカー(ECR / VPC / IAM) -------------------------------------
 
@@ -188,18 +204,20 @@ export class SattoriStack extends Stack {
     });
 
     // NAT を持たない公開サブネット構成(ワーカーは外向き通信のみ必要 = 最小コスト)。
-    // maxAzs は us-east-1 の全AZ数(a-fの6つ)に合わせている。EC2 Fleet の起動時に
-    // 全AZへスポットリクエストを送ることで、単一AZでのキャパシティ枯渇
-    // (InsufficientInstanceCapacity)への耐性を高める(NATを使わないため
-    // AZ追加によるコスト増はない)。
+    // maxAzs は「利用可能なら使うAZ数の上限」であり、実際に作られるサブネット数は
+    // リージョンの提供AZ数とのmin(6, 提供数)になる(eu-south-2は現状3AZなので3つ)。
+    // EC2 Fleet の起動時に全AZへスポットリクエストを送ることで、単一AZでの
+    // キャパシティ枯渇(InsufficientInstanceCapacity)への耐性を高める(NATを
+    // 使わないためAZ追加によるコスト増はない)。将来AZが増えた場合に自動的に
+    // 追従してほしいため6のまま据え置く。
     //
-    // AZの構成自体（maxAzs）は変更しない。当初は us-east-1e を availabilityZones の
-    // 明示指定で除外する案を試したが、既存サブネット(index5)のAZ・CIDRを差し替える
-    // 形の更新になり、CloudFormationが新サブネット作成を旧サブネット削除より先に
-    // 試みるため同一CIDR('10.0.4.0/24')の重複でデプロイが失敗した(create-before-delete
-    // の既定挙動とCIDR一意制約が噛み合わない)。VPC自体は変更せず、下記
-    // WORKER_SUBNET_IDS の組み立て時にus-east-1eのサブネットを除外することで
-    // 同じ目的を安全に達成する（Issue #29）。
+    // かつて us-east-1 運用時は、レガシーAZ(us-east-1e)を availabilityZones の
+    // 明示指定で除外する案を試みたが、既存サブネットのAZ・CIDRを差し替える形の更新に
+    // なり、CloudFormationが新サブネット作成を旧サブネット削除より先に試みるため
+    // CIDR重複でデプロイが失敗した(create-before-deleteの既定挙動とCIDR一意制約が
+    // 噛み合わない, Issue #29)。WORKER_SUBNET_IDS の組み立て時に該当AZを除外する
+    // ことで同じ目的を安全に達成していたが、eu-south-2への移設でそのレガシーAZ問題
+    // 自体が解消したため、現在はフィルタリングを行っていない(下記参照)。
     const vpc = new ec2.Vpc(this, "WorkerVpc", {
       maxAzs: 6,
       natGateways: 0,
@@ -274,17 +292,10 @@ export class SattoriStack extends Stack {
 
     // --- API(Lambda + HTTP API) -------------------------------------------
 
-    // us-east-1e はこのAWSアカウントではレガシーAZ(AZ ID `use1-az3`)で、
-    // c3/c4/d2/i2/i3/m3等の旧世代インスタンスファミリしか提供しておらず、
-    // `apps/api/src/ec2.ts` の CANDIDATE_INSTANCE_TYPES
-    // (c7i/c7a/c6a/c6i/c7i-flex/c5aのいずれのxlarge)も1つも存在しない
-    // （`describe-instance-type-offerings`で確認済み）。含めても EC2 Fleet の
-    // Overrides内で常に容量ゼロな組み合わせが増えるだけなので、
-    // WORKER_SUBNET_IDS の組み立て時に除外する（Issue #29）。VPC自体
-    // (maxAzs:6)は変更しない点に注意（上記コメント参照）。
-    const workerSubnets = vpc.publicSubnets.filter(
-      (subnet) => subnet.availabilityZone !== "us-east-1e",
-    );
+    // 全AZのサブネットをそのままEC2 Fleetの起動先候補にする。us-east-1運用時は
+    // レガシーAZ(us-east-1e)をここで除外していたが(Issue #29)、eu-south-2には
+    // レガシーAZが無いためフィルタリングは不要。
+    const workerSubnets = vpc.publicSubnets;
 
     const commonEnv: Record<string, string> = {
       UPLOAD_BUCKET: uploadBucket.bucketName,
@@ -298,6 +309,9 @@ export class SattoriStack extends Stack {
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
       EMAIL_RATE_LIMIT_TABLE: emailRateLimitTable.tableName,
       SES_FROM_ADDRESS: sesFromAddress,
+      // eu-south-2にはSESが存在しないため、Lambda側(apps/api/src/ses.ts)は
+      // このリージョンを明示して`SESv2Client`を生成する。
+      SES_REGION: props.sesRegion,
       WEB_BASE_URL: `https://${webDomainName}`,
     };
 
@@ -350,7 +364,7 @@ export class SattoriStack extends Stack {
     requestMagicLinkFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ses:SendEmail"],
-        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/*`],
+        resources: [`arn:aws:ses:${props.sesRegion}:${this.account}:identity/*`],
       }),
     );
 
@@ -364,7 +378,7 @@ export class SattoriStack extends Stack {
     sendCompletionEmailFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ses:SendEmail"],
-        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/*`],
+        resources: [`arn:aws:ses:${props.sesRegion}:${this.account}:identity/*`],
       }),
     );
     sendCompletionEmailFn.addEventSource(
@@ -709,15 +723,14 @@ export class SattoriStack extends Stack {
       autoDeleteObjects: true,
     });
 
-    // カスタムドメイン用証明書。CloudFront にアタッチする証明書は us-east-1 必須
-    // (このスタック自体が既定で us-east-1 なので同一スタック内で作成できる)。
-    // hakatashi.com は Route 53 以外の DNS で管理しているため、hostedZone による
-    // 自動検証はできない。DNS 検証用 CNAME は `cdk deploy` 実行中に ACM コンソール
-    // (us-east-1)で確認し、外部 DNS へ手動追加する。
-    const webCertificate = new acm.Certificate(this, "WebCertificate", {
-      domainName: webDomainName,
-      validation: acm.CertificateValidation.fromDns(),
-    });
+    // カスタムドメイン用証明書。CloudFront にアタッチする証明書は us-east-1 必須のため、
+    // このスタック(eu-south-2)では作成できず`SattoriEdgeStack`(us-east-1)が作った
+    // 証明書をARN経由でインポートする（詳細は同スタックのコメント参照）。
+    const webCertificate = acm.Certificate.fromCertificateArn(
+      this,
+      "WebCertificate",
+      props.webCertificateArn,
+    );
 
     // SPAのフォールバックを言語別に振り分けるビューワーリクエスト関数。
     // 以前は errorResponses(403/404 -> /index.html)でフォールバックしていたが、それだと
@@ -785,12 +798,5 @@ function handler(event) {
     new CfnOutput(this, "WorkerRepoUri", { value: workerRepo.repositoryUri });
     // タイトル資産アップロード先(worker/README.md「タイトル資産のS3アップロード手順」参照)。
     new CfnOutput(this, "TitleAssetsBucketName", { value: titleAssetsBucket.bucketName });
-    // ACM証明書のDNS検証と同様、SESのDKIM用CNAMEも外部DNSへ手動追加が必要
-    // (`cdk deploy` 完了後にこの出力を確認して追加する)。
-    sesIdentity.dkimRecords.forEach((record, index) => {
-      new CfnOutput(this, `SesDkimRecord${index}`, {
-        value: `${record.name} CNAME ${record.value}`,
-      });
-    });
   }
 }

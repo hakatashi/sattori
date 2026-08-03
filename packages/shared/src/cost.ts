@@ -13,14 +13,16 @@ import { OUTPUT_RETENTION_DAYS } from "./job.js";
  * を運用者が把握することであり、会計用途ではない。
  *
  * 単価と稼働前提の出典は `docs/aws-region-cost-analysis.md`（2026-07-27時点、
- * us-east-1）。リージョンを移す場合はここの定数も入れ替えること。
+ * us-east-1）。2026-08のeu-south-2移設に伴い、単価定数はeu-south-2の値へ入れ替えた
+ * （AWS Price List APIおよびSpot価格履歴で2026-08-03に再確認）。リージョンを
+ * 再度移す場合はここの定数も入れ替えること。
  */
 
 /** 単価の対象リージョン。表示に添えて「どこの単価か」を明示するために持つ。 */
-export const COST_PRICING_REGION = "us-east-1";
+export const COST_PRICING_REGION = "eu-south-2";
 
 /** 単価表の調査時点（`docs/aws-region-cost-analysis.md`）。 */
-export const COST_PRICING_AS_OF = "2026-07-27";
+export const COST_PRICING_AS_OF = "2026-08-03";
 
 /**
  * ストレージ課金の1GBのバイト数。AWSのストレージ系（S3・EBS）の "GB" は
@@ -34,11 +36,11 @@ export const BYTES_PER_GB = 1024 ** 3;
  */
 export const HOURS_PER_MONTH = 730;
 
-/** S3 Standard のストレージ単価（USD/GB-月、us-east-1、〜50TB帯）。 */
+/** S3 Standard のストレージ単価（USD/GB-月、eu-south-2、〜450TB帯）。us-east-1と同額。 */
 export const S3_STANDARD_USD_PER_GB_MONTH = 0.023;
 
-/** EBS gp3 のストレージ単価（USD/GB-月、us-east-1）。 */
-export const EBS_GP3_USD_PER_GB_MONTH = 0.08;
+/** EBS gp3 のストレージ単価（USD/GB-月、eu-south-2）。us-east-1の0.08より僅かに高い。 */
+export const EBS_GP3_USD_PER_GB_MONTH = 0.088;
 
 /**
  * ワーカーのルートEBSボリュームサイズ（GiB）。ECS最適化AL2023 AMIの既定値で、
@@ -76,16 +78,23 @@ export const CLOUDFRONT_USD_PER_GB = 0.085;
 /**
  * `spotPricePerHour` が記録されていないジョブ（このフィールドの追加より前に
  * 実行された旧ジョブ、または`DescribeSpotPriceHistory`が失敗したジョブ）に使う
- * フォールバック単価（USD/時、us-east-1）。`docs/aws-region-cost-analysis.md` §2 の
- * 30日時間重み付き平均（安価3タイプの平均）。
+ * フォールバック単価（USD/時、eu-south-2）。
  *
  * インスタンスタイプ個別ではなくサイズ帯（`.xlarge` / `.2xlarge`）で持つ:
  * 候補タイプは`price-capacity-optimized`で選ばれるためどれが確保されるか事前に
  * 決まらず、同帯なら価格差も小さいので、帯の代表値で十分という判断。
+ *
+ * 暫定値: 2026-08-03時点の直近3日間のSpot価格履歴の単純平均から算出（`c7i`/`c7a`/
+ * `c7i-flex`の3タイプ平均）。この後`apps/api/src/ec2.ts`の候補に追加した`m7i`系も、
+ * touhou-recorder reports/43の実測（$0.043〜0.104/時間の範囲）を見る限り同じ帯に
+ * 収まっており、この定数を大きく動かす必要はないと判断した。ただしus-east-1時代
+ * （`docs/aws-region-cost-analysis.md` §2）と同様の30日間・時間重み付き平均（TWA）
+ * での再計測がまだのため、実際の値とは数%ずれうる。次にこの定数を見直す際は
+ * TWAで再計測すること。
  */
 export const FALLBACK_SPOT_PRICE_USD_PER_HOUR = {
-  xlarge: 0.0601,
-  "2xlarge": 0.1323,
+  xlarge: 0.045,
+  "2xlarge": 0.092,
 } as const;
 
 /**

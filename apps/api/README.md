@@ -57,16 +57,17 @@ API契約自体は `packages/shared/README.md` を参照。
 （`SingleInstanceType: false`）で配置する。
 
 - **th06/07/08向け**（`DEFAULT_CANDIDATE_INSTANCE_TYPES`）: `c7i.xlarge` /
-  `c7a.xlarge` / `c6a.xlarge` / `c6i.xlarge` / `c7i-flex.xlarge` / `c5a.xlarge`。
-  touhou-recorder `reports/27` で th08 の重複フレーム率を実測検証（いずれも
-  1〜4%台の良好な値）した上で選定した6タイプ。
-- **th11専用**（`TH11_CANDIDATE_INSTANCE_TYPES`）: `c6i.2xlarge` / `c6a.2xlarge` /
-  `c7i.2xlarge` / `c7a.2xlarge`。th11は`.xlarge`帯(4vCPU)だとステージ後半で
-  深刻な処理落ち（コマ落ちではなくゲームプレイ自体の実時間伸長）が本番で発生し、
-  touhou-recorder `reports/40` の実機検証で原因はvCPU数不足と判明。8vCPU/16GiB以上
-  (`.2xlarge`帯)にすると重複フレーム率が明確に改善する。コスト影響は`.xlarge`比で
-  概ね2倍。`c6a.2xlarge`/`c7a.2xlarge`は`reports/40`では未検証（検証済みは
-  `c6i.2xlarge`/`c7i.2xlarge`のみ）で、本番運用の中で注視が必要。
+  `c7a.xlarge` / `c7i-flex.xlarge` / `m7i.xlarge`。2026-08のeu-south-2移設に伴い、
+  旧us-east-1で使っていた`c6a`/`c6i`/`c5a`系（eu-south-2に存在しない）を削除した。
+  4タイプすべてeu-south-2実機で検証済み（touhou-recorder `reports/42`・`43`、
+  重複フレーム率0.1〜5.0%）。`m7i.xlarge`はこの移設で新たに追加した候補。
+- **th11専用**（`TH11_CANDIDATE_INSTANCE_TYPES`）: `c7i.2xlarge` / `c7a.2xlarge` /
+  `m7i.2xlarge`。th11は`.xlarge`帯(4vCPU)だとステージ後半で深刻な処理落ち
+  （コマ落ちではなくゲームプレイ自体の実時間伸長）が本番で発生し、
+  touhou-recorder `reports/40` の実機検証で原因はvCPU数不足と判明。
+  8vCPU/16GiB以上(`.2xlarge`帯)にすると重複フレーム率が明確に改善する。
+  コスト影響は`.xlarge`比で概ね2倍。3タイプすべてeu-south-2実機で検証済み
+  （`reports/42`・`43`、重複フレーム率0.4〜4.5%、いずれも想定尺どおりの自然終了）。
 
 **インスタンスタイプの変更は録画品質（重複フレーム率）に直結するリスクがあり、
 「同スペック帯・同価格帯だから安全」とは限らない**（`z1d.xlarge`は高クロック特化

@@ -79,7 +79,7 @@ export function loadConfig(): ApiConfig {
     webBaseUrl: required("WEB_BASE_URL"),
     ec2: {
       subnetIds: required("WORKER_SUBNET_IDS").split(","),
-      region: process.env.AWS_REGION ?? "us-east-1",
+      region: process.env.AWS_REGION ?? "eu-south-2",
       launchTemplateId: required("WORKER_LAUNCH_TEMPLATE_ID"),
     },
   };

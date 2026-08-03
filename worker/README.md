@@ -560,6 +560,23 @@ python3 -c "from upscale import upscale_to_720p; upscale_to_720p('/tmp/out.mp4',
 docker build -t sattori-worker:latest worker/
 ```
 
+## ECRへのpush
+
+本番のECRリポジトリ名は`sattori-worker`（`infra/lib/sattori-stack.ts`が作成、
+本体スタックと同じくeu-south-2）。`docker build`とは別に、タグ付け・ログイン・
+pushが必要:
+
+```bash
+docker build -t <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest worker/
+aws ecr get-login-password --region eu-south-2 \
+  | docker login --username AWS --password-stdin <account>.dkr.ecr.eu-south-2.amazonaws.com
+docker push <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest
+```
+
+`worker/assets/`（ウォーターマーク・終了検知テンプレート）は`.gitignore`対象のため、
+クリーンなチェックアウトからは`docker build`前にビルドコンテキストへ配置しておく
+こと（上記「リポジトリに含まれない資産」参照）。
+
 ## 制約と今後
 
 - 対応タイトルは th06・th07・th08・th11。他タイトルはリプレイパーサー側は
