@@ -1,6 +1,6 @@
 {
   "name": "@sattori/touhou-replay-parser",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Decoder for Touhou Project replay files (.rpy), covering th06 through th20. Zero runtime dependencies.",
   "keywords": ["touhou", "replay", "rpy", "parser", "decoder"],
   "license": "MIT",
