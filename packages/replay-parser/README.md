@@ -222,6 +222,9 @@ files:
 - [hoangcaominh/thrpy-parser](https://github.com/hoangcaominh/thrpy-parser)
   (Python) — listed here as prior art; its code has not been consulted or
   referenced during the development of this package.
+- [n-rook/thscoreboard](https://github.com/n-rook/thscoreboard)
+  (Python) — web application containing replay parsing implementations in its
+  `project/thscoreboard/replays` directory.
 
 ## License
 
