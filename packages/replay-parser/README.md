@@ -71,7 +71,7 @@ they are distinguished by a version byte in the header.
 | `th165` | 秘封ナイトメアダイアリー (VD) | **Unverified** (ported from threplay only; no test data obtained yet) |
 | `th17` | 東方鬼形獣 (WBaWC) | Verified with Silent Selene samples |
 | `th18` | 東方虹龍洞 (UM) | Same as above |
-| `th20` | 東方錦上京 (FW) | Player name/date/character/difficulty/stage/score verified with `test-fixtures/` + screenshots.<br>**Per-stage breakdown (splits) is not supported** (see below) |
+| `th20` | 東方錦上京 (FW) | Player name/date/difficulty/stage/score verified with `test-fixtures/` + screenshots; `character` verified against 16/16 distinct shot values from Silent Selene samples (see below).<br>**Per-stage breakdown (splits) is not supported** (see below) |
 
 th19 (東方獣王園, UDoALG) is excluded because the game itself has no
 replay-saving feature.
@@ -79,13 +79,28 @@ replay-saving feature.
 ### Notes on th20 (東方錦上京, FW)
 
 threplay only supports up to th18; th20 is implemented based on this
-package's own investigation. The USER section (player name, date, character,
-difficulty, stage, score) has been confirmed to use the same layout as
-th10-th18, but the "per-stage breakdown via header XOR decoding + LZSS
-decompression" present in th10-th18 appears, on the samples at hand, to
-always decompress to a constant size regardless of progress — suggesting the
-format has likely changed. Since this has not been analyzed, `splits` always
-returns an empty array.
+package's own investigation. The USER section (player name, date, difficulty,
+stage, score) has been confirmed to use the same layout as th10-th18.
+
+`character`, however, is deliberately **not** read from that USER section's
+"Chara" field, unlike every other title sharing `readModernUserdata` — real
+replays were found where that field contains outright garbage (e.g. `"test"`,
+or a difficulty/stage word like `"Hard"`, apparently belonging to a different
+field), while the surrounding fields were consistently fine. Instead,
+`character` is derived from the numeric `shot`/`stones` fields in the
+decompressed per-stage-header body, the same approach
+[n-rook/thscoreboard](https://github.com/n-rook/thscoreboard)'s own th20
+parser uses (see "Related work" below) — this requires th20's own header size
+before that decompression (48 bytes, wider than th10-th18's shared 36-byte
+layout, matching thscoreboard's own separate th20 kaitai header definition).
+An earlier version of this file used the wrong (36-byte) header size, which
+made the length/decompressed-size fields read from the wrong offset and
+consistently produced a garbage, constant-size decompression output — at the
+time misdiagnosed as "th20 moved the per-stage breakdown data elsewhere"
+rather than corrupt input from a wrong header size. `splits` still returns an
+empty array, since thscoreboard's own th20 kaitai struct only defines this
+header, not a per-stage layout — meaning that part hasn't been
+reverse-engineered upstream either.
 
 ## Output data
 
@@ -100,6 +115,27 @@ interpret) are not part of `ReplayInfo`.
 Conversion to `ReplayInfo` for Sattori itself is handled by `fromParsedReplay()`
 in `packages/shared` (this package deliberately does not include that
 conversion logic, so as to avoid depending on Sattori-specific types).
+
+### `characterNameJa` / `characterNameEn`
+
+`character` is otherwise used verbatim as it appears in the source data (a raw
+shot-id string like `"ReimuA"` for most titles, or, for th08, a Japanese
+display-name string read directly from the file). `characterNameJa` /
+`characterNameEn` provide a localized display name for `character` (e.g.
+`"ReimuA"` → `characterNameJa: "霊符"` / `characterNameEn: "Reimu A"` for th06),
+looked up via `localizeCharacterName()` (`src/character-names.ts`). Both are
+`null` when `character` is `null` or doesn't match any known raw form for that
+game.
+
+The lookup tables are sourced from
+[n-rook/thscoreboard](https://github.com/n-rook/thscoreboard) (the software
+behind [Silent Selene](https://www.silentselene.net/), see "Related work"
+below) — specifically `GetShotName`/`GetCharacterName` in
+`replays/game_ids.py` and its `ja`/`en_US` gettext catalogs — cross-checked
+against real replays fetched from Silent Selene's API rather than taken on
+faith (see `character-names.ts` for details, including th08's Japanese raw
+strings and th17's inconsistent internal spacing, both confirmed genuine this
+way rather than assumed).
 
 `splits[].lives` / `splits[].bombs` are not strings but a structured
 `ReplayResourceCount` type (`{ count, pieces, maxPieces }`). For games with a

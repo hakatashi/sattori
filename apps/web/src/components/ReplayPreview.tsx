@@ -34,6 +34,16 @@ function formatCleared(cleared: boolean | null, t: TFunction): string {
 }
 
 /**
+ * 表示言語に応じたローカライズ済みキャラ名（`characterNameJa`/`characterNameEn`、
+ * `@sattori/touhou-replay-parser` の `localizeCharacterName` 由来）を優先し、
+ * 未知の形式などで取得できない場合は生の `character` にフォールバックする。
+ */
+function displayCharacter(info: ReplayInfo, language: string): string | null {
+  const localized = language === "en" ? info.characterNameEn : info.characterNameJa;
+  return localized ?? info.character;
+}
+
+/**
  * ページAの解析プレビュー（Issue #8）。STEP1のファイル選択と同時にSTEP2として常に表示し、
  * 状態に応じてプレースホルダー／読み込み中スピナー／解析結果を切り替える。
  */
@@ -69,7 +79,7 @@ export function ReplayPreview(props: Props) {
       </div>
       <div className={styles.basicInfo}>
         <div className={styles.character}>
-          {info.character ?? t("replayPreview.unknown")}
+          {displayCharacter(info, i18n.language) ?? t("replayPreview.unknown")}
         </div>
         <div className={styles.score}>
           {formatScore(info.score, t, i18n.language)}

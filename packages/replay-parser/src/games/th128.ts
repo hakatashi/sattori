@@ -68,6 +68,8 @@ export function parseTh128(original: Uint8Array): ParsedReplay {
     player: normalizeText(name),
     date: normalizeText(date),
     character: null,
+    characterNameJa: null,
+    characterNameEn: null,
     difficulty: normalizeText(difficulty),
     stage: normalizeText(stage),
     score,

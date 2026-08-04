@@ -1,4 +1,5 @@
 import { ByteReader } from "../byte-reader.js";
+import { localizeCharacterName } from "../character-names.js";
 import { ReplayCorruptError } from "../errors.js";
 import { additiveKeyDecode, decompress, readBufferedUint32LE } from "../lzss.js";
 import { jumpToUser, parseIntStrict } from "../userdata.js";
@@ -86,6 +87,9 @@ export function parseTh08(original: Uint8Array): ParsedReplay {
   // The USER section's stage field explicitly contains "Clear" — this is more
   // reliable than the final score_offsets slot (which indicates reaching the
   // true final battle) because it covers all routes and endings.
+  const characterName = normalizeText(character);
+  const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName("th08", characterName);
+
   const cleared = stage.includes("Clear");
   const checkpoints: { offset: number; stage: number; route: string | null }[] = [];
   if (maxStage === SCORE_OFFSET_COUNT - 1) {
@@ -112,7 +116,9 @@ export function parseTh08(original: Uint8Array): ParsedReplay {
     formatVersion: null,
     player: normalizeText(name),
     date: normalizeText(date),
-    character: normalizeText(character),
+    character: characterName,
+    characterNameJa,
+    characterNameEn,
     difficulty: normalizeText(difficulty),
     stage: normalizeText(stage),
     score,

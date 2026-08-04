@@ -80,6 +80,16 @@ export interface ParsedReplay {
   /** Recording date/time, kept verbatim as it appears in the source data (e.g. "25/12/31"). */
   date: string | null;
   character: string | null;
+  /**
+   * Japanese display name for `character` (e.g. `character: "ReimuA"` →
+   * `characterNameJa: "霊符"` for th06), looked up via `localizeCharacterName`
+   * in `character-names.ts`. `null` when `character` is `null` or doesn't
+   * match any known raw form for that game (see that file for sourcing and
+   * per-game caveats).
+   */
+  characterNameJa: string | null;
+  /** English display name for `character`, same lookup/caveats as `characterNameJa`. */
+  characterNameEn: string | null;
   difficulty: string | null;
   /** The reached/recorded stage or scene notation (e.g. "Stage 6", "Extra"). */
   stage: string | null;

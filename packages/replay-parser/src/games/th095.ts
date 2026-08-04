@@ -31,6 +31,8 @@ export function parseTh095(original: Uint8Array): ParsedReplay {
     player: normalizeText(name),
     date: normalizeText(date),
     character: null,
+    characterNameJa: null,
+    characterNameEn: null,
     difficulty: null,
     stage: normalizeText(`${stagePart1} ${stagePart2}`),
     score,

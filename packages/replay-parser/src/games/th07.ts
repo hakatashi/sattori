@@ -1,4 +1,5 @@
 import { decodeAnsiText } from "../byte-reader.js";
+import { localizeCharacterName } from "../character-names.js";
 import { ReplayCorruptError } from "../errors.js";
 import { additiveKeyDecode, decompress, readBufferedUint32LE } from "../lzss.js";
 import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
@@ -88,6 +89,7 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
 
   const character = CHARACTERS[decodeData[2]!] ?? null;
   const difficulty = DIFFICULTIES[decodeData[3]!] ?? null;
+  const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName("th07", character);
   const date = decodeAnsiText(decodeData.subarray(4, 9));
   const name = decodeAnsiText(decodeData.subarray(10, 18));
   const score = readBufferedUint32LE(decodeData, 24) * 10;
@@ -139,6 +141,8 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
     player: normalizeText(name),
     date: normalizeText(date),
     character,
+    characterNameJa,
+    characterNameEn,
     difficulty,
     stage: null,
     score,

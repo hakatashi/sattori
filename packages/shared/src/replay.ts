@@ -15,6 +15,16 @@ export interface ReplayInfo {
   date: string | null;
   /** 使用キャラ／機体（例: "霊夢A"）。判定できなければ null。 */
   character: string | null;
+  /**
+   * `character` の日本語ローカライズ名（例: th06の"ReimuA" → "霊符"）。
+   * `@sattori/touhou-replay-parser` 側の `localizeCharacterName`
+   * （thscoreboardのロケールデータを基に構築、詳細は同パッケージの
+   * `character-names.ts` 参照）による変換で、`character` が未知の形式
+   * （未知のMOD/パッチ由来の値など）の場合は null。
+   */
+  characterNameJa: string | null;
+  /** `character` の英語ローカライズ名。同上の理由で null になる場合がある。 */
+  characterNameEn: string | null;
   /** 難易度（例: "Hard", "Lunatic"）。 */
   difficulty: string | null;
   /** 到達／記録ステージ（例: "Stage 6", "All"）。 */
@@ -44,6 +54,8 @@ export function fromParsedReplay(parsed: ParsedReplay): ReplayInfo {
     player: parsed.player ?? "",
     date: parsed.date,
     character: parsed.character,
+    characterNameJa: parsed.characterNameJa,
+    characterNameEn: parsed.characterNameEn,
     difficulty: parsed.difficulty,
     stage: parsed.stage,
     score: parsed.score,

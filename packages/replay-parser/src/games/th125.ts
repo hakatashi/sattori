@@ -1,4 +1,5 @@
 import { ByteReader } from "../byte-reader.js";
+import { localizeCharacterName } from "../character-names.js";
 import { jumpToUser, parseIntStrict } from "../userdata.js";
 import { normalizeText, type ParsedReplay } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
@@ -23,6 +24,8 @@ export function parseTh125(original: Uint8Array): ParsedReplay {
   const stage = reader.readAnsiString();
   reader.skip(6);
   const score = parseIntStrict(reader.readAnsiString());
+  const characterName = normalizeText(character);
+  const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName("th125", characterName);
 
   return {
     game: "th125",
@@ -30,7 +33,9 @@ export function parseTh125(original: Uint8Array): ParsedReplay {
     formatVersion: null,
     player: normalizeText(name),
     date: normalizeText(date),
-    character: normalizeText(character),
+    character: characterName,
+    characterNameJa,
+    characterNameEn,
     difficulty: null,
     stage: normalizeText(stage),
     score,

@@ -31,6 +31,8 @@ export function parseTh143Family(original: Uint8Array, game: "th143" | "th165"):
     player: normalizeText(name),
     date: normalizeText(date),
     character: null,
+    characterNameJa: null,
+    characterNameEn: null,
     difficulty: null,
     stage: normalizeText(`${stagePart1} ${stagePart2}`),
     score,

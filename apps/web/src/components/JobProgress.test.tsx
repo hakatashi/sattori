@@ -18,6 +18,8 @@ const REPLAY_INFO: ReplayInfo = {
   player: "koyi",
   date: "01/18",
   character: "霊夢A",
+  characterNameJa: null,
+  characterNameEn: null,
   difficulty: "Lunatic",
   stage: null,
   score: 442469780,

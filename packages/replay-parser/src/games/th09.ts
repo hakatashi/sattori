@@ -1,4 +1,5 @@
 import { ByteReader } from "../byte-reader.js";
+import { localizeCharacterName } from "../character-names.js";
 import { ReplayCorruptError } from "../errors.js";
 import { additiveKeyDecode, decompress, readBufferedUint32LE } from "../lzss.js";
 import { jumpToUser } from "../userdata.js";
@@ -98,6 +99,8 @@ export function parseTh09(original: Uint8Array): ParsedReplay {
     splits.push(split);
   }
 
+  const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName("th09", character);
+
   return {
     game: "th09",
     gameTitle: REPLAY_GAME_TITLES.th09,
@@ -105,6 +108,8 @@ export function parseTh09(original: Uint8Array): ParsedReplay {
     player: normalizeText(name),
     date: normalizeText(date),
     character,
+    characterNameJa,
+    characterNameEn,
     difficulty: normalizeText(difficulty),
     stage: normalizeText(stage),
     score: null,
