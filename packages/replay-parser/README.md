@@ -116,6 +116,74 @@ Conversion to `ReplayInfo` for Sattori itself is handled by `fromParsedReplay()`
 in `packages/shared` (this package deliberately does not include that
 conversion logic, so as to avoid depending on Sattori-specific types).
 
+### Field reference
+
+#### `ReplayParseResult`
+
+The discriminated union returned by `parseReplay(data)`:
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `ok` | `boolean` | `true` if parsing succeeded; `false` if an error occurred. |
+| `replay` | [`ParsedReplay`](#parsedreplay) | Present when `ok === true`. Parsed replay metadata. |
+| `error` | [`ReplayParseError`](#replayparseerror) | Present when `ok === false`. Error details. |
+
+#### `ParsedReplay`
+
+The decoded replay metadata object (`result.replay`):
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `game` | `ReplayGameId` | Short game identifier (e.g. `"th06"`, `"th07"`, `"th10"`, `"th20"`). |
+| `gameTitle` | `string` | Full official title with subtitle (e.g. `"東方紅魔郷 ～ the Embodiment of Scarlet Devil."`). |
+| `formatVersion` | `number \| null` | Raw version/format byte from the header. Meaning varies by game (e.g. `5` for th07, `144` for th13; `null` for th06/th08). |
+| `player` | `string \| null` | Player name string (decoded from Shift_JIS with trailing padding trimmed). |
+| `date` | `string \| null` | Date/time string as recorded in the file (format varies by game, e.g. `"05/26/11"`, `"2026/01/24 16:18:16"`, `"25/11/09 17:41"`). |
+| `character` | `string \| null` | Raw shot type or character string (e.g. `"ReimuA"`, `"ReimuRed"`, Japanese string `"博麗　霊夢"` for th08; `null` for th143/th165). |
+| `characterNameJa` | `string \| null` | Japanese display name for `character` (e.g. `"霊符"`, `"霊夢"`, `"霊夢A"`, `"霊夢 赤1"`). See below. |
+| `characterNameEn` | `string \| null` | English display name for `character` (e.g. `"Reimu A"`, `"Reimu"`, `"Reimu A (Yukari)"`, `"Reimu Red"`). See below. |
+| `difficulty` | `string \| null` | Difficulty string (e.g. `"Easy"`, `"Normal"`, `"Hard"`, `"Lunatic"`, `"Extra"`; `null` for scene-based titles like th125/th143). |
+| `stage` | `string \| null` | Highest reached stage or scene string (e.g. `"Stage 6"`, `"Stage All Clear"`, `"2-4"`, `"Day 8 Scene 3"`; `null` for th06/th07). |
+| `score` | `number \| null` | Final total score. |
+| `cleared` | `boolean \| null` | `true` if cleared (Player Wins), `false` if failed/game over, `null` if determinable clear status is unavailable (e.g. th06). |
+| `splits` | [`ReplayStageSplit[]`](#replaystagesplit) | Per-stage/segment records (empty array if unavailable or unsupported). |
+| `frameCount` | `number \| null` | Total in-game playback frames. Divide by 60 for duration in seconds. See below. |
+
+#### `ReplayStageSplit`
+
+Per-stage breakdown records in `ParsedReplay.splits`:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `stage` | `number \| null` | Stage number (1-based index). Snapshot taken at the start of the stage. |
+| `score` | `number \| null` | Accumulated score at the start of this stage/segment. |
+| `power` | `string \| null` | Power value as string (format varies by game, e.g. `"0"`, `"128"`, `"1.00"`, `"4.00"`). |
+| `piv` | `number \| null` | Point of Item Value (PIV) or game-specific score metric (`null` for th06). |
+| `lives` | [`ReplayResourceCount`](#replayresourcecount) \| `null` | Lives count and fragment info. |
+| `bombs` | [`ReplayResourceCount`](#replayresourcecount) \| `null` | Bombs count and fragment info (`null` for th11, where bombs are tied to power). |
+| `graze` | `number \| null` | Graze count (`null` for th06). |
+| `additional` | `Record<string, number \| string \| (number \| string)[]> \| null` | Game-specific extra metrics (e.g. `{ rank: 16 }` for th06, `{ pointItems: 24, cherryMax: 250180 }` for th07, `{ trance: 200, tranceMax: 600 }` for th13). |
+| `frameCount` | `number \| null` | Number of in-game frames played during this stage/segment. |
+
+#### `ReplayResourceCount`
+
+Structured unit count for lives and bombs:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `count` | `number` | Whole unit count (or percentage gauge for th128). |
+| `pieces` | `number \| null` | Fragments collected toward the next unit (`null` if no fragment system or untracked). |
+| `maxPieces` | `number \| null` | Required fragments per 1 unit denominator (e.g. `5` for th11 lives, `8` for th13 bombs, `100` for th128; `null` if no fragment system). |
+
+#### `ReplayParseError`
+
+Error object returned when parsing fails (`result.error`):
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `code` | `ReplayParseErrorCode` | Error classification (`"too_short"`, `"unknown_magic"`, or `"corrupt"`). |
+| `message` | `string` | Human-readable explanation of why parsing failed. |
+
 ### `characterNameJa` / `characterNameEn`
 
 `character` is otherwise used verbatim as it appears in the source data (a raw
