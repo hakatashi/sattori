@@ -54,3 +54,4 @@ logs/
 
 .claude/settings.local.json
 CLAUDE.local.md
+.agents/
