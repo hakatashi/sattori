@@ -6,6 +6,8 @@ const SAMPLE_REPLAY_INFO: ReplayInfo = {
   player: "博麗霊夢",
   date: "2026/07/23 12:34:56",
   character: "霊夢A",
+  characterNameJa: null,
+  characterNameEn: null,
   difficulty: "Hard",
   stage: "Stage 6",
   score: 123456780,

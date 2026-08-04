@@ -1,4 +1,5 @@
 import { ByteReader } from "../byte-reader.js";
+import { localizeCharacterName } from "../character-names.js";
 import { readBufferedUint32LE } from "../lzss.js";
 import { jumpToUser, parseScoreWithTrailingZero } from "../userdata.js";
 import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
@@ -101,13 +102,17 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
   }
 
   const game = isTd ? "th13" : "th14";
+  const characterName = normalizeText(character);
+  const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName(game, characterName);
   return {
     game,
     gameTitle: REPLAY_GAME_TITLES[game],
     formatVersion: versionByte,
     player: normalizeText(name),
     date: normalizeText(date),
-    character: normalizeText(character),
+    character: characterName,
+    characterNameJa,
+    characterNameEn,
     difficulty: normalizeText(difficulty),
     stage: normalizeText(stage),
     score,
