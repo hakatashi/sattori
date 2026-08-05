@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import type { ReplayInfo } from "@sattori/shared";
 import { UploadForm } from "./UploadForm.tsx";
 import * as client from "../api/client.ts";
@@ -43,6 +44,14 @@ const SAMPLE_REPLAY_INFO: ReplayInfo = {
   estimatedDurationSeconds: 847,
 };
 
+function renderUploadForm(onMagicLinkSent: (email: string) => void) {
+  return render(
+    <MemoryRouter>
+      <UploadForm onMagicLinkSent={onMagicLinkSent} />
+    </MemoryRouter>,
+  );
+}
+
 function selectFile(name: string, size = 5) {
   const input = document.querySelector('input[type="file"]') as HTMLInputElement;
   const file = new File([new Uint8Array(size)], name, { type: "application/octet-stream" });
@@ -71,18 +80,18 @@ describe("UploadForm", () => {
   });
 
   it("ファイル未選択では次のステップボタンが無効", () => {
-    render(<UploadForm onMagicLinkSent={vi.fn()} />);
+    renderUploadForm(vi.fn());
     expect(nextStepButton().disabled).toBe(true);
   });
 
   it("ファイル未選択でもSTEP2のプレースホルダーが表示される", () => {
-    render(<UploadForm onMagicLinkSent={vi.fn()} />);
+    renderUploadForm(vi.fn());
     expect(screen.getByText("内容を確認")).toBeTruthy();
     expect(screen.getByText("リプレイファイルを選択すると、ここに内容が表示されます")).toBeTruthy();
   });
 
   it("ファイル選択欄にファイル名とサイズが表示される", () => {
-    render(<UploadForm onMagicLinkSent={vi.fn()} />);
+    renderUploadForm(vi.fn());
     selectFile("th7_02.rpy", 83866);
     expect(screen.getByText("th7_02.rpy (81.90KB)")).toBeTruthy();
   });
@@ -92,7 +101,7 @@ describe("UploadForm", () => {
     mockedClient.uploadReplay.mockResolvedValue(undefined);
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
 
-    render(<UploadForm onMagicLinkSent={vi.fn()} />);
+    renderUploadForm(vi.fn());
     selectFile("th7_07.rpy");
 
     // setPhase("processing") はブラウザ内解析・アップロードの最初のawaitより前に同期的に走るため、
@@ -111,7 +120,7 @@ describe("UploadForm", () => {
     mockedClient.uploadReplay.mockResolvedValue(undefined);
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
 
-    render(<UploadForm onMagicLinkSent={vi.fn()} />);
+    renderUploadForm(vi.fn());
     selectFile("th7_07.rpy");
 
     // ブラウザ内解析（アップロードとは独立）が先に終わり、プレビューが表示される
@@ -127,7 +136,7 @@ describe("UploadForm", () => {
   });
 
   it(".rpy 以外を選ぶとエラー表示され、アップロードは行われない", () => {
-    render(<UploadForm onMagicLinkSent={vi.fn()} />);
+    renderUploadForm(vi.fn());
     selectFile("bad.txt");
     expect(screen.getByText("リプレイファイル (.rpy) を選択してください")).toBeTruthy();
     expect(mockedClient.createUpload).not.toHaveBeenCalled();
@@ -139,7 +148,7 @@ describe("UploadForm", () => {
     mockedClient.uploadReplay.mockResolvedValue(undefined);
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
 
-    render(<UploadForm onMagicLinkSent={vi.fn()} />);
+    renderUploadForm(vi.fn());
     selectFile("th7_07.rpy");
 
     await waitFor(() => expect(mockedShared.parseReplayInfo).toHaveBeenCalledWith(expect.any(Uint8Array)));
@@ -160,7 +169,7 @@ describe("UploadForm", () => {
     mockedClient.uploadReplay.mockResolvedValue(undefined);
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
 
-    render(<UploadForm onMagicLinkSent={vi.fn()} />);
+    renderUploadForm(vi.fn());
     selectFile("th7_07.rpy");
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
     await waitFor(() => expect(mockedClient.uploadReplay).toHaveBeenCalled());
@@ -183,7 +192,7 @@ describe("UploadForm", () => {
       },
     });
 
-    render(<UploadForm onMagicLinkSent={vi.fn()} />);
+    renderUploadForm(vi.fn());
     selectFile("th12.rpy");
 
     await waitFor(() =>
@@ -203,7 +212,7 @@ describe("UploadForm", () => {
     mockedClient.requestMagicLink.mockResolvedValue({});
     const onMagicLinkSent = vi.fn();
 
-    render(<UploadForm onMagicLinkSent={onMagicLinkSent} />);
+    renderUploadForm(onMagicLinkSent);
     selectFile("th7_07.rpy");
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
     await waitFor(() => expect(mockedClient.uploadReplay).toHaveBeenCalled());

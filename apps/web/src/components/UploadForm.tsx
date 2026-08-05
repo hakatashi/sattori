@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import {
   DEFAULT_RECORDING_OPTIONS,
   EMAIL_PATTERN,
@@ -8,6 +9,7 @@ import {
 } from "@sattori/shared";
 import { createUpload, requestMagicLink, SattoriApiError, uploadReplay } from "../api/client.ts";
 import { useLocale } from "../i18n/LocaleContext.ts";
+import { toLocalizedPath } from "../i18n/paths.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
@@ -421,6 +423,12 @@ export function UploadForm({ onMagicLinkSent }: Props) {
       >
         {phase === "starting" ? t("uploadForm.submitStarting") : t("uploadForm.submit")}
       </button>
+      <small className={styles.termsAgreement}>
+        <Trans
+          i18nKey="uploadForm.termsAgreement"
+          components={[<Link key="terms" to={toLocalizedPath("/terms", locale)} />]}
+        />
+      </small>
     </section>
   );
 }
