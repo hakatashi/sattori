@@ -25,12 +25,22 @@
 
 ## ページAのフロー（`components/UploadForm.tsx`）
 
-1. ファイル選択で即座に自動実行: `createUpload()`で署名付きURL取得 →
-   `uploadReplay()`でS3へ直接PUT → `parseReplay()`で解析。
+1. ファイル選択で即座に自動実行: 解析（`@sattori/shared`の`parseReplayInfo()`、実体は
+   `@sattori/touhou-replay-parser`）とアップロード（`createUpload()`で署名付きURL取得→
+   `uploadReplay()`でS3へ直接PUT）を`Promise.all`で並行実行する。`@sattori/touhou-replay-parser`
+   はゼロ依存でブラウザでもそのまま動作するため（`packages/replay-parser/README.md`
+   参照）、バックエンドの`POST /replays/parse`（S3からの再取得を挟む分のラグが乗る）を
+   経由せずブラウザ内で完結させ、アップロード完了を待たずにプレビューを表示できる
+   （`POST /replays/parse`自体は同じ解析ロジックのAPIとして残っているが、このフローからは
+   呼ばれない）。解析はファイル選択後すぐに終わる一方、アップロードは回線速度に依存する
+   ため、解析だけ先に終わってプレビューが表示され、アップロードは裏で続く状態になりうる
+   （STEP2の下に「アップロード中…」を表示）。
 2. 解析成功で`ReplayPreview`にゲーム名/キャラ/スコア/クリア可否等を表示。
    詳細設定でウォーターマークON/OFF（既定ON、`DEFAULT_RECORDING_OPTIONS`）。
-3. メール入力＋解析成功で「次のステップ」ボタンが活性化。押下で
-   `requestMagicLink()`（`POST /magic-links`）を呼び、`MagicLinkSent`画面へ遷移する。
+3. メール入力＋解析・アップロードとも成功で「次のステップ」ボタンが活性化
+   （`requestMagicLink()`に渡す`replayKey`はアップロード完了後にしか手に入らないため、
+   ボタンはアップロード完了も待つ）。押下で`requestMagicLink()`（`POST /magic-links`）を
+   呼び、`MagicLinkSent`画面へ遷移する。
 
 ## ページBのフロー（`pages/JobPage.tsx`）
 

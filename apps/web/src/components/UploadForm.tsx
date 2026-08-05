@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { DEFAULT_RECORDING_OPTIONS, EMAIL_PATTERN, type ReplayInfo } from "@sattori/shared";
 import {
-  createUpload,
-  parseReplay,
-  requestMagicLink,
-  SattoriApiError,
-  uploadReplay,
-} from "../api/client.ts";
+  DEFAULT_RECORDING_OPTIONS,
+  EMAIL_PATTERN,
+  parseReplayInfo,
+  type ReplayInfo,
+} from "@sattori/shared";
+import { createUpload, requestMagicLink, SattoriApiError, uploadReplay } from "../api/client.ts";
 import { useLocale } from "../i18n/LocaleContext.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./UploadForm.module.css";
@@ -19,11 +18,14 @@ interface Props {
 
 /**
  * idle: 未選択、または直前の選択がエラーで終わった状態。
- * uploading/parsing: ファイル選択直後に自動で走る署名URL取得→PUT→解析。
- * ready: 解析成功。プレビュー表示中で「次のステップ」が押せる。
+ * processing: ファイル選択直後に自動で走る、ブラウザ内解析（`@sattori/touhou-replay-parser`
+ *   を`@sattori/shared`経由で直接呼ぶ）とS3アップロード（署名URL取得→PUT）を並行実行中。
+ *   解析はアップロード完了を待たずに終わるため、`preview`はこのフェーズの途中で
+ *   先に埋まりうる（`renderPreview`参照）。
+ * ready: 解析・アップロードともに完了。プレビュー表示中で「次のステップ」が押せる。
  * starting: 「次のステップ」押下後、録画ジョブを起動中。
  */
-type Phase = "idle" | "uploading" | "parsing" | "ready" | "starting";
+type Phase = "idle" | "processing" | "ready" | "starting";
 
 const gameTitles = [
   {
@@ -165,6 +167,19 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / 1024).toFixed(2)}KB`;
 }
 
+/**
+ * `File.prototype.arrayBuffer()`ではなく`FileReader`を使う。テスト環境(jsdom)を含め、
+ * より幅広い環境で確実に動くのはこちらのため。
+ */
+function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 export function UploadForm({ onMagicLinkSent }: Props) {
   const { t, i18n } = useTranslation();
   const locale = useLocale();
@@ -222,25 +237,59 @@ export function UploadForm({ onMagicLinkSent }: Props) {
     selectFile(event.dataTransfer.files[0] ?? null);
   }
 
-  /** ファイル選択直後に自動でアップロード＆解析し、成功したらプレビューを表示する。 */
+  /**
+   * ファイル選択直後に自動で走る、ブラウザ内解析とS3アップロードの並行実行。
+   * `@sattori/touhou-replay-parser`はゼロ依存でブラウザでもそのまま動作するため、
+   * バックエンドの`POST /replays/parse`（S3からの再取得を挟む分のラグが乗る）を
+   * 待たずに、選択直後のファイルをその場で解析してプレビューへ反映する。
+   * アップロードはそれとは独立に進み、`replayKey`が要るのは次のステップ（マジック
+   * リンク送信要求）の時点なので、プレビュー表示はアップロード完了を待たない。
+   */
   async function uploadAndParse(selected: File) {
+    setPhase("processing");
+    setReplayKey(null);
+    setPreview(null);
+
+    const [parseOk, uploadOk] = await Promise.all([
+      parseLocally(selected),
+      uploadToServer(selected),
+    ]);
+
+    if (parseOk && uploadOk) {
+      setPhase("ready");
+    } else {
+      setFile(null);
+      setPhase("idle");
+    }
+  }
+
+  async function parseLocally(selected: File): Promise<boolean> {
     try {
-      setPhase("uploading");
+      const data = new Uint8Array(await readFileAsArrayBuffer(selected));
+      const result = parseReplayInfo(data);
+      if (!result.ok) {
+        setErrorMessage(result.error.message);
+        return false;
+      }
+      setPreview(result.info);
+      return true;
+    } catch {
+      setErrorMessage(t("uploadForm.unexpectedError"));
+      return false;
+    }
+  }
+
+  async function uploadToServer(selected: File): Promise<boolean> {
+    try {
       const upload = await createUpload({ filename: selected.name, size: selected.size });
       await uploadReplay(upload.uploadUrl, selected);
-
-      setPhase("parsing");
-      const info = await parseReplay(upload.replayKey);
-
       setReplayKey(upload.replayKey);
-      setPreview(info);
-      setPhase("ready");
+      return true;
     } catch (err) {
       const message =
         err instanceof SattoriApiError ? err.message : t("uploadForm.unexpectedError");
       setErrorMessage(message);
-      setFile(null);
-      setPhase("idle");
+      return false;
     }
   }
 
@@ -262,14 +311,11 @@ export function UploadForm({ onMagicLinkSent }: Props) {
   }
 
   function renderPreview() {
-    if (phase === "uploading") {
-      return <ReplayPreview status="loading" label={t("uploadForm.uploading")} />;
-    }
-    if (phase === "parsing") {
-      return <ReplayPreview status="loading" label={t("uploadForm.parsing")} />;
-    }
     if (preview) {
       return <ReplayPreview status="ready" info={preview} />;
+    }
+    if (phase === "processing") {
+      return <ReplayPreview status="loading" label={t("uploadForm.parsing")} />;
     }
     return <ReplayPreview status="empty" />;
   }
@@ -330,6 +376,9 @@ export function UploadForm({ onMagicLinkSent }: Props) {
         {t("uploadForm.step2Label")}
       </p>
       {renderPreview()}
+      {preview && phase === "processing" && (
+        <small className={styles.optionHint}>{t("uploadForm.uploading")}</small>
+      )}
 
       <p className={clsx(styles.stepLabel, styles.stepLabelSecondary)}>
         <span className={styles.stepNumber}>STEP 3</span>
