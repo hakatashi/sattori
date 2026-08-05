@@ -131,7 +131,14 @@ describe("JobDetailPage", () => {
   });
 
   it("doneAtが設定されたジョブはdoneAtフィールドとダウンロード期限を表示する", async () => {
-    const doneJob: JobRecord = { ...job, status: "done", doneAt: "2026-07-30T00:10:00.000Z" };
+    // doneAtは実行時刻からの相対値にする。固定日時にすると、テスト実行日が
+    // doneAt + OUTPUT_RETENTION_DAYS(7日)を過ぎた時点でexpired表示に化けてしまう
+    // （実際にこれでテストが壊れたことがある）。
+    const doneJob: JobRecord = {
+      ...job,
+      status: "done",
+      doneAt: new Date(Date.now() - 60_000).toISOString(),
+    };
     mocked.fetchAdminJobDetail.mockResolvedValue({ ...detailResponse, job: doneJob });
     renderJobDetailPage();
 
