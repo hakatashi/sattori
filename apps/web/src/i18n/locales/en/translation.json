@@ -40,13 +40,13 @@
     "heading": "Terms of Service",
     "updatedAt": "Established August 6, 2026",
     "intro": [
-      "These Terms of Service (the \"Terms\") set out the conditions for using Sattori (the \"Service\"), an automatic Touhou Project replay recording service operated by hakatashi as an individual. By using the Service, you are deemed to have agreed to these Terms."
+      "These Terms of Service (the \"Terms\") set out the conditions for using Sattori (the \"Service\"), an automatic Touhou Project replay recording service. By using the Service, you are deemed to have agreed to these Terms."
     ],
     "sections": [
       {
         "heading": "1. Description of the Service",
         "paragraphs": [
-          "The Service automatically records a video from a Touhou Project replay file (.rpy) uploaded by the user, free of charge. See the \"Supported title info\" page for details on supported titles and recording quality.",
+          "The Service automatically records a video based on a Touhou Project replay file (.rpy) uploaded by the user, and provides it as a video file.",
           "The Service is an unofficial, fan-made project unaffiliated with the Touhou Project's development circles — Team Shanghai Alice, Shanghai Alice Reprise, and Tasogare Frontier — their representative ZUN, or any other individuals or organizations holding related rights."
         ]
       },
