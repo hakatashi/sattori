@@ -12,7 +12,8 @@
     },
     "footerNav": {
       "about": "About",
-      "gameInfo": "Supported title info"
+      "gameInfo": "Supported title info",
+      "terms": "Terms of Service"
     }
   },
   "about": {
@@ -34,6 +35,58 @@
     "troubleText1": "Please send a DM on the Mastodon account above, or an email.",
     "noTroubleHeading": "If you don't run into any trouble",
     "noTroubleText": "Enjoy!"
+  },
+  "terms": {
+    "heading": "Terms of Service",
+    "updatedAt": "Established August 6, 2026",
+    "intro": [
+      "These Terms of Service (the \"Terms\") set out the conditions for using Sattori (the \"Service\"), an automatic Touhou Project replay recording service operated by hakatashi as an individual. By using the Service, you are deemed to have agreed to these Terms."
+    ],
+    "sections": [
+      {
+        "heading": "1. Description of the Service",
+        "paragraphs": [
+          "The Service automatically records a video from a Touhou Project replay file (.rpy) uploaded by the user, free of charge. See the \"Supported title info\" page for details on supported titles and recording quality.",
+          "The Service is an unofficial, fan-made project unaffiliated with the Touhou Project's development circles — Team Shanghai Alice, Shanghai Alice Reprise, and Tasogare Frontier — their representative ZUN, or any other individuals or organizations holding related rights."
+        ]
+      },
+      {
+        "heading": "2. Handling of Data",
+        "paragraphs": [
+          "Generated videos contain copyrighted material from the original Touhou Project games. If you re-upload a video to a video-sharing site or similar platform, you are responsible for complying with the Touhou Project's secondary-creation guidelines and the terms of service of each platform you use."
+        ]
+      },
+      {
+        "heading": "3. Disclaimer",
+        "paragraphs": [
+          "The operator does not warrant that the Service is free of factual or legal defects, including but not limited to recording failures, discrepancies between the recording and the original replay, data loss or delay, malfunctions, or security issues.",
+          "Except in cases of the operator's willful misconduct or gross negligence, the operator is not liable for any damage arising from the Service."
+        ]
+      },
+      {
+        "heading": "4. Intellectual Property",
+        "paragraphs": [
+          "Rights to a replay file you upload remain with you.",
+          "Rights to any Touhou Project-related copyrighted material contained in a generated video remain with the respective rights holders. The operator does not claim any rights beyond providing the recording and conversion service."
+        ]
+      },
+      {
+        "heading": "5. Changes to These Terms",
+        "paragraphs": [
+          "The operator may revise these Terms as necessary without individual notice to users. The revised Terms take effect once posted on this page."
+        ]
+      },
+      {
+        "heading": "6. Governing Law and Jurisdiction",
+        "paragraphs": [
+          "These Terms are governed by the laws of Japan. Any dispute arising in connection with the Service shall be subject to the exclusive jurisdiction of the court having jurisdiction over the operator's place of residence as the court of first instance."
+        ]
+      },
+      {
+        "heading": "7. Contact",
+        "paragraphs": ["For inquiries about these Terms, please use the contact information listed on the \"About\" page."]
+      }
+    ]
   },
   "gameInfo": {
     "heading": "Supported title info",
@@ -59,7 +112,8 @@
     "watermarkHintLine1": "For a few seconds before the replay itself starts, the \"TouhouSattori\" logo is shown in the bottom-right corner of the video.",
     "watermarkHintLine2": "It is not shown while the replay is playing.",
     "submitStarting": "Praying⋯",
-    "submit": "Next"
+    "submit": "Next",
+    "termsAgreement": "By continuing, you agree to the <0>Terms of Service</0>."
   },
   "replayPreview": {
     "ariaLabel": "Replay analysis result",
