@@ -3,7 +3,9 @@ import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client
 import {
   DeleteCommand,
   DynamoDBDocumentClient,
+  GetCommand,
   PutCommand,
+  ScanCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
@@ -21,6 +23,7 @@ const REQUIRED_ENV: Record<string, string> = {
   WORKER_SUBNET_IDS: "subnet-xxxx,subnet-yyyy",
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
+  SETTINGS_TABLE: "sattori-settings",
   SES_FROM_ADDRESS: "no-reply@sattori.hakatashi.com",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
 };
@@ -47,6 +50,10 @@ describe("POST /magic-links", () => {
     ddbMock.on(UpdateCommand).resolves({}); // レート制限カウンタの記録
     ddbMock.on(PutCommand).resolves({});
     ddbMock.on(DeleteCommand).resolves({});
+    // キルスイッチ設定(GetCommand)は既定で未作成(Item無し)=受付中として扱われる。
+    ddbMock.on(GetCommand).resolves({});
+    // 月間コストガードの当月コスト算出(adminCosts.tsの全件Scan)は既定でジョブ0件=$0。
+    ddbMock.on(ScanCommand).resolves({ Items: [] });
     sesMock.on(SendEmailCommand).resolves({});
   });
 
@@ -273,5 +280,67 @@ describe("POST /magic-links", () => {
     expect(deleteCalls[0]?.args[0].input.Key).toEqual({
       jobId: putCalls[0]?.args[0].input.Item?.jobId,
     });
+  });
+
+  it("キルスイッチが停止中(acceptingNewJobs:false)なら503を返し、メール送信もレート制限の消費もしない(Issue #14)", async () => {
+    ddbMock
+      .on(GetCommand)
+      .resolves({ Item: { settingKey: "global", acceptingNewJobs: false, monthlyCostLimitUsd: 50 } });
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: "replays/abc.rpy",
+        options: { watermark: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const result = res as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(503);
+    expect(parseBody(result)).toMatchObject({ code: "service_paused" });
+    expect(sesMock.commandCalls(SendEmailCommand)).toHaveLength(0);
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);
+  });
+
+  it("当月の推定コストが月間上限額に達していれば503を返し、メールを送らない(Issue #14)", async () => {
+    ddbMock
+      .on(GetCommand)
+      .resolves({ Item: { settingKey: "global", acceptingNewJobs: true, monthlyCostLimitUsd: 0.0001 } });
+    const now = new Date();
+    ddbMock.on(ScanCommand).resolves({
+      Items: [
+        {
+          status: "done",
+          game: "th07",
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+          launchedAt: null,
+          doneAt: null,
+          instanceId: null,
+          instanceType: null,
+          spotPricePerHour: null,
+          outputPath: null,
+          outputPath720p: null,
+          outputBytes: null,
+          outputBytes720p: null,
+        },
+      ],
+    });
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: "replays/abc.rpy",
+        options: { watermark: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const result = res as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(503);
+    expect(parseBody(result)).toMatchObject({ code: "monthly_cost_limit_reached" });
+    expect(sesMock.commandCalls(SendEmailCommand)).toHaveLength(0);
   });
 });

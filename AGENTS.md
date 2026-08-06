@@ -173,10 +173,15 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 - 複数 EC2 同時起動時の負荷検証は未実施（1インスタンス=1ジョブ分離のため問題ない
   と推測しているが、実運用規模拡大時は要注意）。
 - 録画がリプレイと一致しているかの自動デシンク検知は未実装（目視のみ）。
-- レート制限・濫用対策の強化、コスト監視は継続課題。
+- 濫用対策（Issue #14）はメールアドレス単位のレート制限（`apps/api/src/rateLimit.ts`、
+  Issue #9）に加え、月間コストガード・キルスイッチ（`apps/api/src/settings.ts`・
+  `costGuard.ts`、`/admin/settings`）を実装済み。IP単位のレート制限・reCAPTCHA等の
+  追加botゲートは、メールアドレスによる認証が既に強力な濫用抑止として機能している
+  ため見送っている（過剰と判断）。
 - 管理画面（Issue #51）はジョブ一覧・詳細・ダウンロード導線・workerのCloudWatch
   ログ表示（Issue #58）・ジョブの緊急停止/再実行（Issue #59）・コスト推定と
-  日次/週次/月次集計（Issue #60）まで実装済み。
+  日次/週次/月次集計（Issue #60）・キルスイッチ/月間コストガード設定（Issue #14）
+  まで実装済み。
 - **コスト表示は推定値であって請求額ではない**（`packages/shared/src/cost.ts`、
   単価は`docs/aws-region-cost-analysis.md`のeu-south-2・2026-08-03時点）。
   リージョンや候補インスタンスタイプを変える場合は単価定数も併せて見直すこと。
