@@ -50,6 +50,12 @@ export function AdminLayout({ children, onLogout }: Props) {
           >
             コスト
           </NavLink>
+          <NavLink
+            to="/admin/settings"
+            className={({ isActive }) => (isActive ? styles.navLinkActive : styles.navLink)}
+          >
+            設定
+          </NavLink>
         </nav>
         {/* 通貨切り替えはコスト表示のある画面すべて（コスト集計・ジョブ詳細）に効くため、
             ページ側ではなくヘッダーに置く。 */}

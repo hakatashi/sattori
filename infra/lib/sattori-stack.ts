@@ -173,6 +173,17 @@ export class SattoriStack extends Stack {
       timeToLiveAttribute: "ttl",
     });
 
+    // キルスイッチ・月間コストガード閾値（Issue #14）のシングルトン設定を持つ小さな
+    // テーブル。PKは固定値1件のみ（`apps/api/src/settings.ts`の`SETTINGS_KEY`）。
+    // SSM Parameter Store（管理画面トークンで採用）ではなく専用テーブルにしたのは、
+    // こちらは管理画面から頻繁に更新する運用データであり、`cdk deploy`前の手動投入が
+    // 必要なSecureStringの運用（CLAUDE.local.md参照）と性質が異なるため。
+    const settingsTable = new dynamodb.Table(this, "SettingsTable", {
+      partitionKey: { name: "settingKey", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
     // --- メール送信(SES, マジックリンク認証 Issue #9) -----------------------
     // webDomainName配下から送信する(no-reply@<webDomainName>)。ドメイン検証・DKIM・
     // EmailIdentity自体は`SattoriEdgeStack`(us-east-1、eu-south-2にはSESが存在しない
@@ -308,6 +319,7 @@ export class SattoriStack extends Stack {
       WORKER_SUBNET_IDS: workerSubnets.map((subnet) => subnet.subnetId).join(","),
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
       EMAIL_RATE_LIMIT_TABLE: emailRateLimitTable.tableName,
+      SETTINGS_TABLE: settingsTable.tableName,
       SES_FROM_ADDRESS: sesFromAddress,
       // eu-south-2にはSESが存在しないため、Lambda側(apps/api/src/ses.ts)は
       // このリージョンを明示して`SESv2Client`を生成する。
@@ -354,6 +366,8 @@ export class SattoriStack extends Stack {
     // レート制限カウンタの読み書き、SESでの送信権限が必要。
     jobsTable.grantReadWriteData(requestMagicLinkFn);
     emailRateLimitTable.grantReadWriteData(requestMagicLinkFn);
+    // キルスイッチ・月間コストガード判定（Issue #14）の読み取り専用。
+    settingsTable.grantReadData(requestMagicLinkFn);
     // SESアカウントがサンドボックス中は、送信元IDだけでなく送信先(受信者)の
     // メールアドレスも「検証済みID」としてIAMの権限チェック対象になる
     // (受信者ごとに個別の identity ARN が動的に検査される)。宛先はユーザー入力の
@@ -639,6 +653,25 @@ export class SattoriStack extends Stack {
     });
     jobsTable.grantReadData(adminGetCostsFn);
 
+    // キルスイッチ・月間コストガード（Issue #14）。どちらも`estimateCurrentMonthCostUsd()`
+    // 経由でJobsTableの全件Scanを行うため、adminGetCostsFnと同じくタイムアウト・
+    // メモリを広げておく。
+    const adminGetSettingsFn = makeHandler("AdminGetSettingsFn", "admin/getSettings.ts", commonEnv, {
+      timeout: Duration.seconds(60),
+      memorySize: 512,
+    });
+    settingsTable.grantReadData(adminGetSettingsFn);
+    jobsTable.grantReadData(adminGetSettingsFn);
+
+    const adminUpdateSettingsFn = makeHandler(
+      "AdminUpdateSettingsFn",
+      "admin/updateSettings.ts",
+      commonEnv,
+      { timeout: Duration.seconds(60), memorySize: 512 },
+    );
+    settingsTable.grantReadWriteData(adminUpdateSettingsFn);
+    jobsTable.grantReadData(adminUpdateSettingsFn);
+
     const httpApi = new apigw.HttpApi(this, "HttpApi", {
       corsPreflight: {
         allowOrigins: ["*"],
@@ -711,6 +744,20 @@ export class SattoriStack extends Stack {
       path: "/admin/costs",
       methods: [apigw.HttpMethod.GET],
       integration: new HttpLambdaIntegration("AdminGetCostsInt", adminGetCostsFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/settings",
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration("AdminGetSettingsInt", adminGetSettingsFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/settings",
+      // POST/PATCHの使い分けはadmin/stopJob.ts・admin/retryJob.tsと同じ理由
+      // （corsPreflight.allowMethodsの拡張を避けるため更新系だがPOSTに揃える）。
+      methods: [apigw.HttpMethod.POST],
+      integration: new HttpLambdaIntegration("AdminUpdateSettingsInt", adminUpdateSettingsFn),
       authorizer: adminAuthorizer,
     });
 
