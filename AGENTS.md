@@ -24,7 +24,10 @@ DL→完了メール）はすべて実装済みで、現在は初回リリース
 
 ```
 [ブラウザ: React/Vite SPA]
-  ① 署名付きURLで .rpy を S3 へ直接 PUT、POST /replays/parse で解析・プレビュー
+  ① 署名付きURLで .rpy を S3 へ直接 PUT。解析・プレビューは`@sattori/touhou-replay-parser`
+     （ゼロ依存でブラウザでも動作）をブラウザ内でそのまま呼んで即座に行い、アップロード
+     完了を待たない（S3 PUT と並行実行。バックエンドの `POST /replays/parse` は同じ解析
+     ロジックのAPIとして残しているが、ページAの標準フローからは呼ばれない）
   ② POST /magic-links でメール認証（マジックリンク）送信要求（status: pending のジョブ作成）
   ③ メール内リンク（ジョブページ）を開くと POST /jobs/{jobId}/start で録画ジョブ起動
   ④ GET /jobs/{id} をポーリングして進捗表示・DL

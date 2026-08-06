@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { ReplayInfo } from "@sattori/shared";
 import { UploadForm } from "./UploadForm.tsx";
 import * as client from "../api/client.ts";
+import * as shared from "@sattori/shared";
 
 vi.mock("../api/client.ts", () => ({
   SattoriApiError: class extends Error {
@@ -15,11 +16,19 @@ vi.mock("../api/client.ts", () => ({
   },
   createUpload: vi.fn(),
   uploadReplay: vi.fn(),
-  parseReplay: vi.fn(),
   requestMagicLink: vi.fn(),
 }));
 
-const mocked = vi.mocked(client);
+vi.mock("@sattori/shared", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@sattori/shared")>();
+  return {
+    ...actual,
+    parseReplayInfo: vi.fn(),
+  };
+});
+
+const mockedClient = vi.mocked(client);
+const mockedShared = vi.mocked(shared);
 
 const SAMPLE_REPLAY_INFO: ReplayInfo = {
   game: "th07",
@@ -87,57 +96,64 @@ describe("UploadForm", () => {
     expect(screen.getByText("th7_02.rpy (81.90KB)")).toBeTruthy();
   });
 
-  it("アップロード中・解析中はSTEP2にスピナーとラベルを表示する", async () => {
-    let resolveUpload!: (value: { replayKey: string; uploadUrl: string }) => void;
-    let resolveParse!: (value: ReplayInfo) => void;
-    mocked.createUpload.mockReturnValue(
-      new Promise((resolve) => {
-        resolveUpload = resolve;
-      }),
-    );
-    mocked.uploadReplay.mockResolvedValue(undefined);
-    mocked.parseReplay.mockReturnValue(
-      new Promise((resolve) => {
-        resolveParse = resolve;
-      }),
-    );
+  it("ファイル選択直後はSTEP2に解析中のスピナーを表示する（ブラウザ内解析はアップロード完了を待たない）", () => {
+    mockedClient.createUpload.mockReturnValue(new Promise(() => {}));
+    mockedClient.uploadReplay.mockResolvedValue(undefined);
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
 
     renderUploadForm(vi.fn());
     selectFile("th7_07.rpy");
 
-    await waitFor(() => expect(screen.getByText("アップロード中…")).toBeTruthy());
+    // setPhase("processing") はブラウザ内解析・アップロードの最初のawaitより前に同期的に走るため、
+    // fireEvent.change直後の時点で既に解析中スピナーが見える。
+    expect(screen.getByText("リプレイを解析しています…")).toBeTruthy();
     expect(screen.getByRole("status", { name: "読み込み中" })).toBeTruthy();
+  });
+
+  it("解析はアップロード完了を待たずに終わり、アップロード中は次のステップへ進めない", async () => {
+    let resolveUpload!: (value: { replayKey: string; uploadUrl: string }) => void;
+    mockedClient.createUpload.mockReturnValue(
+      new Promise((resolve) => {
+        resolveUpload = resolve;
+      }),
+    );
+    mockedClient.uploadReplay.mockResolvedValue(undefined);
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+
+    renderUploadForm(vi.fn());
+    selectFile("th7_07.rpy");
+
+    // ブラウザ内解析（アップロードとは独立）が先に終わり、プレビューが表示される
+    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    expect(screen.getByText("アップロード中…")).toBeTruthy();
+    fillEmail("user@example.com");
+    expect(nextStepButton().disabled).toBe(true);
 
     await act(async () => resolveUpload({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" }));
 
-    await waitFor(() => expect(screen.getByText("リプレイを解析しています…")).toBeTruthy());
-    expect(screen.getByRole("status", { name: "読み込み中" })).toBeTruthy();
-
-    await act(async () => resolveParse(SAMPLE_REPLAY_INFO));
-    fillEmail("user@example.com");
-
     await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    expect(screen.queryByText("アップロード中…")).toBeNull();
   });
 
   it(".rpy 以外を選ぶとエラー表示され、アップロードは行われない", () => {
     renderUploadForm(vi.fn());
     selectFile("bad.txt");
     expect(screen.getByText("リプレイファイル (.rpy) を選択してください")).toBeTruthy();
-    expect(mocked.createUpload).not.toHaveBeenCalled();
+    expect(mockedClient.createUpload).not.toHaveBeenCalled();
     expect(nextStepButton().disabled).toBe(true);
   });
 
   it("ファイル選択で自動アップロード＆解析され、プレビューが表示される（メール未入力では非活性のまま）", async () => {
-    mocked.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
-    mocked.uploadReplay.mockResolvedValue(undefined);
-    mocked.parseReplay.mockResolvedValue(SAMPLE_REPLAY_INFO);
+    mockedClient.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
+    mockedClient.uploadReplay.mockResolvedValue(undefined);
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
 
     renderUploadForm(vi.fn());
     selectFile("th7_07.rpy");
 
-    await waitFor(() => expect(mocked.parseReplay).toHaveBeenCalledWith("replays/x.rpy"));
-    expect(mocked.createUpload).toHaveBeenCalledWith({ filename: "th7_07.rpy", size: 5 });
-    expect(mocked.uploadReplay).toHaveBeenCalledWith("https://s3/put", expect.any(File));
+    await waitFor(() => expect(mockedShared.parseReplayInfo).toHaveBeenCalledWith(expect.any(Uint8Array)));
+    expect(mockedClient.createUpload).toHaveBeenCalledWith({ filename: "th7_07.rpy", size: 5 });
+    expect(mockedClient.uploadReplay).toHaveBeenCalledWith("https://s3/put", expect.any(File));
     // プレビュー内容(ReplayPreview)が表示されている
     await waitFor(() =>
       expect(screen.getByText("東方妖々夢 ～ Perfect Cherry Blossom.")).toBeTruthy(),
@@ -149,31 +165,32 @@ describe("UploadForm", () => {
   });
 
   it("メールアドレスも入力すると次のステップボタンが活性化する", async () => {
-    mocked.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
-    mocked.uploadReplay.mockResolvedValue(undefined);
-    mocked.parseReplay.mockResolvedValue(SAMPLE_REPLAY_INFO);
+    mockedClient.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
+    mockedClient.uploadReplay.mockResolvedValue(undefined);
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
 
     renderUploadForm(vi.fn());
     selectFile("th7_07.rpy");
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    await waitFor(() => expect(mockedClient.uploadReplay).toHaveBeenCalled());
 
     fillEmail("not-an-email");
     expect(nextStepButton().disabled).toBe(true);
 
     fillEmail("user@example.com");
-    expect(nextStepButton().disabled).toBe(false);
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
   });
 
   it("解析失敗（非対応タイトル等）ではエラー表示され、次のステップは非活性のまま", async () => {
-    mocked.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
-    mocked.uploadReplay.mockResolvedValue(undefined);
-    mocked.parseReplay.mockRejectedValue(
-      new client.SattoriApiError(
-        "unsupported_game",
-        "東方星蓮船 ～ Undefined Fantastic Object. は現在録画に対応していません",
-        422,
-      ),
-    );
+    mockedClient.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
+    mockedClient.uploadReplay.mockResolvedValue(undefined);
+    mockedShared.parseReplayInfo.mockReturnValue({
+      ok: false,
+      error: {
+        code: "unsupported_game",
+        message: "東方星蓮船 ～ Undefined Fantastic Object. は現在録画に対応していません",
+      },
+    });
 
     renderUploadForm(vi.fn());
     selectFile("th12.rpy");
@@ -185,26 +202,27 @@ describe("UploadForm", () => {
     );
     fillEmail("user@example.com");
     expect(nextStepButton().disabled).toBe(true);
-    expect(mocked.requestMagicLink).not.toHaveBeenCalled();
+    expect(mockedClient.requestMagicLink).not.toHaveBeenCalled();
   });
 
   it("次のステップ押下でマジックリンク送信要求が行われ onMagicLinkSent が発火する", async () => {
-    mocked.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
-    mocked.uploadReplay.mockResolvedValue(undefined);
-    mocked.parseReplay.mockResolvedValue(SAMPLE_REPLAY_INFO);
-    mocked.requestMagicLink.mockResolvedValue({});
+    mockedClient.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
+    mockedClient.uploadReplay.mockResolvedValue(undefined);
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+    mockedClient.requestMagicLink.mockResolvedValue({});
     const onMagicLinkSent = vi.fn();
 
     renderUploadForm(onMagicLinkSent);
     selectFile("th7_07.rpy");
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    await waitFor(() => expect(mockedClient.uploadReplay).toHaveBeenCalled());
     fillEmail("user@example.com");
     await waitFor(() => expect(nextStepButton().disabled).toBe(false));
 
     fireEvent.click(nextStepButton());
 
     await waitFor(() => expect(onMagicLinkSent).toHaveBeenCalledWith("user@example.com"));
-    expect(mocked.requestMagicLink).toHaveBeenCalledWith(
+    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
       { watermark: true },
       "user@example.com",
