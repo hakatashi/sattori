@@ -53,6 +53,12 @@ export function AboutPage() {
           </a>
         </li>
         <li>
+          YouTube:{" "}
+          <a href="https://www.youtube.com/@hakatashi" target="_blank" rel="noopener noreferrer">
+            https://www.youtube.com/@hakatashi
+          </a>
+        </li>
+        <li>
           Email: <a href="mailto:hakatasiloving@gmail.com">hakatasiloving@gmail.com</a>
         </li>
       </ul>

@@ -15,6 +15,10 @@ describe("AboutPage", () => {
       "href",
       "https://x.com/hakatashi",
     );
+    expect(screen.getByRole("link", { name: "https://www.youtube.com/@hakatashi" })).toHaveProperty(
+      "href",
+      "https://www.youtube.com/@hakatashi",
+    );
     expect(screen.getByRole("link", { name: "hakatasiloving@gmail.com" })).toHaveProperty(
       "href",
       "mailto:hakatasiloving@gmail.com",
