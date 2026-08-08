@@ -156,6 +156,12 @@ export function CostsPage() {
                         {bucket.failedCount > 0 && (
                           <span className={styles.failed}>（失敗{bucket.failedCount}）</span>
                         )}
+                        {/* 自宅ワーカー（Issue #49）が処理したジョブはEC2課金が
+                            発生しない。額が低い理由が「録画が少ない」のか
+                            「自宅が吸収した」のかを読み取れるようにする。 */}
+                        {bucket.homeWorkerJobCount > 0 && (
+                          <span>（自宅{bucket.homeWorkerJobCount}）</span>
+                        )}
                       </td>
                     </tr>
                   ))}

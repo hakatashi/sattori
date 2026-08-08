@@ -9,6 +9,7 @@ import {
 } from "@aws-sdk/client-ec2";
 import type { JobRecord } from "@sattori/shared";
 import type { ApiConfig } from "./config.js";
+import { buildWorkerEnv } from "./workerEnv.js";
 
 const ec2 = new EC2Client({});
 
@@ -73,25 +74,12 @@ function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
 export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: string): string {
   const registry = config.workerImage.split("/")[0] ?? "";
 
-  const envFlags = [
-    `-e AWS_DEFAULT_REGION=${config.ec2.region}`,
-    `-e AWS_REGION=${config.ec2.region}`,
-    `-e JOB_ID=${job.jobId}`,
-    `-e GAME=${job.game}`,
-    `-e REPLAY_BUCKET=${config.uploadBucket}`,
-    `-e REPLAY_KEY=${job.replayKey}`,
-    `-e OUTPUT_BUCKET=${config.outputBucket}`,
-    `-e TITLE_ASSETS_BUCKET=${config.titleAssetsBucket}`,
-    `-e JOBS_TABLE=${config.jobsTable}`,
-    `-e WATERMARK=${job.options.watermark ? "1" : "0"}`,
-    // taskToken はスクリプト冒頭で $TASK_TOKEN に格納済み（bootstrap 失敗時の
-    // SendTaskFailure 通知と共有するため）。ここでは二重埋め込みを避けそれを参照する。
-    `-e TASK_TOKEN="$TASK_TOKEN"`,
-  ];
-  if (job.estimatedDurationSeconds !== null) {
-    // ワーカーの録画進捗率算出用の参考値（取得できていなければ付与しない）。
-    envFlags.push(`-e EXPECTED_DURATION_SECONDS=${job.estimatedDurationSeconds}`);
-  }
+  // 環境変数の中身は自宅ワーカー（Issue #49）と共有する（`workerEnv.ts`）。
+  // taskToken だけはスクリプト冒頭で $TASK_TOKEN に格納済み（bootstrap 失敗時の
+  // SendTaskFailure 通知と共有するため）なので、二重埋め込みを避けそれを参照する。
+  const envFlags = Object.entries(buildWorkerEnv(config, job, taskToken)).map(([key, value]) =>
+    key === "TASK_TOKEN" ? `-e TASK_TOKEN="$TASK_TOKEN"` : `-e ${key}=${value}`,
+  );
 
   // trap EXIT で必ず shutdown する（Spot 終了 = 課金停止）。ECR ログインや
   // docker 実行が失敗しても、インスタンスを起動したまま残さない（孤児防止）。

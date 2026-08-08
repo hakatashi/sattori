@@ -7,7 +7,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
-import type { JobRecord, JobStatus } from "@sattori/shared";
+import type { JobRecord, JobStatus, WorkerKind } from "@sattori/shared";
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -259,6 +259,31 @@ export async function updateJobInstance(
         ":sp": instance.spotPricePerHour,
         ":u": new Date().toISOString(),
       },
+    }),
+  );
+}
+
+/**
+ * ジョブを実行するワーカーの種別を記録する（Issue #49）。EC2 Fleetの起動に成功した
+ * 時点（`ec2`）に`Launch`が書き込む。`home`は自宅ワーカーがclaimと同時に自分で
+ * 書き込むため、ここを通らない。
+ *
+ * リトライで割り当てが変わりうるので**上書きしてよい**（`launchedAt`のように
+ * 最初の1回だけ、という扱いにはしない）。コスト推定はこの値でEC2課金の有無を
+ * 分岐する（`packages/shared/src/cost.ts`）。
+ */
+export async function updateJobWorkerKind(
+  table: string,
+  jobId: string,
+  workerKind: WorkerKind,
+): Promise<void> {
+  const now = new Date().toISOString();
+  await client.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { jobId },
+      UpdateExpression: "SET workerKind = :w, updatedAt = :u",
+      ExpressionAttributeValues: { ":w": workerKind, ":u": now },
     }),
   );
 }

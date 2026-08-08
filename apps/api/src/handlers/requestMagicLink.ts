@@ -106,6 +106,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     launchedAt: null,
     doneAt: null,
     email: body.email,
+    // 実行するワーカーの種別は`Launch`が決める（Issue #49）。
+    workerKind: null,
     instanceId: null,
     instanceType: null,
     availabilityZone: null,

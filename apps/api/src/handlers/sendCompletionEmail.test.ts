@@ -17,6 +17,7 @@ const REQUIRED_ENV: Record<string, string> = {
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
   SETTINGS_TABLE: "sattori-settings",
+  WORKERS_TABLE: "sattori-workers",
   SES_FROM_ADDRESS: "no-reply@sattori.hakatashi.com",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
 };
@@ -38,6 +39,7 @@ function baseJob(overrides: Partial<JobRecord>): JobRecord {
     doneAt: null,
     email: "user@example.com",
     instanceId: null,
+    workerKind: null,
     instanceType: null,
     availabilityZone: null,
     spotPricePerHour: null,

@@ -35,6 +35,7 @@ th11: `reports/35`〜`reports/39`)を参照。
   進捗コールバック対応 |
 | `status.py` | DynamoDB へのジョブ状態・進捗反映、チェックポイント確認用のジョブ取得 |
 | `interruption_watcher.py` | Spot中断通知/リバランス推奨をIMDS経由で監視するバックグラウンドスレッド |
+| `task_heartbeat.py` | Step Functionsへ60秒ごとに`SendTaskHeartbeat`を送るバックグラウンドスレッド(Issue #49)。ワーカーの死活監視で、15分途絶えるとタスクが失敗し`HandleFailure`が後始末に入る。主目的は自宅ワーカー(`home-worker/`)の停電・回線断の検知だが、EC2でもハング時の失敗検知が90分→15分に縮まる |
 | `progress_reporter.py` | 録画中の進捗スクリーンショットをS3へアップロードするバックグラウンドスレッド |
 | `title_assets.py` | GAME環境変数に応じたタイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)を
   S3からダウンロード・展開する(Issue #22)。ECRストレージコストがタイトル数に比例して

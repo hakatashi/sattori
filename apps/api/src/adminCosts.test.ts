@@ -19,6 +19,7 @@ function job(overrides: Partial<JobCostInput> = {}): JobCostInput {
     launchedAt: "2026-08-01T00:00:00.000Z",
     doneAt: "2026-08-01T00:36:00.000Z",
     instanceId: "i-1",
+    workerKind: null,
     instanceType: "c7i.xlarge",
     spotPricePerHour: 0.06,
     outputPath: "outputs/a/original.mp4",

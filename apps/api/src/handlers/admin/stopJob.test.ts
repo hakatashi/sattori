@@ -24,6 +24,7 @@ const REQUIRED_ENV: Record<string, string> = {
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
   SETTINGS_TABLE: "sattori-settings",
+  WORKERS_TABLE: "sattori-workers",
   SES_FROM_ADDRESS: "no-reply@sattori.hakatashi.com",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
   STATE_MACHINE_ARN: "arn:aws:states:us-east-1:123456789012:stateMachine:RecordingStateMachine",
@@ -47,6 +48,7 @@ const recordingJob: JobRecord = {
   doneAt: null,
   email: "user@example.com",
   instanceId: "i-1234",
+  workerKind: null,
   instanceType: "c7i.2xlarge",
   availabilityZone: "us-east-1a",
   spotPricePerHour: null,
@@ -74,6 +76,13 @@ function parseBody(res: APIGatewayProxyStructuredResultV2): AdminStopJobResponse
 async function invoke(jobId?: string): Promise<APIGatewayProxyStructuredResultV2> {
   const { handler } = await import("./stopJob.js");
   return (await handler(makeEvent(jobId), {} as never, () => {})) as APIGatewayProxyStructuredResultV2;
+}
+
+/** statusを書き換えるUpdateItem（自宅ワーカーの割り当て解除と区別する）。 */
+function statusUpdates() {
+  return ddbMock
+    .commandCalls(UpdateCommand)
+    .filter((call) => call.args[0].input.ExpressionAttributeValues?.[":s"] !== undefined);
 }
 
 describe("POST /admin/jobs/{jobId}/stop", () => {
@@ -105,6 +114,7 @@ describe("POST /admin/jobs/{jobId}/stop", () => {
       status: "failed",
       executionStopped: true,
       instanceTerminated: true,
+      homeWorkerReleased: false,
     });
 
     // 実行名=jobIdからexecutionArnを決定的に導出している。
@@ -116,7 +126,7 @@ describe("POST /admin/jobs/{jobId}/stop", () => {
       "i-1234",
     ]);
 
-    const updateCall = ddbMock.commandCalls(UpdateCommand)[0];
+    const updateCall = statusUpdates()[0];
     expect(updateCall?.args[0].input.ExpressionAttributeValues?.[":s"]).toBe("failed");
     expect(updateCall?.args[0].input.ExpressionAttributeValues?.[":e"]).toBe(
       "管理者により停止されました",
@@ -269,8 +279,10 @@ describe("POST /admin/jobs/{jobId}/stop", () => {
     // 完了メールは既に飛んでいるため、failedで上書きすると「完了メールは届いたのに
     // 画面はfailed」という食い違いになる。
     ddbMock.on(GetCommand).resolves({ Item: { ...recordingJob, status: "converting" } });
+    ddbMock.on(UpdateCommand).resolves({});
+    // 条件付きなのはstatus確定のUpdateItemだけ（自宅ワーカーの割り当て解除は無条件）。
     ddbMock
-      .on(UpdateCommand)
+      .on(UpdateCommand, { ConditionExpression: "#s <> :done" })
       .rejects(new ConditionalCheckFailedException({ message: "conditional", $metadata: {} }));
     sfnMock.on(StopExecutionCommand).resolves({});
     ec2Mock.on(TerminateInstancesCommand).resolves({});
@@ -282,8 +294,28 @@ describe("POST /admin/jobs/{jobId}/stop", () => {
     expect(body.status).toBe("done");
     expect(body.executionStopped).toBe(true);
     // 条件付き更新であることの確認（無条件書き込みだとdoneを潰す）。
-    const updateCall = ddbMock.commandCalls(UpdateCommand)[0];
-    expect(updateCall?.args[0].input.ConditionExpression).toBe("#s <> :done");
+    expect(statusUpdates()[0]?.args[0].input.ConditionExpression).toBe("#s <> :done");
+  });
+
+  it("自宅ワーカー(Issue #49)のジョブでは割り当てを解除しhomeWorkerReleasedを返す", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: {
+        ...recordingJob,
+        workerKind: "home",
+        assignedWorkerId: "home-1",
+        instanceId: null,
+      },
+    });
+    ddbMock.on(UpdateCommand).resolves({});
+    sfnMock.on(StopExecutionCommand).resolves({});
+
+    const body = parseBody(await invoke("job-1"));
+
+    expect(body.homeWorkerReleased).toBe(true);
+    const releaseCall = ddbMock
+      .commandCalls(UpdateCommand)
+      .find((call) => call.args[0].input.UpdateExpression?.includes("assignedWorkerId"));
+    expect(releaseCall).toBeDefined();
   });
 
   it("StopExecutionが失敗したらインスタンスを終了せず状態も変更しない", async () => {

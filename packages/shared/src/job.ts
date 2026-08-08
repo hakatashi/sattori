@@ -1,6 +1,7 @@
 import type { GameId } from "./games.js";
 import type { SupportedLanguage } from "./language.js";
 import type { ReplayInfo } from "./replay.js";
+import type { HomeWorkerOfferState, WorkerEnvironment, WorkerKind } from "./worker.js";
 
 /**
  * 録画ジョブのライフサイクル。ワーカー（worker/）が進行に応じて DynamoDB を更新し、
@@ -189,6 +190,45 @@ export interface JobRecord {
    * （通常のジョブでは null）。
    */
   retriedFromJobId: string | null;
+  /**
+   * このジョブを実行している（実行した）ワーカーの種別（Issue #49）。ジョブ作成時は
+   * null で、`Launch` の割り当てが確定した時点で `ec2`（EC2 Fleetを起動した）か
+   * `home`（自宅ワーカーがclaimした）が入る。**コスト推定はこの値で分岐する**
+   * （自宅ワーカーのジョブにはEC2/EBS/IPv4の課金が一切発生しない。`cost.ts`）。
+   * Step Functionsのリトライで割り当てが変われば上書きされるため、最後の試行の
+   * 種別を表す。
+   */
+  workerKind: WorkerKind | null;
+  /**
+   * 自宅ワーカーへオファー中であることを示すマーカー（Issue #49）。
+   * `HomeWorkerOfferIndex`（sparse GSI）のパーティションキーで、**オファー中の
+   * ジョブだけがこの属性を持つ**（撤回・claim時は属性ごと削除する）ため、
+   * インデックスがそのまま「いまオファー中のジョブ一覧」になる。
+   *
+   * 以下4つのオファー関連フィールドだけ `| null` ではなく optional なのは、
+   * DynamoDBのNULL型を書くとGSIのキー属性として不適合になるうえ「属性が無い」
+   * ことをそのまま条件式（`attribute_not_exists`）で表現したいため。
+   */
+  homeWorkerOfferState?: HomeWorkerOfferState;
+  /** オファーの期限（ISO 8601）。GSIのソートキーも兼ねる。 */
+  homeWorkerOfferExpiresAt?: string;
+  /**
+   * オファーに添えるワーカーコンテナの環境変数一式（`taskToken`を含む）。
+   * 自宅デーモンはこれをそのまま `docker run -e` へ渡すだけでよく、
+   * ワーカー起動パラメータの組み立てロジックをAWS側（`apps/api/src/workerEnv.ts`）
+   * に一本化できる。ジョブ完了時にデーモンが削除する（使用済みtaskTokenを
+   * 残さないため）。
+   */
+  homeWorkerEnv?: WorkerEnvironment;
+  /**
+   * ジョブをclaimした自宅ワーカーのID（`WorkerHeartbeat.workerId`）。
+   * claim済みかどうかの唯一の真実で、デーモンは自分のIDである限りにおいてのみ
+   * 実行を続ける（`HandleFailure`がこの属性を消すと、デーモンは次のハートビート
+   * 更新で気づいてコンテナを停止する＝claimの取り消し手段を兼ねる）。
+   */
+  assignedWorkerId?: string;
+  /** 自宅ワーカーが最後にジョブの生存を報告した時刻（ISO 8601、運用調査用）。 */
+  homeWorkerHeartbeatAt?: string;
   /**
    * `POST /magic-links` 押下時点でユーザーが選択していた表示言語
    * （`RequestMagicLinkRequest.language` をそのまま転記）。マジックリンク

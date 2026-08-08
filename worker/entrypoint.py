@@ -17,7 +17,10 @@ EC2 Fleet インスタンスの UserData から `docker run` で起動される�
   4. 720pへアップスケール変換(進捗%を10秒間隔程度で報告)
   5. 変換後動画をS3へアップロード → status を done に更新(outputPath/outputPath720p 確定)
 
-バックグラウンドで InterruptionWatcher が Spot中断通知(実際に発効する2分前通知)を
+バックグラウンドでは2つのスレッドが動く。TaskHeartbeat は Step Functions へ60秒間隔で
+`SendTaskHeartbeat` を送り、ワーカーが生きていることを知らせる(Issue #49。自宅ワーカーの
+停電・回線断はAWS側から観測できないため、これが唯一の死活監視になる)。もう1つ、
+InterruptionWatcher が Spot中断通知(実際に発効する2分前通知)を
 監視し、検知次第 taskToken 経由で Step Functions に早期失敗通知する(60分のタイムアウトを
 待たずに新インスタンスでのリトライを開始させるため)。録画/変換処理自体はそのまま
 続行する(中断が実際に発効するまで、できるところまで進める)。リバランス推奨(発効するとは
@@ -43,6 +46,7 @@ import pulse
 from interruption_watcher import InterruptionWatcher
 from progress_reporter import ProgressReporter
 from status import get_job, update_progress, update_status
+from task_heartbeat import TaskHeartbeat
 from title_assets import ensure_title_assets
 from upscale import upscale_to_720p
 
@@ -269,6 +273,11 @@ def main():
     watcher = InterruptionWatcher(on_interruption, log=log)
     watcher.start()
 
+    # Step Functions への死活通知(Issue #49)。ジョブの最初から最後まで動かす
+    # (録画中だけでなく、タイトル資産のダウンロードや720p変換の最中も対象)。
+    heartbeat = TaskHeartbeat(TASK_TOKEN, log=log)
+    heartbeat.start()
+
     try:
         job = get_job(JOB_ID)
         resuming = bool(job and job.get("outputPath"))
@@ -282,9 +291,11 @@ def main():
         convert_and_upload(s3)
         log("ジョブ完了")
         watcher.stop()
+        heartbeat.stop()
         notify_task_result(True)
     except Exception as err:  # noqa: BLE001 - 失敗はすべて failed として記録する
         watcher.stop()
+        heartbeat.stop()
         log(f"ERROR: {err}")
         if not _notified.is_set():
             update_status(JOB_ID, "failed", error="録画処理中にエラーが発生しました")

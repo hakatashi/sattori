@@ -36,6 +36,7 @@ const job: JobRecord = {
   doneAt: null,
   email: "user@example.com",
   instanceId: "i-1234",
+  workerKind: "ec2",
   instanceType: "c7i.2xlarge",
   availabilityZone: "us-east-1a",
   spotPricePerHour: null,
@@ -284,6 +285,7 @@ describe("JobDetailPage", () => {
         status: "done",
         executionStopped: true,
         instanceTerminated: true,
+        homeWorkerReleased: false,
       });
       renderJobDetailPage();
 
@@ -313,6 +315,7 @@ describe("JobDetailPage", () => {
         status: "failed",
         executionStopped: true,
         instanceTerminated: true,
+        homeWorkerReleased: false,
       });
       renderJobDetailPage();
 

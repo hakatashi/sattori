@@ -45,7 +45,8 @@ pending → queued → launching → recording → converting → done | failed
 転記、ページBでの表示用）、`retriedToJobId`/`retriedFromJobId`（管理画面からの
 再実行で複製された元ジョブ⇄新ジョブの相互リンク、Issue #59）、
 `launchedAt`/`spotPricePerHour`/`outputBytes`/`outputBytes720p`（コスト推定の入力、
-Issue #60。後述「コスト推定」）等を持つ。
+Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほか自宅ワーカー関連
+（Issue #49。後述「ワーカーの種別と自宅ワーカー」）等を持つ。
 フィールドごとの詳細はソースのコメントを参照。
 
 > **`JobRecord`にフィールドを足すときの注意**: `apps/api`の`requestMagicLink.ts`
@@ -53,7 +54,30 @@ Issue #60。後述「コスト推定」）等を持つ。
 > 全フィールドを明示的に埋めるため、型エラーとして必ず気付ける。ただし
 > `buildRetryJob()`は元ジョブをスプレッドで引き継ぐので、**実行結果に属する
 > フィールド（出力・インスタンス情報・時刻）は明示的にnullへ初期化すること**
-> （引き継ぐと新ジョブが元ジョブの結果を持ったまま起動する）。
+> （引き継ぐと新ジョブが元ジョブの結果を持ったまま起動する）。特に
+> `homeWorkerOfferState`はsparse GSIのキー属性なので、引き継ぐと新ジョブが起動前から
+> 「オファー中」としてインデックスに載り、自宅ワーカーに横取りされる。
+
+## ワーカーの種別と自宅ワーカー（`src/worker.ts`、Issue #49）
+
+録画ジョブを実行するのは EC2 Fleet（`workerKind: "ec2"`）か開発者の自宅サーバー
+（`"home"`）のどちらかで、**どちらも同じECRイメージ・同じtaskToken契約**で動く。
+自宅マシンはNAT配下でAWS側から到達できないため、割り当てはPull型:
+
+- `WorkerHeartbeat`: `WorkersTable`の1アイテム。自宅の常駐デーモンが15秒ごとに
+  自身の空き状況・対応タイトル・追加能力（`WorkerCapability`）を自己申告する。
+  `isHeartbeatFresh()`が新鮮さ（45秒以内）を判定し、**新鮮でなければAWS側は
+  オファー自体を行わない**（＝自宅が落ちている平常時に録画開始が遅れない）。
+  未来方向のずれも同じ幅までしか許容しない（時計が進んだ止まったデーモンへ
+  オファーが吸い込まれ続けるのを防ぐため）。
+- `JobRecord`のオファー/claim関連フィールドは**`| null`ではなく optional**にしてある。
+  DynamoDBのNULL型はGSIのキー属性として不適合で、「属性が無い」ことをそのまま
+  条件式（`attribute_not_exists`）で表現したいため。
+- `WorkerCapability`に定義があること自体は「実装済み」を意味しない（能力の宣言は
+  デーモン側の設定で行う）。`slow-motion-recording`はIssue #68の受け皿。
+
+契約の詳細と運用は`apps/api/README.md`「自宅ワーカーへのジョブ割り当て」・
+`home-worker/README.md`を参照。
 
 ## リプレイ情報（`src/replay.ts`, `src/games.ts`）
 

@@ -35,10 +35,15 @@ DL→完了メール）はすべて実装済みで、現在は初回リリース
 [API Gateway HTTP API] → [Lambda ハンドラ群] → [DynamoDB: ジョブ状態・メールレート制限カウンタ]
         │ startJob が Step Functions の実行を開始(StartExecution)
         ▼
-[Step Functions(Standard, 1ジョブ=1実行)] → EC2 Fleet でワーカーを起動、
+[Step Functions(Standard, 1ジョブ=1実行)] → ワーカーを1台**割り当て**、
    ワーカー自身が taskToken(SendTaskSuccess/Failure)で成否を通知。失敗時は
    孤児インスタンスをterminateしつつ最大10回までリトライ(`apps/api/src/retryPolicy.ts`)
-        ▼
+        │
+        ├─(A) 自宅サーバーが空いていれば、ジョブレコードにオファーを書いて数十秒待つ。
+        │      自宅の常駐デーモン(`home-worker/`)が条件付き更新でclaimし、EC2と同一の
+        │      Dockerイメージをローカルで実行する(Issue #49)。時間内にclaimされなければ
+        │      オファーを撤回して(B)へフォールバックする
+        ▼(B)
 [EC2 Fleet ワーカー(Spot, Docker: Wine+Xvfb+ffmpeg+Python)]
    S3から.rpy取得 → 録画 → 生動画をS3へチェックポイントUP →
    720pアップスケール変換 → 変換後動画をS3へUP → DynamoDB更新 →
@@ -73,6 +78,7 @@ SESと合わせて`SattoriEdgeStack`（us-east-1固定の付帯スタック、`i
 | Lambda API・EC2起動・課金/レート制限 | [`apps/api/README.md`](apps/api/README.md) |
 | フロントエンド | [`apps/web/README.md`](apps/web/README.md) |
 | 録画ワーカー（Python） | [`worker/README.md`](worker/README.md) |
+| 自宅サーバー録画ワーカー（Python） | [`home-worker/README.md`](home-worker/README.md) |
 | AWS CDK インフラ | [`infra/README.md`](infra/README.md) |
 
 ## 3. 常に踏まえておくべき設計判断
@@ -93,6 +99,13 @@ SESと合わせて`SattoriEdgeStack`（us-east-1固定の付帯スタック、`i
   （詳細は `apps/api/README.md`・`infra/README.md`）。
 - **進捗はポーリング**（WebSocket/SSE は月1000回規模には過剰という判断）。ワーカーが
   DynamoDB を更新し、`GET /jobs/{id}` が返す。
+- **録画ワーカーは EC2 Fleet と自宅サーバーの2種類あり、どちらも同じ ECR イメージ・
+  同じ taskToken 契約で動く**（Issue #49）。自宅マシンは NAT 配下で AWS 側から到達
+  できないため、割り当ては **Pull 型**（AWS がジョブレコードにオファーを書き、自宅の
+  常駐デーモンが DynamoDB の条件付き更新で原子的に claim する）。新鮮なハートビートが
+  無ければオファー自体を行わないので、自宅が落ちている平常時に録画開始が遅れることは
+  ない。**ワーカーの中に「自宅かEC2か」の分岐を作らないこと** — 環境差分はすべて
+  起動側が渡す環境変数（`apps/api/src/workerEnv.ts`）の違いとして表現する。
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。CloudFront 永年無料枠で egress を
   実質ゼロにできる。
 - **録画ワーカーだけ Python**。PoC の numpy/PIL によるフレーム差分・Wine 制御が
@@ -135,6 +148,7 @@ pnpm workspaces + Turborepo。ルートに `pnpm-workspace.yaml` / `turbo.json` 
 | `apps/api` | Lambda ハンドラ・S3/DynamoDB/EC2/Step Functions 連携 | tsc(--noEmit), vitest |
 | `apps/web` | フロントエンド SPA（`react-router-dom`） | vite, vitest, jsdom |
 | `worker` | 録画パイプライン（Python） | python, docker |
+| `home-worker` | 自宅サーバー常駐デーモン（ジョブのclaimとコンテナ実行、Issue #49） | python, docker |
 | `infra` | AWS CDK スタック | cdk, tsx, vitest |
 
 ### TypeScript の約束事（全 TS パッケージ共通）
@@ -172,6 +186,9 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
   （`worker/README.md` 参照）。
 - 複数 EC2 同時起動時の負荷検証は未実施（1インスタンス=1ジョブ分離のため問題ない
   と推測しているが、実運用規模拡大時は要注意）。
+- 自宅サーバーワーカー（Issue #49）は実装済みだが、**実機での並列録画・claim競合・
+  claim取り消しのE2E検証は未実施**。自宅マシンでの並列録画自体は4並列まで実績が
+  ある（Issue #48）。
 - 録画がリプレイと一致しているかの自動デシンク検知は未実装（目視のみ）。
 - 濫用対策（Issue #14）はメールアドレス単位のレート制限（`apps/api/src/rateLimit.ts`、
   Issue #9）に加え、月間コストガード・キルスイッチ（`apps/api/src/settings.ts`・
@@ -185,6 +202,9 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 - **コスト表示は推定値であって請求額ではない**（`packages/shared/src/cost.ts`、
   単価は`docs/aws-region-cost-analysis.md`のeu-south-2・2026-08-03時点）。
   リージョンや候補インスタンスタイプを変える場合は単価定数も併せて見直すこと。
+  自宅ワーカー（Issue #49）が処理したジョブは EC2/EBS/IPv4 の課金が発生しないため
+  0 で計上する（自宅の電気代・回線費は AWS の請求に現れず按分する意味も無いので
+  一切計上しない）。
   管理画面はUSD/円を切り替えて表示できるが、**円換算は固定レート定数**
   （`USD_TO_JPY_RATE`、2026-08-03時点）による概算で、計算・API応答はすべてUSDのまま
   （換算は表示の直前だけ）。

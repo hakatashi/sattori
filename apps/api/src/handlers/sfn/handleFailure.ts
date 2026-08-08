@@ -1,6 +1,7 @@
 import { isTerminalStatus } from "@sattori/shared";
 import { loadConfig } from "../../config.js";
 import { terminateInstance } from "../../ec2.js";
+import { releaseHomeWorkerAssignment } from "../../homeWorker.js";
 import { getJob, updateJobStatus } from "../../jobs.js";
 import { MAX_ATTEMPTS } from "../../retryPolicy.js";
 
@@ -11,7 +12,8 @@ import { MAX_ATTEMPTS } from "../../retryPolicy.js";
  * - Spot中断の早期失敗通知はワーカーの処理継続中に送られるため、待機中に処理が
  *   正常完了している（`status === "done"`）ことがある。その場合は何もせず
  *   `shouldRetry: false` を返す（インスタンスは自身の trap で既に shutdown 済み）。
- * - 未完了なら孤児化した可能性のある EC2 インスタンスを terminate する。
+ * - 未完了なら孤児化した可能性のある EC2 インスタンスを terminate し、自宅ワーカー
+ *   （Issue #49）への割り当て・オファーを解除する。
  * - まだリトライ余地があれば `shouldRetry: true` を返し、ステートマシン側で
  *   `Launch` へ戻る。無ければジョブを `failed` に確定させる
  *   （ワーカー自身が既に `failed` を書き込んでいる場合は上書きしない）。
@@ -44,6 +46,25 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
       }),
     );
     return { shouldRetry: false };
+  }
+
+  // 自宅ワーカー（Issue #49）への割り当てを解除する。EC2に対する`TerminateInstances`
+  // と対になる後始末で、`assignedWorkerId`を消すことで走っているデーモンは次の
+  // ジョブハートビート（条件付き更新）でclaimの取り消しに気づきコンテナを止める。
+  // オファー中のまま`Launch`がタイムアウト/クラッシュしたケースも同時に掃除できる
+  // （期限切れのオファーがGSIに残り続けるのを防ぐ）。
+  if (job) {
+    try {
+      await releaseHomeWorkerAssignment(config.jobsTable, event.jobId);
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          event: "release_home_worker_failed",
+          jobId: event.jobId,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
   }
 
   if (job?.instanceId) {

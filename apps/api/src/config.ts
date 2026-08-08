@@ -28,6 +28,11 @@ export interface ApiConfig {
   emailRateLimitTable: string;
   /** キルスイッチ・月間コストガード閾値を保持する DynamoDB テーブル名（Issue #14）。 */
   settingsTable: string;
+  /**
+   * 常駐ワーカー（自宅サーバー、Issue #49）のハートビートを保持する DynamoDB
+   * テーブル名。`Launch` がオファーの可否を判断するために読む。
+   */
+  workersTable: string;
   /** マジックリンクメールの送信元アドレス（SESで検証済みのドメイン配下）。 */
   sesFromAddress: string;
   /** マジックリンクURLを組み立てる際のWebフロントエンドのベースURL（末尾スラッシュなし）。 */
@@ -78,6 +83,7 @@ export function loadConfig(): ApiConfig {
     maxReplayBytes: Number(process.env.MAX_REPLAY_BYTES ?? 5 * 1024 * 1024),
     emailRateLimitTable: required("EMAIL_RATE_LIMIT_TABLE"),
     settingsTable: required("SETTINGS_TABLE"),
+    workersTable: required("WORKERS_TABLE"),
     sesFromAddress: required("SES_FROM_ADDRESS"),
     webBaseUrl: required("WEB_BASE_URL"),
     ec2: {
