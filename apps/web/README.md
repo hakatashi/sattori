@@ -62,6 +62,31 @@
 ブラウザ標準のダウンロード機構（進捗表示・タブを離れても継続）を使うため、
 fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
 
+## 完了後のプレビュー再生（`components/JobProgress.tsx`、Issue #71）
+
+`status: "done"`のとき、`GetJobResponse.previewVideoUrl`（720p版のCDN URL。
+ダウンロード用と違い`response-content-disposition`は付かない）を`<video controls>`で
+そのまま再生できるようにしている。
+
+**この画面で最も気を遣うべきはCloudFrontの配信量**である。動画1本は720p版で平均
+約1GiBあり、月1000録画で常時無料枠(1TB/月)をほぼ使い切る水準にある
+（`docs/aws-region-cost-analysis.md` §6）。プレビューが「もう1回ダウンロードされる」
+のと同義になると配信量が単純に倍増するため、次の前提を崩さないこと。
+
+- **`preload="none"` は必須**。既定値（`metadata`）だと、ジョブページを開いただけで
+  全員ぶんのmoov atom取得リクエストが走る。`preload="none"`なら再生ボタンを押すまで
+  1バイトも取得されない（Chromeの実測で確認済み。ページロード後に動画URLへの
+  リクエストが一切発生しないこと・同じページのposter画像は取得されていることを
+  DevToolsのネットワーク記録で確認）。
+- 再生前に真っ黒な矩形を出さないための`poster`には、録画中スクリーンショット
+  （数十KB）を流用する。このために`GET /jobs/{jobId}`は`done`でも
+  `previewImageUrl`を返す。
+- 再生後はブラウザがRangeリクエストで先読みし、バッファが十分たまった時点で受信を
+  止める（S3・CloudFrontともRange対応）。途中まで見て閉じれば転送量もその分で済む。
+  ただし**全編を視聴した上でダウンロードもされれば配信量は2倍**になる。これは
+  避けようがないので、`autoPlay`を付けない・音量を勝手に上げない等、
+  「ユーザーが意図して再生したときだけ流れる」状態を保つことで抑える。
+
 ## 多言語対応（i18n、`src/i18n/`）
 
 `i18next` + `react-i18next`。日本語（既定、プレフィックス無し）と英語（`/en`

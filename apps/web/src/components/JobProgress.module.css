@@ -210,10 +210,33 @@
   font-size: 0.875rem;
 }
 
-.doneActions {
+.preview {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.previewVideo {
+  width: 100%;
+  /* 対応タイトルはいずれも4:3(640x480、720p版も960x720)。明示しておくと、poster
+     （録画中スクリーンショット）が無いジョブでもコントロールバーだけの潰れた箱に
+     ならずに済む。 */
+  aspect-ratio: 4 / 3;
+  max-width: 480px;
+  margin-inline: auto;
+  background: #000;
+  border-radius: var(--radius);
+}
+
+.previewNote {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.doneActions {
   padding-left: 2rem;
   align-items: flex-end;
 }
@@ -224,16 +247,22 @@
   width: 100%;
   justify-content: space-between;
   align-items: flex-end;
+
+  .spacer {
+    flex: 1 1 0;
+  }
 }
 
 .downloadExpiresAt {
   margin: 0;
+  text-align: center;
   color: var(--text-muted);
   font-size: 0.8rem;
 }
 
 .download {
   display: inline-block;
+  margin-top: 0.5rem;
   padding: 0.85rem 3rem;
   text-align: center;
   text-decoration: none;
@@ -248,7 +277,8 @@
 }
 
 .secondaryDownload {
-  display: inline-block;
+  flex: 1 1 0;
+
   text-align: right;
   color: var(--text-muted);
   text-decoration: none;
@@ -257,6 +287,17 @@
 
 .secondaryDownload:hover {
   color: var(--text);
+}
+
+@media (max-width: 900px) {
+  .downloadButtons {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .secondaryDownload {
+    width: 100%;
+  }
 }
 
 @keyframes pulse {

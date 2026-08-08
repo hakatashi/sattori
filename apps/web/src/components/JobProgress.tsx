@@ -179,9 +179,45 @@ export function JobProgressView({ job, loadError }: ViewProps) {
             </p>
           )}
 
+          {done && job.previewVideoUrl && (
+            <figure className={styles.preview}>
+              {/*
+                プレビュー再生（Issue #71）。動画1本の平均が720p版で約1GiBあり、
+                CloudFrontの常時無料枠(1TB/月)を月1000録画でほぼ使い切る水準にある
+                （`docs/aws-region-cost-analysis.md` §6）ため、配信量を増やさないことを
+                最優先にしている:
+                - `preload="none"`: 再生ボタンを押すまで1バイトも取得させない
+                  （既定の`metadata`はページを開いただけでmoov atomの取得が走る）。
+                  再生前に真っ黒な矩形にならないよう、代わりに録画中スクリーンショットを
+                  `poster`（数十KB）として使う。
+                - 再生後はブラウザがRangeリクエストで必要な分だけ先読みし、十分
+                  バッファできた時点で受信を止める（S3/CloudFrontともRange対応）。
+                  途中まで見て閉じれば、その分の転送量しか発生しない。
+                - `autoPlay`は付けない（意図しない全編ダウンロードを避ける）。
+              */}
+              <video
+                className={styles.previewVideo}
+                src={job.previewVideoUrl}
+                poster={job.previewImageUrl ?? undefined}
+                controls
+                preload="none"
+                playsInline
+                aria-label={t("jobProgress.previewVideoLabel")}
+              />
+            </figure>
+          )}
+
           {done && (job.downloadUrl720p ?? job.downloadUrl) && (
             <div className={styles.doneActions}>
+              {job.downloadExpiresAt && (
+                <p className={styles.downloadExpiresAt}>
+                  {t("jobProgress.downloadExpiresAt", {
+                    date: formatExpiresAt(job.downloadExpiresAt, i18n.language),
+                  })}
+                </p>
+              )}
               <div className={styles.downloadButtons}>
+                <div className={styles.spacer} />
                 <a
                   className={styles.download}
                   href={job.downloadUrl720p ?? job.downloadUrl ?? undefined}
@@ -195,13 +231,6 @@ export function JobProgressView({ job, loadError }: ViewProps) {
                   </a>
                 )}
               </div>
-              {job.downloadExpiresAt && (
-                <p className={styles.downloadExpiresAt}>
-                  {t("jobProgress.downloadExpiresAt", {
-                    date: formatExpiresAt(job.downloadExpiresAt, i18n.language),
-                  })}
-                </p>
-              )}
             </div>
           )}
         </div>
