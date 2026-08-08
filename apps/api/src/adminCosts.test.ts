@@ -4,7 +4,7 @@ import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import { BYTES_PER_GB, CLOUDFRONT_FREE_TIER_GB_PER_MONTH } from "@sattori/shared";
 import type { JobCostInput } from "@sattori/shared";
-import { parseGranularity, summarizeCosts } from "./adminCosts.js";
+import { estimateCurrentMonthCostUsd, parseGranularity, summarizeCosts } from "./adminCosts.js";
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
@@ -195,5 +195,33 @@ describe("summarizeCosts", () => {
 
     expect(result.buckets[0]?.key).toBe("2026-05");
     expect(result.buckets[0]?.totalUsd).toBeGreaterThan(0);
+  });
+});
+
+describe("estimateCurrentMonthCostUsd", () => {
+  beforeEach(() => {
+    ddbMock.reset();
+  });
+
+  it("当月のジョブのbreakdown合計＋CloudFront超過分を返す(月間コストガード、Issue #14)", async () => {
+    ddbMock.on(ScanCommand).resolves({ Items: [job()] });
+
+    const total = await estimateCurrentMonthCostUsd("jobs", NOW);
+
+    const monthly = await summarizeCosts("jobs", { granularity: "monthly", limit: 1, now: NOW });
+    expect(total).toBeCloseTo(
+      (monthly.buckets[0]?.totalUsd ?? 0) + (monthly.cloudFront[0]?.usd ?? 0),
+      10,
+    );
+    expect(total).toBeGreaterThan(0);
+  });
+
+  it("当月にジョブが無ければ0を返す", async () => {
+    ddbMock.on(ScanCommand).resolves({
+      Items: [job({ createdAt: "2026-06-01T00:00:00.000Z", launchedAt: "2026-06-01T00:00:00.000Z" })],
+    });
+
+    const total = await estimateCurrentMonthCostUsd("jobs", NOW);
+    expect(total).toBe(0);
   });
 });

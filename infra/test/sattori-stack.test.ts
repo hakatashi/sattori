@@ -197,7 +197,7 @@ describe("SattoriStack", () => {
   });
 
   it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {
-    template.resourceCountIs("AWS::DynamoDB::Table", 2); // Jobs/EmailRateLimit
+    template.resourceCountIs("AWS::DynamoDB::Table", 3); // Jobs/EmailRateLimit/Settings(Issue #14)
     template.hasResourceProperties("AWS::DynamoDB::Table", {
       KeySchema: [{ AttributeName: "normalizedEmail", KeyType: "HASH" }],
       TimeToLiveSpecification: { AttributeName: "ttl", Enabled: true },
@@ -283,9 +283,9 @@ describe("SattoriStack", () => {
         }),
       ]),
     });
-    // GSI追加はテーブル数を変えない(既存の「テーブルはjobsTable/emailRateLimitTableの2つ」
-    // というアサーションと矛盾しないことの確認を兼ねる)。
-    template.resourceCountIs("AWS::DynamoDB::Table", 2);
+    // GSI追加はテーブル数を変えない(既存の「テーブルはjobsTable/emailRateLimitTable/
+    // settingsTableの3つ(Issue #14)」というアサーションと矛盾しないことの確認を兼ねる)。
+    template.resourceCountIs("AWS::DynamoDB::Table", 3);
   });
 
   it("管理画面(`/admin/*`)のHTTP APIルートがLambda Authorizerで保護されている", () => {

@@ -227,3 +227,20 @@ export async function summarizeCosts(
     totalJobCount: jobs.length,
   };
 }
+
+/**
+ * 当月（UTC基準）の推定コスト合計（USD）。月間コストガード（Issue #14）が閾値判定に
+ * 使う値で、`GET /admin/costs`と同じ`summarizeCosts()`を再利用する——月次バケットの
+ * 内訳合計に、月次でしか判定できないCloudFrontの無料枠超過分（`estimateCloudFrontCost`）
+ * を足し合わせたものが「その月にかかった推定額」の全体になる。
+ *
+ * ジョブが1件も無い月はバケット自体が作られない（`summarizeCosts`はMapに存在する
+ * キーしか返さない）ため、該当月が見つからなければ0として扱う。
+ */
+export async function estimateCurrentMonthCostUsd(table: string, now: Date): Promise<number> {
+  const result = await summarizeCosts(table, { granularity: "monthly", limit: 1, now });
+  const monthKey = costBucketKey(now, "monthly");
+  const bucket = result.buckets.find((item) => item.key === monthKey);
+  const cloudFront = result.cloudFront.find((item) => item.month === monthKey);
+  return (bucket?.totalUsd ?? 0) + (cloudFront?.usd ?? 0);
+}

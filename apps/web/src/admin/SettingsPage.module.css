@@ -1,0 +1,106 @@
+.card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  max-width: 36rem;
+}
+
+.cardHeading {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.cardNote {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem;
+}
+
+.status {
+  margin: 0 0 0.75rem;
+}
+
+.statusOk {
+  color: var(--series-1, #2a78d6);
+}
+
+.statusStopped {
+  color: var(--danger);
+}
+
+.button {
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.stopButton {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.gauge {
+  display: block;
+  width: 100%;
+  height: 0.5rem;
+  border-radius: 2px;
+  background: var(--divider);
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.gaugeFill,
+.gaugeOver {
+  display: block;
+  height: 100%;
+}
+
+.gaugeFill {
+  background: var(--series-1, #2a78d6);
+}
+
+.gaugeOver {
+  background: var(--danger);
+}
+
+.limitRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.limitLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.limitInput {
+  width: 6rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.error {
+  color: var(--danger);
+  margin-bottom: 1rem;
+}

@@ -30,6 +30,7 @@ const config: ApiConfig = {
   logGroup: "/sattori/worker",
   maxReplayBytes: 5 * 1024 * 1024,
   emailRateLimitTable: "email-rate-limit",
+  settingsTable: "sattori-settings",
   sesFromAddress: "no-reply@sattori.hakatashi.com",
   webBaseUrl: "https://sattori.hakatashi.com",
   ec2: {

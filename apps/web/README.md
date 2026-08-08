@@ -178,6 +178,16 @@ API Gateway自身の形式で、このAPIの`ApiError`（code/message）形で�
   `@sattori/shared`の`usdToJpy()`＝固定レートによる概算で、円表示のときだけ
   「固定レートによる概算」である旨の注記を出す。円は小数を**USD表示より2桁少なく**
   する（$1≒¥157なので、$0.0360→¥5.65、$0.17→¥27で情報量が釣り合う）。
+- **設定画面**（`SettingsPage.tsx`、`/admin/settings`、Issue #14）: キルスイッチ
+  （`acceptingNewJobs`）と月間コストガードの上限額（`monthlyCostLimitUsd`）を
+  管理する。キルスイッチは新規録画の受付を即座に停止・再開するトグルで、
+  当月の推定コスト（`estimateJobCost()`の月次集計。`CostsPage.tsx`と同じ推定値で
+  請求額そのものではない）を上限額に対するゲージで表示する。どちらもユーザー向けの
+  サービス提供可否に直結する変更のため、`JobActionsPanel`と同じ方針で
+  `window.confirm`による確認を保存前に必須にしている。API側の反映タイミングの
+  非対称性（キルスイッチは次のリクエストから即反映、月間コストガードの閾値は
+  ユーザー向け経路のキャッシュにより最大5分遅れる）は`apps/api/README.md`
+  「キルスイッチ・月間コストガード」参照。
 - **レイアウト**: `AdminLayout.tsx`はユーザー向け`App.tsx`の`Layout`とは共有しない
   専用シェル（`LanguageSwitcher`が存在しない`/en/admin`へのリンクを出してしまうことと、
   ユーザー向け`main`幅(50rem)がジョブ一覧テーブルには狭すぎることが理由）。CSS Modules
