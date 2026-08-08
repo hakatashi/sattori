@@ -159,6 +159,7 @@
     "etaMinutes": "About {{minutes}} min remaining",
     "retryHint": "This is taking longer than usual. Please wait a bit longer.",
     "genericError": "A problem occurred while recording. Please try again.",
+    "previewVideoLabel": "Preview of the recorded video",
     "download": "Download video",
     "downloadOriginal": "Download video before conversion",
     "downloadExpiresAt": "The video will be available for download until {{date}}",
