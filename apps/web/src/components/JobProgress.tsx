@@ -204,15 +204,20 @@ export function JobProgressView({ job, loadError }: ViewProps) {
                 playsInline
                 aria-label={t("jobProgress.previewVideoLabel")}
               />
-              <figcaption className={styles.previewNote}>
-                {t("jobProgress.previewVideoNote")}
-              </figcaption>
             </figure>
           )}
 
           {done && (job.downloadUrl720p ?? job.downloadUrl) && (
             <div className={styles.doneActions}>
+              {job.downloadExpiresAt && (
+                <p className={styles.downloadExpiresAt}>
+                  {t("jobProgress.downloadExpiresAt", {
+                    date: formatExpiresAt(job.downloadExpiresAt, i18n.language),
+                  })}
+                </p>
+              )}
               <div className={styles.downloadButtons}>
+                <div className={styles.spacer} />
                 <a
                   className={styles.download}
                   href={job.downloadUrl720p ?? job.downloadUrl ?? undefined}
@@ -226,13 +231,6 @@ export function JobProgressView({ job, loadError }: ViewProps) {
                   </a>
                 )}
               </div>
-              {job.downloadExpiresAt && (
-                <p className={styles.downloadExpiresAt}>
-                  {t("jobProgress.downloadExpiresAt", {
-                    date: formatExpiresAt(job.downloadExpiresAt, i18n.language),
-                  })}
-                </p>
-              )}
             </div>
           )}
         </div>
