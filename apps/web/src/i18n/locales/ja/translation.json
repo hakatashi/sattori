@@ -158,6 +158,8 @@
     "etaMinutes": "残り約{{minutes}}分",
     "retryHint": "通常より時間がかかっています。もうしばらくお待ちください。",
     "genericError": "録画中に問題が発生しました。もう一度お試しください。",
+    "previewVideoLabel": "録画した動画のプレビュー",
+    "previewVideoNote": "再生ボタンを押すまで動画は読み込まれません（通信量の節約のため）。",
     "download": "動画をダウンロード",
     "downloadOriginal": "変換前の動画をダウンロード",
     "downloadExpiresAt": "動画は{{date}}までダウンロードできます",

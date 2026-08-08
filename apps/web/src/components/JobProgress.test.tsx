@@ -41,6 +41,7 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     error: null,
     updatedAt: new Date().toISOString(),
     progress: null,
+    previewVideoUrl: null,
     previewImageUrl: null,
     replayInfo: REPLAY_INFO,
     ...overrides,
@@ -89,6 +90,58 @@ describe("JobProgressView のダウンロード", () => {
   });
 });
 
+describe("JobProgressView のプレビュー再生（Issue #71）", () => {
+  it("完了ジョブはpreviewVideoUrlを<video>で再生できる", () => {
+    render(
+      <JobProgressView
+        job={buildDoneJob({
+          previewVideoUrl: "https://media.example/720p.mp4",
+          previewImageUrl: "https://media.example/preview.jpg",
+        })}
+        loadError={null}
+      />,
+    );
+
+    const video = screen.getByLabelText("録画した動画のプレビュー") as HTMLVideoElement;
+    expect(video.tagName).toBe("VIDEO");
+    expect(video.getAttribute("src")).toBe("https://media.example/720p.mp4");
+    expect(video.poster).toBe("https://media.example/preview.jpg");
+    expect(video.controls).toBe(true);
+  });
+
+  it("プレビューは preload=\"none\" で、再生ボタンを押すまで動画を取得しない", () => {
+    // CloudFrontの配信量を増やさないための要（`docs/aws-region-cost-analysis.md` §6）。
+    // 既定値(metadata)へ退行すると、ページを開いただけで全ジョブぶんの取得が走る。
+    render(
+      <JobProgressView
+        job={buildDoneJob({ previewVideoUrl: "https://media.example/720p.mp4" })}
+        loadError={null}
+      />,
+    );
+
+    const video = screen.getByLabelText("録画した動画のプレビュー") as HTMLVideoElement;
+    expect(video.getAttribute("preload")).toBe("none");
+    expect(video.hasAttribute("autoplay")).toBe(false);
+  });
+
+  it("previewVideoUrlが無ければプレビューを表示しない", () => {
+    render(<JobProgressView job={buildDoneJob()} loadError={null} />);
+
+    expect(screen.queryByLabelText("録画した動画のプレビュー")).toBeNull();
+  });
+
+  it("完了していないジョブではプレビューを表示しない", () => {
+    render(
+      <JobProgressView
+        job={buildDoneJob({ status: "converting", previewVideoUrl: "https://media.example/720p.mp4" })}
+        loadError={null}
+      />,
+    );
+
+    expect(screen.queryByLabelText("録画した動画のプレビュー")).toBeNull();
+  });
+});
+
 function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
   return {
     jobId: "job-1",
@@ -100,6 +153,7 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     error: null,
     updatedAt: new Date().toISOString(),
     progress: 100,
+    previewVideoUrl: null,
     previewImageUrl: null,
     replayInfo: REPLAY_INFO,
     ...overrides,

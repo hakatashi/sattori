@@ -120,8 +120,18 @@ export interface GetJobResponse {
    */
   progress: number | null;
   /**
+   * 完了時のプレビュー再生用URL（`<video>`の`src`、720p版。無ければ元解像度版）。
+   * `downloadUrl720p`と実体は同じオブジェクトだが、こちらは
+   * `response-content-disposition`クエリを**付けない**（付けるとCloudFrontの
+   * キャッシュキーが変わるうえ、ダウンロード用URLと役割が混ざるため）。
+   * 完了していない・出力が無いジョブでは null。
+   */
+  previewVideoUrl: string | null;
+  /**
    * 録画中の画面プレビュー画像URL（CloudFront配信）。
-   * status が recording/converting の間のみ値を持ち、それ以外（完了・失敗後）は null。
+   * status が recording/converting/done の間のみ値を持ち、失敗後は null。
+   * done での用途はプレビュープレイヤーの`poster`（`previewVideoUrl`参照）で、
+   * 進捗表示のサムネイルとしては使わない。
    */
   previewImageUrl: string | null;
   /**

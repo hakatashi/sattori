@@ -33,6 +33,7 @@ function buildJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     error: null,
     updatedAt: new Date().toISOString(),
     progress: 100,
+    previewVideoUrl: null,
     previewImageUrl: null,
     replayInfo: REPLAY_INFO,
     ...overrides,

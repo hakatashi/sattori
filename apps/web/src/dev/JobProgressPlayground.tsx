@@ -17,7 +17,14 @@ const SAMPLE_REPLAY_INFO: ReplayInfo = {
 
 const BASE: Omit<
   GetJobResponse,
-  "status" | "downloadUrl" | "downloadUrl720p" | "downloadExpiresAt" | "error" | "progress" | "previewImageUrl"
+  | "status"
+  | "downloadUrl"
+  | "downloadUrl720p"
+  | "downloadExpiresAt"
+  | "error"
+  | "progress"
+  | "previewVideoUrl"
+  | "previewImageUrl"
 > = {
   jobId: "sample-job-id",
   game: "th07",
@@ -33,6 +40,7 @@ function buildJob(overrides: Partial<GetJobResponse> & { status: JobStatus }): G
     downloadExpiresAt: null,
     error: null,
     progress: null,
+    previewVideoUrl: null,
     previewImageUrl: null,
     ...overrides,
   };
@@ -59,12 +67,26 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
     }),
   },
   {
-    title: "status: done（720p・元解像度の両方あり）",
+    title: "status: done（720p・元解像度の両方あり、プレビュー付き）",
     job: buildJob({
       status: "done",
       downloadUrl: "https://example.com/sample.mp4",
       downloadUrl720p: "https://example.com/sample-720p.mp4",
       downloadExpiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+      // 実在しないURLだが、preload="none"のため再生ボタンを押すまで取得は走らず、
+      // posterだけが表示される（レイアウト確認にはこれで十分）。
+      previewVideoUrl: "https://example.com/sample-720p.mp4",
+      previewImageUrl: "https://placehold.co/640x480/222/fff?text=Preview",
+    }),
+  },
+  {
+    title: "status: done（プレビュー画像が無くposterが付かない場合）",
+    job: buildJob({
+      status: "done",
+      downloadUrl: "https://example.com/sample.mp4",
+      downloadUrl720p: "https://example.com/sample-720p.mp4",
+      downloadExpiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+      previewVideoUrl: "https://example.com/sample-720p.mp4",
     }),
   },
   {
