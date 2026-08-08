@@ -25,7 +25,9 @@ th11: `reports/35`〜`reports/39`)を参照。
   fps暴走/処理落ちの早期検知・自動リトライ(既定3回)・映像/音声を別プロセスで録画し
   後でmuxする処理(reports/26)・フックDLLより前に追加DLLを注入する処理
   (`GameConfig.extra_dlls`、th06のVsyncPatch用)を担う。進捗スクリーンショット/状態も
-  書き出す |
+  書き出す。音声はジョブ専用のPulseAudio sinkへ分離する(後述「並列録画時の音声分離」) |
+| `pulse.py` | ジョブ専用のPulseAudio null-sinkの作成・破棄(Issue #48)。同一ホストで
+  複数ジョブを並列録画したときに音声が混ざらないようにするためのもの(後述) |
 | `record_th06.py` / `record_th07.py` / `record_th08.py` / `record_th11.py` | タイトル
   固有のパス設定(`GameConfig`)を組み立てて `recording_common.record_with_retry()` を
   呼ぶだけの薄いラッパー |
@@ -253,6 +255,51 @@ touhou-recorderでの事前検証(reports/35〜39)を踏まえた設計:
 - テンプレート画像はゲーム本体ではなく録画パイプライン自体の参照素材のため、タイトル
   資産S3アーカイブではなくワーカーイメージに焼き込む(「リポジトリに含まれない資産」
   節参照)。
+
+## 並列録画時の音声分離(Issue #48、reports/41)
+
+映像はXvfbのディスプレイ番号(`GameConfig.display`、タイトルごとに`:96`〜`:99`)で
+分離されているが、音声は以前はすべてのジョブがPulseAudioのデフォルトsink
+(`module-always-sink`が自動生成する`auto_null`)を暗黙に共有しており、同一ホストで
+複数ジョブを並列録画すると**全ジョブの音声が混ざって記録される**問題があった。
+EC2 Fleet(1インスタンス=1ジョブ)では顕在化しないが、自宅サーバーを追加ワーカーとして
+併用する構想(Issue #49)の前提としてこれを解消した。
+
+- **原因はPulseAudio・Wineいずれの構造的制約でもない**。WINEPREFIXのレジストリにある
+  `winepulse.drv`の`devices`設定は「PulseAudioバックエンドを使う」という指定でしか
+  なく、接続先sinkを固定しない。実際の出力先はPulseAudioクライアントライブラリの
+  規則(`PULSE_SINK`環境変数、無指定ならデフォルトsink)に従うだけである。
+- **対策**: ジョブごとに専用のnull-sinkを作り、ゲーム(Wine)側は`PULSE_SINK`で出力先を
+  そのsinkに固定し(`GameConfig.build_env()`)、録音側ffmpegはそのsinkのmonitor
+  (`GameConfig.pulse_source` = `<sink名>.monitor`)を入力にする。Wine側・MOD側の
+  変更は不要。
+- **sinkのライフサイクル**は`recording_common.record_with_retry()`が
+  `pulse.job_sink()`で管理する。録画開始時に作成し、成功・失敗を問わず戻る際に
+  unloadする。全試行(自動リトライ)で1つのsinkを共有する。
+- sink名は`pulse.sink_name_for_job()`でjobIdから採番する
+  (`sattori_job_<英数字・アンダースコアに正規化したjobId>`)。jobIdの生成規則に
+  依存しないよう、PulseAudioのsink名として安全な文字種へ必ず正規化する。
+  `entrypoint.py`が`--pulse-sink`で録画スクリプトへ渡す。ローカル単体実行時
+  (`--pulse-sink`未指定)はプロセスIDから採番する。
+- 作成前に**同名のsinkが残っていれば必ずunloadする**(`pulse.remove_sink()`)。
+  ワーカーがSIGKILL等で強制終了するとunloadが走らず孤児sinkが残り、同名sinkが既に
+  存在する状態で作成すると新しいsinkが`<名前>.2`へリネームされて、`<名前>.monitor`が
+  前回の孤児sinkを指してしまうため。掃除の対象を同名sinkに限定しているのは、
+  `sattori_job_*`を一括削除すると並列実行中の他ジョブの音声を巻き込んで壊すため。
+- **`auto_null`には依存しない**。`module-always-sink`は「他にsinkが1つも無い場合にのみ
+  `auto_null`を維持する」仕様のため、専用sinkを作った時点で`auto_null`は消えるが、
+  専用sinkしか使わない以上これは無害である(以前`entrypoint.py`にあった「sinkを追加
+  すると`auto_null`が消えて録画が失敗する」という注意書きはこの設計変更で解消した)。
+- **EC2 Fleet(1インスタンス=1ジョブ)でも同じコードパスを通す**。1ジョブしかない環境で
+  専用sinkを使うこと自体に副作用はなく(既存の`-copyts`+実測`-itsoffset`によるA/V同期
+  補正にも影響しないことをreports/41で確認済み)、環境分岐を作らない方がテスト・保守が
+  容易なため。
+- 実機検証(2026-08-08、このリポジトリのローカル環境): th07とth08を専用sink付きで
+  同時録画し、`pactl list sink-inputs`で各ゲームが自分のsinkにのみ接続していることを
+  確認した上で、th08プロセスをSIGSTOPで停止する対照実験を行った。停止中のth08側sinkの
+  monitorは`mean_volume: -91.0 dB`(実質無音)まで落ちる一方、動作を続けているth07側は
+  `-8.1 dB`のままで、混成が起きていないことを確認した(reports/41 Task 3と同じ手順)。
+  単一ジョブ(th06)での通し録画にもリグレッションがないことを併せて確認済み。
 
 ## テスト(`tests/`)
 
@@ -540,12 +587,21 @@ reports/21)。th06・th07(640x480)のような低解像度録画はそのまま�
 ゲーム資産を配置済みであれば、S3/DynamoDB を介さず録画本体だけを試せる:
 
 ```bash
-python3 record_th07.py --replay-path /path/to/any.rpy --output /tmp/out.mp4 \
-  --watermark assets/watermark/watermark-60fps.webm
-python3 record_th08.py --replay-path /path/to/any.rpy --output /tmp/out.mp4 \
-  --watermark assets/watermark/watermark-60fps.webm
-python3 record_th11.py --replay-path /path/to/any.rpy --output /tmp/out.mp4 \
-  --watermark assets/watermark/watermark-60fps.webm
+python3 record_th07.py --replay-path /path/to/any.rpy --output /tmp/out.mp4
+python3 record_th08.py --replay-path /path/to/any.rpy --output /tmp/out.mp4
+python3 record_th11.py --replay-path /path/to/any.rpy --output /tmp/out.mp4
+```
+
+音声の録音先となるPulseAudio sink(上記「並列録画時の音声分離」)は`--pulse-sink`未指定
+ならプロセスIDから採番されるため、複数タイトルを同時に走らせても音声は混ざらない
+(ディスプレイ番号もタイトルごとに異なるため映像も干渉しない)。特定の名前を使いたい
+場合のみ`--pulse-sink sattori_job_xxx`を明示する。
+
+```bash
+# 2並列で音声が分離されていることを確かめる例
+python3 record_th07.py --replay-path /path/to/th7.rpy --output /tmp/th07/out.mp4 &
+python3 record_th08.py --replay-path /path/to/th8.rpy --output /tmp/th08/out.mp4 &
+pactl list sink-inputs | grep -E "Sink:|application.name"  # 各ゲームが別sinkに繋がる
 ```
 
 720pアップスケール変換だけを試す場合(ffmpeg/ffprobeがあれば動作する):

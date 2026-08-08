@@ -2,7 +2,7 @@ import record_th06
 
 
 def test_build_config_uses_th06_canonical_slot_and_paths():
-    config = record_th06.build_config()
+    config = record_th06.build_config("sattori_job_test")
 
     assert config.game_id == "th06"
     # th07/th08と異なりリネームしない。VsyncPatchが実行ファイル名を検証しているらしく、

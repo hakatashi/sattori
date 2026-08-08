@@ -39,6 +39,7 @@ import time
 
 import boto3
 
+import pulse
 from interruption_watcher import InterruptionWatcher
 from progress_reporter import ProgressReporter
 from status import get_job, update_progress, update_status
@@ -135,8 +136,11 @@ def on_interruption(reason, detail):
 
 
 def start_pulseaudio():
-    # auto_null sink は起動時に自動生成されるため手動追加しない
-    # (追加すると auto_null.2 にリネームされ録画が失敗する, PoC で確認済み)。
+    # デーモンを起動するだけで、sink はここでは作らない。録音に使うジョブ専用の
+    # null-sink は録画スクリプト側(recording_common.record_with_retry →
+    # pulse.job_sink)が作成・破棄する(Issue #48)。デフォルト sink(`auto_null`)には
+    # 依存しない設計のため、専用 sink のロードに伴って `module-always-sink` が
+    # `auto_null` を落としても実害はない(touhou-recorder reports/41)。
     log("pulseaudio を起動します")
     subprocess.run(["pulseaudio", "-D", "--exit-idle-time=-1", "--disallow-exit"], check=False)
     time.sleep(2.0)
@@ -206,6 +210,10 @@ def record(s3):
             "--replay-path", REPLAY_PATH,
             "--output", OUTPUT_VIDEO,
             "--progress-dir", PROGRESS_DIR,
+            # 音声の録音先をこのジョブ専用のPulseAudio sinkに固定する(Issue #48)。
+            # 1インスタンス=1ジョブのEC2 Fleetでは分離の必要はないが、コードパスを
+            # 分岐させない方針のため常に渡す。
+            "--pulse-sink", pulse.sink_name_for_job(JOB_ID),
         ]
         if EXPECTED_DURATION_SECONDS:
             cmd += ["--expected-duration-seconds", EXPECTED_DURATION_SECONDS]

@@ -2,7 +2,7 @@ import record_th07
 
 
 def test_build_config_uses_th07_canonical_slot_and_paths():
-    config = record_th07.build_config()
+    config = record_th07.build_config("sattori_job_test")
 
     assert config.game_id == "th07"
     assert config.game_exe == "th07.exe"
