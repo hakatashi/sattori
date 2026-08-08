@@ -22,6 +22,7 @@ function makeJob(overrides: Partial<JobRecord> = {}): JobRecord {
     launchedAt: "2026-08-01T00:00:00.000Z",
     doneAt: "2026-08-01T00:36:00.000Z",
     email: "user@example.com",
+    workerKind: "ec2",
     instanceId: "i-1234",
     instanceType: "c7i.xlarge",
     availabilityZone: "us-east-1a",

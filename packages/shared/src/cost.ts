@@ -129,6 +129,7 @@ export type JobCostInput = Pick<
   JobRecord,
   | "status"
   | "game"
+  | "workerKind"
   | "createdAt"
   | "updatedAt"
   | "launchedAt"
@@ -192,7 +193,14 @@ export type BilledDurationSource =
   /** `launchedAt` が無い旧ジョブ。`FALLBACK_BILLED_HOURS` で代用している。 */
   | "assumed"
   /** EC2が一度も起動していない（pendingのまま期限切れ等）。EC2系のコストは0。 */
-  | "not-launched";
+  | "not-launched"
+  /**
+   * 自宅ワーカーが実行した（Issue #49）。EC2/EBS/IPv4の課金は発生しないため0。
+   * 自宅サーバーの電気代・回線費用はAWSの請求に現れず、按分する意味も無いので
+   * このモジュールでは一切計上しない（「AWSにいくら払っているか」を推定する
+   * モジュールであることを崩さないため）。
+   */
+  | "home-worker";
 
 /** Spot単価をどう決めたか。 */
 export type SpotPriceSource =
@@ -312,6 +320,13 @@ function resolveBilledSeconds(
   job: JobCostInput,
   now: number,
 ): { seconds: number; source: BilledDurationSource } {
+  // 自宅ワーカー(Issue #49)はEC2を1台も起動していないため、稼働時間に比例する
+  // 項目(EC2 Spot/EBS/IPv4)はすべて0になる。`hasEverLaunched`より先に判定すること
+  // (statusがrecording等になっている＝「起動した痕跡がある」と誤判定されるため)。
+  if (job.workerKind === "home") {
+    return { seconds: 0, source: "home-worker" };
+  }
+
   if (!hasEverLaunched(job)) {
     return { seconds: 0, source: "not-launched" };
   }

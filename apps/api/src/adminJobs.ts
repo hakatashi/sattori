@@ -17,7 +17,7 @@ export const STATUS_CREATED_AT_INDEX = "StatusCreatedAtIndex";
  * GSIのProjectionは`ALL`だが、通信量を抑えるためクエリ側でも絞る。
  */
 const SUMMARY_PROJECTION =
-  "jobId, game, #status, createdAt, updatedAt, email, #error, instanceType, availabilityZone, progress, replayInfo";
+  "jobId, game, #status, createdAt, updatedAt, email, #error, workerKind, instanceType, availabilityZone, progress, replayInfo";
 const SUMMARY_EXPRESSION_ATTRIBUTE_NAMES = {
   // "status"はDynamoDBの予約語、"error"も同様に予約語のためプレースホルダが必要。
   "#status": "status",

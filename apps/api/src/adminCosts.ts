@@ -32,7 +32,7 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 /** Scanで取得するのはコスト推定に必要なフィールドだけに絞る（通信量・メモリ削減）。 */
 const COST_PROJECTION =
-  "#status, game, createdAt, updatedAt, launchedAt, doneAt, instanceId, instanceType, spotPricePerHour, outputPath, outputPath720p, outputBytes, outputBytes720p";
+  "#status, game, workerKind, createdAt, updatedAt, launchedAt, doneAt, instanceId, instanceType, spotPricePerHour, outputPath, outputPath720p, outputBytes, outputBytes720p";
 // "status"はDynamoDBの予約語。
 const COST_EXPRESSION_ATTRIBUTE_NAMES = { "#status": "status" };
 
@@ -66,6 +66,7 @@ function newBucket(key: string): MutableBucket {
     jobCount: 0,
     doneCount: 0,
     failedCount: 0,
+    homeWorkerJobCount: 0,
     breakdown: emptyCostBreakdown(),
     totalUsd: 0,
     billedSeconds: 0,
@@ -127,6 +128,7 @@ function normalizeJob(item: JobCostInput): JobCostInput {
   return {
     status: item.status,
     game: item.game,
+    workerKind: item.workerKind ?? null,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
     launchedAt: item.launchedAt ?? null,
@@ -173,6 +175,9 @@ export async function summarizeCosts(
       bucket.doneCount += 1;
     } else if (job.status === "failed") {
       bucket.failedCount += 1;
+    }
+    if (job.workerKind === "home") {
+      bucket.homeWorkerJobCount += 1;
     }
     bucket.breakdown = addCostBreakdown(bucket.breakdown, estimate.breakdown);
     bucket.totalUsd = sumCostBreakdown(bucket.breakdown);

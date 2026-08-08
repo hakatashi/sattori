@@ -27,6 +27,7 @@ export type AdminJobSummary = Pick<
   | "updatedAt"
   | "email"
   | "error"
+  | "workerKind"
   | "instanceType"
   | "availabilityZone"
   | "progress"
@@ -172,6 +173,11 @@ export interface AdminStopJobResponse {
    * （まだ起動していない）の場合は false。
    */
   instanceTerminated: boolean;
+  /**
+   * 自宅ワーカー（Issue #49）への割り当てを解除したか。EC2ワーカーのジョブ・
+   * 未割り当てのジョブでは false（解除処理自体は冪等に走るが、解除対象は無い）。
+   */
+  homeWorkerReleased: boolean;
 }
 
 /** POST /admin/jobs/{jobId}/retry のレスポンス（Issue #59）。 */
@@ -201,6 +207,12 @@ export interface AdminCostBucket {
   doneCount: number;
   /** うち`failed`で終わったジョブ数。 */
   failedCount: number;
+  /**
+   * うち自宅ワーカー（Issue #49）が実行したジョブ数。EC2課金が発生しないぶん
+   * バケットの合計額が下がるため、「安いのは自宅ワーカーが吸収したからなのか、
+   * そもそも録画数が少なかったのか」を区別できるようにする。
+   */
+  homeWorkerJobCount: number;
   breakdown: CostBreakdown;
   /** `breakdown`の合計（USD）。CloudFrontの配信料は含まない（`cloudFront`参照）。 */
   totalUsd: number;

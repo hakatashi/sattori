@@ -4,6 +4,7 @@ import { ADMIN_STOPPED_JOB_ERROR, isTerminalStatus } from "@sattori/shared";
 import type { AdminStopJobResponse } from "@sattori/shared";
 import { loadConfig, required } from "../../config.js";
 import { findJobInstanceIds, terminateInstance } from "../../ec2.js";
+import { releaseHomeWorkerAssignment } from "../../homeWorker.js";
 import { error, json } from "../../http.js";
 import { getJob, updateJobStatus } from "../../jobs.js";
 import { buildExecutionArn, getExecutionLiveness } from "../../stepFunctions.js";
@@ -22,8 +23,8 @@ const sfn = new SFNClient({});
  * 起動し続ける」窓が常に存在する（`stepFunctions.ts`の`getExecutionLiveness`参照）。
  * statusだけで弾くと、まさにこの機能が止めたい暴走ジョブを止められない。
  *
- * **順序が重要**: (1) Step Functions実行の停止 → (2) EC2インスタンスのterminate →
- * (3) ジョブを`failed`に確定、の順で行う。先にインスタンスをterminateすると、
+ * **順序が重要**: (1) Step Functions実行の停止 → (2) EC2インスタンスのterminate・
+ * 自宅ワーカー（Issue #49）への割り当て解除 → (3) ジョブを`failed`に確定、の順で行う。先にインスタンスをterminateすると、
  * ワーカーからのtaskToken通知が永久に来なくなった実行がタスクタイムアウト(90分)後に
  * `HandleFailure`経由でリトライへ回り、**停止したはずのジョブが別インスタンスで
  * 再起動してしまう**（`infra/lib/sattori-stack.ts`のリトライループ）。
@@ -174,6 +175,31 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     }
   }
 
+  // 自宅ワーカー（Issue #49）への割り当ても解除する。EC2の`TerminateInstances`と
+  // 同じ位置づけの後始末で、`assignedWorkerId`が消えるとデーモンは次のジョブ
+  // ハートビート（条件付き更新）でclaimの取り消しに気づき、コンテナを停止する。
+  // 失敗を握りつぶすと「停止済み表示のまま自宅で録画が走り続ける」ことになるため、
+  // terminate失敗時と同様に502で打ち切り、ジョブ状態は書き換えない。
+  let homeWorkerReleased = false;
+  try {
+    await releaseHomeWorkerAssignment(config.jobsTable, jobId);
+    homeWorkerReleased = job.assignedWorkerId !== undefined;
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "admin_release_home_worker_failed",
+        jobId,
+        name: err instanceof Error ? err.name : undefined,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    return error(
+      502,
+      "release_home_worker_failed",
+      "自宅ワーカーへの割り当て解除に失敗しました。Step Functions実行は停止済みのため、時間をおいて再度停止を実行してください",
+    );
+  }
+
   // ここまでの間にワーカーが完走している可能性がある（例: `converting`のジョブを
   // 停止した直後に720pのアップロードが終わり、`done`とdoneAtが書かれて完了メールも
   // 飛ぶ）。無条件に上書きすると「完了メールは届いたのに画面はfailed」という最悪の
@@ -195,6 +221,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       executionLiveness: liveness,
       executionStopped,
       terminatedInstanceIds: [...instanceIds],
+      homeWorkerReleased,
       statusUpdated,
     }),
   );
@@ -204,6 +231,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     status: statusUpdated ? "failed" : "done",
     executionStopped,
     instanceTerminated,
+    homeWorkerReleased,
   };
   return json(200, response);
 };

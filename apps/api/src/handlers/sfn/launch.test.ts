@@ -5,10 +5,10 @@ import {
   DescribeSpotPriceHistoryCommand,
   EC2Client,
 } from "@aws-sdk/client-ec2";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import type { JobRecord } from "@sattori/shared";
+import type { JobRecord, WorkerHeartbeat } from "@sattori/shared";
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -22,6 +22,7 @@ const REQUIRED_ENV: Record<string, string> = {
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
   SETTINGS_TABLE: "sattori-settings",
+  WORKERS_TABLE: "sattori-workers",
   SES_FROM_ADDRESS: "no-reply@sattori.hakatashi.com",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
 };
@@ -46,6 +47,7 @@ const job: JobRecord = {
   doneAt: null,
   email: null,
   instanceId: null,
+  workerKind: null,
   instanceType: null,
   availabilityZone: null,
   spotPricePerHour: null,
@@ -59,6 +61,22 @@ const job: JobRecord = {
   language: "ja",
 };
 
+/** 空き十分・対応タイトルありの自宅ワーカー（Issue #49）。 */
+function heartbeat(overrides: Partial<WorkerHeartbeat> = {}): WorkerHeartbeat {
+  return {
+    workerId: "home-1",
+    kind: "home",
+    lastHeartbeatAt: new Date().toISOString(),
+    accepting: true,
+    activeJobs: 0,
+    maxConcurrency: 4,
+    supportedGames: ["th07"],
+    capabilities: [],
+    ttl: Math.floor(Date.now() / 1000) + 900,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.stubEnv("JOBS_TABLE", REQUIRED_ENV.JOBS_TABLE!);
   for (const [key, value] of Object.entries(REQUIRED_ENV)) {
@@ -66,6 +84,8 @@ beforeEach(() => {
   }
   ec2Mock.reset();
   ddbMock.reset();
+  // 既定では自宅ワーカーは1台も動いていない（＝従来どおりEC2 Fleetを起動する）。
+  ddbMock.on(ScanCommand).resolves({ Items: [] });
 });
 
 describe("sfn/launch handler", () => {
@@ -93,7 +113,7 @@ describe("sfn/launch handler", () => {
 
     expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
     const updateCalls = ddbMock.commandCalls(UpdateCommand);
-    expect(updateCalls.length).toBe(3);
+    expect(updateCalls.length).toBe(4);
     const updatedFields = updateCalls.map((call) => call.args[0].input.ExpressionAttributeValues);
     expect(updatedFields).toEqual(
       expect.arrayContaining([
@@ -106,6 +126,8 @@ describe("sfn/launch handler", () => {
         }),
         // launchedAt（コスト推定の課金起点、Issue #60）は未設定のときだけ書き込む。
         expect.objectContaining({ ":nullType": "NULL" }),
+        // 誰が実行しているか（Issue #49）。コスト推定がこの値で分岐する。
+        expect.objectContaining({ ":w": "ec2" }),
       ]),
     );
   });
@@ -139,5 +161,134 @@ describe("sfn/launch handler", () => {
     await expect(
       handler({ jobId: "missing-job", attempt: 1, taskToken: "token-xyz" }),
     ).rejects.toThrow(/ジョブが見つかりません/);
+  });
+});
+
+describe("sfn/launch handler（自宅ワーカーへのオファー、Issue #49）", () => {
+  /** オファー用UpdateItem（`homeWorkerOfferState`をSETするもの）。 */
+  const offerCalls = () =>
+    ddbMock
+      .commandCalls(UpdateCommand)
+      .filter((call) => call.args[0].input.UpdateExpression?.includes("SET homeWorkerOfferState"));
+
+  /** オファー撤回のUpdateItem。 */
+  const withdrawCalls = () =>
+    ddbMock
+      .commandCalls(UpdateCommand)
+      .filter((call) => call.args[0].input.UpdateExpression?.startsWith("REMOVE homeWorkerOfferState"));
+
+  it("ハートビートが無ければオファーせず即EC2を起動する（平常時に遅延させない）", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: job });
+    ddbMock.on(UpdateCommand).resolves({});
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-abc123"], InstanceType: "c7i.xlarge", AvailabilityZone: "eu-south-2a" }],
+    });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(offerCalls()).toHaveLength(0);
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+  });
+
+  it("claimされたらEC2を起動しない（taskTokenはデーモンが持つ）", async () => {
+    ddbMock.on(ScanCommand).resolves({ Items: [heartbeat()] });
+    // 1回目=Launch冒頭のジョブ取得、2回目以降=claim確認。すぐclaimされた状況にする。
+    ddbMock
+      .on(GetCommand)
+      .resolvesOnce({ Item: job })
+      .resolves({ Item: { assignedWorkerId: "home-1" } });
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(0);
+    // オファーにはワーカーコンテナの環境変数一式（taskToken含む）を添える。
+    const env = offerCalls()[0]?.args[0].input.ExpressionAttributeValues?.[":env"];
+    expect(env).toMatchObject({ JOB_ID: "job-1", GAME: "th07", TASK_TOKEN: "token-xyz" });
+    // statusの更新はデーモンがclaimと同じ条件付き更新で行うため、ここでは書かない
+    // （後追いで書くと、先に走り出したコンテナのrecordingを上書きしうる）。
+    const statusValues = ddbMock
+      .commandCalls(UpdateCommand)
+      .map((call) => call.args[0].input.ExpressionAttributeValues?.[":s"]);
+    expect(statusValues).not.toContain("launching");
+  });
+
+  it("時間内にclaimされなければオファーを撤回してEC2へフォールバックする", async () => {
+    ddbMock.on(ScanCommand).resolves({ Items: [heartbeat()] });
+    ddbMock.on(GetCommand).resolvesOnce({ Item: job }).resolves({ Item: {} });
+    ddbMock.on(UpdateCommand).resolves({});
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-abc123"], InstanceType: "c7i.xlarge", AvailabilityZone: "eu-south-2a" }],
+    });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+
+    const { handler } = await import("./launch.js");
+    // 実時間で待たないよう、オファー期限を即座に過ぎた状態にする。
+    vi.useFakeTimers();
+    try {
+      const promise = handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+      await vi.advanceTimersByTimeAsync(60_000);
+      await promise;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(withdrawCalls()).toHaveLength(1);
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+  });
+
+  it("撤回の直前にclaimされていたらEC2を起動しない（二重録画の防止）", async () => {
+    ddbMock.on(ScanCommand).resolves({ Items: [heartbeat()] });
+    ddbMock.on(GetCommand).resolvesOnce({ Item: job }).resolves({ Item: {} });
+    ddbMock.on(UpdateCommand).resolves({});
+    // 撤回だけが条件チェックで失敗する＝待機中にclaimされていた。
+    ddbMock
+      .on(UpdateCommand, { ConditionExpression: "attribute_not_exists(assignedWorkerId)" })
+      .callsFake((input: { UpdateExpression?: string }) => {
+        if (input.UpdateExpression?.startsWith("REMOVE")) {
+          throw new ConditionalCheckFailedException({ message: "claimed", $metadata: {} });
+        }
+        return {};
+      });
+
+    const { handler } = await import("./launch.js");
+    vi.useFakeTimers();
+    try {
+      const promise = handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+      await vi.advanceTimersByTimeAsync(60_000);
+      await promise;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(0);
+  });
+
+  it("ハートビートの読み取りに失敗してもEC2起動へフォールバックする", async () => {
+    ddbMock.on(ScanCommand).rejects(new Error("throttled"));
+    ddbMock.on(GetCommand).resolves({ Item: job });
+    ddbMock.on(UpdateCommand).resolves({});
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-abc123"], InstanceType: "c7i.xlarge", AvailabilityZone: "eu-south-2a" }],
+    });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(offerCalls()).toHaveLength(0);
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
   });
 });
