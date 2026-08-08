@@ -7,9 +7,33 @@ from PIL import Image
 import recording_common as rc
 
 
+@pytest.fixture(autouse=True)
+def fake_job_sink(monkeypatch):
+    """テスト中に実際のpactl(PulseAudio)を叩かせない。
+
+    record_with_retry()がジョブ専用sinkを作成・破棄する(Issue #48)ため、pulse側の
+    pactl実行部分だけを差し替え、呼び出し履歴を返す(sinkのライフサイクル自体は
+    本物のpulse.job_sink()を通す)。
+    """
+    events = []
+
+    def create_null_sink(sink_name, log=print):
+        events.append(("create", sink_name))
+        return "42"
+
+    def unload_module(module_id, log=print):
+        events.append(("unload", module_id))
+        return True
+
+    monkeypatch.setattr(rc.pulse, "create_null_sink", create_null_sink)
+    monkeypatch.setattr(rc.pulse, "unload_module", unload_module)
+    return events
+
+
 def make_config(**overrides):
     kwargs = dict(
         game_id="th08",
+        pulse_sink="sattori_job_test",
         display=":98",
         wineprefix="/prefix",
         instance_dir="/instance",
@@ -82,6 +106,17 @@ def test_game_config_build_env_sets_wine_and_locale_vars():
     assert env["DISPLAY"] == ":98"
     assert env["LANG"] == "ja_JP.UTF-8"
     assert env["LC_ALL"] == "ja_JP.UTF-8"
+    # Wineの音声出力先をジョブ専用sinkへ固定する(Issue #48)。無指定だとデフォルトsinkへ
+    # 流れ、同一ホストでの並列録画で全ジョブの音声が混ざる。
+    assert env["PULSE_SINK"] == "sattori_job_test"
+
+
+def test_game_config_derives_pulse_source_from_pulse_sink():
+    # 録音側ffmpegの入力はジョブ専用sinkのmonitor(タイトル固定の`auto_null.monitor`では
+    # なくなった、Issue #48)。
+    config = make_config(pulse_sink="sattori_job_abc")
+
+    assert config.pulse_source == "sattori_job_abc.monitor"
 
 
 def test_mad_zero_for_identical_frames():
@@ -443,6 +478,52 @@ def test_record_with_retry_discards_output_above_max_duplicate_rate(monkeypatch)
     )
 
     assert success is False
+
+
+def test_record_with_retry_creates_and_destroys_job_sink(monkeypatch, fake_job_sink):
+    # ジョブ専用sinkは録画開始時に作成し、終了時に必ず破棄する(Issue #48)。
+    config = make_config(pulse_sink="sattori_job_abc")
+    monkeypatch.setattr(rc, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0,
+    })
+    monkeypatch.setattr(rc, "measure_duplicate_rate", lambda *a, **k: 1.0)
+
+    success = rc.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=1, log=lambda msg: None)
+
+    assert success is True
+    assert fake_job_sink == [("create", "sattori_job_abc"), ("unload", "42")]
+
+
+def test_record_with_retry_destroys_job_sink_when_recording_fails(monkeypatch, fake_job_sink):
+    # 失敗時に残った孤児sinkは、次のジョブで同名sinkが`<名前>.2`にリネームされる原因に
+    # なるため、成功・失敗を問わず破棄する。
+    config = make_config(pulse_sink="sattori_job_abc")
+    monkeypatch.setattr(rc, "attempt_recording", lambda *a, **k: {
+        "output_exists": False, "classification": "setup_error", "fps_runaway_hz": None, "total_record_sec": 0.0,
+    })
+
+    success = rc.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=2, log=lambda msg: None)
+
+    assert success is False
+    assert fake_job_sink == [("create", "sattori_job_abc"), ("unload", "42")]
+
+
+def test_record_with_retry_reuses_single_sink_across_attempts(monkeypatch, fake_job_sink):
+    config = make_config(pulse_sink="sattori_job_abc")
+    calls = []
+
+    def fake_attempt(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return {"output_exists": True, "classification": "stutter", "fps_runaway_hz": None, "total_record_sec": 5.0}
+        return {"output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0}
+
+    monkeypatch.setattr(rc, "attempt_recording", fake_attempt)
+    monkeypatch.setattr(rc, "measure_duplicate_rate", lambda *a, **k: 1.0)
+
+    assert rc.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=3, log=lambda msg: None) is True
+    assert len(calls) == 2
+    assert [event for event, _ in fake_job_sink] == ["create", "unload"]
 
 
 def test_wait_for_stable_geometry_waits_until_two_reads_agree(monkeypatch):
