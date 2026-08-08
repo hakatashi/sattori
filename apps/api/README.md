@@ -24,6 +24,8 @@ API契約自体は `packages/shared/README.md` を参照。
 | `admin/stopJob.ts` | `POST /admin/jobs/{jobId}/stop` | 暴走ジョブの緊急停止（実行停止→インスタンス終了→`failed`確定） |
 | `admin/retryJob.ts` | `POST /admin/jobs/{jobId}/retry` | 失敗ジョブの再実行（**新しいjobId**へ複製して起動） |
 | `admin/getCosts.ts` | `GET /admin/costs` | コスト推定の日次/週次/月次集計（全件Scan + アプリ側集計） |
+| `admin/getSettings.ts` | `GET /admin/settings` | キルスイッチ・月間コストガード閾値の現在値と当月推定コストを取得（Issue #14） |
+| `admin/updateSettings.ts` | `POST /admin/settings` | キルスイッチ・月間コストガード閾値の更新（Issue #14） |
 
 ## ジョブ起動〜Step Functionsの流れ
 
@@ -122,6 +124,34 @@ UserDataスクリプトの要点:
   作成したジョブを削除してロールバックする（誰もアクセスできないジョブを残さない）。
 - `pending`ジョブの受付期限は24時間（`jobs.ts`の`PENDING_JOB_TTL_MS`。bot/濫用対策で、
   アップロード用S3の保持期間とは独立）。
+
+## キルスイッチ・月間コストガード（`settings.ts`, `costGuard.ts`, Issue #14）
+
+`requestMagicLink.ts`は上記のメールレート制限より前に、以下2つのグローバルな
+受付制御を順に行う。どちらも`SettingsTable`（PK固定値1件のシングルトン設定、
+`SETTINGS_KEY = "global"`）に持つ`AdminSettings`を参照する。
+
+- **キルスイッチ**（`acceptingNewJobs`）: 管理画面（`/admin/settings`）から手動で
+  新規録画の受付を即座に停止できる。月間コストガードが発動する前に運用者が
+  緊急停止する用途を想定している。`getSettings()`はキャッシュせず毎回GetItem
+  するため（1件のみの軽量な読み取り）、切替は次のリクエストから反映される。
+- **月間コストガード**（`monthlyCostLimitUsd`、既定`DEFAULT_MONTHLY_COST_LIMIT_USD`
+  ＝50 USD）: 月間の録画**回数**ではなく、既存の推定コスト機能
+  （`@sattori/shared`の`estimateJobCost()`、Issue #60）による**当月の推定コスト合計**
+  が閾値に達したら新規受付を止める。回数ではなく金額で判定するのは、自宅サーバーを
+  追加録画ワーカーとして導入する構想（Issue #49）が実現すると一部ジョブのEC2コストが
+  大幅に下がり、ジョブ単価が一様でなくなる見込みのため。当月コストの算出
+  （`adminCosts.ts`の`estimateCurrentMonthCostUsd()`）は`JobsTable`の全件Scanを要する
+  ため、ユーザー向け経路専用の`costGuard.ts`が5分（`COST_GUARD_CACHE_TTL_MS`）
+  Lambda実行コンテキストにキャッシュする（`adminAuth.ts`のSSMトークンキャッシュと
+  同じ考え方。閾値到達直後の数分は数件超過して受け付ける可能性があるが、この
+  推定値自体が請求額そのものではないため許容している）。
+- どちらも該当すれば`POST /magic-links`は503（`service_paused` /
+  `monthly_cost_limit_reached`）を返す。エラーメッセージはそのままフロントエンドに
+  表示される（`apps/web`はAPIの`ApiError.message`をそのままユーザーに見せる設計）。
+- 設定の更新（`POST /admin/settings`）は`settings.ts`の`updateSettings()`が単純な
+  読み取り→マージ→上書きで行う。管理者は1人固定で更新頻度も低いため、
+  `rateLimit.ts`のような原子的な条件付き更新は採用していない。
 
 ## ダウンロードURLとContent-Disposition（`getJob.ts`）
 

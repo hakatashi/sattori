@@ -39,7 +39,10 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   管理画面のジョブ一覧取得用GSI`StatusCreatedAtIndex`（PK=`status`, SK=`createdAt`,
   Projection=ALL）を追加済み、Issue #51。詳細は`apps/api/README.md`「管理API」）、
   `EmailRateLimitTable`（`normalizedEmail`パーティションキーのみ・1メール1item、
-  TTL属性で自動削除。`apps/api/README.md`参照）。
+  TTL属性で自動削除。`apps/api/README.md`参照）、
+  `SettingsTable`（`settingKey`パーティションキーのみ・固定値1item、キルスイッチ・
+  月間コストガード閾値のシングルトン設定。Issue #14。`apps/api/README.md`
+  「キルスイッチ・月間コストガード」参照）。
 - **SES**: `EmailIdentity`（送信元ドメインのDKIM検証、マジックリンク・完了メール
   送信用）は**`SattoriEdgeStack`（us-east-1）側**にある（eu-south-2にはSESが存在
   しないため）。DKIM用CNAMEは`cdk deploy`後にCfnOutputの値を外部DNSへ手動追加する

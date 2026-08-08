@@ -87,6 +87,8 @@ Issue #60。後述「コスト推定」）等を持つ。
 | `POST /admin/jobs/{jobId}/stop` | ジョブの緊急停止（Issue #59） |
 | `POST /admin/jobs/{jobId}/retry` | ジョブの再実行（Issue #59。**新しいjobIdのジョブとして複製・起動**するため、レスポンスの`jobId`はパスのそれとは別物） |
 | `GET /admin/costs` | コスト推定の日次/週次/月次集計（Issue #60。後述「コスト推定」） |
+| `GET /admin/settings` | キルスイッチ・月間コストガード閾値の現在値と当月推定コスト（Issue #14。後述「運用設定」） |
+| `POST /admin/settings` | キルスイッチ・月間コストガード閾値の更新（Issue #14） |
 
 参照系と違い停止・再実行は状態を変えるため`POST`（`DELETE`にすると
 `corsPreflight.allowMethods`の拡張も要る）。再実行の複製元/複製先は
@@ -129,6 +131,27 @@ API側の実装詳細（GSI設計・authorizer・ダウンロードURLの発行�
 
 **これは請求額ではなく推定値**である。用途は「どのジョブが異常に高いか」「月次で
 いくら使っているか」の運用把握であり、会計用途ではない。
+
+## 運用設定（`src/settings.ts`、Issue #14）
+
+`GET`/`POST /admin/settings`の契約。ジョブレコードとは別の、DynamoDBの
+`SettingsTable`にシングルトンで持つ運用設定（`AdminSettings`）を表す。
+
+- `acceptingNewJobs`: **キルスイッチ**。falseで`POST /magic-links`（新規録画受付）を
+  即座に停止する。月間コストガードが発動する前に運用者が手動で全面停止できるように
+  するための機能。
+- `monthlyCostLimitUsd`: **月間コストガード**の閾値（USD、既定
+  `DEFAULT_MONTHLY_COST_LIMIT_USD` = 50）。月間の録画**回数**ではなく、上記
+  「コスト推定」による**当月の推定コスト合計**がこの金額に達したら新規受付を止める。
+  自宅サーバーを追加録画ワーカーとして導入する構想（Issue #49）が実現すると
+  ジョブ単価が一様でなくなる見込みのため、回数ではなく金額で判定する設計にしている。
+- `AdminSettingsResponse`は`AdminSettings`に加えて`currentMonthCostUsd`
+  （当月の推定コスト合計。CloudFrontの無料枠超過分を含む）と`costLimitReached`
+  （`currentMonthCostUsd >= monthlyCostLimitUsd`）を含む。
+
+API側の実装詳細（キャッシュ戦略・反映タイミングの非対称性等）は
+`apps/api/README.md`「キルスイッチ・月間コストガード」、フロント側は
+`apps/web/README.md`「管理画面」の設定画面の項を参照。
 
 ## ダウンロードファイル名・Content-Disposition（`src/download.ts`）
 

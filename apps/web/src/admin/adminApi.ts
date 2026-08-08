@@ -5,9 +5,11 @@ import type {
   AdminJobListResponse,
   AdminLogsResponse,
   AdminRetryJobResponse,
+  AdminSettingsResponse,
   AdminStopJobResponse,
   CostGranularity,
   JobStatus,
+  UpdateAdminSettingsRequest,
 } from "@sattori/shared";
 import { request, SattoriApiError } from "../api/client.ts";
 
@@ -143,4 +145,24 @@ export function retryAdminJob(token: string, jobId: string): Promise<AdminRetryJ
     `/admin/jobs/${encodeURIComponent(jobId)}/retry`,
     { method: "POST" },
   );
+}
+
+/** キルスイッチ・月間コストガード閾値の現在値と、当月の推定コストを取得する（Issue #14）。 */
+export function fetchAdminSettings(token: string): Promise<AdminSettingsResponse> {
+  return adminRequest<AdminSettingsResponse>(token, "/admin/settings");
+}
+
+/**
+ * キルスイッチ・月間コストガード閾値を更新する（Issue #14）。指定したフィールドだけが
+ * 更新される。新規録画の受付を止める破壊的操作になりうるため、呼び出し側は
+ * `acceptingNewJobs`の変更時は確認ダイアログを挟むこと。
+ */
+export function updateAdminSettings(
+  token: string,
+  patch: UpdateAdminSettingsRequest,
+): Promise<AdminSettingsResponse> {
+  return adminRequest<AdminSettingsResponse>(token, "/admin/settings", {
+    method: "POST",
+    body: JSON.stringify(patch),
+  });
 }

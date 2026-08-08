@@ -11,10 +11,12 @@ import {
   type RequestMagicLinkResponse,
 } from "@sattori/shared";
 import { loadConfig } from "../config.js";
+import { getCachedMonthlyCostUsd } from "../costGuard.js";
 import { error, json, parseBody } from "../http.js";
 import { deleteJob, PENDING_JOB_TTL_MS, putJob } from "../jobs.js";
 import { checkAndRecordRateLimit } from "../rateLimit.js";
 import { sendMagicLinkEmail } from "../ses.js";
+import { getSettings } from "../settings.js";
 
 /**
  * POST /magic-links
@@ -44,6 +46,35 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const game: GameId = body.game ?? "th07";
   if (!isSupportedGame(game)) {
     return error(422, "unsupported_game", "現在このタイトルの録画には対応していません");
+  }
+
+  // キルスイッチ（Issue #14）。管理者が/adminから手動で全面停止した状態。
+  // GetItem1回のみで軽量なためキャッシュせず、切替が即座に反映されるようにする
+  // （`settings.ts`参照）。
+  const settings = await getSettings(config.settingsTable);
+  if (!settings.acceptingNewJobs) {
+    return error(
+      503,
+      "service_paused",
+      "現在、新規録画の受付を一時的に停止しています。しばらくしてから再度お試しください。",
+    );
+  }
+
+  // 月間コストガード（Issue #14）。月間の録画回数ではなく、既存の推定コスト機能
+  // （`@sattori/shared`の`estimateJobCost()`）による当月の推定合計額が閾値に達したら
+  // 新規受付を止める。自宅サーバーを追加ワーカーとして導入する構想（Issue #49）で
+  // ジョブ単価が一様でなくなる見込みのため、回数ではなく金額で判定する。
+  // 当月コストの算出はJobsTableの全件Scanを要するため`getCachedMonthlyCostUsd()`が
+  // 数分キャッシュする（`costGuard.ts`参照）——閾値到達直後の数分は数件超過して
+  // 受け付ける可能性があるが、この推定値自体が請求額そのものではない
+  // （AGENTS.md「今後の展開・既知の制約」）ため許容している。
+  const currentMonthCostUsd = await getCachedMonthlyCostUsd(config.jobsTable);
+  if (currentMonthCostUsd >= settings.monthlyCostLimitUsd) {
+    return error(
+      503,
+      "monthly_cost_limit_reached",
+      "今月の推定利用コストが上限に達したため、新規録画の受付を一時的に停止しています。翌月になると自動的に受付を再開します。",
+    );
   }
 
   const { allowed } = await checkAndRecordRateLimit(config.emailRateLimitTable, body.email);

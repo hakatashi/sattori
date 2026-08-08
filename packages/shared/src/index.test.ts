@@ -5,6 +5,7 @@ import {
   DEFAULT_RECORDING_OPTIONS,
   ADMIN_JOB_LIST_DEFAULT_LIMIT,
   ADMIN_JOB_LIST_MAX_LIMIT,
+  DEFAULT_MONTHLY_COST_LIMIT_USD,
 } from "./index.js";
 
 describe("shared", () => {
@@ -31,5 +32,9 @@ describe("shared", () => {
   it("管理API(admin.ts)の定数がindexからre-exportされている(Issue #51)", () => {
     expect(ADMIN_JOB_LIST_DEFAULT_LIMIT).toBe(20);
     expect(ADMIN_JOB_LIST_MAX_LIMIT).toBe(100);
+  });
+
+  it("月間コストガード(settings.ts)の既定値がindexからre-exportされている(Issue #14)", () => {
+    expect(DEFAULT_MONTHLY_COST_LIMIT_USD).toBe(50);
   });
 });
