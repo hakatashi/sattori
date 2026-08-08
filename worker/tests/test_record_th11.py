@@ -2,7 +2,7 @@ import record_th11
 
 
 def test_build_config_uses_th11_canonical_slot_and_paths():
-    config = record_th11.build_config()
+    config = record_th11.build_config("sattori_job_test")
 
     assert config.game_id == "th11"
     assert config.game_exe == "th11.exe"
@@ -19,6 +19,6 @@ def test_build_config_uses_th11_canonical_slot_and_paths():
 def test_build_config_sets_pause_menu_cursor_exclude_rect():
     # Pause Menu画面の選択カーソル明滅で画面静止検知が機能しなくなる問題への対策
     # (touhou-recorder reports/37・38)。
-    config = record_th11.build_config()
+    config = record_th11.build_config("sattori_job_test")
 
     assert config.still_detect_exclude_rect == (70, 288, 188, 318)

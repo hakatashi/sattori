@@ -41,6 +41,12 @@ build_video_ffmpeg_cmd/build_audio_ffmpeg_cmd で両ffmpegに`-copyts`を付与�
 実際の絶対キャプチャ開始時刻(wallclockベースのepoch秒)を出力ファイルの
 start_timeとして保持し、mux_audio_video()がその差分を実測して遅く始まった側に
 `-itsoffset`を与えることで補正する(ハードコードされた定数ではなく毎回実測)。
+
+音声の入出力先はジョブごとに作る専用のPulseAudio null-sink(`GameConfig.pulse_sink`)に
+固定する。以前は全ジョブがデフォルトsink(`auto_null`)を暗黙に共有しており、同一ホストで
+並列録画すると全ジョブの音声が混ざって記録されていた(Issue #48、reports/41)。sink自体の
+作成・破棄は record_with_retry() が pulse.job_sink() で行い、Wine側の出力先は
+GameConfig.build_env() が渡す`PULSE_SINK`で固定する。
 """
 import io
 import json
@@ -53,6 +59,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 from PIL import Image
+
+import pulse
 
 XVFB_SCREEN = "800x600x24"
 
@@ -145,6 +153,11 @@ class GameConfig:
     canonical_slot: str  # アップロードされた任意ファイル名リプレイを配置する正規スロット名
     injector_path: str
     hook_dll_path: str
+    # このジョブ専用のPulseAudio null-sink名(Issue #48)。タイトルではなくジョブごとに
+    # 一意であるべき値なので、GameConfigの既定値ではなく実行時に注入する
+    # (record_th*.pyの`--pulse-sink`引数、entrypoint.pyがjobIdから採番して渡す)。
+    # 名前はpulse.sink_name_for_job()で正規化済みのものを渡すこと。
+    pulse_sink: str
     # 実行ファイル名。未指定(None)ならf"{game_id}.exe"を使う(th07/th08)。
     # th06はVsyncPatch(vpatch_th06.dll)が対象プロセスの実行ファイル名を検証している
     # らしく、`th06.exe`へリネームすると白画面ハング(reports/30)が再発することを
@@ -160,8 +173,9 @@ class GameConfig:
     process_name: str | None = None
     hook_dll: str = field(init=False)
     log_path: str = field(init=False)
+    # 録音側ffmpegの入力(pulse_sinkのmonitor)。pulse_sinkから導出する。
+    pulse_source: str = field(init=False)
     injector: str = "injector.exe"
-    pulse_source: str = "auto_null.monitor"
     # フックDLLより前に注入する追加DLL(ファイル名のみ、game_dir_src配下に同梱されており
     # prepare_instance()のrsyncで自動的にinstance_dirへコピーされる想定)。
     # th06はwined3dの白画面ハング回避に必須のVsyncPatch(vpatch_th06.dll、
@@ -188,6 +202,7 @@ class GameConfig:
             object.__setattr__(self, "process_name", self.game_exe)
         object.__setattr__(self, "hook_dll", f"{self.game_id}_hook.dll")
         object.__setattr__(self, "log_path", f"{self.instance_dir}/{self.game_id}_autoplay.log")
+        object.__setattr__(self, "pulse_source", f"{self.pulse_sink}.monitor")
         if self.end_template_path is None:
             module_dir = os.path.dirname(os.path.abspath(__file__))
             object.__setattr__(
@@ -202,6 +217,12 @@ class GameConfig:
         # 日本語ロケールを明示しないと動的描画の日本語が文字化けする(reports/13)。
         env["LANG"] = "ja_JP.UTF-8"
         env["LC_ALL"] = "ja_JP.UTF-8"
+        # Wineの音声出力先をこのジョブ専用sinkへ固定する(Issue #48、reports/41)。
+        # 無指定だとPulseAudioのデフォルトsinkへ流れ、同一ホストの並列録画で音声が
+        # 混ざる。WINEPREFIXのレジストリ(winepulse.drvのdevices)は「PulseAudioを使う」
+        # という指定でしかなく接続先sinkを固定しないため、Wine側の変更ではなく
+        # この環境変数で制御する。
+        env["PULSE_SINK"] = self.pulse_sink
         return env
 
 
@@ -895,7 +916,23 @@ def record_with_retry(config, replay_path, output_path, *,
                        log=print):
     """attempt_recording()を最大max_attempts回試行し、fps暴走・処理落ちの早期検知や
     事後の重複フレーム率チェックに引っかかった場合は出力を破棄してリトライする。
-    正常な録画が得られればTrueを、max_attempts回失敗すればFalseを返す。"""
+    正常な録画が得られればTrueを、max_attempts回失敗すればFalseを返す。
+
+    このジョブ専用のPulseAudio null-sink(config.pulse_sink)はここで作成し、成功・失敗を
+    問わず戻る際に破棄する(Issue #48)。全試行で同じsinkを使い回す(試行ごとにWineと
+    録音ffmpegは起動し直されるため、sinkだけを共有しても前試行の残留ストリームは残らない)。
+    """
+    with pulse.job_sink(config.pulse_sink, log=log):
+        return _record_with_retry(
+            config, replay_path, output_path,
+            progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
+            max_attempts=max_attempts, max_duplicate_rate=max_duplicate_rate, log=log,
+        )
+
+
+def _record_with_retry(config, replay_path, output_path, *,
+                       progress_dir, expected_duration_seconds,
+                       max_attempts, max_duplicate_rate, log):
     for attempt in range(1, max_attempts + 1):
         log(f"=== 試行 {attempt}/{max_attempts} ===")
         result = attempt_recording(

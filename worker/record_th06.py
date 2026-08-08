@@ -38,6 +38,7 @@ th07/th08の命名則(`th{N}_ud####.rpy`)を踏襲したものだが、th08の�
 import argparse
 import os
 
+import pulse
 from recording_common import GameConfig, log_with_prefix, record_with_retry
 
 REPO = os.path.dirname(os.path.abspath(__file__))
@@ -47,12 +48,13 @@ def log(msg):
     log_with_prefix("record_th06", msg)
 
 
-def build_config():
+def build_config(pulse_sink):
     instance_dir = os.environ.get("SATTORI_INSTANCE_DIR", f"{REPO}/instances/th06-recording")
     game_dir_src = os.environ.get("SATTORI_GAME_DIR", f"{REPO}/games/th06")
     mod_dir = os.environ.get("SATTORI_MOD_DIR", f"{REPO}/mods")
     return GameConfig(
         game_id="th06",
+        pulse_sink=pulse_sink,
         display=os.environ.get("SATTORI_DISPLAY", ":96"),
         wineprefix=os.environ.get("WINEPREFIX", f"{REPO}/prefixes/th06-wined3d-gl"),
         instance_dir=instance_dir,
@@ -82,6 +84,11 @@ def main():
         "--expected-duration-seconds", type=float, default=None,
         help="リプレイの推定再生時間(進捗率算出用の参考値、未指定なら進捗率は算出しない)",
     )
+    parser.add_argument(
+        "--pulse-sink", default=None,
+        help="このジョブ専用のPulseAudio null-sink名(録画開始時に作成し終了時に破棄する、Issue #48)。"
+             "未指定ならプロセスIDから採番する(ローカル単体実行向け)",
+    )
     parser.add_argument("--max-attempts", type=int, default=3, help="異常検知時の最大試行回数")
     parser.add_argument(
         "--max-duplicate-rate", type=float, default=30.0,
@@ -93,7 +100,7 @@ def main():
     if args.progress_dir:
         os.makedirs(args.progress_dir, exist_ok=True)
 
-    config = build_config()
+    config = build_config(args.pulse_sink or pulse.local_sink_name())
     success = record_with_retry(
         config, args.replay_path, args.output,
         progress_dir=args.progress_dir, expected_duration_seconds=args.expected_duration_seconds,
