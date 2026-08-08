@@ -210,6 +210,32 @@
   font-size: 0.875rem;
 }
 
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.previewVideo {
+  width: 100%;
+  /* 対応タイトルはいずれも4:3(640x480、720p版も960x720)。明示しておくと、poster
+     （録画中スクリーンショット）が無いジョブでもコントロールバーだけの潰れた箱に
+     ならずに済む。 */
+  aspect-ratio: 4 / 3;
+  max-width: 480px;
+  margin-inline: auto;
+  background: #000;
+  border-radius: var(--radius);
+}
+
+.previewNote {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
 .doneActions {
   display: flex;
   flex-direction: column;

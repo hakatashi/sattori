@@ -1,7 +1,7 @@
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { calculateDownloadExpiresAt, type GetJobResponse } from "@sattori/shared";
 import { loadConfig } from "../config.js";
-import { buildVideoDownloadUrl } from "../downloads.js";
+import { buildCdnUrl, buildVideoDownloadUrl } from "../downloads.js";
 import { error, json } from "../http.js";
 import { getJob } from "../jobs.js";
 
@@ -30,11 +30,22 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     job.status === "done" && job.outputPath720p
       ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath720p, job, "720p")
       : null;
-  // プレビュー画像は録画・変換の進行中のみ意味を持つ(完了・失敗後は最新のダウンロード
-  // 導線を優先し、古いスクリーンショットは表示しない)。
+  // ページBのプレビュープレイヤー(Issue #71)用のURL。ダウンロード用と違い
+  // `response-content-disposition`を付けない(付けるとCloudFrontのキャッシュキーが
+  // 変わってしまい、ダウンロードとプレビューでキャッシュを共有できない)。
+  // 720p版を優先するのは、主要ダウンロードボタンと同じ「ユーザーが受け取る成果物」を
+  // そのまま見せるため(ウォーターマークもこちらにのみ合成されている)。
+  const previewOutputPath =
+    job.status === "done" ? (job.outputPath720p ?? job.outputPath ?? null) : null;
+  const previewVideoUrl = previewOutputPath
+    ? buildCdnUrl(config.cdnDomain, previewOutputPath)
+    : null;
+  // プレビュー画像は録画・変換の進行中に加え、完了後はプレビュープレイヤーの
+  // poster として使う(再生前に真っ黒な矩形を出さないため)。失敗後は表示しない。
   const previewImageUrl =
-    (job.status === "recording" || job.status === "converting") && job.previewImagePath
-      ? `https://${config.cdnDomain}/${job.previewImagePath}`
+    (job.status === "recording" || job.status === "converting" || job.status === "done") &&
+    job.previewImagePath
+      ? buildCdnUrl(config.cdnDomain, job.previewImagePath)
       : null;
 
   const response: GetJobResponse = {
@@ -47,6 +58,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     error: job.error,
     updatedAt: job.updatedAt,
     progress: job.progress,
+    previewVideoUrl,
     previewImageUrl,
     replayInfo: job.replayInfo ?? null,
   };

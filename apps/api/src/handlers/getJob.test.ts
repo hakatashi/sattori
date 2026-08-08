@@ -142,6 +142,63 @@ describe("GET /jobs/{jobId}", () => {
     expect(body.downloadExpiresAt).toBeNull();
   });
 
+  it("完了ジョブは response-content-disposition を付けない720p版のプレビュー再生URLを返す", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: doneJob });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    // `<video src>`にそのまま渡すURL。dispositionを付けるとCloudFrontのキャッシュキーが
+    // ダウンロード用と分かれてしまうため、クエリなしの素のCDN URLであることを保証する。
+    expect(body.previewVideoUrl).toBe("https://cdn.example.net/output/job-1/video-720p.mp4");
+  });
+
+  it("720p版が無い完了ジョブのプレビュー再生URLは元解像度版へフォールバックする", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...doneJob, outputPath720p: null } });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.previewVideoUrl).toBe("https://cdn.example.net/output/job-1/video.mp4");
+  });
+
+  it("録画中(done以外)のジョブはプレビュー再生URLを返さない", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...doneJob, status: "recording" } });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.previewVideoUrl).toBeNull();
+  });
+
+  it("完了ジョブもプレビュー画像URLを返す(プレビュープレイヤーのposterに使う)", async () => {
+    ddbMock
+      .on(GetCommand)
+      .resolves({ Item: { ...doneJob, previewImagePath: "previews/job-1/latest.jpg" } });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.previewImageUrl).toBe("https://cdn.example.net/previews/job-1/latest.jpg");
+  });
+
+  it("失敗したジョブはプレビュー画像URLを返さない", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, status: "failed", previewImagePath: "previews/job-1/latest.jpg" },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.previewImageUrl).toBeNull();
+    expect(body.previewVideoUrl).toBeNull();
+  });
+
   it("ジョブが存在しなければ404を返す", async () => {
     ddbMock.on(GetCommand).resolves({});
     const { handler } = await import("./getJob.js");
