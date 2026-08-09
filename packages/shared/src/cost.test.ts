@@ -20,6 +20,7 @@ function makeJob(overrides: Partial<JobCostInput> = {}): JobCostInput {
   return {
     status: "done",
     game: "th07",
+    workerKind: "ec2",
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-01T00:36:00.000Z",
     launchedAt: "2026-08-01T00:00:00.000Z",
@@ -34,6 +35,43 @@ function makeJob(overrides: Partial<JobCostInput> = {}): JobCostInput {
     ...overrides,
   };
 }
+
+describe("estimateJobCost（自宅ワーカー、Issue #49）", () => {
+  it("EC2/EBS/IPv4は0で計上する（インスタンスを1台も起動していないため）", () => {
+    const estimate = estimateJobCost(
+      makeJob({ workerKind: "home", instanceId: null, instanceType: null, spotPricePerHour: null }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+
+    expect(estimate.billedSeconds).toBe(0);
+    expect(estimate.billedDurationSource).toBe("home-worker");
+    expect(estimate.breakdown.ec2Spot).toBe(0);
+    expect(estimate.breakdown.ebs).toBe(0);
+    expect(estimate.breakdown.publicIpv4).toBe(0);
+  });
+
+  it("S3保管料とmiscは計上する（自宅で録画してもAWS側に実際に発生するため）", () => {
+    const estimate = estimateJobCost(
+      makeJob({ workerKind: "home" }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+
+    expect(estimate.breakdown.s3Storage).toBeGreaterThan(0);
+    expect(estimate.breakdown.misc).toBe(MISC_USD_PER_JOB);
+    // CloudFrontの配信量も引き続き見積もる（無料枠の消化はワーカー種別に依らない）。
+    expect(estimate.deliveryBytes).toBeGreaterThan(0);
+  });
+
+  it("実行中でもEC2コストは積み上がらない（launchedAtの有無に関わらず0）", () => {
+    const estimate = estimateJobCost(
+      makeJob({ workerKind: "home", status: "recording", doneAt: null }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+
+    expect(estimate.billedSeconds).toBe(0);
+    expect(estimate.billedDurationSource).toBe("home-worker");
+  });
+});
 
 describe("estimateJobCost", () => {
   it("launchedAt〜doneAt を課金対象時間として EC2 コストを積む", () => {

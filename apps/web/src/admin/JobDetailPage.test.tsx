@@ -324,8 +324,10 @@ describe("JobDetailPage", () => {
 
       await waitFor(() => expect(screen.getByText(/停止しました/)).toBeTruthy());
       expect(mocked.stopAdminJob).toHaveBeenCalledWith("token", "job-1");
-      // 初回取得 + 停止後の再取得。
-      expect(mocked.fetchAdminJobDetail).toHaveBeenCalledTimes(2);
+      // 初回取得 + 停止後の再取得。再取得は`useAdminResource.reload()`のstate更新を
+      // 経てuseEffectから発火するため、結果メッセージが描画されたのと同じティックとは
+      // 限らない（即時にアサートするとCIのような遅い環境で取りこぼす）。
+      await waitFor(() => expect(mocked.fetchAdminJobDetail).toHaveBeenCalledTimes(2));
     });
 
     it("再実行に成功したら新しいjobIdへのリンクを表示する", async () => {

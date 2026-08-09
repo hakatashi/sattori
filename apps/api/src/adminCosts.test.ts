@@ -43,6 +43,61 @@ describe("parseGranularity", () => {
   });
 });
 
+describe("自宅ワーカーのジョブの扱い（Issue #49）", () => {
+  beforeEach(() => {
+    ddbMock.reset();
+  });
+
+  const homeJob = () =>
+    job({ workerKind: "home", instanceId: null, instanceType: null, spotPricePerHour: null });
+
+  it("コストダッシュボードの集計でEC2系を積まない", async () => {
+    ddbMock.on(ScanCommand).resolves({ Items: [homeJob()] });
+
+    const result = await summarizeCosts("jobs", { granularity: "monthly", limit: 12, now: NOW });
+    const bucket = result.buckets[0]!;
+
+    expect(bucket.jobCount).toBe(1);
+    expect(bucket.homeWorkerJobCount).toBe(1);
+    expect(bucket.billedSeconds).toBe(0);
+    expect(bucket.breakdown.ec2Spot).toBe(0);
+    expect(bucket.breakdown.ebs).toBe(0);
+    expect(bucket.breakdown.publicIpv4).toBe(0);
+    // S3保管料は自宅ワーカーでも実際に発生するので計上する。
+    expect(bucket.breakdown.s3Storage).toBeGreaterThan(0);
+  });
+
+  it("EC2ジョブと混在しても、EC2系の合計は EC2 ジョブのぶんだけになる", async () => {
+    ddbMock.on(ScanCommand).resolves({ Items: [job(), homeJob()] });
+
+    const mixed = await summarizeCosts("jobs", { granularity: "monthly", limit: 12, now: NOW });
+    ddbMock.reset();
+    ddbMock.on(ScanCommand).resolves({ Items: [job()] });
+    const ec2Only = await summarizeCosts("jobs", { granularity: "monthly", limit: 12, now: NOW });
+
+    expect(mixed.buckets[0]!.jobCount).toBe(2);
+    expect(mixed.buckets[0]!.homeWorkerJobCount).toBe(1);
+    expect(mixed.buckets[0]!.breakdown.ec2Spot).toBeCloseTo(
+      ec2Only.buckets[0]!.breakdown.ec2Spot,
+      10,
+    );
+    expect(mixed.buckets[0]!.billedSeconds).toBe(ec2Only.buckets[0]!.billedSeconds);
+  });
+
+  it("月間コストガードの当月推定にもEC2費用を含めない", async () => {
+    ddbMock.on(ScanCommand).resolves({ Items: [homeJob()] });
+    const homeOnly = await estimateCurrentMonthCostUsd("jobs", NOW);
+
+    ddbMock.reset();
+    ddbMock.on(ScanCommand).resolves({ Items: [job()] });
+    const ec2Only = await estimateCurrentMonthCostUsd("jobs", NOW);
+
+    // 同じ出力サイズなのでS3/miscは同額。差はまるごとEC2系の有無になる。
+    expect(homeOnly).toBeLessThan(ec2Only);
+    expect(ec2Only - homeOnly).toBeCloseTo(0.06 * 0.6 + (30 * 0.088 * (0.6 / 730)) + 0.005 * 0.6, 6);
+  });
+});
+
 describe("summarizeCosts", () => {
   beforeEach(() => {
     ddbMock.reset();
