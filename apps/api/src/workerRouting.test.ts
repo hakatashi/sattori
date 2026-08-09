@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { WorkerHeartbeat } from "@sattori/shared";
-import { WORKER_HEARTBEAT_FRESH_SECONDS } from "@sattori/shared";
+import { LAUNCH_LAMBDA_TIMEOUT_SECONDS, WORKER_HEARTBEAT_FRESH_SECONDS } from "@sattori/shared";
 import {
   DEFAULT_ROUTING_POLICY,
+  GAME_ROUTING_POLICIES,
   isWorkerEligible,
+  MAX_OFFER_WINDOW_SECONDS,
   routingPolicyFor,
   selectHomeWorker,
 } from "./workerRouting.js";
@@ -34,6 +36,24 @@ describe("routingPolicyFor", () => {
 
   it("オファー待機は自宅デーモンのポーリング間隔より十分長い", () => {
     expect(DEFAULT_ROUTING_POLICY.offerWindowSeconds).toBeGreaterThanOrEqual(10);
+  });
+
+  it("オファー待機はLaunch Lambdaのタイムアウトに収まる", () => {
+    // 待機は`Launch`の実行時間をそのまま消費する。溢れると、オファーは撤回済み
+    // （あるいは撤回すらできないまま）なのにEC2も起動していない状態で15分の
+    // ハートビートタイムアウトを待つ、丸ごと無駄なリトライが1周発生する。
+    // th20（Issue #87）向けに待機を伸ばすときは、この上限の元である
+    // `LAUNCH_LAMBDA_TIMEOUT_SECONDS`（CDKが使う値）も併せて上げること。
+    expect(MAX_OFFER_WINDOW_SECONDS).toBeLessThan(LAUNCH_LAMBDA_TIMEOUT_SECONDS);
+    for (const [game, policy] of [
+      ["(既定)", DEFAULT_ROUTING_POLICY] as const,
+      ...Object.entries(GAME_ROUTING_POLICIES),
+    ]) {
+      expect(
+        policy?.offerWindowSeconds,
+        `${game} の offerWindowSeconds が上限(${MAX_OFFER_WINDOW_SECONDS}秒)を超えています`,
+      ).toBeLessThanOrEqual(MAX_OFFER_WINDOW_SECONDS);
+    }
   });
 });
 

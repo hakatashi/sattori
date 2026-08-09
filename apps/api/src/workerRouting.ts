@@ -1,4 +1,4 @@
-import { isHeartbeatFresh } from "@sattori/shared";
+import { isHeartbeatFresh, LAUNCH_LAMBDA_TIMEOUT_SECONDS } from "@sattori/shared";
 import type { GameId, JobRecord, WorkerCapability, WorkerHeartbeat } from "@sattori/shared";
 
 /**
@@ -40,9 +40,33 @@ export interface GameRoutingPolicy {
    * いる場合しかオファーしない**ので、平常時（自宅サーバーが落ちている）に
    * この待ちが発生することはない。デーモンのポーリング間隔
    * （`home-worker/`の`HOME_WORKER_POLL_INTERVAL_SEC`、既定3秒）の数倍を確保する。
+   *
+   * **`MAX_OFFER_WINDOW_SECONDS` を超えないこと**（テストで守っている）。この待機は
+   * `Launch` Lambdaの実行時間をそのまま消費するため、伸ばしすぎると関数タイムアウトに
+   * ぶつかる。
    */
   offerWindowSeconds: number;
 }
+
+/**
+ * `Launch` Lambdaのタイムアウトのうち、オファー待機以外の処理に残しておく秒数。
+ * 待機の前後には、ハートビートのScan・オファーの書き込み・撤回、そしてEC2 Fleetの
+ * 起動一式（`CreateLaunchTemplateVersion` → `CreateFleet` →
+ * `DescribeSpotPriceHistory` → ジョブレコード更新）が並ぶ。
+ */
+export const LAUNCH_OVERHEAD_RESERVE_SECONDS = 20;
+
+/**
+ * `offerWindowSeconds` に指定してよい上限。
+ *
+ * これを超えると、オファーを撤回した直後（あるいは撤回すらできないまま）に`Launch`が
+ * タイムアウトし、**オファーは消えたのにEC2も起動していない**状態で15分の
+ * ハートビートタイムアウトを待つ、丸ごと無駄なリトライが1周発生する。th20（Issue #87）
+ * のように待機を伸ばしたくなったときは、この上限——すなわち
+ * `LAUNCH_LAMBDA_TIMEOUT_SECONDS`（CDKが使う定数）——も併せて引き上げること。
+ */
+export const MAX_OFFER_WINDOW_SECONDS =
+  LAUNCH_LAMBDA_TIMEOUT_SECONDS - LAUNCH_OVERHEAD_RESERVE_SECONDS;
 
 /** タイトル固有の指定が無い場合の方針。 */
 export const DEFAULT_ROUTING_POLICY: GameRoutingPolicy = {

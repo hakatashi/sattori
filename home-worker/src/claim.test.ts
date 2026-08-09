@@ -28,6 +28,15 @@ describe("findOpenOffers", () => {
     expect(input?.ExpressionAttributeValues).toMatchObject({ ":open": "open" });
     expect(input?.KeyConditionExpression).toContain("homeWorkerOfferExpiresAt > :now");
   });
+
+  it("オファー探索は判断に必要な属性だけを射影する(他ジョブのtaskTokenを持ち帰らない)", async () => {
+    ddbMock.on(QueryCommand).resolves({ Items: [] });
+
+    await findOpenOffers(client, "jobs");
+
+    const input = ddbMock.commandCalls(QueryCommand)[0]?.args[0].input;
+    expect(input?.ProjectionExpression).toBe("jobId, game");
+  });
 });
 
 describe("claimJob", () => {

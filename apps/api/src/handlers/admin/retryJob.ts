@@ -37,12 +37,16 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
   // （`homeWorkerOfferState`はsparse GSI `HomeWorkerOfferIndex`のキー属性で、
   // 引き継ぐと新ジョブが起動前から「オファー中」としてインデックスに載り、
   // 自宅ワーカーに横取りされる）ため、スプレッド前に取り除く。
+  // `stopRequestedAt`（緊急停止の拒否票）も同じ理由で引き継がない。引き継ぐと
+  // 新ジョブのワーカーが最初からstatusを1つも書けなくなり、録画が完走しても
+  // `queued`のまま固まる（`worker/status.py`参照）。
   const {
     homeWorkerOfferState: _offerState,
     homeWorkerOfferExpiresAt: _offerExpiresAt,
     homeWorkerEnv: _offerEnv,
     assignedWorkerId: _assignedWorkerId,
     homeWorkerHeartbeatAt: _homeWorkerHeartbeatAt,
+    stopRequestedAt: _stopRequestedAt,
     ...carried
   } = source;
   return {

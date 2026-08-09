@@ -39,14 +39,18 @@ function isConditionalFailure(err: unknown): boolean {
  * 期限切れのオファー（AWS側が撤回する前にLambdaが落ちた等）を掴んでも
  * claimの条件式で弾かれるが、無駄なUpdateItemを避けるためここでも絞る。
  *
- * GSIの射影は ALL なので、返るアイテムはジョブレコードそのものとして扱ってよい
- * （`infra/lib/sattori-stack.ts`）。
+ * GSIの射影は ALL だが、**引き受けるかどうかの判断に必要な属性だけを射影して読む**。
+ * 絞らないと、結局claimしなかったジョブの `homeWorkerEnv`（生きた `TASK_TOKEN` を
+ * 含む）まで自宅マシンへ運んでくることになる。実行に必要な環境変数は
+ * `claimJob` の `ALL_NEW` で受け取る。
  */
+export type OpenOffer = Pick<JobRecord, "jobId" | "game">;
+
 export async function findOpenOffers(
   client: DynamoDBDocumentClient,
   jobsTable: string,
   limit = 10,
-): Promise<JobRecord[]> {
+): Promise<OpenOffer[]> {
   const result = await client.send(
     new QueryCommand({
       TableName: jobsTable,
@@ -54,10 +58,11 @@ export async function findOpenOffers(
       KeyConditionExpression:
         "homeWorkerOfferState = :open AND homeWorkerOfferExpiresAt > :now",
       ExpressionAttributeValues: { ":open": HOME_WORKER_OFFER_OPEN, ":now": nowIso() },
+      ProjectionExpression: "jobId, game",
       Limit: limit,
     }),
   );
-  return (result.Items as JobRecord[] | undefined) ?? [];
+  return (result.Items as OpenOffer[] | undefined) ?? [];
 }
 
 /**

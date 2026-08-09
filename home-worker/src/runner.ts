@@ -80,6 +80,13 @@ export const defaultRunCommand: RunCommand = async (command, options) => {
     child.on("close", (code) => {
       resolve({ code: code ?? -1, stdout, stderr });
     });
+    // 子プロセスが書き込みより先に死ぬと `stdin` は EPIPE を投げる。リスナが
+    // 無ければ Node はこれを未処理の 'error' イベントとして扱い、**デーモン全体を
+    // 落とす**（Python版の `subprocess.run(input=...)` はここを内部で吸収していた）。
+    // 実際の失敗は `close` の終了コードと stderr で分かるので、ここでは捨ててよい。
+    child.stdin.on("error", () => undefined);
+    child.stdout.on("error", () => undefined);
+    child.stderr.on("error", () => undefined);
     child.stdin.end(options?.input ?? "");
   });
 };
@@ -94,18 +101,28 @@ export const defaultSpawnContainer: SpawnContainer = async (command, onLine) => 
   // それぞれ行単位で読んで同じ転送先へ流すほうが素直（CloudWatch Logsの
   // 1ストリームへ入る点は同じ）。
   const readers = [child.stdout, child.stderr].map(async (stream) => {
-    for await (const line of createInterface({ input: stream, crlfDelay: Infinity })) {
-      onLine(line);
+    try {
+      for await (const line of createInterface({ input: stream, crlfDelay: Infinity })) {
+        onLine(line);
+      }
+    } catch (err) {
+      // 子プロセスの異常終了でストリーム自体が壊れることはある。読めた行までで
+      // 打ち切る（成否は `close` の終了コードで判断する）。ここで拒否させると、
+      // spawn自体が失敗した場合に**誰も待たないPromiseの拒否**になり、デーモンが
+      // 落ちる。
+      onLine(`[runner] コンテナ出力の読み取りが中断されました: ${String(err)}`);
     }
   });
-  const code = await new Promise<number>((resolve, reject) => {
-    child.on("error", reject);
-    child.on("close", (exitCode) => {
-      resolve(exitCode ?? -1);
+  try {
+    return await new Promise<number>((resolve, reject) => {
+      child.on("error", reject);
+      child.on("close", (exitCode) => {
+        resolve(exitCode ?? -1);
+      });
     });
-  });
-  await Promise.all(readers);
-  return code;
+  } finally {
+    await Promise.all(readers);
+  }
 };
 
 /**
@@ -250,9 +267,20 @@ export class ContainerRun implements Killable {
   /**
    * コンテナを停止する。claimが取り消された（=別経路でリトライが始まった）
    * ときに呼ぶ。放置すると同じリプレイを二重に録画してしまう。
+   *
+   * **`killed` を立てるのは実際に止められたときだけ**。`docker kill` は
+   * dockerデーモンの一時障害でも失敗しうるが、失敗を無視して停止済みとして扱うと、
+   * 生き残ったコンテナがそのまま録画を完走する一方で `#finishJob` が
+   * 「claim取り消しによる停止」として通知もログも省いてしまい、二重録画が
+   * 誰にも気づかれない。呼び出し側が再試行できるよう例外にする。
    */
   async kill(): Promise<void> {
+    const result = await this.#run(["docker", "kill", containerName(this.#jobId)]);
+    if (result.code !== 0) {
+      throw new Error(
+        `docker kill に失敗しました(exit=${result.code}): ${result.stderr.trim()}`,
+      );
+    }
     this.#killed = true;
-    await this.#run(["docker", "kill", containerName(this.#jobId)]);
   }
 }

@@ -6,6 +6,7 @@ import datetime
 import os
 
 import boto3
+from botocore.exceptions import ClientError
 
 # boto3 リソースは遅延生成する。モジュール import 時に生成すると、リージョン
 # 未設定（AWS_DEFAULT_REGION/AWS_REGION 無し）の環境で NoRegionError が発生し
@@ -48,6 +49,18 @@ def update_status(
     """ジョブの status(と任意で outputPath / outputPath720p / 出力サイズ / error)を更新する。
 
     output_bytes / output_bytes_720p は管理画面のコスト推定(Issue #60)の入力。
+
+    管理画面から緊急停止(Issue #59)されたジョブには一切書き込まない
+    (`attribute_not_exists(stopRequestedAt)` を条件にする)。EC2 は
+    `TerminateInstances` で即座に黙るが、自宅ワーカー(Issue #49)のコンテナは
+    デーモンが claim の取り消しに気づくまで走り続けるため、その間に完走すると
+    `done` と doneAt を書き、DynamoDB Streams 経由で**停止したはずのジョブの
+    完了メールがユーザーへ飛ぶ**。ワーカーが「自宅かEC2か」を知る必要はなく、
+    どちらも同じ拒否票を尊重するだけでよい。
+
+    条件が崩れた場合は例外にせずログだけ残して戻る。停止済みジョブへの書き込みが
+    拒否されるのは想定内の正常系であり、ここで例外を投げると録画パイプラインが
+    「失敗」として後始末を走らせてしまう。
     """
     table_name = os.environ.get("JOBS_TABLE")
     if not table_name:
@@ -82,12 +95,22 @@ def update_status(
         expr += ", doneAt = :d"
         values[":d"] = now
 
-    table.update_item(
-        Key={"jobId": job_id},
-        UpdateExpression=expr,
-        ExpressionAttributeNames=names,
-        ExpressionAttributeValues=values,
-    )
+    try:
+        table.update_item(
+            Key={"jobId": job_id},
+            UpdateExpression=expr,
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+            ConditionExpression="attribute_not_exists(stopRequestedAt)",
+        )
+    except ClientError as err:
+        if err.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+        print(
+            f"[status] {job_id} -> {status} は緊急停止済みのため書き込みませんでした",
+            flush=True,
+        )
+        return
     print(f"[status] {job_id} -> {status}", flush=True)
 
 

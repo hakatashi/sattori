@@ -13,10 +13,27 @@
  *      Step Functions へ通知するので、このデーモンは通知に関与しない
  *      （コンテナが起動すらできなかった場合の失敗通知だけは肩代わりする）。
  *
- * 実行中は30秒ごとに「claimがまだ自分のものか」を条件付き更新で確かめる。
+ * **claimの取り消しをどう確実に捕捉するか**がこのデーモンの中心的な関心事である。
  * AWS側（`HandleFailure`・管理画面からの緊急停止）が `assignedWorkerId` を消すことが
- * **claimの取り消し**なので、条件が崩れたら即座にコンテナを停止する。これを怠ると、
- * 既に別経路でリトライが始まっているジョブを二重に録画してしまう。
+ * 取り消しであり、これを取りこぼすと、既に別経路でリトライが始まっているジョブを
+ * 二重に録画してしまう。NAT配下で通知を受け取れないため、捕捉は次の3点で行う:
+ *
+ *   1. 実行中は `CLAIM_CHECK_INTERVAL_SEC` ごとに「claimがまだ自分のものか」を
+ *      条件付き更新（`touchClaim`）で確かめる。**コンテナを起動する前から**回すので、
+ *      イメージのpull中に取り消された場合はコンテナを起動せずに終わる。
+ *   2. **実行中のジョブと同じjobIdがオファーに再出現したら、その場で権威のある
+ *      確認を行う**。オファーは `attribute_not_exists(assignedWorkerId)` を条件に
+ *      書かれるので、再出現は取り消しの強い兆候である（GSIは結果整合なので断定は
+ *      できず、必ず `touchClaim` で裏を取る）。ポーリング間隔を待たずに気づける。
+ *   3. 実行中のジョブは**二度claimしない**。claimし直すと同名コンテナの起動失敗で
+ *      リトライを1回無駄に消費し、スロットの数え上げも壊れる。
+ *
+ * 取り消しを検知したら `docker kill` する。**killの失敗は握りつぶさない**
+ * （成功するまで再試行し、成功しない限り「停止済み」として扱わない）——止められて
+ * いないコンテナを止めたことにすると、二重録画が誰にも気づかれないまま完走する。
+ *
+ * なお、コンテナが完走してしまった場合の後始末（`done`への上書きや完了メール）は
+ * ジョブレコード側の拒否票（`JobRecord.stopRequestedAt`）が受け止める。
  *
  * SIGTERM/SIGINT を受けたら新規claimを止め、実行中のジョブは完走を待ってから終了する
  * （走り出した録画を落とすと、節約できるCPU時間よりはるかに大きな無駄になるため）。
@@ -70,6 +87,33 @@ export interface DaemonDeps {
   spawnContainer?: SpawnContainer;
 }
 
+/** claimが取り消されたため実行を中止した（＝失敗として通知してはいけない）。 */
+class ClaimRevokedError extends Error {
+  override readonly name = "ClaimRevokedError";
+}
+
+/**
+ * claim監視ループが見張る対象。claimの取り消しは**コンテナを起動する前**にも
+ * 起こりうるため、コンテナの実体とは別に取り消しフラグを持つ。
+ */
+export interface ClaimWatchTarget {
+  /** claimの取り消しを検知した（コンテナ起動前を含む）。 */
+  readonly revoked: Signal;
+  /** ジョブの実行が終わった（成否は問わない）。監視ループを起こすために使う。 */
+  readonly finished: Signal;
+  /** 起動済みコンテナ（起動前・起動できなかった場合は null）。 */
+  container: Killable | null;
+}
+
+/** 実行中のジョブ1件ぶんの状態。 */
+class RunningJob implements ClaimWatchTarget {
+  readonly revoked = new Signal();
+  readonly finished = new Signal();
+  container: Killable | null = null;
+  /** `#runJob` の完了を待ち合わせるためのプロミス（ドレイン用）。 */
+  promise: Promise<void> = Promise.resolve();
+}
+
 export class HomeWorkerDaemon {
   readonly #config: Config;
   readonly #log: (message: string) => void;
@@ -78,10 +122,8 @@ export class HomeWorkerDaemon {
   readonly #loadPerCpu: () => number;
   readonly #runnerOptions: { log: (message: string) => void; run?: RunCommand; spawnContainer?: SpawnContainer };
   readonly #stopping = new Signal();
-  /** jobId -> 実行中コンテナ（起動前は null のスロット予約）。 */
-  readonly #running = new Map<string, Killable | null>();
-  /** 実行中ジョブの完了を待ち合わせるためのプロミス集合（ドレイン用）。 */
-  readonly #jobPromises = new Set<Promise<void>>();
+  /** jobId -> 実行中ジョブ（claim直後、コンテナ起動前から登録する）。 */
+  readonly #running = new Map<string, RunningJob>();
   #lastHeartbeatAtMs = 0;
   #documents: DynamoDBDocumentClient | undefined;
   #logs: CloudWatchLogsClient | undefined;
@@ -177,8 +219,17 @@ export class HomeWorkerDaemon {
     if (!accepting) {
       return;
     }
-    for (const job of await this.claimOffers(this.#config.maxConcurrency - active)) {
-      this.startJob(job);
+    const claimed = await this.claimAndStartOffers(this.#config.maxConcurrency - active);
+    if (claimed.length > 0) {
+      // claim直後に空き状況を書き直す。間引き（15秒）に任せると、スロットが埋まった
+      // 後も最大15秒間AWSからは「空きあり」に見え、誰もclaimできないジョブが
+      // オファーされて、EC2へのフォールバックが`offerWindowSeconds`ぶん遅れる。
+      const remaining = this.activeJobs();
+      await this.publishHeartbeat(
+        !this.#stopping.isSet && canAccept(this.#config, remaining, load),
+        remaining,
+        { force: true },
+      );
     }
   }
 
@@ -186,10 +237,20 @@ export class HomeWorkerDaemon {
    * ハートビートを書く（前回から `WORKER_HEARTBEAT_INTERVAL_SECONDS` 経っていなければ
    * 何もしない）。ポーリング間隔（既定3秒）とハートビート間隔（15秒）は別物なので、
    * 毎周書かないよう間引く。
+   *
+   * `force` を渡すと間引きを無視して即座に書く。空き状況が変わった瞬間
+   * （claim直後）は、AWS側の判断材料が古いままだと無駄なオファーを招くため。
    */
-  async publishHeartbeat(accepting: boolean, activeJobs: number): Promise<void> {
+  async publishHeartbeat(
+    accepting: boolean,
+    activeJobs: number,
+    options: { force?: boolean } = {},
+  ): Promise<void> {
     const now = Date.now();
-    if (now - this.#lastHeartbeatAtMs < WORKER_HEARTBEAT_INTERVAL_SECONDS * 1000) {
+    if (
+      options.force !== true &&
+      now - this.#lastHeartbeatAtMs < WORKER_HEARTBEAT_INTERVAL_SECONDS * 1000
+    ) {
       return;
     }
     await writeHeartbeat(this.#documentClient(), this.#config.workersTable, this.#config, {
@@ -200,10 +261,19 @@ export class HomeWorkerDaemon {
   }
 
   /**
-   * オファーを探索し、引き受けられるものを空きスロットぶんだけclaimする。
-   * claimできたジョブレコード（`homeWorkerEnv` を含む）を返す。
+   * オファーを探索し、引き受けられるものを空きスロットぶんだけclaimして**その場で
+   * 実行を開始する**。claimしたジョブレコード（`homeWorkerEnv` を含む）を返す。
+   *
+   * claimと起動を1件ずつ交互に行うのが要点。claimを溜めてからまとめて起動すると、
+   * 2件目のclaimがDynamoDBの一時障害で例外になったときに、**1件目のclaimだけが
+   * 誰にも実行されないまま**残る（AWS側は割り当て済みと見えるのでEC2も起動せず、
+   * ジョブは15分のハートビートタイムアウトまで凍る）。
+   *
+   * claim自体が例外になった場合は、応答が失われただけで**書き込みは成功している
+   * 可能性がある**ため、自分名義のclaimを解除してから打ち切る（`releaseClaim` は
+   * 自分が持っている場合しか効かない条件付き更新なので、空振りでも無害）。
    */
-  async claimOffers(availableSlots: number): Promise<JobRecord[]> {
+  async claimAndStartOffers(availableSlots: number): Promise<JobRecord[]> {
     const claimed: JobRecord[] = [];
     if (availableSlots <= 0) {
       return claimed;
@@ -213,27 +283,59 @@ export class HomeWorkerDaemon {
       if (claimed.length >= availableSlots || this.#stopping.isSet) {
         break;
       }
-      if (typeof offer.jobId !== "string" || !this.#config.supportedGames.includes(offer.game)) {
+      const jobId = offer.jobId;
+      if (typeof jobId !== "string" || !this.#config.supportedGames.includes(offer.game)) {
         continue;
       }
-      const job = await claimJob(client, this.#config.jobsTable, offer.jobId, this.#config.workerId);
+      const running = this.#running.get(jobId);
+      if (running !== undefined) {
+        // 実行中のジョブが再びオファーに載っている＝AWS側が割り当てを解除して
+        // 出し直した可能性が高い。**二度claimしてはならない**（同名コンテナの
+        // 起動失敗でリトライを1回無駄にし、スロットの数え上げも壊れる）。
+        // GSIは結果整合なので自分のclaim直後の残像でもありうるため、権威のある
+        // 条件付き更新で裏を取る。
+        await this.#recheckClaim(jobId, running);
+        continue;
+      }
+      let job: JobRecord | null;
+      try {
+        job = await claimJob(client, this.#config.jobsTable, jobId, this.#config.workerId);
+      } catch (err) {
+        this.#log(`claimに失敗しました(打ち切り) jobId=${jobId}: ${String(err)}`);
+        await this.#releaseUncertainClaim(jobId);
+        break;
+      }
       if (job === null) {
         // 他のワーカーが先に取ったか、期限切れ。次のオファーへ。
         continue;
       }
-      this.#log(`ジョブをclaimしました jobId=${offer.jobId} game=${offer.game}`);
+      this.#log(`ジョブをclaimしました jobId=${jobId} game=${offer.game}`);
       claimed.push(job);
+      this.startJob(job);
     }
     return claimed;
   }
 
   /**
-   * ジョブの実行を開始する（完了は待たない）。実行中の数え上げはコンテナ起動前から
-   * 効かせたいので、スロットの予約（値 null）をここで入れる。
+   * claimの成否が不明なまま例外になったジョブの後始末。書き込みが通っていた場合の
+   * 「実行されないclaim」を残さないため、自分名義なら解除する。
+   */
+  async #releaseUncertainClaim(jobId: string): Promise<void> {
+    try {
+      await releaseClaim(this.#documentClient(), this.#config.jobsTable, jobId, this.#config.workerId);
+    } catch (err) {
+      this.#log(`claimの取り消しにも失敗しました jobId=${jobId}: ${String(err)}`);
+    }
+  }
+
+  /**
+   * ジョブの実行を開始する（完了は待たない）。実行中の数え上げ・claim監視は
+   * コンテナ起動前から効かせたいので、スロットの予約をここで入れる。
    */
   startJob(job: JobRecord): void {
-    this.#running.set(job.jobId, null);
-    const promise = this.#runJob(job)
+    const running = new RunningJob();
+    this.#running.set(job.jobId, running);
+    running.promise = this.#runJob(job, running)
       .catch((err: unknown) => {
         // `#runJob` は自前で握りつぶすが、二重の保険（未処理のPromise拒否で
         // プロセスを落とさない）。
@@ -241,14 +343,12 @@ export class HomeWorkerDaemon {
       })
       .finally(() => {
         this.#running.delete(job.jobId);
-        this.#jobPromises.delete(promise);
       });
-    this.#jobPromises.add(promise);
   }
 
   // --- ジョブ1本の実行 ------------------------------------------------------
 
-  async #runJob(job: JobRecord): Promise<void> {
+  async #runJob(job: JobRecord, running: RunningJob): Promise<void> {
     const jobId = job.jobId;
     const shipper = new CloudWatchLogShipper(
       this.#logsClient(),
@@ -256,8 +356,13 @@ export class HomeWorkerDaemon {
       jobId,
       { log: this.#log },
     );
-    /** 監視ループを起こすためのジョブ完了シグナル。 */
-    const finished = new Signal();
+    // claimの監視はコンテナ起動より先に始める。イメージのpullには数分かかることが
+    // あり、その間に取り消されたなら**コンテナを起動しない**のが正しい。
+    void this.watchClaim(jobId, running).catch((err: unknown) => {
+      // 監視ループの内部は自前で握りつぶすが、ここを裸の `void` にすると
+      // 想定外の拒否ひとつでプロセスが落ち、実行中の全録画が道連れになる。
+      this.#log(`claim監視ループで予期しないエラー jobId=${jobId}: ${String(err)}`);
+    });
     try {
       const offered = job.homeWorkerEnv;
       if (offered === undefined || Object.keys(offered).length === 0) {
@@ -273,8 +378,14 @@ export class HomeWorkerDaemon {
       await pullImage(this.#config.workerImage, this.#runnerOptions);
 
       const container = new ContainerRun(this.#config, jobId, env, this.#runnerOptions);
-      this.#running.set(jobId, container);
-      void this.watchClaim(jobId, container, finished);
+      // **登録してから取り消しを確認する**順序が要点。逆にすると「確認は通ったが
+      // 登録前に取り消された」窓ができ、監視ループはkillすべき相手を知らないまま
+      // コンテナが走り出す。この順序なら、pull中の取り消しはここで（コンテナを
+      // 起動せずに）拾い、起動後の取り消しは監視ループが `docker kill` で拾う。
+      running.container = container;
+      if (running.revoked.isSet) {
+        throw new ClaimRevokedError("claimが取り消されたためコンテナを起動しません");
+      }
 
       const exitCode = await container.run((line) => {
         shipper.append(line);
@@ -282,27 +393,33 @@ export class HomeWorkerDaemon {
       await shipper.flush();
       await this.#finishJob(job, env, container, exitCode);
     } catch (err) {
-      // コンテナを一度も起動できなかった＝ワーカー内部の失敗通知が走らない。
-      // EC2のUserDataが bootstrap 失敗を自分で通知するのと同じ役割を果たす。
-      const bootstrapFailure = err instanceof ImagePreparationError;
-      this.#log(
-        bootstrapFailure
-          ? `ジョブを開始できませんでした jobId=${jobId}: ${String(err)}`
-          : `ジョブの実行中にエラーが発生しました jobId=${jobId}: ${String(err)}`,
-      );
-      await this.#notifyFailure(
-        job.homeWorkerEnv,
-        bootstrapFailure ? "HomeWorkerBootstrapFailure" : "HomeWorkerFailed",
-        String(err),
-      );
-      await releaseClaim(
-        this.#documentClient(),
-        this.#config.jobsTable,
-        jobId,
-        this.#config.workerId,
-      );
+      if (err instanceof ClaimRevokedError) {
+        // 取り消されたジョブの成否を通知してはいけない（Step Functions側は既に
+        // 別経路で処理を進めている）。claimも既にAWS側が外している。
+        this.#log(`claimが取り消されたため実行を中止しました jobId=${jobId}`);
+      } else {
+        // コンテナを一度も起動できなかった＝ワーカー内部の失敗通知が走らない。
+        // EC2のUserDataが bootstrap 失敗を自分で通知するのと同じ役割を果たす。
+        const bootstrapFailure = err instanceof ImagePreparationError;
+        this.#log(
+          bootstrapFailure
+            ? `ジョブを開始できませんでした jobId=${jobId}: ${String(err)}`
+            : `ジョブの実行中にエラーが発生しました jobId=${jobId}: ${String(err)}`,
+        );
+        await this.#notifyFailure(
+          job.homeWorkerEnv,
+          bootstrapFailure ? "HomeWorkerBootstrapFailure" : "HomeWorkerFailed",
+          String(err),
+        );
+        await releaseClaim(
+          this.#documentClient(),
+          this.#config.jobsTable,
+          jobId,
+          this.#config.workerId,
+        );
+      }
     } finally {
-      finished.set();
+      running.finished.set();
       await shipper.flush();
       this.#running.delete(jobId);
     }
@@ -311,7 +428,7 @@ export class HomeWorkerDaemon {
   async #finishJob(
     job: JobRecord,
     env: Record<string, string>,
-    container: ContainerRun,
+    container: Killable,
     exitCode: number,
   ): Promise<void> {
     const jobId = job.jobId;
@@ -367,14 +484,22 @@ export class HomeWorkerDaemon {
 
   /**
    * claimが自分のものであり続けるかを見張り、崩れたらコンテナを停止する。
-   * `finished` はジョブ側が終了時に立てるシグナルで、これが無いと最大
+   * `running.finished` はジョブ側が終了時に立てるシグナルで、これが無いと最大
    * `CLAIM_CHECK_INTERVAL_SEC` ぶん監視ループが残り続ける。
+   *
+   * 取り消し済みでもまだ止められていない（`docker kill` が失敗した）間はループを
+   * 続けて再試行する。「止めたことにする」より「止まるまで諦めない」方を選ぶ。
    */
-  async watchClaim(jobId: string, container: Killable, finished: Signal): Promise<void> {
-    while (!container.killed && !finished.isSet) {
-      await finished.wait(this.#claimCheckIntervalMs);
-      if (container.killed || finished.isSet) {
+  async watchClaim(jobId: string, running: ClaimWatchTarget): Promise<void> {
+    while (!running.finished.isSet) {
+      await running.finished.wait(this.#claimCheckIntervalMs);
+      if (running.finished.isSet) {
         return;
+      }
+      if (running.revoked.isSet) {
+        // 取り消しは既に判明している。あとは確実に止めるだけ。
+        await this.#enforceRevocation(jobId, running);
+        continue;
       }
       let stillMine: boolean;
       try {
@@ -385,15 +510,78 @@ export class HomeWorkerDaemon {
           this.#config.workerId,
         );
       } catch (err) {
-        // 一時的なAPI障害では止めない（止めるほうが損失が大きい）。
+        // 一時的なAPI障害では止めない（止めるほうが損失が大きい）。取り消しは
+        // 「条件が崩れた」と分かったときにしか宣言しない。
         this.#log(`claimの確認に失敗しました(継続) jobId=${jobId}: ${String(err)}`);
         continue;
       }
       if (!stillMine) {
-        this.#log(`claimが取り消されました。コンテナを停止します jobId=${jobId}`);
-        await container.kill();
-        return;
+        await this.#enforceRevocation(jobId, running);
       }
+    }
+  }
+
+  /**
+   * オファーに再出現したジョブについて、claimが自分のものかを権威のある条件付き更新で
+   * 確かめる（結果整合なGSIの残像と、本当の取り消しを見分けるため）。
+   */
+  async #recheckClaim(jobId: string, running: ClaimWatchTarget): Promise<void> {
+    if (running.revoked.isSet) {
+      return;
+    }
+    let stillMine: boolean;
+    try {
+      stillMine = await touchClaim(
+        this.#documentClient(),
+        this.#config.jobsTable,
+        jobId,
+        this.#config.workerId,
+      );
+    } catch (err) {
+      this.#log(`オファー再出現時のclaim確認に失敗しました(継続) jobId=${jobId}: ${String(err)}`);
+      return;
+    }
+    if (stillMine) {
+      // 自分のclaim直後のGSI残像。何もしない（次の周回で消える）。
+      return;
+    }
+    this.#log(`実行中のジョブが再オファーされていました jobId=${jobId}`);
+    await this.#enforceRevocation(jobId, running);
+  }
+
+  /**
+   * claimの取り消しを確定させ、コンテナを止める。**止められなかったことは黙って
+   * 受け流さない**——`ContainerRun.kill()` が失敗した場合はコンテナが生き残って
+   * 録画を続けているので、`killed` を立てずに監視ループの次の周回で再試行する
+   * （立ててしまうと `#finishJob` が成否の通知もログも全部飛ばし、二重録画が
+   * 誰にも気づかれないまま完走する）。
+   */
+  async #enforceRevocation(jobId: string, running: ClaimWatchTarget): Promise<void> {
+    const firstTime = !running.revoked.isSet;
+    running.revoked.set();
+    const container = running.container;
+    if (container === null) {
+      // まだコンテナを起動していない。起動側が `revoked` を見て中止する。
+      if (firstTime) {
+        this.#log(`claimが取り消されました。コンテナは起動しません jobId=${jobId}`);
+      }
+      return;
+    }
+    if (container.killed) {
+      return;
+    }
+    this.#log(`claimが取り消されました。コンテナを停止します jobId=${jobId}`);
+    await this.#killContainer(jobId, container);
+  }
+
+  /** コンテナの停止を試みる（失敗しても例外にせず、呼び出し側の再試行に任せる）。 */
+  async #killContainer(jobId: string, container: Killable): Promise<void> {
+    try {
+      await container.kill();
+    } catch (err) {
+      this.#log(
+        `コンテナの停止に失敗しました(再試行します) jobId=${jobId}: ${String(err)}`,
+      );
     }
   }
 
@@ -417,7 +605,7 @@ export class HomeWorkerDaemon {
         this.#log(`ドレイン中のハートビートに失敗しました(継続): ${String(err)}`);
       }
       await Promise.race([
-        Promise.allSettled([...this.#jobPromises]),
+        Promise.allSettled([...this.#running.values()].map((job) => job.promise)),
         sleep(DRAIN_POLL_INTERVAL_MS),
       ]);
     }
