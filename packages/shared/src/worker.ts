@@ -122,6 +122,21 @@ export type HomeWorkerOfferState = typeof HOME_WORKER_OFFER_OPEN;
 export const HOME_WORKER_OFFER_INDEX = "HomeWorkerOfferIndex";
 
 /**
+ * `Launch` Lambda のタイムアウト（秒）。CDK（`infra/lib/sattori-stack.ts`）が
+ * この値で関数を作る。
+ *
+ * `Launch` はオファーがclaimされるのを**同期的に待つ**（`waitForHomeWorkerClaim`）
+ * ため、`GameRoutingPolicy.offerWindowSeconds` を伸ばすとこのタイムアウトに
+ * ぶつかる。待機の直後にはEC2 Fleetの起動（`CreateLaunchTemplateVersion` →
+ * `CreateFleet` → `DescribeSpotPriceHistory` → ジョブレコード更新）が控えており、
+ * タイムアウトで途中死すると **オファーは撤回済みなのにEC2も起動していない**
+ * 状態で15分のハートビートタイムアウトを待つことになる。
+ * 両者の関係は `apps/api/src/workerRouting.ts` の `MAX_OFFER_WINDOW_SECONDS`
+ * で明文化し、テストで守っている。
+ */
+export const LAUNCH_LAMBDA_TIMEOUT_SECONDS = 60;
+
+/**
  * ワーカーコンテナへ渡す環境変数一式（`apps/api/src/workerEnv.ts` が組み立てる）。
  * EC2では UserData の `docker run -e` に展開され、自宅ワーカーではオファーに
  * 添えてジョブレコードへ書かれ、デーモンがそのまま `docker run` へ渡す。
@@ -131,6 +146,27 @@ export const HOME_WORKER_OFFER_INDEX = "HomeWorkerOfferIndex";
  * 環境変数の違い」として表現する。
  */
 export type WorkerEnvironment = Record<string, string>;
+
+/**
+ * 「`TASK_TOKEN` を伏せた」ことを表す型だけのブランド。実体には存在しないプロパティで、
+ * `unique symbol` なので他の型と偶然一致することもない。
+ */
+export declare const redactedWorkerEnvironment: unique symbol;
+
+/**
+ * `TASK_TOKEN` を伏せた `WorkerEnvironment`。**サービスの外へ出す経路
+ * （管理APIのレスポンス・ログ）ではこちらの型だけを使う**。
+ *
+ * ブランドを交差させているのは、`WorkerEnvironment` をうっかりそのまま代入したときに
+ * 型エラーにするため。`WorkerEnvironment` は `Record<string, string>` なので、
+ * `Omit<..., "TASK_TOKEN">` や `TASK_TOKEN?: undefined` では**何も防げない**
+ * （インデックスシグネチャが optional なプロパティの互換性判定に使われないため、
+ * どちらも素通りする）。値を落とす実処理とこの型への変換は
+ * `apps/api/src/workerEnv.ts` の `redactWorkerEnv()` の1箇所だけで行う。
+ */
+export type RedactedWorkerEnvironment = WorkerEnvironment & {
+  readonly [redactedWorkerEnvironment]: true;
+};
 
 /**
  * ハートビートが新鮮か（＝ワーカーが生きているとみなせるか）。

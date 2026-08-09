@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { App } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
+import { LAUNCH_LAMBDA_TIMEOUT_SECONDS } from "@sattori/shared";
 import { SattoriStack } from "../lib/sattori-stack.ts";
 
 function synth(): Template {
@@ -159,6 +160,21 @@ describe("SattoriStack", () => {
         ]),
       },
     });
+  });
+
+  it("Launch Lambda のタイムアウトは共有定数と一致する(オファー待機の上限の根拠)", () => {
+    // `apps/api` の `MAX_OFFER_WINDOW_SECONDS` はこの値から導出されている。
+    // ここで直値に戻すと、オファー待機の上限だけが実態から乖離する。
+    const launchFunctions = template.findResources("AWS::Lambda::Function", {
+      Properties: {
+        Handler: Match.anyValue(),
+        Timeout: LAUNCH_LAMBDA_TIMEOUT_SECONDS,
+        Environment: {
+          Variables: Match.objectLike({ WORKERS_TABLE: Match.anyValue() }),
+        },
+      },
+    });
+    expect(Object.keys(launchFunctions).length).toBeGreaterThanOrEqual(1);
   });
 
   it("ワーカー起動用の EC2 Launch Template が存在する", () => {

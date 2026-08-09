@@ -99,6 +99,31 @@ export async function updateJobStatus(
   }
 }
 
+/**
+ * 「管理画面から緊急停止が要求された」マーカー（`stopRequestedAt`）を立てる。
+ *
+ * ワーカー（`worker/status.py`）はこの属性が無いことを条件にしか status を書けないので、
+ * この1回の更新以降、**生き残ったワーカーがジョブを`done`へ戻すことはできなくなる**。
+ * EC2は`TerminateInstances`で即座に黙るが、自宅ワーカー（Issue #49）の停止は
+ * デーモンのポーリング分だけ遅れる（最大`CLAIM_CHECK_INTERVAL_SEC`）ため、
+ * 「停止したはずのジョブの完了メールが飛ぶ」事故はこのマーカーでしか防げない。
+ *
+ * **必ずワーカーの後始末（terminate・割り当て解除）より前に呼ぶこと**。後に回すと
+ * その間に完走したコンテナの`done`が通ってしまい、防ぎたい競合がそのまま残る。
+ * status自体はここでは書かない（実際には止まっていないのに`failed`と表示するのを
+ * 避けるため、停止処理が全段成功してから確定させる。`admin/stopJob.ts`参照）。
+ */
+export async function markJobStopRequested(table: string, jobId: string): Promise<void> {
+  await client.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { jobId },
+      UpdateExpression: "SET stopRequestedAt = :now, updatedAt = :now",
+      ExpressionAttributeValues: { ":now": new Date().toISOString() },
+    }),
+  );
+}
+
 export class JobAlreadyStartedError extends Error {
   /** 条件チェック失敗時点での既存ジョブの状態（取得できた場合のみ）。 */
   readonly currentStatus: JobStatus | undefined;

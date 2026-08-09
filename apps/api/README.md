@@ -84,6 +84,14 @@ API契約自体は `packages/shared/README.md` を参照。
    **ここを踏み外すと同じリプレイを2台で録画する**ため、期限切れとclaimの競合は
    必ずDynamoDBの条件付き更新で決着させること。
 
+この待機は`Launch` Lambdaの実行時間をそのまま消費するため、`offerWindowSeconds`には
+上限がある（`MAX_OFFER_WINDOW_SECONDS` = `LAUNCH_LAMBDA_TIMEOUT_SECONDS` −
+オファー以外の処理ぶんの余裕20秒）。溢れると、オファーは撤回済みなのにEC2も起動して
+いない状態で15分のハートビートタイムアウトを待つ、丸ごと無駄なリトライが1周発生する。
+Lambdaのタイムアウトは`@sattori/shared`の`LAUNCH_LAMBDA_TIMEOUT_SECONDS`を唯一の
+出典にしてCDKが設定しており、両者の整合はテストで守っている（th20向けに待機を伸ばす
+なら定数も併せて上げること）。
+
 ハートビートの読み取り・オファーの書き込みで想定外の例外が出た場合は握りつぶして
 EC2起動へフォールバックする。自宅ワーカーはコスト削減のためのbest-effortな経路に
 過ぎず、その不調でユーザーの録画そのものを落としてはならない。
@@ -92,6 +100,15 @@ EC2起動へフォールバックする。自宅ワーカーはコスト削減�
 **AWS側がこの属性を消すことがclaimの取り消し**になる（デーモンは30秒ごとに
 「自分のものか」を条件付き更新で確認し、崩れたらコンテナを停止する）。消す側は
 `sfn/handleFailure.ts` と `admin/stopJob.ts` の2箇所。
+
+取り消しは**同期的ではない**（EC2の`TerminateInstances`と違い、デーモンが次の確認で
+気づくまでコンテナは走り続ける）。その間にコンテナが完走すると`done`とdoneAtが書かれ、
+DynamoDB Streams経由で停止したはずのジョブの完了メールがユーザーへ飛ぶため、
+`admin/stopJob.ts` は後始末より**先に**`stopRequestedAt`（`markJobStopRequested()`）を
+立てる。ワーカー（`worker/status.py`）は`attribute_not_exists(stopRequestedAt)`を条件に
+しかstatusを書けないので、この票が立った後の書き込みは一切通らない。
+「取り消しに気づかせる」（デーモン側の努力）と「気づく前に完走されても壊れない」
+（レコード側の拒否票）の二段構えで、どちらが遅れても最悪の結果にならないようにしてある。
 
 ## EC2 Fleet インスタンスタイプの分散配置（`ec2.ts`, Issue #29）
 
@@ -148,7 +165,13 @@ Step Functionsのリトライで`Launch`は最大10回走るため、毎回上�
 行う予定）のような分岐も、ワーカーの`if`ではなく「起動側が録画速度の環境変数を足すか
 どうか」で表現すること。
 
-`TASK_TOKEN` を含むため、ログや外部への出力では必ず `redactWorkerEnv()` を通すこと。
+`TASK_TOKEN`（Step Functionsの実行を任意に成功/失敗させられるベアラ）を含むため、
+ログや外部への出力では必ず `redactWorkerEnv()` を通すこと。**この約束は型で強制して
+ある**——`redactWorkerEnv()` の戻り値だけが `RedactedWorkerEnvironment`（ブランド付き）
+になり、管理APIのレスポンス型 `AdminJobRecord.homeWorkerEnv` はそれしか受け付けない
+ので、`JobRecord` をそのまま返そうとするとコンパイルエラーになる
+（`toAdminJobRecord()` が唯一の変換口）。散文の約束だけだった間、実際に
+`GET /admin/jobs/{jobId}` が生きたトークンをそのまま返していた。
 
 ## ワーカー起動スクリプト（UserData, `ec2.ts` の `buildUserData()`）
 

@@ -56,7 +56,9 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 > フィールド（出力・インスタンス情報・時刻）は明示的にnullへ初期化すること**
 > （引き継ぐと新ジョブが元ジョブの結果を持ったまま起動する）。特に
 > `homeWorkerOfferState`はsparse GSIのキー属性なので、引き継ぐと新ジョブが起動前から
-> 「オファー中」としてインデックスに載り、自宅ワーカーに横取りされる。
+> 「オファー中」としてインデックスに載り、自宅ワーカーに横取りされる。また
+> `stopRequestedAt`（緊急停止の拒否票）を引き継ぐと、新ジョブのワーカーがstatusを
+> 1つも書けなくなり、録画が完走しても`queued`のまま固まる。
 
 ## ワーカーの種別と自宅ワーカー（`src/worker.ts`、Issue #49）
 
@@ -101,6 +103,15 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 `admin.ts`は正反対の方針（`AdminJobDetailResponse.job`は`JobRecord`をほぼそのまま返す）
 を取るため。管理APIは`/admin/*`のLambda Authorizer（共有トークン）配下にしか
 存在しないため、内部データを含めても問題ない前提に立っている。
+
+**唯一の例外が`homeWorkerEnv`**（自宅ワーカーへのオファーに添えるコンテナ環境変数、
+Issue #49）。これは生きたStep Functionsの`TASK_TOKEN`——実行を任意に成功/失敗させられる
+ベアラ——を含むため、`AdminJobRecord`では`RedactedWorkerEnvironment`（`unique symbol`の
+ブランド付き）に狭めてある。`JobRecord`をそのまま代入すると**型エラーになる**ので、
+`apps/api`の`toAdminJobRecord()`（内部で`redactWorkerEnv()`を呼ぶ）を通し忘れることは
+できない。ブランドを使っているのは、`WorkerEnvironment`が`Record<string, string>`で
+あるためインデックスシグネチャが optional プロパティの互換性判定に使われず、
+`Omit<..., "TASK_TOKEN">`や`TASK_TOKEN?: undefined`では**何も防げない**から。
 
 | メソッド・パス | 用途 |
 | --- | --- |

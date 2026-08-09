@@ -155,4 +155,35 @@ describe("ContainerRun", () => {
     expect(container.killed).toBe(true);
     expect(calls[0]).toEqual(["docker", "kill", containerName("job-1")]);
   });
+
+  it("docker killが失敗したら例外にし、停止済みとして扱わない", async () => {
+    // `killed`を立ててしまうと、生き残ったコンテナが録画を完走する一方で
+    // デーモンは「claim取り消しで停止した」として成否の通知もログも省くため、
+    // 二重録画が誰にも気づかれない。
+    const container = new ContainerRun(
+      makeConfig(),
+      "job-1",
+      {},
+      { log: () => undefined, run: async () => result(1, "Cannot kill container") },
+    );
+
+    await expect(container.kill()).rejects.toThrow(/docker kill/);
+    expect(container.killed).toBe(false);
+  });
+});
+
+describe("defaultRunCommand", () => {
+  it("標準入力を書く前に子プロセスが死んでもEPIPEで落ちない", async () => {
+    // `stdin`に'error'リスナが無いと、NodeはこれをプロセスレベルのUncaught
+    // Exceptionとして扱い、**デーモン全体を落とす**（実行中の全録画が道連れ）。
+    // Python版の`subprocess.run(input=...)`はここを内部で吸収していた。
+    const { defaultRunCommand } = await import("./runner.js");
+
+    const outcome = await defaultRunCommand(
+      ["sh", "-c", "exit 3"],
+      { input: "x".repeat(1024 * 1024) },
+    );
+
+    expect(outcome.code).toBe(3);
+  });
 });

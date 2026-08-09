@@ -26,7 +26,11 @@ import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations
 import { HttpLambdaAuthorizer, HttpLambdaResponseType } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
-import { HOME_WORKER_OFFER_INDEX, OUTPUT_RETENTION_DAYS } from "@sattori/shared";
+import {
+  HOME_WORKER_OFFER_INDEX,
+  LAUNCH_LAMBDA_TIMEOUT_SECONDS,
+  OUTPUT_RETENTION_DAYS,
+} from "@sattori/shared";
 import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import type { Construct } from "constructs";
 
@@ -496,8 +500,10 @@ export class SattoriStack extends Stack {
     // `GameRoutingPolicy.offerWindowSeconds`(既定20秒)ぶんポーリングして待つため、
     // 既定の30秒タイムアウトでは足りない。待機は自宅ワーカーのハートビートが
     // 新鮮なときにしか発生しないので、通常のジョブでこの時間を消費することはない。
+    // タイムアウト値は`@sattori/shared`の定数を唯一の出典にしてある(apps/api側の
+    // `MAX_OFFER_WINDOW_SECONDS`がこの値から導出され、テストで整合を守っている)。
     const launchFn = makeHandler("LaunchFn", "sfn/launch.ts", commonEnv, {
-      timeout: Duration.seconds(60),
+      timeout: Duration.seconds(LAUNCH_LAMBDA_TIMEOUT_SECONDS),
     });
     const handleFailureFn = makeHandler("HandleFailureFn", "sfn/handleFailure.ts");
 

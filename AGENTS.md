@@ -194,6 +194,12 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
   「実機検証の記録」）。
   ただし**claim競合・claim取り消し・オファー経由のE2E（AWSを通した割り当て）は未検証**
   で、これらはPRのデプロイ後に確認する必要がある。
+- **claimの取り消しは「デーモンが気づく」だけに頼らず、二段構えで守る**。NAT配下の
+  デーモンには通知が届かないため取り消しの捕捉は能動的な確認（`touchClaim`・
+  オファー再出現の検知）しか手段が無く、気づく前にコンテナが完走する窓が必ず残る。
+  そこでジョブレコード側に拒否票 `stopRequestedAt` を持たせ、ワーカーの status 書き込み
+  （`worker/status.py`）を条件付き更新で弾く。停止したジョブが`done`へ戻り完了メールが
+  飛ぶ、という最悪の結果はこちらで止める設計になっている（`home-worker/README.md` §3）。
 - **自宅ワーカーの録画品質は、並列度そのものよりCPU温度とホストの他負荷に強く依存する**。
   開発マシン（Ryzen 7 5700X、8コア16スレッド）での実測（`home-worker/README.md`
   「実機検証の記録」）:

@@ -10,7 +10,7 @@ import {
 } from "@aws-sdk/client-sfn";
 import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
-import type { AdminStopJobResponse, JobRecord } from "@sattori/shared";
+import type { AdminStopJobResponse, ApiError, JobRecord } from "@sattori/shared";
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -85,6 +85,15 @@ function statusUpdates() {
     .filter((call) => call.args[0].input.ExpressionAttributeValues?.[":s"] !== undefined);
 }
 
+/** 緊急停止の拒否票（`stopRequestedAt`）を立てるUpdateItem。 */
+function stopRequestedMarkers() {
+  return ddbMock
+    .commandCalls(UpdateCommand)
+    .filter((call) =>
+      String(call.args[0].input.UpdateExpression).includes("stopRequestedAt = :now"),
+    );
+}
+
 describe("POST /admin/jobs/{jobId}/stop", () => {
   beforeEach(() => {
     ddbMock.reset();
@@ -131,6 +140,14 @@ describe("POST /admin/jobs/{jobId}/stop", () => {
     expect(updateCall?.args[0].input.ExpressionAttributeValues?.[":e"]).toBe(
       "管理者により停止されました",
     );
+
+    // 拒否票（`stopRequestedAt`）は**ワーカーの後始末より先に**立てる。後に回すと、
+    // 割り当て解除に気づく前に完走した自宅ワーカーのコンテナが`done`を書き、
+    // 停止したはずのジョブの完了メールがユーザーへ飛ぶ。
+    expect(stopRequestedMarkers()).toHaveLength(1);
+    expect(
+      String(ddbMock.commandCalls(UpdateCommand)[0]?.args[0].input.UpdateExpression),
+    ).toContain("stopRequestedAt = :now");
   });
 
   it("実行がまだ存在しない場合もインスタンス終了と状態確定は行う", async () => {
@@ -328,7 +345,10 @@ describe("POST /admin/jobs/{jobId}/stop", () => {
 
     expect(res.statusCode).toBe(502);
     expect(ec2Mock.commandCalls(TerminateInstancesCommand)).toHaveLength(0);
-    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);
+    expect(statusUpdates()).toHaveLength(0);
+    // 拒否票だけは先に立ててある（生き残ったワーカーに`done`を書かせないため。
+    // 停止を再実行できるようにするうえでも、この票が残っていて困ることはない）。
+    expect(stopRequestedMarkers()).toHaveLength(1);
   });
 
   it("terminateが失敗したらfailedへの確定を行わない(止まっていないのに終了扱いにしない)", async () => {
@@ -339,7 +359,23 @@ describe("POST /admin/jobs/{jobId}/stop", () => {
     const res = await invoke("job-1");
 
     expect(res.statusCode).toBe(502);
-    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);
+    expect(statusUpdates()).toHaveLength(0);
+  });
+
+  it("拒否票の記録に失敗したら停止処理へ進まない", async () => {
+    // 拒否票を立てられないまま自宅ワーカーの割り当てを解除すると、claimの取り消しに
+    // 気づく前に完走したコンテナが`done`を書き、停止したはずのジョブの完了メールが
+    // ユーザーへ飛ぶ。黙らせられないなら停止したことにしてはいけない。
+    ddbMock.on(GetCommand).resolves({ Item: recordingJob });
+    ddbMock.on(UpdateCommand).rejects(new Error("throttled"));
+
+    const res = await invoke("job-1");
+
+    expect(res.statusCode).toBe(502);
+    expect((JSON.parse(res.body ?? "{}") as ApiError).code).toBe("mark_stop_requested_failed");
+    expect(sfnMock.commandCalls(StopExecutionCommand)).toHaveLength(0);
+    expect(ec2Mock.commandCalls(TerminateInstancesCommand)).toHaveLength(0);
+    expect(statusUpdates()).toHaveLength(0);
   });
 
   it("ジョブが存在しなければ404を返す", async () => {

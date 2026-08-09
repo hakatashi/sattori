@@ -1,4 +1,9 @@
-import type { JobRecord, WorkerEnvironment } from "@sattori/shared";
+import type {
+  AdminJobRecord,
+  JobRecord,
+  RedactedWorkerEnvironment,
+  WorkerEnvironment,
+} from "@sattori/shared";
 import type { ApiConfig } from "./config.js";
 
 /**
@@ -43,8 +48,27 @@ export function buildWorkerEnv(
  * `buildWorkerEnv()` の結果のうち `TASK_TOKEN` を伏せたコピー。ログや
  * 管理画面の表示にそのまま出すと、Step Functions の実行を任意に成功/失敗させられる
  * トークンが漏れるため、外へ出す経路では必ずこれを通す。
+ *
+ * 「必ず通す」を散文の約束で済ませていた結果 `GET /admin/jobs/{id}` が生きた
+ * トークンをそのまま返していたため、**戻り値の型で表明する**方式に変えてある
+ * （`RedactedWorkerEnvironment`。外へ出す型はそちらしか受け付けない）。
  */
-export function redactWorkerEnv(env: WorkerEnvironment): WorkerEnvironment {
+export function redactWorkerEnv(env: WorkerEnvironment): RedactedWorkerEnvironment {
   const { TASK_TOKEN: _taskToken, ...rest } = env;
-  return rest;
+  // `WorkerEnvironment` は `Record<string, string>` なので、分割代入の残りにも
+  // インデックスシグネチャが残り「TASK_TOKENを含みうる型」のままになる。実体からは
+  // 確実に落ちているため、型を絞るのはこの1箇所だけに許す。
+  return rest as RedactedWorkerEnvironment;
+}
+
+/**
+ * ジョブレコードを管理APIのレスポンス用に整える（`homeWorkerEnv` の
+ * `TASK_TOKEN` を伏せるだけ）。管理APIは `JobRecord` をあえて絞り込まない方針
+ * （`AdminJobRecord` のコメント参照）なので、ここでフィールドを間引かないこと。
+ */
+export function toAdminJobRecord(job: JobRecord): AdminJobRecord {
+  const { homeWorkerEnv, ...rest } = job;
+  return homeWorkerEnv === undefined
+    ? rest
+    : { ...rest, homeWorkerEnv: redactWorkerEnv(homeWorkerEnv) };
 }

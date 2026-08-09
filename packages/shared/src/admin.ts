@@ -1,5 +1,6 @@
 import type { CostBreakdown, CostGranularity } from "./cost.js";
 import type { JobRecord, JobStatus } from "./job.js";
+import type { RedactedWorkerEnvironment } from "./worker.js";
 
 /**
  * 管理画面（`/admin`、Issue #51）向けのAPI契約。`api.ts` の契約は「ユーザー向け」で
@@ -66,14 +67,25 @@ export interface AdminJobDownloads {
   ffmpegLogUrl: string | null;
 }
 
+/**
+ * 管理APIが返すジョブレコード。`JobRecord`をほぼそのまま返す（email・instanceId等の
+ * 内部データを含む）。要件が「ジョブの詳細を全て確認できること」であり、ホワイトリスト
+ * 方式だと`JobRecord`拡張のたびに更新漏れが生じるため、あえて絞り込まない。
+ *
+ * **唯一の例外が`homeWorkerEnv`**（Issue #49）。これは生きた Step Functions の
+ * `TASK_TOKEN`——実行を任意に成功/失敗させられるベアラ——を含むため、
+ * `RedactedWorkerEnvironment` に狭めてある。`JobRecord` をそのまま代入すると
+ * **型エラーになる**ので、`apps/api/src/workerEnv.ts` の `toAdminJobRecord()` を
+ * 通し忘れることはできない（この不変条件を散文でしか書いていなかった結果、
+ * トークンがレスポンスへ露出していた）。
+ */
+export type AdminJobRecord = Omit<JobRecord, "homeWorkerEnv"> & {
+  homeWorkerEnv?: RedactedWorkerEnvironment;
+};
+
 /** GET /admin/jobs/{jobId} のレスポンス。 */
 export interface AdminJobDetailResponse {
-  /**
-   * `JobRecord`をそのまま返す（email・instanceId等の内部データを含む）。
-   * 要件が「ジョブの詳細を全て確認できること」であり、ホワイトリスト方式だと
-   * `JobRecord`拡張のたびに更新漏れが生じるため、あえて絞り込まない。
-   */
-  job: JobRecord;
+  job: AdminJobRecord;
   downloads: AdminJobDownloads;
 }
 
