@@ -26,7 +26,7 @@ import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations
 import { HttpLambdaAuthorizer, HttpLambdaResponseType } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
-import { OUTPUT_RETENTION_DAYS } from "@sattori/shared";
+import { HOME_WORKER_OFFER_INDEX, OUTPUT_RETENTION_DAYS } from "@sattori/shared";
 import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import type { Construct } from "constructs";
 
@@ -170,7 +170,7 @@ export class SattoriStack extends Stack {
     // 高々数件なのでProjectionはALLでよい(StatusCreatedAtIndexと同じ理由で、
     // 後から射影属性を増やせないINCLUDEを避ける)。
     jobsTable.addGlobalSecondaryIndex({
-      indexName: "HomeWorkerOfferIndex",
+      indexName: HOME_WORKER_OFFER_INDEX,
       partitionKey: { name: "homeWorkerOfferState", type: dynamodb.AttributeType.STRING },
       sortKey: { name: "homeWorkerOfferExpiresAt", type: dynamodb.AttributeType.STRING },
       projectionType: dynamodb.ProjectionType.ALL,
@@ -323,7 +323,7 @@ export class SattoriStack extends Stack {
       assumedBy: new iam.AccountPrincipal(this.account),
       description: "Sattori home recording worker (Issue #49)",
       // デーモンはコンテナ起動時にこの期間ぶんの一時認証情報を発行して渡す
-      // (`home-worker/credentials.py`)。**ジョブ1本の最長所要時間(録画60分+変換)
+      // (`home-worker/src/credentials.ts`)。**ジョブ1本の最長所要時間(録画60分+変換)
       // より確実に長い**必要がある——短いと録画の途中でコンテナ内のS3/DynamoDB
       // 呼び出しが認証エラーで落ちる(コンテナ内には再取得の手段が無い)。
       maxSessionDuration: Duration.hours(4),

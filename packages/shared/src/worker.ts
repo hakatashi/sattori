@@ -114,6 +114,14 @@ export const HOME_WORKER_OFFER_OPEN = "open";
 export type HomeWorkerOfferState = typeof HOME_WORKER_OFFER_OPEN;
 
 /**
+ * オファー用sparse GSIの名前。CDK（`infra/lib/sattori-stack.ts`）がインデックスを作り、
+ * `Launch` Lambda（オファーを書く側）と自宅デーモン（`home-worker/`、Query する側）が
+ * 同じ名前を参照する。3者に同じ文字列を書き写すと片方だけ直したときに気づけないため、
+ * 共有パッケージの定数を唯一の出典にしている。
+ */
+export const HOME_WORKER_OFFER_INDEX = "HomeWorkerOfferIndex";
+
+/**
  * ワーカーコンテナへ渡す環境変数一式（`apps/api/src/workerEnv.ts` が組み立てる）。
  * EC2では UserData の `docker run -e` に展開され、自宅ワーカーではオファーに
  * 添えてジョブレコードへ書かれ、デーモンがそのまま `docker run` へ渡す。

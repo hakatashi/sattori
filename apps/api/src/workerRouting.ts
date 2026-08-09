@@ -39,7 +39,7 @@ export interface GameRoutingPolicy {
    * 待ち時間はそのまま録画開始の遅延になるが、**ハートビートが新鮮なワーカーが
    * いる場合しかオファーしない**ので、平常時（自宅サーバーが落ちている）に
    * この待ちが発生することはない。デーモンのポーリング間隔
-   * （`home-worker/`の`POLL_INTERVAL_SECONDS`、既定3秒）の数倍を確保する。
+   * （`home-worker/`の`HOME_WORKER_POLL_INTERVAL_SEC`、既定3秒）の数倍を確保する。
    */
   offerWindowSeconds: number;
 }

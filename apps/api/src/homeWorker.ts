@@ -7,7 +7,7 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 /**
  * 自宅ワーカー（Issue #49）へのジョブのオファーとその後始末。claim する側
- * （`home-worker/claim.py`）とここが同じ条件付き更新の約束を共有する:
+ * （`home-worker/src/claim.ts`）とここが同じ条件付き更新の約束を共有する:
  *
  * - オファー中: `homeWorkerOfferState = "open"` かつ `homeWorkerOfferExpiresAt` が未来。
  *   sparse GSI（`HomeWorkerOfferIndex`）に載るのはこの状態のジョブだけ。
@@ -20,8 +20,8 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
  * （デーモンは自分のIDが残っている間だけ実行を続ける）。
  */
 
-/** GSI名。CDK（`infra/lib/sattori-stack.ts`）と自宅デーモンの双方が同じ名前を使う。 */
-export const HOME_WORKER_OFFER_INDEX = "HomeWorkerOfferIndex";
+// GSI名（`HOME_WORKER_OFFER_INDEX`）は CDK・自宅デーモンと共有するため
+// `@sattori/shared` に置いてある。
 
 /**
  * ワーカーのハートビート一覧を取得する。`WorkersTable` は常駐ワーカーの台数

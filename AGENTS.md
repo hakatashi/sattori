@@ -78,7 +78,7 @@ SESと合わせて`SattoriEdgeStack`（us-east-1固定の付帯スタック、`i
 | Lambda API・EC2起動・課金/レート制限 | [`apps/api/README.md`](apps/api/README.md) |
 | フロントエンド | [`apps/web/README.md`](apps/web/README.md) |
 | 録画ワーカー（Python） | [`worker/README.md`](worker/README.md) |
-| 自宅サーバー録画ワーカー（Python） | [`home-worker/README.md`](home-worker/README.md) |
+| 自宅サーバー録画ワーカー（常駐デーモン） | [`home-worker/README.md`](home-worker/README.md) |
 | AWS CDK インフラ | [`infra/README.md`](infra/README.md) |
 
 ## 3. 常に踏まえておくべき設計判断
@@ -108,9 +108,12 @@ SESと合わせて`SattoriEdgeStack`（us-east-1固定の付帯スタック、`i
   起動側が渡す環境変数（`apps/api/src/workerEnv.ts`）の違いとして表現する。
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。CloudFront 永年無料枠で egress を
   実質ゼロにできる。
-- **録画ワーカーだけ Python**。PoC の numpy/PIL によるフレーム差分・Wine 制御が
-  実証済みで、TS 再実装はリスクだけ増えるための判断。フロント・API・パーサー・IaC は
-  TypeScript。
+- **録画ワーカー（`worker/`）だけ Python**。PoC の numpy/PIL によるフレーム差分・
+  Wine 制御が実証済みで、TS 再実装はリスクだけ増えるための判断。フロント・API・
+  パーサー・IaC は TypeScript。この例外は**録画パイプラインに限る**——自宅ワーカーの
+  常駐デーモン（`home-worker/`）はコントロールプレーン（DynamoDBの条件付き更新・
+  `docker run`・ログ転送）しか担わず上記の根拠が当てはまらないため、`@sattori/shared`
+  の型・定数をそのまま使える TypeScript で書いている。
 - **jobId 自体が認可の秘密値**（マジックリンクのトークンではなく jobId をそのまま
   使う設計）。メールを確認しないと分からない値であることを利用してbot/濫用対策と
   メール認証を兼ねている。
@@ -148,7 +151,7 @@ pnpm workspaces + Turborepo。ルートに `pnpm-workspace.yaml` / `turbo.json` 
 | `apps/api` | Lambda ハンドラ・S3/DynamoDB/EC2/Step Functions 連携 | tsc(--noEmit), vitest |
 | `apps/web` | フロントエンド SPA（`react-router-dom`） | vite, vitest, jsdom |
 | `worker` | 録画パイプライン（Python） | python, docker |
-| `home-worker` | 自宅サーバー常駐デーモン（ジョブのclaimとコンテナ実行、Issue #49） | python, docker |
+| `home-worker` | 自宅サーバー常駐デーモン（ジョブのclaimとコンテナ実行、Issue #49） | tsc, vitest, docker |
 | `infra` | AWS CDK スタック | cdk, tsx, vitest |
 
 ### TypeScript の約束事（全 TS パッケージ共通）

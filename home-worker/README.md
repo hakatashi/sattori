@@ -8,6 +8,15 @@
 あるのは「ジョブを取りに行き、コンテナを起動し、ログを転送し、後始末をする」だけの
 薄い常駐プロセスであり、録画パイプラインのロジックは一切持たない。
 
+そのため実装は**録画ワーカー（`worker/`、Python）ではなくモノレポ側の TypeScript**
+（pnpm workspace の `@sattori/home-worker`）である。ここがやるのは DynamoDB の条件付き
+更新・`docker run`・CloudWatch Logs への転送というコントロールプレーンの仕事だけで、
+Python を採用する根拠（numpy/PIL によるフレーム差分・Wine 制御、AGENTS.md §3）が
+一切当てはまらない。TypeScript にすることで、AWS 側と噛み合う型・定数
+（`SUPPORTED_GAME_IDS` / `WorkerHeartbeat` / `WORKER_HEARTBEAT_*` /
+`HOME_WORKER_OFFER_INDEX` など）を `@sattori/shared` から直接 import でき、
+手書きの二重管理が無くなる。
+
 ## 1. なぜ Pull 型なのか
 
 自宅マシンは動的グローバルIP・NAT配下にあり、AWS 側から到達させるにはポート開放や
@@ -134,13 +143,21 @@ IAM ユーザー側に付けるポリシー:
 
 ### 4.3 起動
 
+Node 24 と pnpm（リポジトリルートの `.tool-versions`）があればよい。デーモンは
+`@sattori/shared` に依存するため、**ビルドはリポジトリルートから**行う
+（`pnpm build` が turbo 経由で `@sattori/shared` → `@sattori/home-worker` の順に
+ビルドする）。
+
 ```bash
+pnpm install
+pnpm build          # このデーモンだけなら: pnpm exec turbo run build --filter @sattori/home-worker
 cd home-worker
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
 JOBS_TABLE=... WORKERS_TABLE=... WORKER_IMAGE=... HOME_WORKER_ROLE_ARN=... \
-  python3 daemon.py
+  node dist/main.js
 ```
+
+必須の環境変数が欠けている場合は起動時に「設定エラー」を出して終了コード2で落ちる
+（systemd の `Restart=always` で無限に再起動し続けないよう、設定ミスは即座に分かる）。
 
 systemd ユニットの例（`/etc/systemd/system/sattori-home-worker.service`）:
 
@@ -155,7 +172,7 @@ Type=simple
 User=hakatashi
 WorkingDirectory=/home/hakatashi/sattori/home-worker
 EnvironmentFile=/etc/sattori-home-worker.env
-ExecStart=/home/hakatashi/sattori/home-worker/.venv/bin/python3 daemon.py
+ExecStart=/home/hakatashi/.asdf/shims/node dist/main.js
 Restart=always
 RestartSec=10
 # 実行中の録画を完走させてから終了する（SIGTERM後は新規claimを止めるだけ）。
@@ -169,6 +186,25 @@ WantedBy=multi-user.target
 `EnvironmentFile` にはアクセスキーではなく `AWS_PROFILE`（または
 `AWS_SHARED_CREDENTIALS_FILE`）を書き、鍵そのものは `~/.aws/credentials` に置いて
 `chmod 600` にしておくとよい。
+
+`ExecStart` は `dist/` を直接叩く（`pnpm start` を挟むと、SIGTERM が pnpm 止まりで
+Node へ届かず、ドレイン——実行中の録画の完走待ち——が働かなくなる）。デプロイ時は
+**先に `pnpm build` を済ませてから** `systemctl restart` すること。
+
+### 4.4 モジュール構成
+
+| ファイル | 役割 |
+| --- | --- |
+| `src/main.ts` | エントリポイント。設定読み込みとシグナルハンドラの登録だけ |
+| `src/daemon.ts` | メインループ。ハートビート・claim・コンテナ実行・claim監視・ドレイン |
+| `src/config.ts` | 環境変数から設定を組み立てる（§4.2 の表がそのまま対応する） |
+| `src/credentials.ts` | `sts:AssumeRole` による短命クレデンシャルの発行と期限管理 |
+| `src/claim.ts` | オファーの探索（GSI Query）と claim/解放の条件付き更新。**AWS 側との契約そのもの** |
+| `src/heartbeat.ts` | `WorkersTable` への自己申告（型は `@sattori/shared` の `WorkerHeartbeat`） |
+| `src/capacity.ts` | 余力判定（同時実行上限・ロードアベレージ）。新規 claim を止めるだけ |
+| `src/runner.ts` | `docker login` / `docker pull` / `docker run` / `docker kill` |
+| `src/logShipper.ts` | コンテナ出力を CloudWatch Logs へ転送 |
+| `src/signal.ts` | 中断できる待機（Python 版の `threading.Event` に相当） |
 
 ## 5. 運用
 
@@ -190,8 +226,9 @@ WantedBy=multi-user.target
 ## 6. 実機検証の記録
 
 開発マシン（AMD Ryzen 7 5700X、8コア16スレッド / 94GiB）でフル尺のリプレイを録画した
-記録（2026-08-09）。コンテナの起動は `runner.py` の `build_docker_command()` /
-`ContainerRun` を実際に使い、タイトル資産の取得・リプレイ取得・出力アップロードは
+記録（2026-08-09）。コンテナの起動はデーモンの `buildDockerCommand()` / `ContainerRun`
+（検証当時はPython実装の `runner.py`。TypeScript移植後の `src/runner.ts` と同じ
+`docker run` を組み立てる）を実際に使い、タイトル資産の取得・リプレイ取得・出力アップロードは
 本番と同じ eu-south-2 の S3 バケットを通した。`JOBS_TABLE` は未指定（本番の
 JobsTable を汚さないため）、`TASK_TOKEN` はダミー（Step Functions の実行が無いため）。
 
@@ -265,10 +302,19 @@ th20（東方錦上京、Issue #87）は描画負荷が高く、原則として4
 ## 8. テスト
 
 ```bash
-cd home-worker
-pip install -r requirements-dev.txt
-python3 -m pytest
+pnpm --filter @sattori/home-worker test        # 単体で走らせる場合
+pnpm test                                       # turbo で全パッケージ横断
 ```
 
-AWS 呼び出しと `docker` はすべて差し替えており、実際のクラウド資源には触れない
-（`worker/` と同じ方針で moto 等は使わない）。
+AWS 呼び出しは `aws-sdk-client-mock` で差し替え（`apps/api` と同じ方針）、`docker` の
+実行は `RunCommand` / `SpawnContainer` を注入して差し替えるため、実際のクラウド資源にも
+docker デーモンにも触れない。
+
+テストで特に守っているのは以下の判断（＝壊すと二重録画・課金事故に直結するもの）:
+
+- claim が取り消されていたらコンテナを止める（`watchClaim`）。一時的なAPIエラーでは止めない。
+- 対応外タイトルのオファーは claim しない／空きスロットを超えて claim しない。
+- claim の条件式に `attribute_not_exists(assignedWorkerId)` と期限判定が入っている。
+- コンテナへ渡す認証情報の残存時間が足りなければ assume し直す。
+- ログ転送に失敗したら以降は諦める（録画は止めない）。
+- `docker run` のログ出力で `TASK_TOKEN` と AWS 認証情報が伏せられている。
