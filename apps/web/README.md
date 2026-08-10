@@ -97,9 +97,15 @@ th20のリプレイを解析したときだけ、STEP2のプレビュー直下�
 ブラウザ標準のダウンロード機構（進捗表示・タブを離れても継続）を使うため、
 fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
 
+**出力が1本のジョブでは`downloadUrl720p`が null になる**（th20・低速録画。解像度が
+変わらない/生データが半分の速度で使えないため、変換結果1本に集約する。
+`worker/convert.py`の`needs_separate_raw_output()`）。主要ボタンは
+`downloadUrl720p ?? downloadUrl`のフォールバックでそのまま本命を指し、副次リンク
+（「変換前の動画をダウンロード」）は両方揃っているときだけ出す。
+
 ## 完了後のプレビュー再生（`components/JobProgress.tsx`、Issue #71）
 
-`status: "done"`のとき、`GetJobResponse.previewVideoUrl`（720p版のCDN URL。
+`status: "done"`のとき、`GetJobResponse.previewVideoUrl`（配信版のCDN URL。
 ダウンロード用と違い`response-content-disposition`は付かない）を`<video controls>`で
 そのまま再生できるようにしている。
 

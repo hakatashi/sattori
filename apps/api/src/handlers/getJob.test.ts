@@ -243,4 +243,52 @@ describe("GET /jobs/{jobId}", () => {
 
     expect(parseBody(res as APIGatewayProxyStructuredResultV2).slowMotion).toBe(false);
   });
+
+  /**
+   * 出力が1本のジョブ（th20・低速録画。`worker/convert.py` の
+   * `needs_separate_raw_output()` 参照）。`outputPath` が指すのは録画そのままの
+   * 副次版ではなく**変換結果そのもの**なので、ファイル名に ` #raw` を付けてはいけない。
+   */
+  it("720p版が無いジョブは outputPath を本命として扱い、ファイル名に #raw を付けない", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, outputPath: "output/job-1/video-720p.mp4", outputPath720p: null },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.downloadUrl720p).toBeNull();
+    expect(body.downloadUrl).toBeTruthy();
+    const disposition = new URL(body.downloadUrl as string).searchParams.get(
+      "response-content-disposition",
+    );
+    expect(disposition).not.toContain("raw");
+  });
+
+  it("720p版があるジョブでは outputPath 側のファイル名に #raw が付く", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: doneJob });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    const disposition = new URL(body.downloadUrl as string).searchParams.get(
+      "response-content-disposition",
+    );
+    expect(disposition).toContain("raw");
+  });
+
+  it("720p版が無くてもプレビュー再生URLは outputPath へフォールバックする", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, outputPath: "output/job-1/video-720p.mp4", outputPath720p: null },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+
+    expect(parseBody(res as APIGatewayProxyStructuredResultV2).previewVideoUrl).toBe(
+      "https://cdn.example.net/output/job-1/video-720p.mp4",
+    );
+  });
 });

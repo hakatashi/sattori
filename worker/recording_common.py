@@ -61,7 +61,6 @@ from dataclasses import dataclass, field
 import numpy as np
 from PIL import Image
 
-import descale
 import pulse
 
 # 既定のXvfb画面サイズ(640x480ウィンドウ+ウィンドウ装飾分の余白)。th20は内部描画解像度が
@@ -699,6 +698,29 @@ def mux_audio_video(video_path, audio_path, output_path, env, log=print):
     return result.returncode == 0
 
 
+def duplicate_rate_threshold_for_raw(threshold_percent, time_scale):
+    """等倍換算の重複フレーム率の閾値を、**等倍へ戻す前の生データ**に対する閾値へ換算する。
+
+    低速録画(Issue #68)の生データは、ゲームが目標fpsを完璧に維持できていても各フレームが
+    `time_scale` 枚ずつ並ぶ(録画自体は等倍と同じ`-framerate 60`で撮るため)。等倍の閾値を
+    そのまま当てると、正常な録画が必ず「処理落ち」と判定されてリトライされてしまう。
+
+    ユニークなフレーム数 U は等倍化しても変わらず、総フレーム数だけが `time_scale` 倍に
+    なる。生データの尺 T、等倍化後の尺 T/scale として
+
+        raw = 1 - U/(60T)                     等倍化後 = 1 - U/(60T/scale)
+
+    から `等倍化後 = scale*raw - (scale-1)`、逆に解いて
+
+        raw = (等倍化後 + scale - 1) / scale
+
+    等倍(scale=1)では換算しても値が変わらないので、既存タイトルの判定は一切変わらない。
+    """
+    if time_scale <= 1.0:
+        return threshold_percent
+    return (threshold_percent + (time_scale - 1) * 100.0) / time_scale
+
+
 def measure_duplicate_rate(video_path, start_sec, duration_sec):
     """録画動画の指定区間について、mpdecimateフィルタで重複フレーム率(%)を計測する。
     ウィンドウ再作成等による処理落ち(reports/12・13・22)の事後検知に使う。
@@ -747,7 +769,7 @@ def _failure_result(config, env, log):
         "classification": "setup_error",
         "fps_runaway_hz": None,
         "total_record_sec": 0.0,
-        "content_duration_sec": 0.0,
+        "time_scale": 1.0,
     }
 
 
@@ -1014,26 +1036,6 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     else:
         log(f"WARNING: 映像/音声の中間ファイルが見つかりません: video={video_target} audio={audio_target}")
 
-    if output_exists and time_scale != 1.0:
-        # 低速録画(Issue #68)の生データを、ここで**等倍相当へ戻してしまう**。
-        # 以降の工程(重複フレーム率チェック・S3へのチェックポイント・720p変換・
-        # ユーザーへの配信)はすべて等倍の動画だけを見ればよくなり、パイプラインの
-        # 他の場所に低速録画の分岐を持ち込まずに済む。
-        # 重複フレーム率チェックにとっても、この順序が正しい: 変換後は「目標fpsを
-        # 維持できていれば重複ほぼ0%、本当に処理落ちしていれば重複として残る」という
-        # 等倍録画と同じ意味の数字になり、閾値をそのまま使える(descale.py 参照)。
-        slowmo_target = f"{base}.slowmo.mp4"
-        os.replace(output_path, slowmo_target)
-        output_exists = descale.descale_to_normal_speed(
-            slowmo_target, output_path, time_scale, native_hz=NATIVE_FRAME_RATE_HZ, log=log,
-        )
-        if output_exists:
-            # 生データは等倍版の数倍のサイズがあり、同一インスタンスでのリトライで
-            # ディスクを食い潰さないよう変換後は捨てる(診断に要る情報は残らないため)。
-            os.remove(slowmo_target)
-        else:
-            log("WARNING: 等倍変換に失敗したため、この試行は失敗として扱います")
-
     if output_exists:
         log(f"出力ファイル: {output_path} ({os.path.getsize(output_path)} bytes)")
     else:
@@ -1069,10 +1071,10 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         "classification": classification,
         "fps_runaway_hz": fps_runaway_hz,
         "total_record_sec": total_record_sec,
-        # 出力ファイルの尺(秒)。低速録画では実時間(total_record_sec)の1/time_scale
-        # になる(等倍へ戻した後のファイルが出力されるため)。重複フレーム率を測る
-        # 区間の指定など、**ファイルの中の時刻**を扱う箇所はこちらを使うこと。
-        "content_duration_sec": total_record_sec / time_scale,
+        # この試行の録画に適用されていた実時間スケール(等倍なら1.0)。出力は等倍へ
+        # 戻す前の生データなので、重複フレーム率の判定にこの値が要る
+        # (`duplicate_rate_threshold_for_raw()`)。
+        "time_scale": time_scale,
     }
 
 
@@ -1114,13 +1116,18 @@ def _record_with_retry(config, replay_path, output_path, *,
             log("WARNING: 処理落ちの早期検知によりこの試行を破棄してリトライします")
             continue
 
-        # 計測区間は出力ファイル内の時刻なので、実時間ではなくコンテンツ尺で決める
-        # (低速録画では両者が2倍ずれる)。
-        content_duration_sec = result.get("content_duration_sec", result["total_record_sec"])
-        dup_rate = measure_duplicate_rate(output_path, 15, min(30, max(5, content_duration_sec - 15)))
-        log(f"録画開始15秒以降の重複フレーム率: {dup_rate}%")
-        if dup_rate is not None and dup_rate > max_duplicate_rate:
-            log(f"WARNING: 重複フレーム率({dup_rate}%)が閾値({max_duplicate_rate}%)を超えました。破棄してリトライします")
+        # 判定対象は**等倍へ戻す前の生データ**なので、閾値の方をスケールに合わせて
+        # 換算する(`duplicate_rate_threshold_for_raw()`)。等倍録画では換算しても
+        # 値が変わらないため、th06/07/08/11の挙動は従来どおり。
+        time_scale = result.get("time_scale", 1.0)
+        threshold = duplicate_rate_threshold_for_raw(max_duplicate_rate, time_scale)
+        dup_rate = measure_duplicate_rate(output_path, 15, min(30, max(5, result["total_record_sec"] - 15)))
+        log(
+            f"録画開始15秒以降の重複フレーム率: {dup_rate}% "
+            f"(閾値{threshold:.1f}% = 等倍換算{max_duplicate_rate}%、time_scale={time_scale})"
+        )
+        if dup_rate is not None and dup_rate > threshold:
+            log(f"WARNING: 重複フレーム率({dup_rate}%)が閾値({threshold:.1f}%)を超えました。破棄してリトライします")
             continue
 
         log(f"試行{attempt}で正常な録画を確認しました")

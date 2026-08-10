@@ -43,12 +43,13 @@ import time
 import boto3
 
 import pulse
+from convert import convert_for_delivery, needs_separate_raw_output, probe_resolution
 from interruption_watcher import InterruptionWatcher
 from progress_reporter import ProgressReporter
+from recording_common import slow_motion_scale
 from status import get_job, update_progress, update_status
 from task_heartbeat import TaskHeartbeat
 from title_assets import ensure_title_assets
-from upscale import upscale_to_720p
 
 JOB_ID = os.environ["JOB_ID"]
 GAME = os.environ.get("GAME", "th07")
@@ -64,11 +65,20 @@ REPO = "/app"
 WORK_DIR = f"/app/runs/{JOB_ID}"
 REPLAY_PATH = f"{WORK_DIR}/upload.rpy"
 OUTPUT_VIDEO = f"{WORK_DIR}/video.mp4"
-OUTPUT_VIDEO_720P = f"{WORK_DIR}/video_720p.mp4"
+OUTPUT_VIDEO_DELIVERY = f"{WORK_DIR}/video_delivery.mp4"
 PROGRESS_DIR = f"{WORK_DIR}/progress"
 # 出力オブジェクトキー。CloudFront はこのキーをパスとして配信する。
+# `OUTPUT_KEY` は録画直後の生データ(チェックポイント)の置き場でもある。
+# `_720p` という接尾辞は歴史的なもので、実際の解像度は録画によって変わる
+# (720pに満たない録画だけ引き上げ、th20の1280x960はそのまま。`convert.py`参照)。
 OUTPUT_KEY = f"videos/{JOB_ID}.mp4"
-OUTPUT_KEY_720P = f"videos/{JOB_ID}_720p.mp4"
+OUTPUT_KEY_DELIVERY = f"videos/{JOB_ID}_720p.mp4"
+# 生データのチェックポイントに添えるS3オブジェクトメタデータのキー。低速録画
+# (Issue #68)の生データは実時間が `time_scale` 倍に伸びており、等倍へ戻すには
+# その倍率が要る。**環境変数から取り直してはいけない**: 自宅ワーカーが低速で
+# 録画した後にリトライがEC2へ回ると、EC2側には`FPS_LIMIT_TARGET_HZ`が渡らないため、
+# 半分の速度の動画をそのまま配信してしまう。倍率は生データ自身に添えて運ぶ。
+TIME_SCALE_METADATA_KEY = "sattori-time-scale"
 WATERMARK_ASSET = f"{REPO}/assets/watermark/watermark-60fps.webm"
 # 720p変換中のffmpeg生ログ(frame=/fps=/bitrate=等)の退避先。CloudWatch Logsには
 # 全行流さず(Issue #58フォローアップ)、ここへ書き出してから完了後にS3(期限付き)へ
@@ -161,7 +171,7 @@ def download_checkpoint_video(s3):
     s3.download_file(OUTPUT_BUCKET, OUTPUT_KEY, OUTPUT_VIDEO)
 
 
-def upload_video(s3, path, key):
+def upload_video(s3, path, key, metadata=None):
     """動画をS3へアップロードし、そのバイト数を返す。
 
     サイズは管理画面のコスト推定(Issue #60、packages/shared/src/cost.ts)で
@@ -171,11 +181,32 @@ def upload_video(s3, path, key):
     """
     size = os.path.getsize(path)
     log(f"動画をアップロード: s3://{OUTPUT_BUCKET}/{key} ({size}バイト)")
-    s3.upload_file(
-        path, OUTPUT_BUCKET, key,
-        ExtraArgs={"ContentType": "video/mp4"},
-    )
+    extra = {"ContentType": "video/mp4"}
+    if metadata:
+        extra["Metadata"] = metadata
+    s3.upload_file(path, OUTPUT_BUCKET, key, ExtraArgs=extra)
     return size
+
+
+def read_checkpoint_time_scale(s3):
+    """生データのチェックポイントに添えた実時間スケールを読む(既定1.0＝等倍)。
+
+    取得に失敗した場合も1.0へ倒す。低速録画で録った生データを等倍とみなすと
+    半分の速度の動画を配信してしまうが、ここで例外にすると**変換から再開できる
+    はずだったジョブを録画からやり直させる**ことになる。メタデータが欠けるのは
+    このフィールド導入前のジョブか、S3の一時障害に限られるため、ログを残して
+    続行する側に倒す。
+    """
+    try:
+        head = s3.head_object(Bucket=OUTPUT_BUCKET, Key=OUTPUT_KEY)
+        raw = (head.get("Metadata") or {}).get(TIME_SCALE_METADATA_KEY)
+        if raw is None:
+            log(f"生データに{TIME_SCALE_METADATA_KEY}が無いため等倍として扱います")
+            return 1.0
+        return float(raw)
+    except Exception as err:  # noqa: BLE001 - 取得失敗で変換からの再開自体を諦めない
+        log(f"生データのメタデータ取得に失敗しました(等倍として続行): {err}")
+        return 1.0
 
 
 def upload_ffmpeg_upscale_log_if_present(s3):
@@ -232,21 +263,43 @@ def record(s3):
 
     # 変換前に生動画をチェックポイントとしてアップロードする。以降Spot中断で
     # リトライになっても、次の試行はここから(変換のみ)再開できる。
-    output_bytes = upload_video(s3, OUTPUT_VIDEO, OUTPUT_KEY)
+    # 低速録画(Issue #68)ならこの生データは実時間が伸びた状態なので、等倍へ戻すのに
+    # 要る倍率をオブジェクトメタデータとして添える(`TIME_SCALE_METADATA_KEY`参照)。
+    time_scale = slow_motion_scale()
+    output_bytes = upload_video(
+        s3, OUTPUT_VIDEO, OUTPUT_KEY, metadata={TIME_SCALE_METADATA_KEY: str(time_scale)},
+    )
     update_status(JOB_ID, "converting", output_path=OUTPUT_KEY, output_bytes=output_bytes)
 
 
-def convert_and_upload(s3):
-    log("720pへアップスケール変換します")
+def convert_and_upload(s3, time_scale):
+    """録画結果を配信用の1本へ変換し、S3とDynamoDBへ反映する。
+
+    **録画後の再エンコードはこの1パスだけ**で、等倍への戻し(低速録画)・解像度合わせ・
+    ウォーターマーク合成をまとめて行う(`convert.py`)。
+
+    出力が1本になるか2本になるかは録画の内容で決まる(`needs_separate_raw_output()`):
+
+    - **2本**(th06/07/08/11の等倍録画): 生データがそのまま「元解像度版」として通用する。
+      既にチェックポイントとしてアップロード済みなので、変換結果を別キーへ足すだけ。
+    - **1本**(th20・低速録画): 生データを別に出す意味が無い(解像度が同じでウォーター
+      マークの有無しか違わない)か、半分の速度でそのままでは配信できない。変換結果だけを
+      配信し、**役目を終えた生データはS3から消す**(消さないとジョブあたりの保管量が
+      倍のまま残り、CloudFrontの無料枠を圧迫する。AGENTS.md §6)。
+    """
     # 録画フェーズ末尾の進捗値(秒数)が変換フェーズ開始直後も表示され続けるのを防ぐ。
     update_progress(JOB_ID, 0)
 
     def on_convert_progress(seconds):
         update_progress(JOB_ID, round(seconds))
 
+    width, height = probe_resolution(OUTPUT_VIDEO)
+    separate_raw = needs_separate_raw_output(width, height, time_scale)
+
     try:
-        upscale_to_720p(
-            OUTPUT_VIDEO, OUTPUT_VIDEO_720P,
+        convert_for_delivery(
+            OUTPUT_VIDEO, OUTPUT_VIDEO_DELIVERY,
+            time_scale=time_scale,
             watermark_path=WATERMARK_ASSET if WATERMARK else None,
             on_progress=on_convert_progress, log=log,
             ffmpeg_log_path=FFMPEG_UPSCALE_LOG,
@@ -254,16 +307,42 @@ def convert_and_upload(s3):
     finally:
         # 変換の成否にかかわらずアップロードする(失敗時こそ診断に必要なため)。
         upload_ffmpeg_upscale_log_if_present(s3)
-    output_bytes_720p = upload_video(s3, OUTPUT_VIDEO_720P, OUTPUT_KEY_720P)
+
+    delivery_bytes = upload_video(s3, OUTPUT_VIDEO_DELIVERY, OUTPUT_KEY_DELIVERY)
+    if separate_raw:
+        update_status(
+            JOB_ID, "done",
+            output_path=OUTPUT_KEY, output_path_720p=OUTPUT_KEY_DELIVERY,
+            # 生動画のサイズもここで併せて記録する。チェックポイントから再開した場合
+            # (record()を通らず download_checkpoint_video() で取得した場合)は
+            # record() 側の記録が走らないため。
+            output_bytes=os.path.getsize(OUTPUT_VIDEO),
+            output_bytes_720p=delivery_bytes,
+        )
+        return
+
+    # 1本に集約する場合。`outputPath` を変換結果へ差し替え、`outputPath720p` は
+    # null のままにする(ページBのダウンロードボタンは `downloadUrl720p ?? downloadUrl`
+    # のフォールバックでそのまま1本になる)。
     update_status(
         JOB_ID, "done",
-        output_path=OUTPUT_KEY, output_path_720p=OUTPUT_KEY_720P,
-        # 生動画のサイズもここで併せて記録する。チェックポイントから再開した場合
-        # (record()を通らず download_checkpoint_video() で取得した場合)は
-        # record() 側の記録が走らないため。
-        output_bytes=os.path.getsize(OUTPUT_VIDEO),
-        output_bytes_720p=output_bytes_720p,
+        output_path=OUTPUT_KEY_DELIVERY,
+        output_bytes=delivery_bytes,
     )
+    # **`done` を確定させてから**生データを消す。順序を逆にすると、削除後・status更新前に
+    # 落ちた場合に「outputPathの指すオブジェクトが無い」ジョブが残り、変換からの再開も
+    # できなくなる。ここまで来ていれば再開はもう起こらないので、削除は純粋な後始末。
+    delete_raw_checkpoint(s3)
+
+
+def delete_raw_checkpoint(s3):
+    """役目を終えた生データのチェックポイントをS3から削除する(失敗しても続行)。"""
+    try:
+        s3.delete_object(Bucket=OUTPUT_BUCKET, Key=OUTPUT_KEY)
+        log(f"生データのチェックポイントを削除しました: s3://{OUTPUT_BUCKET}/{OUTPUT_KEY}")
+    except Exception as err:  # noqa: BLE001 - 完了済みジョブを削除失敗で失敗扱いにしない
+        # 残ってもライフサイクルルール(OUTPUT_RETENTION_DAYS日)でいずれ消える。
+        log(f"生データのチェックポイント削除に失敗しました(継続): {err}")
 
 
 def main():
@@ -286,10 +365,15 @@ def main():
         if resuming:
             log("生動画チェックポイントを検出しました。変換から再開します")
             download_checkpoint_video(s3)
+            # 録画時の実時間スケールは生データ自身に添えてある。環境変数から
+            # 取り直すと、自宅ワーカーが低速で録った後にEC2でリトライされた場合に
+            # 半分の速度のまま配信してしまう(`TIME_SCALE_METADATA_KEY`参照)。
+            time_scale = read_checkpoint_time_scale(s3)
         else:
             record(s3)
+            time_scale = slow_motion_scale()
 
-        convert_and_upload(s3)
+        convert_and_upload(s3, time_scale)
         log("ジョブ完了")
         watcher.stop()
         heartbeat.stop()
