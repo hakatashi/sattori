@@ -228,7 +228,7 @@ Node へ届かず、ドレイン——実行中の録画の完走待ち——が
 | `src/heartbeat.ts` | `WorkersTable` への自己申告（型は `@sattori/shared` の `WorkerHeartbeat`） |
 | `src/capacity.ts` | 余力判定（同時実行上限・ロードアベレージ）。新規 claim を止めるだけ |
 | `src/runner.ts` | `docker login` / `docker pull` / `docker run` / `docker kill` |
-| `src/logShipper.ts` | コンテナ出力を CloudWatch Logs へ転送 |
+| `src/logShipper.ts` | コンテナ出力を CloudWatch Logs へ転送（件数とバイト数でバッチを切り、失敗しても転送は諦めない） |
 | `src/signal.ts` | 中断できる待機（Python 版の `threading.Event` に相当） |
 
 ## 5. 運用
@@ -347,5 +347,9 @@ docker デーモンにも触れない。
 - claim の条件式に `attribute_not_exists(assignedWorkerId)` と期限判定が入っている。
 - claim 直後に空き状況のハートビートを書き直す（満杯なのに「空きあり」と見せない）。
 - コンテナへ渡す認証情報の残存時間が足りなければ assume し直す。
-- ログ転送に失敗したら以降は諦める（録画は止めない）。
+- ログ転送に失敗しても録画を止めず、**以降の転送も諦めない**（うるさい失敗ログの方を
+  間引く）。バイト数の上限でもバッチを切る——1MiB超のリクエストは再試行しても通らない
+  400で丸ごと捨てられるため、件数だけでは守れない。自宅ワーカーのジョブには
+  `instanceId` が無く管理画面の `GetConsoleOutput` フォールバックも効かないので、
+  ここで捨てたログには控えが無い。
 - `docker run` のログ出力で `TASK_TOKEN` と AWS 認証情報が伏せられている。

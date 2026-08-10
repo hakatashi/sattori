@@ -84,6 +84,15 @@ API契約自体は `packages/shared/README.md` を参照。
    **ここを踏み外すと同じリプレイを2台で録画する**ため、期限切れとclaimの競合は
    必ずDynamoDBの条件付き更新で決着させること。
 
+オファーの書き込み自体が条件チェックで失敗した場合は、**claim済みと決めつけない**
+（`handleOfferConflict()`）。`HandleFailure`の割り当て解除は失敗をログだけにして
+`shouldRetry`を返すため、前の試行の`assignedWorkerId`が残ったまま再入することがある。
+これをclaim済みと誤読すると、今回のtaskTokenを誰も持たないまま15分のタイムアウトを
+待つことになる（リトライ1周が丸ごと無駄になる）。判別は`homeWorkerEnv.TASK_TOKEN`が
+今回のトークンかどうかで行う——**オファーの書き込みがトークンをデーモンへ渡す唯一の
+経路**なので、これが証拠になる。陳腐化していたら割り当てを解除してEC2へ回す（解除は
+走り続けている古いコンテナを止める手段も兼ねる）。
+
 この待機は`Launch` Lambdaの実行時間をそのまま消費するため、`offerWindowSeconds`には
 上限がある（`MAX_OFFER_WINDOW_SECONDS` = `LAUNCH_LAMBDA_TIMEOUT_SECONDS` −
 オファー以外の処理ぶんの余裕20秒）。溢れると、オファーは撤回済みなのにEC2も起動して

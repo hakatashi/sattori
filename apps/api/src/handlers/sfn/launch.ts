@@ -3,8 +3,10 @@ import { loadConfig } from "../../config.js";
 import type { ApiConfig } from "../../config.js";
 import { launchRecordingInstance } from "../../ec2.js";
 import {
+  getHomeWorkerAssignment,
   listWorkerHeartbeats,
   offerJobToHomeWorker,
+  releaseHomeWorkerAssignment,
   waitForHomeWorkerClaim,
   withdrawHomeWorkerOffer,
 } from "../../homeWorker.js";
@@ -80,6 +82,10 @@ export const handler = async (event: LaunchTaskEvent): Promise<void> => {
  * 経路であり、その不調でユーザーの録画そのものを落としてはならない。ただし
  * 「オファーを撤回できなかった（＝誰かがclaimした）」だけは握りつぶさずEC2起動を
  * 中止する。ここを踏み外すと同じリプレイを2台で録画してしまうため。
+ *
+ * 逆に「オファーを書けなかった」は claim済みとは限らない（`handleOfferConflict()`
+ * 参照）。誤ってclaim済みと読むと、今回のtaskTokenを誰も持たないまま15分の
+ * タイムアウトを待つことになる。
  */
 async function tryOfferToHomeWorker(
   config: ApiConfig,
@@ -119,15 +125,7 @@ async function tryOfferToHomeWorker(
       expiresAt,
     });
     if (!offered) {
-      // 既に誰かがclaim済み（Launchの再入）。EC2は起動しない。
-      console.log(
-        JSON.stringify({
-          event: "home_worker_offer_skipped",
-          jobId: event.jobId,
-          attempt: event.attempt,
-        }),
-      );
-      return true;
+      return await handleOfferConflict(config, event);
     }
   } catch (err) {
     console.warn(
@@ -187,5 +185,80 @@ async function tryOfferToHomeWorker(
       attempt: event.attempt,
     }),
   );
+  return false;
+}
+
+/**
+ * オファーの条件チェックが失敗した（＝既に `assignedWorkerId` がある）ときの分岐。
+ * true を返すとEC2を起動しない。
+ *
+ * 「既に誰かがclaim済み」と決めつけてはいけない。`HandleFailure` の
+ * `releaseHomeWorkerAssignment` は失敗をログだけにして `shouldRetry` を返すため、
+ * **前の試行の割り当てが解除されずに残ったまま再入する**ことがある。それをclaim済みと
+ * 誤読すると、今回の taskToken を誰も持たないまま15分のハートビートタイムアウトを
+ * 待つことになり、リトライ1周（待機3分を含め約18分）が丸ごと無駄になる。
+ *
+ * 見分け方は `getHomeWorkerAssignment()` のコメント参照（レコードに載っている
+ * taskToken が今回のものかどうか）。陳腐化していた場合は割り当てを解除してEC2へ
+ * フォールバックする。解除は走っている古いコンテナを止める手段も兼ねる
+ * （デーモンは `assignedWorkerId` が自分でなくなった時点で `docker kill` する）。
+ */
+async function handleOfferConflict(
+  config: ApiConfig,
+  event: LaunchTaskEvent,
+): Promise<boolean> {
+  let assignment: { assignedWorkerId: string | null; taskToken: string | null };
+  try {
+    assignment = await getHomeWorkerAssignment(config.jobsTable, event.jobId);
+  } catch (err) {
+    // 判別できないなら安全側（EC2を起動しない）に倒す。二重録画のほうが害が大きい。
+    console.warn(
+      JSON.stringify({
+        event: "home_worker_assignment_lookup_failed",
+        jobId: event.jobId,
+        attempt: event.attempt,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    return true;
+  }
+
+  if (assignment.taskToken === event.taskToken) {
+    // 今回のトークンを持つワーカーが走っている（Launchの再入）。EC2は起動しない。
+    console.log(
+      JSON.stringify({
+        event: "home_worker_offer_skipped",
+        jobId: event.jobId,
+        attempt: event.attempt,
+        workerId: assignment.assignedWorkerId,
+      }),
+    );
+    return true;
+  }
+
+  console.warn(
+    JSON.stringify({
+      event: "home_worker_stale_assignment",
+      jobId: event.jobId,
+      attempt: event.attempt,
+      workerId: assignment.assignedWorkerId,
+    }),
+  );
+  try {
+    await releaseHomeWorkerAssignment(config.jobsTable, event.jobId);
+  } catch (err) {
+    // 解除できなくてもEC2は起動する。今回の試行にはワーカーが1台も居らず、
+    // 放置すればタイムアウトが確定するため（古いコンテナが完走した場合は
+    // そちらの結果がジョブレコードに残るが、トークンが死んでいるので
+    // ステートマシンへは通知されない）。
+    console.error(
+      JSON.stringify({
+        event: "home_worker_stale_release_failed",
+        jobId: event.jobId,
+        attempt: event.attempt,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
   return false;
 }
