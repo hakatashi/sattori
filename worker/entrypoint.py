@@ -14,8 +14,10 @@ EC2 Fleet インスタンスの UserData から `docker run` で起動される�
      で録画(ProgressReporterが録画中のスクリーンショット/進捗をS3・DynamoDBへ反映する)
   3. 録画完了直後、生動画をS3へアップロードしoutputPathを保存(=チェックポイント) →
      status を converting に更新
-  4. 720pへアップスケール変換(進捗%を10秒間隔程度で報告)
-  5. 変換後動画をS3へアップロード → status を done に更新(outputPath/outputPath720p 確定)
+  4. 配信用変換(等倍への戻し・解像度合わせ・ウォーターマーク合成を1パスで。
+     進捗%を10秒間隔程度で報告)
+  5. 変換後動画をS3へアップロード → status を done に更新。出力が1本か2本かは
+     録画の内容で決まる(`convert.needs_separate_raw_output()`、下記 convert_and_upload)
 
 バックグラウンドでは2つのスレッドが動く。TaskHeartbeat は Step Functions へ60秒間隔で
 `SendTaskHeartbeat` を送り、ワーカーが生きていることを知らせる(Issue #49。自宅ワーカーの
@@ -80,7 +82,7 @@ OUTPUT_KEY_DELIVERY = f"videos/{JOB_ID}_720p.mp4"
 # 半分の速度の動画をそのまま配信してしまう。倍率は生データ自身に添えて運ぶ。
 TIME_SCALE_METADATA_KEY = "sattori-time-scale"
 WATERMARK_ASSET = f"{REPO}/assets/watermark/watermark-60fps.webm"
-# 720p変換中のffmpeg生ログ(frame=/fps=/bitrate=等)の退避先。CloudWatch Logsには
+# 配信用変換中のffmpeg生ログ(frame=/fps=/bitrate=等)の退避先。CloudWatch Logsには
 # 全行流さず(Issue #58フォローアップ)、ここへ書き出してから完了後にS3(期限付き)へ
 # アップロードする。CloudFrontでは配信しない診断用データのため、動画とは別プレフィックス
 # にする(infra/lib/sattori-stack.tsで短めのライフサイクルルールを設定)。
@@ -211,7 +213,7 @@ def read_checkpoint_time_scale(s3):
 
 def upload_ffmpeg_upscale_log_if_present(s3):
     """720p変換のffmpeg生ログをS3へアップロードする(存在する場合のみ)。変換の
-    成功/失敗どちらでも診断に使えるため、呼び出し側はupscale_to_720pの成否に
+    成功/失敗どちらでも診断に使えるため、呼び出し側はconvert_for_delivery()の成否に
     かかわらず(finallyで)呼ぶ。アップロード自体の失敗はジョブ全体を失敗させない
     (診断データの欠落より、既に完了した変換結果を無駄にする方が損失が大きいため)。
     """
