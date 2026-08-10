@@ -197,7 +197,7 @@ Type=simple
 User=hakatashi
 WorkingDirectory=/home/hakatashi/sattori/home-worker
 EnvironmentFile=/etc/sattori-home-worker.env
-ExecStart=/home/hakatashi/.asdf/shims/node dist/main.js
+ExecStart=/home/hakatashi/.asdf/installs/nodejs/24.9.0/bin/node dist/main.js
 Restart=always
 RestartSec=10
 # 実行中の録画を完走させてから終了する（SIGTERM後は新規claimを止めるだけ）。
@@ -215,6 +215,13 @@ WantedBy=multi-user.target
 `ExecStart` は `dist/` を直接叩く（`pnpm start` を挟むと、SIGTERM が pnpm 止まりで
 Node へ届かず、ドレイン——実行中の録画の完走待ち——が働かなくなる）。デプロイ時は
 **先に `pnpm build` を済ませてから** `systemctl restart` すること。
+
+Node は **asdf の shim（`~/.asdf/shims/node`）ではなく実体のパスを指定する**。shim の
+中身は `exec asdf exec "node" "$@"` で `asdf` 本体（`/usr/local/bin/asdf`）を PATH から
+探すが、systemd の既定 PATH には `/usr/local/bin` が含まれないため、shim 経由では
+起動に失敗する。実体のパスは `asdf which node` で得られる。ただしこのパスには
+バージョンが埋まっているので、**asdf で Node を入れ替えたらユニットの更新が要る**
+（起動しなくなるだけで録画が壊れることはないが、`Restart=always` で再起動を繰り返す）。
 
 ### 4.4 モジュール構成
 
