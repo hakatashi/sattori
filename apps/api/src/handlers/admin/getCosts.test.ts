@@ -17,6 +17,7 @@ const REQUIRED_ENV: Record<string, string> = {
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
   SETTINGS_TABLE: "sattori-settings",
+  WORKERS_TABLE: "sattori-workers",
   SES_FROM_ADDRESS: "no-reply@sattori.hakatashi.com",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
 };
@@ -31,6 +32,7 @@ const job: JobCostInput = {
   launchedAt: "2026-08-01T00:00:00.000Z",
   doneAt: "2026-08-01T00:36:00.000Z",
   instanceId: "i-1",
+  workerKind: null,
   instanceType: "c7i.xlarge",
   spotPricePerHour: 0.06,
   outputPath: "outputs/a/original.mp4",

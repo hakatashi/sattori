@@ -33,8 +33,9 @@ th11: `reports/35`〜`reports/39`)を参照。
   呼ぶだけの薄いラッパー |
 | `upscale.py` | 録画動画をアスペクト比を保って720pへアップスケールする後処理(reports/21)。
   進捗コールバック対応 |
-| `status.py` | DynamoDB へのジョブ状態・進捗反映、チェックポイント確認用のジョブ取得 |
+| `status.py` | DynamoDB へのジョブ状態・進捗反映、チェックポイント確認用のジョブ取得。status の書き込みは `attribute_not_exists(stopRequestedAt)` を条件にする（管理画面から緊急停止されたジョブを`done`へ戻さないため。下記） |
 | `interruption_watcher.py` | Spot中断通知/リバランス推奨をIMDS経由で監視するバックグラウンドスレッド |
+| `task_heartbeat.py` | Step Functionsへ60秒ごとに`SendTaskHeartbeat`を送るバックグラウンドスレッド(Issue #49)。ワーカーの死活監視で、15分途絶えるとタスクが失敗し`HandleFailure`が後始末に入る。主目的は自宅ワーカー(`home-worker/`)の停電・回線断の検知だが、EC2でもハング時の失敗検知が90分→15分に縮まる |
 | `progress_reporter.py` | 録画中の進捗スクリーンショットをS3へアップロードするバックグラウンドスレッド |
 | `title_assets.py` | GAME環境変数に応じたタイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)を
   S3からダウンロード・展開する(Issue #22)。ECRストレージコストがタイトル数に比例して
@@ -587,6 +588,20 @@ reports/21)。th06・th07(640x480)のような低解像度録画はそのまま�
 `interruption_watcher.py` がIMDS経由でSpot中断通知/リバランス推奨(いずれも2分前
 通知)を監視し、検知次第 taskToken 経由で Step Functions に早期失敗通知する
 (60分のタスクタイムアウトを待たずに新インスタンスでのリトライを開始させるため)。
+
+## 緊急停止されたジョブへの書き込み拒否(`status.py`)
+
+`update_status()` は `attribute_not_exists(stopRequestedAt)` を条件にしかジョブ
+レコードを更新しない(条件が崩れたらログだけ残して何もしない。停止済みジョブへの
+書き込み拒否は想定内の正常系なので例外にしない)。
+
+管理画面からの緊急停止(Issue #59)は EC2 なら `TerminateInstances` でワーカーを
+即座に黙らせられるが、自宅ワーカー(Issue #49)のコンテナは常駐デーモンが claim の
+取り消しに気づくまで走り続ける。その間に完走すると `done` と `doneAt` が書かれ、
+DynamoDB Streams 経由で**停止したはずのジョブの完了メールがユーザーへ飛ぶ**。
+`stopRequestedAt` は停止要求がワーカーの生存期間より長生きするための拒否票で、
+ワーカー側は「自分が自宅かEC2か」を知る必要がなく、どちらも同じ票を尊重するだけ
+でよい(録画パイプラインに実行環境の分岐を持ち込まない方針のまま扱える)。
 
 ## ローカルでの録画単体テスト(ネットワーク不要)
 

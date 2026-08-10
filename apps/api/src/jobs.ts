@@ -7,7 +7,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
-import type { JobRecord, JobStatus } from "@sattori/shared";
+import type { JobRecord, JobStatus, WorkerKind } from "@sattori/shared";
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -97,6 +97,31 @@ export async function updateJobStatus(
     }
     throw err;
   }
+}
+
+/**
+ * 「管理画面から緊急停止が要求された」マーカー（`stopRequestedAt`）を立てる。
+ *
+ * ワーカー（`worker/status.py`）はこの属性が無いことを条件にしか status を書けないので、
+ * この1回の更新以降、**生き残ったワーカーがジョブを`done`へ戻すことはできなくなる**。
+ * EC2は`TerminateInstances`で即座に黙るが、自宅ワーカー（Issue #49）の停止は
+ * デーモンのポーリング分だけ遅れる（最大`CLAIM_CHECK_INTERVAL_SEC`）ため、
+ * 「停止したはずのジョブの完了メールが飛ぶ」事故はこのマーカーでしか防げない。
+ *
+ * **必ずワーカーの後始末（terminate・割り当て解除）より前に呼ぶこと**。後に回すと
+ * その間に完走したコンテナの`done`が通ってしまい、防ぎたい競合がそのまま残る。
+ * status自体はここでは書かない（実際には止まっていないのに`failed`と表示するのを
+ * 避けるため、停止処理が全段成功してから確定させる。`admin/stopJob.ts`参照）。
+ */
+export async function markJobStopRequested(table: string, jobId: string): Promise<void> {
+  await client.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { jobId },
+      UpdateExpression: "SET stopRequestedAt = :now, updatedAt = :now",
+      ExpressionAttributeValues: { ":now": new Date().toISOString() },
+    }),
+  );
 }
 
 export class JobAlreadyStartedError extends Error {
@@ -259,6 +284,31 @@ export async function updateJobInstance(
         ":sp": instance.spotPricePerHour,
         ":u": new Date().toISOString(),
       },
+    }),
+  );
+}
+
+/**
+ * ジョブを実行するワーカーの種別を記録する（Issue #49）。EC2 Fleetの起動に成功した
+ * 時点（`ec2`）に`Launch`が書き込む。`home`は自宅ワーカーがclaimと同時に自分で
+ * 書き込むため、ここを通らない。
+ *
+ * リトライで割り当てが変わりうるので**上書きしてよい**（`launchedAt`のように
+ * 最初の1回だけ、という扱いにはしない）。コスト推定はこの値でEC2課金の有無を
+ * 分岐する（`packages/shared/src/cost.ts`）。
+ */
+export async function updateJobWorkerKind(
+  table: string,
+  jobId: string,
+  workerKind: WorkerKind,
+): Promise<void> {
+  const now = new Date().toISOString();
+  await client.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { jobId },
+      UpdateExpression: "SET workerKind = :w, updatedAt = :u",
+      ExpressionAttributeValues: { ":w": workerKind, ":u": now },
     }),
   );
 }

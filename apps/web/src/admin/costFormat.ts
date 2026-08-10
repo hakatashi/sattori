@@ -82,6 +82,7 @@ export const BILLED_DURATION_LABEL: Record<BilledDurationSource, string> = {
   running: "実行中のため現在時刻まで（増加中）",
   assumed: "起動時刻未記録のため実績平均で代用",
   "not-launched": "EC2未起動",
+  "home-worker": "自宅ワーカーが実行（EC2課金なし）",
 };
 
 /** Spot単価の根拠を日本語の注記にする。 */

@@ -42,7 +42,14 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   TTL属性で自動削除。`apps/api/README.md`参照）、
   `SettingsTable`（`settingKey`パーティションキーのみ・固定値1item、キルスイッチ・
   月間コストガード閾値のシングルトン設定。Issue #14。`apps/api/README.md`
-  「キルスイッチ・月間コストガード」参照）。
+  「キルスイッチ・月間コストガード」参照）、
+  `WorkersTable`（`workerId`パーティションキーのみ・TTLあり。自宅サーバー常駐
+  ワーカーのハートビート置き場。Issue #49。`home-worker/README.md`参照）。
+  `JobsTable`にはもう1本、自宅ワーカーへのオファー用**sparse GSI**
+  `HomeWorkerOfferIndex`（PK=`homeWorkerOfferState`, SK=`homeWorkerOfferExpiresAt`）
+  がある。オファー中のジョブだけがこの属性を持つ（claim・撤回時にREMOVEする）ので、
+  インデックス自体が「いまオファー中のジョブ一覧」になり、自宅デーモンは
+  `JobsTable`全体をScanせずにポーリングできる。
 - **SES**: `EmailIdentity`（送信元ドメインのDKIM検証、マジックリンク・完了メール
   送信用）は**`SattoriEdgeStack`（us-east-1）側**にある（eu-south-2にはSESが存在
   しないため）。DKIM用CNAMEは`cdk deploy`後にCfnOutputの値を外部DNSへ手動追加する
@@ -66,12 +73,20 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   により上書きする（`AGENTS.md`の設計判断参照。ここでのUserDataはプレースホルダで
   実際に使われることはない）。
 - **Step Functions**: `RecordingStateMachine`（Standard）。`Launch`
-  （`waitForTaskToken`、60分タイムアウト）→ 失敗時 `WaitBeforeCheck`（3分）→
+  （`waitForTaskToken`、90分タイムアウト+**15分のハートビートタイムアウト**）→
+  失敗時 `WaitBeforeCheck`（3分）→
   `HandleFailure` → `ShouldRetry?`（`shouldRetry`なら`IncrementAttempt`して
   `Launch`へ、そうでなければ`Fail`）。`HandleFailure`自体が例外を投げても
   （DynamoDB/EC2 APIの一時的なスロットリング等）実行全体を即失敗させず、
   3回リトライ後になお失敗すれば`HandleFailureCrashed`へ倒して実行を必ず終端させる
   （孤児インスタンスが残る可能性はログに残す）。詳細は`apps/api/README.md`。
+  ハートビートタイムアウト（Issue #49）はワーカーの死活監視で、コンテナが60秒ごとに
+  `SendTaskHeartbeat`を送る（`worker/task_heartbeat.py`）。**主目的は自宅ワーカー**
+  ——自宅マシンの停電・回線断はAWS側から一切観測できず、これが無いとジョブが
+  タスクタイムアウト（90分）まで「録画中」で固まる。EC2ワーカーにとっても
+  ハング時の失敗検知が90分→15分に縮まる。**ハートビートを送らない古いワーカー
+  イメージがECRに残っていると全ジョブが15分でタイムアウトするため、
+  ワーカーイメージのpushを`cdk deploy`より先に行うこと**（下記デプロイ手順）。
 - **IAM**: ワーカーロール（ECR pull / S3 / DynamoDB / ログ送出 /
   `states:SendTask*`。`SendTask*`はリソースレベル権限に非対応のため`Resource: "*"`
   がAWS側の制約として必要）+ インスタンスプロファイル、Launch Lambdaロール
@@ -79,9 +94,16 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   （`ec2:TerminateInstances`）、StartJob Lambdaロール（`states:StartExecution`）、
   RequestMagicLink/SendCompletionEmail Lambdaロール（`JobsTable`等の読み書き +
   `ses:SendEmail`。SESサンドボックス中は送信先IDも権限チェック対象になるため、
-  Resourceはアカウント配下のSES identity全体`identity/*`に絞っている）。
-- **CloudWatch Logs**: `/sattori/worker`（2週間保持）。ワーカーコンテナが
-  `awslogs`ドライバで書き込む。重複フレーム診断のため失敗時も残す。
+  Resourceはアカウント配下のSES identity全体`identity/*`に絞っている）、
+  **`HomeWorkerRole`**（自宅サーバーの常駐デーモンがassumeする最小権限ロール、
+  Issue #49。信頼ポリシーはアカウント内プリンシパル、`maxSessionDuration`は4時間
+  ＝ジョブ1本の最長所要時間より確実に長い値。実際に誰が使えるかは、手動で作る
+  IAMユーザー側の`sts:AssumeRole`ポリシーで制御する。手順は
+  `home-worker/README.md`参照）。
+- **CloudWatch Logs**: `/sattori/worker`（2週間保持）。EC2ワーカーはdockerの
+  `awslogs`ドライバで、自宅ワーカーは常駐デーモンが`PutLogEvents`で
+  （dockerデーモンにAWS認証情報を持たせないため）、いずれも`{jobId}`という同じ
+  ストリーム名で書き込む。重複フレーム診断のため失敗時も残す。
 - **Lambda**（`NodejsFunction`、CJS出力。ESM出力だとAWS SDK内部の動的
   `require("node:https")`がLambda(ESM)で失敗するため）× 12: createUpload /
   parseReplay / requestMagicLink / startJob / getJob / sendCompletionEmail /
@@ -154,12 +176,18 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの 
    `pnpm run deploy`（`infra`の`deploy`スクリプト＝`cdk deploy --all`を呼び、
    `SattoriEdgeStack`→`SattoriStack`の順にデプロイする）
 3. ワーカーイメージをECRへ push（`docker build worker/` → `docker push`。
-   ECRリポジトリはeu-south-2側）
+   ECRリポジトリはeu-south-2側）。**`Launch`のハートビートタイムアウト（Issue #49）を
+   追加・変更するデプロイでは、この手順を`cdk deploy`より先に行うこと**
+   ——ハートビートを送らない古いイメージが残っていると全ジョブが15分で
+   タイムアウトする
 4. ACM証明書のDNS検証用CNAME・SESのDKIM用CNAMEを、`cdk deploy`完了後の
    `SattoriEdgeStack`のCfnOutputを確認して外部DNSへ手動追加する
    （`hakatashi.com`はRoute 53以外で管理しているため自動検証はできない）
 5. タイトル資産（ゲーム本体+WINEPREFIX+MOD）をS3へアップロードする
    （`worker/README.md`「タイトル資産のS3アップロード手順」参照）
+6. （自宅ワーカーを使う場合のみ）`HomeWorkerRole`をassumeするIAMユーザーを手動で
+   作成し、自宅サーバーの常駐デーモンを設定する（`home-worker/README.md`参照。
+   アクセスキーはCloudFormationで作るべきではないため手動運用）
 
 ## CDK合成のみ行う場合
 

@@ -18,6 +18,7 @@ const REQUIRED_ENV: Record<string, string> = {
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
   SETTINGS_TABLE: "sattori-settings",
+  WORKERS_TABLE: "sattori-workers",
   SES_FROM_ADDRESS: "no-reply@sattori.hakatashi.com",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
 };
@@ -39,6 +40,7 @@ const recordingJob: JobRecord = {
   doneAt: null,
   email: "user@example.com",
   instanceId: "i-1234",
+  workerKind: null,
   instanceType: "c7i.2xlarge",
   availabilityZone: "us-east-1a",
   spotPricePerHour: null,
@@ -89,6 +91,25 @@ describe("GET /admin/jobs/{jobId}", () => {
     expect(body.downloads.videoUrl).toBeTruthy();
     expect(body.downloads.video720pUrl).toBeNull();
     expect(body.downloads.previewImageUrl).toBe("https://cdn.example.net/progress/job-1/1234.jpg");
+  });
+
+  it("homeWorkerEnvのTASK_TOKENは伏せて返す(他の環境変数は残す)", async () => {
+    // 生きたtaskTokenはStep Functionsの実行を任意に成功/失敗させられるベアラで、
+    // レスポンスに載せるとブラウザのdevtools・HAR・アクセスログにまで漏れる。
+    ddbMock.on(GetCommand).resolves({
+      Item: {
+        ...recordingJob,
+        homeWorkerEnv: { JOB_ID: "job-1", GAME: "th11", TASK_TOKEN: "live-task-token" },
+      },
+    });
+    s3Mock.on(HeadObjectCommand).resolves({});
+
+    const { handler } = await import("./getJobDetail.js");
+    const res = (await handler(makeEvent("job-1"), {} as never, () => {})) as APIGatewayProxyStructuredResultV2;
+    const body = parseBody(res);
+
+    expect(body.job.homeWorkerEnv).toEqual({ JOB_ID: "job-1", GAME: "th11" });
+    expect(res.body).not.toContain("live-task-token");
   });
 
   it("署名付きreplayUrlにX-Amz-Signatureとresponse-content-dispositionが含まれる", async () => {

@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+from botocore.exceptions import ClientError
 
 import status
 
@@ -93,6 +94,45 @@ def test_update_status_includes_optional_fields(monkeypatch):
     assert "outputPath = :o" in kwargs["UpdateExpression"]
     assert "outputPath720p = :o720" in kwargs["UpdateExpression"]
     assert "#e = :e" in kwargs["UpdateExpression"]
+
+
+def test_update_status_refuses_stopped_jobs(monkeypatch):
+    # 管理画面からの緊急停止(Issue #59)はワーカーより長生きする拒否票として働く。
+    # これが無いと、自宅ワーカー(Issue #49)が claim の取り消しに気づく前に完走した
+    # コンテナが done を書き、停止したはずのジョブの完了メールがユーザーへ飛ぶ。
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "recording")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert kwargs["ConditionExpression"] == "attribute_not_exists(stopRequestedAt)"
+
+
+def test_update_status_swallows_conditional_check_failure(monkeypatch):
+    # 停止済みジョブへの書き込みが弾かれるのは想定内の正常系。ここで例外を投げると
+    # 録画パイプラインが「失敗」として後始末を走らせてしまう。
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_resource.Table.return_value.update_item.side_effect = ClientError(
+        {"Error": {"Code": "ConditionalCheckFailedException", "Message": "stopped"}},
+        "UpdateItem",
+    )
+
+    status.update_status("job-1", "done", output_path="videos/job-1.mp4")
+
+
+def test_update_status_reraises_other_client_errors(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_resource.Table.return_value.update_item.side_effect = ClientError(
+        {"Error": {"Code": "ProvisionedThroughputExceededException", "Message": "slow down"}},
+        "UpdateItem",
+    )
+
+    with pytest.raises(ClientError):
+        status.update_status("job-1", "recording")
 
 
 def test_update_status_sets_done_at_only_for_done(monkeypatch):

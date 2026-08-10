@@ -11,6 +11,7 @@ import {
 } from "../../downloads.js";
 import { error, json } from "../../http.js";
 import { getJob } from "../../jobs.js";
+import { toAdminJobRecord } from "../../workerEnv.js";
 
 /**
  * GET /admin/jobs/{jobId}
@@ -58,6 +59,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     ffmpegLogUrl,
   };
 
-  const response: AdminJobDetailResponse = { job, downloads };
+  // `homeWorkerEnv`（自宅ワーカーへのオファーに添えたコンテナ環境変数）には生きた
+  // `TASK_TOKEN`が入っているため、必ず伏せてから返す（`toAdminJobRecord`）。
+  const response: AdminJobDetailResponse = { job: toAdminJobRecord(job), downloads };
   return json(200, response);
 };

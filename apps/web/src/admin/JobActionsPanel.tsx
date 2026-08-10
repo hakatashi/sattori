@@ -63,7 +63,7 @@ export function JobActionsPanel({ job, onJobChanged }: Props) {
 
   const handleStop = () => {
     const confirmed = window.confirm(
-      `ジョブ ${job.jobId} を緊急停止します。実行中のEC2インスタンスは強制終了され、録画結果は失われます。よろしいですか？`,
+      `ジョブ ${job.jobId} を緊急停止します。実行中のEC2インスタンス(自宅ワーカーの場合はコンテナ)は強制終了され、録画結果は失われます。よろしいですか？`,
     );
     if (!confirmed) {
       return;
@@ -71,7 +71,7 @@ export function JobActionsPanel({ job, onJobChanged }: Props) {
     run("stop", async () => {
       const result = await stopAdminJob(token, job.jobId);
       setMessage(
-        `停止しました（Step Functions実行: ${result.executionStopped ? "停止済み" : "対象なし"} / EC2インスタンス: ${result.instanceTerminated ? "終了要求済み" : "対象なし"}）${
+        `停止しました（Step Functions実行: ${result.executionStopped ? "停止済み" : "対象なし"} / EC2インスタンス: ${result.instanceTerminated ? "終了要求済み" : "対象なし"} / 自宅ワーカー: ${result.homeWorkerReleased ? "割り当て解除済み" : "対象なし"}）${
           // 停止処理中にワーカーが完走していた場合、APIは確定済みの`done`を
           // `failed`で上書きしない（`AdminStopJobResponse.status`参照）。
           result.status === "done" ? "。停止処理中に録画が完了したため、statusはdoneのままです" : ""

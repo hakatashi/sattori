@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { App } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
+import { LAUNCH_LAMBDA_TIMEOUT_SECONDS } from "@sattori/shared";
 import { SattoriStack } from "../lib/sattori-stack.ts";
 
 function synth(): Template {
@@ -161,6 +162,21 @@ describe("SattoriStack", () => {
     });
   });
 
+  it("Launch Lambda のタイムアウトは共有定数と一致する(オファー待機の上限の根拠)", () => {
+    // `apps/api` の `MAX_OFFER_WINDOW_SECONDS` はこの値から導出されている。
+    // ここで直値に戻すと、オファー待機の上限だけが実態から乖離する。
+    const launchFunctions = template.findResources("AWS::Lambda::Function", {
+      Properties: {
+        Handler: Match.anyValue(),
+        Timeout: LAUNCH_LAMBDA_TIMEOUT_SECONDS,
+        Environment: {
+          Variables: Match.objectLike({ WORKERS_TABLE: Match.anyValue() }),
+        },
+      },
+    });
+    expect(Object.keys(launchFunctions).length).toBeGreaterThanOrEqual(1);
+  });
+
   it("ワーカー起動用の EC2 Launch Template が存在する", () => {
     template.hasResourceProperties("AWS::EC2::LaunchTemplate", {
       LaunchTemplateData: Match.objectLike({
@@ -197,7 +213,8 @@ describe("SattoriStack", () => {
   });
 
   it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {
-    template.resourceCountIs("AWS::DynamoDB::Table", 3); // Jobs/EmailRateLimit/Settings(Issue #14)
+    // Jobs/Workers(Issue #49)/EmailRateLimit/Settings(Issue #14)
+    template.resourceCountIs("AWS::DynamoDB::Table", 4);
     template.hasResourceProperties("AWS::DynamoDB::Table", {
       KeySchema: [{ AttributeName: "normalizedEmail", KeyType: "HASH" }],
       TimeToLiveSpecification: { AttributeName: "ttl", Enabled: true },
@@ -283,9 +300,50 @@ describe("SattoriStack", () => {
         }),
       ]),
     });
-    // GSI追加はテーブル数を変えない(既存の「テーブルはjobsTable/emailRateLimitTable/
-    // settingsTableの3つ(Issue #14)」というアサーションと矛盾しないことの確認を兼ねる)。
-    template.resourceCountIs("AWS::DynamoDB::Table", 3);
+    // GSI追加はテーブル数を変えない(上のテーブル数アサーションと矛盾しないことの
+    // 確認を兼ねる)。
+    template.resourceCountIs("AWS::DynamoDB::Table", 4);
+  });
+
+  it("JobsTableに自宅ワーカー(Issue #49)のオファー用sparse GSIが存在する", () => {
+    template.hasResourceProperties("AWS::DynamoDB::Table", {
+      GlobalSecondaryIndexes: Match.arrayWith([
+        Match.objectLike({
+          IndexName: "HomeWorkerOfferIndex",
+          KeySchema: [
+            { AttributeName: "homeWorkerOfferState", KeyType: "HASH" },
+            { AttributeName: "homeWorkerOfferExpiresAt", KeyType: "RANGE" },
+          ],
+        }),
+      ]),
+    });
+  });
+
+  it("常駐ワーカーのハートビート用テーブル(WorkersTable)がTTL付きで存在する", () => {
+    template.hasResourceProperties("AWS::DynamoDB::Table", {
+      KeySchema: [{ AttributeName: "workerId", KeyType: "HASH" }],
+      TimeToLiveSpecification: { AttributeName: "ttl", Enabled: true },
+    });
+  });
+
+  it("Launchタスクにハートビートタイムアウトが設定されている(自宅ワーカーの死活監視)", () => {
+    // ワーカーが15分間`SendTaskHeartbeat`を送らなければ失敗させ、HandleFailureが
+    // claim解除・孤児掃除を行う。自宅マシンの停電・回線断はAWS側から観測できないため、
+    // この仕組みが無いとタスクタイムアウト(90分)までジョブが固まる。
+    const machines = template.findResources("AWS::StepFunctions::StateMachine");
+    // 定義はFn::Joinの断片に分かれ、さらにJSON文字列として二重にエスケープされて
+    // いるため、バックスラッシュを落としてから素朴に含有チェックする。
+    const definition = JSON.stringify(Object.values(machines)[0]).replaceAll("\\", "");
+    expect(definition).toContain('"HeartbeatSeconds":900');
+  });
+
+  it("自宅ワーカー用のIAMロールがアカウント内からのAssumeRoleを許可している", () => {
+    template.hasResourceProperties("AWS::IAM::Role", {
+      Description: "Sattori home recording worker (Issue #49)",
+      // ジョブ1本の最長所要時間(録画60分+変換)より確実に長いこと。短いと
+      // 録画の途中でコンテナ内のAWS呼び出しが認証エラーで落ちる。
+      MaxSessionDuration: 4 * 3600,
+    });
   });
 
   it("管理画面(`/admin/*`)のHTTP APIルートがLambda Authorizerで保護されている", () => {

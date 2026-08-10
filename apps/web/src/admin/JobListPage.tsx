@@ -95,6 +95,7 @@ export function JobListPage() {
                   <th>jobId</th>
                   <th>game</th>
                   <th>status</th>
+                  <th>worker</th>
                   <th>createdAt</th>
                   <th>email</th>
                   <th>error</th>
@@ -110,6 +111,9 @@ export function JobListPage() {
                     <td>
                       <StatusBadge status={job.status} />
                     </td>
+                    {/* 自宅ワーカー(Issue #49)が処理したジョブはEC2課金が発生しない。
+                        一覧で見分けられるようにしておく（未割り当ては "-"）。 */}
+                    <td>{job.workerKind ?? "-"}</td>
                     <td>{formatDateTime(job.createdAt)}</td>
                     <td>{job.email ?? "-"}</td>
                     <td className={styles.errorCell} title={job.error ?? undefined}>

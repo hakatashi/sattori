@@ -4,8 +4,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type {
   AdminExecutionResponse,
   AdminJobDetailResponse,
+  AdminJobRecord,
   AdminLogsResponse,
-  JobRecord,
 } from "@sattori/shared";
 import { JobDetailPage } from "./JobDetailPage.tsx";
 import { AdminAuthContext } from "./AdminAuthContext.ts";
@@ -22,7 +22,7 @@ vi.mock("./adminApi.ts", () => ({
 
 const mocked = vi.mocked(adminApi);
 
-const job: JobRecord = {
+const job: AdminJobRecord = {
   jobId: "job-1",
   game: "th11",
   replayKey: "replays/abc.rpy",
@@ -36,6 +36,7 @@ const job: JobRecord = {
   doneAt: null,
   email: "user@example.com",
   instanceId: "i-1234",
+  workerKind: "ec2",
   instanceType: "c7i.2xlarge",
   availabilityZone: "us-east-1a",
   spotPricePerHour: null,
@@ -134,7 +135,7 @@ describe("JobDetailPage", () => {
     // doneAtは実行時刻からの相対値にする。固定日時にすると、テスト実行日が
     // doneAt + OUTPUT_RETENTION_DAYS(7日)を過ぎた時点でexpired表示に化けてしまう
     // （実際にこれでテストが壊れたことがある）。
-    const doneJob: JobRecord = {
+    const doneJob: AdminJobRecord = {
       ...job,
       status: "done",
       doneAt: new Date(Date.now() - 60_000).toISOString(),
@@ -227,7 +228,7 @@ describe("JobDetailPage", () => {
   });
 
   describe("操作パネル(Issue #59)", () => {
-    const doneJob: JobRecord = { ...job, status: "done", doneAt: "2026-07-30T00:10:00.000Z" };
+    const doneJob: AdminJobRecord = { ...job, status: "done", doneAt: "2026-07-30T00:10:00.000Z" };
 
     afterEach(() => {
       vi.restoreAllMocks();
@@ -255,7 +256,7 @@ describe("JobDetailPage", () => {
       // ワーカーはSendTaskFailureより先にfailedを書くため、statusがfailedでも
       // ステートマシンが最大10回までEC2を起動し直していることがある。UIで
       // 押せなくしてしまうと、その暴走を止める手段が無くなる。
-      const failedJob: JobRecord = { ...job, status: "failed", error: "録画に失敗しました" };
+      const failedJob: AdminJobRecord = { ...job, status: "failed", error: "録画に失敗しました" };
       mocked.fetchAdminJobDetail.mockResolvedValue({ ...detailResponse, job: failedJob });
       renderJobDetailPage();
 
@@ -284,6 +285,7 @@ describe("JobDetailPage", () => {
         status: "done",
         executionStopped: true,
         instanceTerminated: true,
+        homeWorkerReleased: false,
       });
       renderJobDetailPage();
 
@@ -313,6 +315,7 @@ describe("JobDetailPage", () => {
         status: "failed",
         executionStopped: true,
         instanceTerminated: true,
+        homeWorkerReleased: false,
       });
       renderJobDetailPage();
 
@@ -321,8 +324,10 @@ describe("JobDetailPage", () => {
 
       await waitFor(() => expect(screen.getByText(/停止しました/)).toBeTruthy());
       expect(mocked.stopAdminJob).toHaveBeenCalledWith("token", "job-1");
-      // 初回取得 + 停止後の再取得。
-      expect(mocked.fetchAdminJobDetail).toHaveBeenCalledTimes(2);
+      // 初回取得 + 停止後の再取得。再取得は`useAdminResource.reload()`のstate更新を
+      // 経てuseEffectから発火するため、結果メッセージが描画されたのと同じティックとは
+      // 限らない（即時にアサートするとCIのような遅い環境で取りこぼす）。
+      await waitFor(() => expect(mocked.fetchAdminJobDetail).toHaveBeenCalledTimes(2));
     });
 
     it("再実行に成功したら新しいjobIdへのリンクを表示する", async () => {

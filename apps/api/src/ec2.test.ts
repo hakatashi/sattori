@@ -31,6 +31,7 @@ const config: ApiConfig = {
   maxReplayBytes: 5 * 1024 * 1024,
   emailRateLimitTable: "email-rate-limit",
   settingsTable: "sattori-settings",
+  workersTable: "sattori-workers",
   sesFromAddress: "no-reply@sattori.hakatashi.com",
   webBaseUrl: "https://sattori.hakatashi.com",
   ec2: {
@@ -54,6 +55,7 @@ const job: JobRecord = {
   doneAt: null,
   email: null,
   instanceId: null,
+  workerKind: null,
   instanceType: null,
   availabilityZone: null,
   spotPricePerHour: null,

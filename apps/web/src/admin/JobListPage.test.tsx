@@ -22,6 +22,7 @@ function summary(jobId: string): AdminJobSummary {
     updatedAt: "2026-07-30T00:00:00.000Z",
     email: "user@example.com",
     error: null,
+    workerKind: "ec2",
     instanceType: null,
     availabilityZone: null,
     progress: null,
