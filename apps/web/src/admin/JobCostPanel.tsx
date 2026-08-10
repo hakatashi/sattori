@@ -35,6 +35,11 @@ interface Props {
 export function JobCostPanel({ job }: Props) {
   const { currency } = useCostCurrency();
   const estimate = estimateJobCost(job);
+  // 自宅ワーカーが実行したジョブ（Issue #49）はEC2を1台も起動していないため、
+  // 稼働時間に比例する項目（EC2 Spot/EBS/IPv4）はすべて0になる。このとき
+  // `spotPricePerHour`は計算に使われていないフォールバック定数でしかなく、
+  // 表示すると「この単価で課金された」と読めてしまうので出さない。
+  const isHomeWorker = estimate.billedDurationSource === "home-worker";
 
   return (
     <div className={styles.panel}>
@@ -68,11 +73,15 @@ export function JobCostPanel({ job }: Props) {
             （{BILLED_DURATION_LABEL[estimate.billedDurationSource]}）
           </span>
         </dd>
-        <dt>Spot単価</dt>
-        <dd>
-          {formatMoney(estimate.spotPricePerHour, currency)}/時
-          <span className={styles.note}>（{SPOT_PRICE_LABEL[estimate.spotPriceSource]}）</span>
-        </dd>
+        {!isHomeWorker && (
+          <>
+            <dt>Spot単価</dt>
+            <dd>
+              {formatMoney(estimate.spotPricePerHour, currency)}/時
+              <span className={styles.note}>（{SPOT_PRICE_LABEL[estimate.spotPriceSource]}）</span>
+            </dd>
+          </>
+        )}
         <dt>出力サイズ</dt>
         <dd>
           {estimate.outputSizeUnknown ? (
@@ -95,8 +104,18 @@ export function JobCostPanel({ job }: Props) {
 
       <p className={styles.disclaimer}>
         {COST_PRICING_REGION}の単価（{COST_PRICING_AS_OF}時点）に基づく推定値で、実際の請求額
-        ではありません。試行間の待機時間もEC2稼働として数えるため、リトライしたジョブでは
-        過大に出ます。
+        ではありません。
+        {isHomeWorker ? (
+          // 自宅ワーカーのジョブはEC2/EBS/IPv4が0で、代わりに電気代・回線費が
+          // かかっているが、それはAWSの請求に現れず按分する意味も無いので
+          // このモジュールでは一切計上しない（`@sattori/shared`の`cost.ts`）。
+          <>
+            {" "}
+            このジョブは自宅ワーカーが実行したため、EC2 Spot・EBS・パブリックIPv4は発生せず0で計上しています（自宅サーバーの電気代・回線費はAWSの請求に現れないため一切含みません）。
+          </>
+        ) : (
+          <> 試行間の待機時間もEC2稼働として数えるため、リトライしたジョブでは過大に出ます。</>
+        )}
         {currency === "jpy" && <> {JPY_RATE_NOTE}</>}
       </p>
     </div>

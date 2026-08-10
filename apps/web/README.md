@@ -164,7 +164,8 @@ API Gateway自身の形式で、このAPIの`ApiError`（code/message）形で�
   ログインへ縮退させる）。
 - **構成**: `AdminApp.tsx`（認証ゲート＋内部`<Routes>`）→ `JobListPage.tsx`（一覧・
   status絞り込み・カーソルページング。状態は`useSearchParams`でURLに載せる）／
-  `JobDetailPage.tsx`（`JobRecord`全フィールド＋ダウンロード導線＋コスト推定）／
+  `JobDetailPage.tsx`（`JobRecord`全フィールド＋ダウンロード導線＋コスト推定＋
+  ユーザー向けジョブページへのリンク）／`LogsPanel.tsx`（ワーカーログ、Issue #58）／
   `CostsPage.tsx`（コスト集計、Issue #60）／
   `ExecutionPanel.tsx`（Step Functions実行状態、`JobDetailPage`とは別にfetchする。
   理由は`apps/api/README.md`参照）。データ取得は共通フック`useAdminResource.ts`
@@ -184,6 +185,34 @@ API Gateway自身の形式で、このAPIの`ApiError`（code/message）形で�
   操作後は`useAdminResource`の`reload()`でジョブ詳細を取り直す。`reload()`は
   deps変更時と違い取得中も直前の`data`を保持する（パネルが一瞬アンマウントされて
   実行結果メッセージが消えるのを避けるため）。
+- **ユーザー向けジョブページへのリンク**（`JobDetailPage.tsx`）: ジョブ詳細から
+  ページB（`/jobs/{jobId}`、英語のジョブなら`/en/jobs/{jobId}`）を別タブで開ける。
+  jobId自体が認可の秘密値（`AGENTS.md` §3）なので、管理者もこのURLを開けば
+  ユーザーとまったく同じ画面を確認できる。同一SPA内だが`<Link>`にすると管理画面から
+  離脱してしまうため`target="_blank"`にしている。
+- **ワーカーログ**（`LogsPanel.tsx`、Issue #58）: CloudWatch Logs
+  （ロググループ`/sattori/worker`、ストリーム名=jobId）を新しい方から読む。
+  自宅ワーカーのログも同じストリームへ転送されるため（`home-worker/src/logShipper.ts`）、
+  表示側はワーカーの種別を意識しない。
+  - 初回読み込み後は末尾（最新行）まで自動スクロールする。さらに**ジョブが実行中で
+    かつ表示が末尾にある間だけ**10秒ごとに最新ページを取り直して追尾する（`tail -f`相当）。
+    末尾判定は`followingTail`のようなstateではなく**毎回DOMの実際のスクロール位置**で
+    行う（履歴を遡って読んでいる最中に末尾へ飛ばされるのを防ぐため。stateは注記の
+    表示にしか使わない）。
+  - 自動更新は「さらに古いログを読み込む」で積んだ履歴を捨てないよう、取り直した
+    最新ページを`mergeTailEvents()`で継ぎ足す。`GetLogEvents`のイベントには識別子が
+    無いため`(timestamp, message)`の一致で重なりを探す近似で、重なりが見つからない
+    （＝前回の更新から1ページぶん以上流れた）ときだけ履歴を捨てて`nextBackwardToken`も
+    取り直す。
+- **ワーカー種別（EC2 / 自宅サーバー）による文言の出し分け**（Issue #49）: ジョブ詳細の
+  ワーカー欄・操作パネル・コスト推定・ログの「ストリームが見つからない」説明は
+  `workerKind`で切り替える。自宅ワーカーのジョブに「EC2インスタンスを強制終了し」
+  「Spot単価」と出すのは端的に誤りで、停止の効き方（terminateで即座に止まるEC2 /
+  claim解除にデーモンが気づくまで最大30秒走り続ける自宅ワーカー）も課金の有無も違う。
+  コスト推定のSpot単価は**自宅ワーカーのジョブでは表示しない**（計算に使われていない
+  フォールバック定数が「この単価で課金された」と読まれてしまうため）。ただし再実行の
+  確認文言だけは自宅ワーカーのジョブでもEC2課金に触れる——再実行は`workerKind: null`の
+  新しいジョブを作るので、割り当ては改めて決まる（`apps/api/src/handlers/admin/retryJob.ts`）。
 - **コスト表示**（Issue #60）: ジョブ詳細の`JobCostPanel.tsx`（1ジョブぶんの内訳）と
   `CostsPage.tsx`（`/admin/costs`、日次/週次/月次の集計と推移）。計算は
   `@sattori/shared`の`estimateJobCost()`をそのまま呼ぶ（集計APIと同じ実装を共有し、
