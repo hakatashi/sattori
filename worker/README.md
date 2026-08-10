@@ -1,11 +1,14 @@
 # worker — Sattori 録画ワーカー
 
-東方紅魔郷(th06)・東方妖々夢(th07)・東方永夜抄(th08)・東方地霊殿(th11)のリプレイを
+東方紅魔郷(th06)・東方妖々夢(th07)・東方永夜抄(th08)・東方地霊殿(th11)・
+東方錦上京(th20)のリプレイを
 Wine + Xvfb + ffmpeg でヘッドレス録画し、S3 へアップロードする Python ワーカー。AWS EC2
-Spot インスタンス上で Docker コンテナとして実行される。技術的背景は `touhou-recorder` の
+Spot インスタンス、または自宅サーバー(`home-worker/`)上で Docker コンテナとして実行される。
+技術的背景は `touhou-recorder` の
 PoC レポート(th07: `reports/11`, `reports/13`, `reports/14`, `reports/16`, `reports/17`,
 `reports/21`。th08: `reports/22`〜`reports/26`、Issue #13。th06: `reports/30`〜`reports/32`。
-th11: `reports/35`〜`reports/39`)を参照。
+th11: `reports/35`〜`reports/39`。th20: `reports/44`〜`reports/48`、Issue #87。
+低速録画: `reports/47`・`reports/48`、Issue #68)を参照。
 
 ## 構成
 
@@ -28,9 +31,13 @@ th11: `reports/35`〜`reports/39`)を参照。
   書き出す。音声はジョブ専用のPulseAudio sinkへ分離する(後述「並列録画時の音声分離」) |
 | `pulse.py` | ジョブ専用のPulseAudio null-sinkの作成・破棄(Issue #48)。同一ホストで
   複数ジョブを並列録画したときに音声が混ざらないようにするためのもの(後述) |
-| `record_th06.py` / `record_th07.py` / `record_th08.py` / `record_th11.py` | タイトル
+| `record_th06.py` / `record_th07.py` / `record_th08.py` / `record_th11.py` /
+  `record_th20.py` | タイトル
   固有のパス設定(`GameConfig`)を組み立てて `recording_common.record_with_retry()` を
   呼ぶだけの薄いラッパー |
+| `descale.py` | 低速録画(Issue #68)の生データを等倍相当へ戻す後処理(映像のPTS圧縮＋
+  音声のリサンプル)。`recording_common.attempt_recording()` が mux 直後に呼ぶため、
+  以降の工程は等倍の動画だけを見ればよい(後述「低速録画」) |
 | `upscale.py` | 録画動画をアスペクト比を保って720pへアップスケールする後処理(reports/21)。
   進捗コールバック対応 |
 | `status.py` | DynamoDB へのジョブ状態・進捗反映、チェックポイント確認用のジョブ取得。status の書き込みは `attribute_not_exists(stopRequestedAt)` を条件にする（管理画面から緊急停止されたジョブを`done`へ戻さないため。下記） |
@@ -51,6 +58,18 @@ th11: `reports/35`〜`reports/39`)を参照。
 | `mods/th11_replay_autoplay/` | th11 自動再生フック DLL(`th11_hook.dll`)のソース(C++, MSVC)。
   DirectInput GetDeviceStateではなくGetKeyboardStateフック(`PressVKey`)でキー入力を
   注入する(TH10以降のエンジン向け、reports/35) |
+| `mods/th20_replay_autoplay/` | th20 自動再生フック DLL(`th20_hook.dll`)のソース(C++, MSVC)。
+  th11と同じGetKeyboardStateフック経路に加え、以下3つの共通フックを組み込む
+  (後述「th20対応の技術的背景」) |
+| `mods/common/fps_limiter_hook.*` | `IDirect3DDevice9::Present`のvtableフックによる
+  フレームレート制限(reports/46)。AWS実機でth20のfpsが75fps前後へ暴走しリプレイが
+  早回しになる不具合の対策で、同時に低速録画(Issue #68)の実装基盤でもある。
+  目標fpsは`FPS_LIMIT_TARGET_HZ`(既定60) |
+| `mods/common/dsound_hook.*` | DirectSoundセカンダリバッファの`SetFrequency`フック
+  (reports/47)。低速録画時、Presentのスロットルに連動しない音声を同じ比率で
+  スローダウンさせる |
+| `mods/common/fps_display_hook.*` | 画面に焼き付くfpsカウンター表示だけを等倍相当へ
+  補正するフック(reports/48)。低速録画の動画に「30.0fps」と焼き付いてしまうのを防ぐ |
 
 `mods/` 配下はソース・ビルドスクリプトのみリポジトリで管理する
 (元は `touhou-recorder` の PoC で作成したもの)。ビルド方法は後述。
@@ -225,6 +244,131 @@ touhou-recorderでの事前検証(reports/35〜39)を踏まえた設計:
   th06/07/08と共通の実装(`recording_common.py`)をそのまま使う。th11のMODも
   `fps_monitor.cpp`を組み込んでおり、実機検証では56.6〜60.2Hzで安定していた
   (fps暴走の兆候なし、reports/35)。
+
+## th20対応の技術的背景(reports/44〜48、Issue #87)
+
+th20(東方錦上京)は TH125 以降のエンジンで、これまでの4タイトルと構造が大きく違う。
+既存タイトルの慣習をそのまま流用すると必ず外すので、以下は個別に押さえること。
+
+- **cfg とリプレイは `%APPDATA%/ShanghaiAlice/th20/` から読まれる**。ゲーム本体
+  ディレクトリに置いても読まれない(reports/44)。cfg が無いと「解像度を選択して
+  ください」の初回起動ダイアログ(246x234 の小さなウィンドウ)が出て、
+  `WaitForStableWindow` が通らず録画に失敗する。`GameConfig.uses_appdata_profile`
+  を立てると `prepare_instance()` が配置する。
+  - **配置先は実行中の UNIX ユーザーから解決する**(`recording_common.resolve_appdata_dir()`)。
+    Wine はプロファイルを `drive_c/users/<UNIXユーザー名>` へマッピングし、無ければ
+    起動時に作る。資産アーカイブに入っている `users/hakatashi/...`(アーカイブを
+    作った開発機のユーザー名)を決め打ちにすると、root で動く本番コンテナは空の
+    `users/root/` を参照して cfg を見失う。touhou-recorder ではコンテナの実行ユーザー
+    自体を改名して回避した(reports/46)が、こちらは**ユーザー名に依存しない**方を
+    採っている——イメージの実行ユーザーと資産を作った開発機のユーザー名を一致させ
+    続ける、という運用上の約束を増やしたくないため。
+- **Xvfb の画面サイズは `1400x1100x24` が必要**。th14 以降は内部描画解像度が 960p 相当に
+  上がっており、th20 は 1280x960 ウィンドウで起動する。全タイトル共通の 800x600 では
+  x11grab が起動に失敗する(reports/44)。`GameConfig.xvfb_screen` でタイトルごとに
+  指定する。
+- **メニュー自動操作は Down×3→Enter→Right→Enter→Enter**(th11 の Down×2 と異なる)。
+  タイトルロゴアニメーションの待機は **10000ms** 必要で、th11 の 6000ms では
+  メニュー項目が操作可能になる前に入力が空振りする(reports/44)。
+- **終了検知は画面静止のみ**(th11 と同じくテンプレート照合に不向き)。ただし th20 は
+  リプレイ終了後も**2箇所**で背景アニメーションが継続するため、両方を静止判定の
+  MAD 計算から除外しないと自然終了を検知できない(reports/45)。このため
+  `GameConfig.still_detect_exclude_rect` は矩形の**リスト**も受け付ける
+  (th11 の単一矩形指定はそのまま動く)。
+- **`Present` フックによるフレームレート制御が必須**。AWS 実機(Intel Xeon/Nitro 仮想化)
+  では th20 のフレームペーシング計算が崩れ、ゲーム内 fps が常時 75fps 前後まで上振れして
+  **リプレイが早回しで録画される**(reports/46)。th20 はレンダリング fps とゲームロジック
+  更新が直結しているため、fps の上振れがそのままゲーム進行の早回しになる。
+  `mods/common/fps_limiter_hook.*` が `QueryPerformanceCounter` 基準で 60Hz へ
+  スロットルして是正する。**ローカル(Ryzen 7 5700X)では元々再現しない**ので、
+  ローカル録画が正常でも AWS 側で必ず fps カウンターを目視確認すること。
+- **`mods/common/dinput_hook.cpp` の二重フック対策**: th20 はメニュー用とゲームプレイ用で
+  `DirectInput8Create` を2回呼ぶ。2つ目のインスタンスも同じ静的 vtable を共有するため、
+  無条件に `PatchVTable` すると `g_origCreateDevice` に自分自身が保存され、次の
+  `CreateDevice` で無限再帰(スタックオーバーフロー)になる(reports/44)。
+  vtable[9] 側にあった同じチェックを vtable[3] にも入れてある。
+  **この修正は共通コードなので、th06/07/08/11 の `*_hook.dll` を次に触る際は
+  本修正込みで再ビルドすること**(これらは `DirectInput8Create` を1回しか呼ばないため
+  現状は無害だが、ビルド済み DLL と最新ソースが乖離している状態ではある)。
+- **デシンク(リプレイずれ)が起きやすい**。リプレイファイル・ゲーム本体側の現象で
+  録画側では検知も対処もできない。reports/45 では、撃破できなくなったスペルカードを
+  時間切れまで再生し続けて尺が 40 分近くまで伸びた実例が出ている。**想定尺を大幅に
+  超えてタイムアウトへ近づいた場合は、まずデシンクを疑うこと**。ユーザーには
+  ページAで事前に注意書きを出している(`apps/web`、Issue #87)。
+
+## 低速録画(Issue #68)
+
+th20 は Xvfb + wined3d + llvmpipe のソフトウェアレンダリングに対して描画負荷が重く、
+ボム・スペルカード等の高負荷区間で**ゲームエンジン自体が処理落ちする**
+(ローカル実機で最低 19.8fps、`c7i.2xlarge` で最低 9.1fps、reports/45・46)。録画側の
+コマ落ちではなくゲーム進行そのものが遅くなるため、等倍録画のままでは品質を担保できない。
+
+対策として、**ゲームを 1/2 倍速で走らせて録画し、後処理で等倍へ戻す**。th20 は
+レンダリング fps とゲームロジック更新が直結しているので、`Present` を 30Hz へ絞ると
+ゲーム進行ごとスローモーション化し、実時間あたりの CPU 負荷が下がって処理落ちが解消する
+(reports/47 で最低 19.8fps → 安定 30.0fps を実証)。
+
+### 有効化とワーカー側の分岐が無いこと
+
+起動側が渡す環境変数 **`FPS_LIMIT_TARGET_HZ` の有無だけ**で決まる。未設定なら全タイトル
+従来どおり等倍で動く。**ワーカーは自分が EC2 にいるのか自宅にいるのかを知らない**
+——低速録画は EC2 では割に合わない(録画時間＝Spot 料金が倍になる)ため自宅ワーカー限定だが、
+その判断は起動側(`apps/api/src/workerEnv.ts`)が環境変数を付けるかどうかで表現する。
+
+### 3つのフックが同じ比率で動く
+
+| フック | 役割 |
+| --- | --- |
+| `fps_limiter_hook` | `IDirect3DDevice9::Present` を目標fpsへスロットル(＝ゲーム進行のスローダウン) |
+| `dsound_hook` | セカンダリバッファの再生周波数を同じ比率へ下げる。BGM/SE は DirectSound の独立したストリーミングで Present のスロットルに連動しないため、これが無いと映像と音声がズレ続ける(reports/47) |
+| `fps_display_hook` | 画面に焼き付く fps カウンターの表示だけ等倍相当へ補正。無いと等倍へ戻した動画に「30.0fps」と表示され続ける(reports/48) |
+
+MOD 内のメニュー操作待機(`dllmain.cpp` の `ScaledSleep`)も同じ比率で伸びる。
+
+### 監視側の時間も同じ比率で伸ばすこと
+
+**MOD 内部の待機だけでなく、それを監視する `recording_common.py` 側のタイムアウト・
+猶予も同じ比率で伸ばさないと低速録画は成立しない**。reports/47 では、スケール未適用の
+`POST_START_GRACE_SEC`(15秒)のままステージ開始の導入演出中に処理落ち検知が走り、
+3回とも誤ってリトライされる事象が実際に起きた。`slow_motion_scale()` の係数を掛けて
+いるのは以下:
+
+- MOD の `sequence complete` ログを待つタイムアウト
+- `POST_START_GRACE_SEC`(リプレイ再生開始後の猶予)
+- `STUTTER_PROBE_INTERVAL_SEC` / `_PERIOD_SEC` / `_ACTIVE_UNTIL_SEC`(処理落ち早期検知)
+- `TIMEOUT_SEC`(録画のハードタイムアウト。60分 → 120分)
+
+`TIMEOUT_SEC` が倍になることに合わせて、Step Functions の `taskTimeout` と自宅デーモンの
+`HOME_WORKER_DRAIN_TIMEOUT_SEC` も 150 分に揃えてある(`infra/lib/sattori-stack.ts`・
+`home-worker/README.md`)。
+
+### 等倍への変換は録画直後に済ませる
+
+`attempt_recording()` は mux の直後に `descale.py` を呼び、**その試行の出力ファイルを
+等倍相当に置き換える**。以降の工程(重複フレーム率チェック・S3 へのチェックポイント・
+720p 変換・配信)は等倍の動画だけを見ればよく、パイプラインの他の場所に低速録画の分岐が
+一切要らない。
+
+この順序は重複フレーム率チェックにとっても正しい。録画自体は等倍と同じ
+`-framerate 60` で撮っているので 30Hz 素材は各フレームが2枚ずつ並ぶが、変換で PTS を
+1/2 に圧縮してから `-r 60` に落とすと**重複がちょうど間引かれる**。結果、
+「目標 fps を維持できていれば重複ほぼ 0%、本当に処理落ちしていれば重複として残る」という
+等倍録画と同じ意味の数字になり、閾値(`MAX_DUPLICATE_RATE_DEFAULT`)をそのまま使える。
+
+### 進捗はコンテンツ秒数で報告する
+
+`save_progress_snapshot()` へ渡す進捗は実時間ではなく**コンテンツ秒数**(完成品の動画で
+何秒ぶん進んだか)。分母の `EXPECTED_DURATION_SECONDS` がリプレイの再生時間である以上、
+伸びた実時間をそのまま入れると進捗率が半分に見えてしまう。実時間が倍かかること自体は、
+フロントエンドがジョブの `slowMotion` を見て残り時間の見積もりへ織り込む
+(`apps/web/src/hooks/jobProgressBudget.ts`)。
+
+### ローカルでの実行
+
+```bash
+FPS_LIMIT_TARGET_HZ=30 python3 record_th20.py \
+  --replay-path games/th20/replay/th20_01.rpy --output /tmp/th20/out.mp4
+```
 
 ## リプレイ終了検知の方式(reports/33・34)
 
@@ -467,6 +611,25 @@ tar -czf /tmp/th11-assets.tar.gz \
 aws s3 cp /tmp/th11-assets.tar.gz "s3://${TITLE_ASSETS_BUCKET}/titles/th11/assets.tar.gz"
 ```
 
+th20の場合、`games/th20/` には**cfg(`th20.cfg`、ウィンドウモードのもの)を必ず同梱する**
+(`prepare_instance()` が `%APPDATA%` へコピーする元になる。無いと初回起動時の解像度選択
+ダイアログで止まる、reports/44)。WINEPREFIX はth11と同じくMS明朝も登録済みのものを使う:
+
+```bash
+cd worker
+tar -czf /tmp/th20-assets.tar.gz \
+  games/th20 \
+  prefixes/th20-wined3d-gl \
+  mods/common/build/injector.exe \
+  mods/th20_replay_autoplay/build/th20_hook.dll
+aws s3 cp /tmp/th20-assets.tar.gz "s3://${TITLE_ASSETS_BUCKET}/titles/th20/assets.tar.gz"
+```
+
+> アーカイブ内の `prefixes/th20-wined3d-gl/drive_c/users/<name>/` は、アーカイブを作った
+> 開発機のユーザー名のままでよい。ワーカーは実行中のUNIXユーザーから `%APPDATA%` を
+> 解決する(`recording_common.resolve_appdata_dir()`)ので、コンテナの実行ユーザーと
+> 一致させる必要はない。
+
 `title_assets.py` はインスタンス起動時に `worker/games/{title}/` が既に存在するかを
 確認し、無ければこのアーカイブをダウンロード・展開する(存在すればスキップ、
 Spot中断リトライ時の同一インスタンス再利用等を想定)。展開先はワーカーイメージ内の
@@ -487,6 +650,7 @@ worker\mods\th06_replay_autoplay\build.bat
 worker\mods\th07_replay_autoplay\build.bat
 worker\mods\th08_replay_autoplay\build.bat
 worker\mods\th11_replay_autoplay\build.bat
+worker\mods\th20_replay_autoplay\build.bat
 ```
 
 - `build_injector.bat` は `setup_vcvars.bat`(vswhere.exe で VS を検出し
@@ -497,6 +661,20 @@ worker\mods\th11_replay_autoplay\build.bat
   `common/` の `dinput_hook.cpp` / `window_wait.cpp` / `logging.cpp` を静的にまとめて
   それぞれ `worker/mods/th06_replay_autoplay/build/th06_hook.dll` /
   `worker/mods/th07_replay_autoplay/build/th07_hook.dll` を生成する。
+- `th20_replay_autoplay/build.bat` は上記に加えて `fps_limiter_hook.cpp` /
+  `dsound_hook.cpp` / `fps_display_hook.cpp` を含める(それぞれ Present のフレームレート
+  制御・低速録画時の音声スケール・fps表示補正。上記「th20対応の技術的背景」「低速録画」
+  参照)。mingw-w64 でクロスビルドする場合、th20だけは `-static` も必須
+  (付けないと wine 実行時に `libgcc_s_dw2-1.dll` / `libstdc++-6.dll` が見つからず
+  DLL 注入が失敗する、reports/44):
+  ```bash
+  cd worker/mods/th20_replay_autoplay
+  i686-w64-mingw32-g++ -shared -O2 -o build/th20_hook.dll \
+    dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
+    ../common/logging.cpp ../common/fps_monitor.cpp ../common/fps_limiter_hook.cpp \
+    ../common/dsound_hook.cpp ../common/fps_display_hook.cpp \
+    -luser32 -static-libgcc -static-libstdc++ -static
+  ```
 - `th08_replay_autoplay/build.bat` / `th11_replay_autoplay/build.bat` も同様に
   `fps_monitor.cpp`(fps暴走検知用、reports/22)を加えてそれぞれ
   `worker/mods/th08_replay_autoplay/build/th08_hook.dll` /
@@ -524,8 +702,8 @@ worker\mods\th11_replay_autoplay\build.bat
 | 変数 | 説明 |
 | --- | --- |
 | `JOB_ID` | ジョブ ID(DynamoDB キー・出力キーに使用) |
-| `GAME` | タイトル(`th06` / `th07` / `th08` / `th11`。`entrypoint.py` がこの値に応じて
-  `record_th06.py` / `record_th07.py` / `record_th08.py` / `record_th11.py` を呼び分ける) |
+| `GAME` | タイトル(`th06` / `th07` / `th08` / `th11` / `th20`。`entrypoint.py` がこの値に応じて
+  `record_th06.py` 〜 `record_th20.py` を呼び分ける) |
 | `REPLAY_BUCKET` / `REPLAY_KEY` | アップロード済みリプレイの S3 位置 |
 | `OUTPUT_BUCKET` | 録画動画の出力先バケット(CloudFront オリジン) |
 | `TITLE_ASSETS_BUCKET` | タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)のバケット
@@ -534,6 +712,8 @@ worker\mods\th11_replay_autoplay\build.bat
 | `WATERMARK` | `1` でウォーターマーク合成、`0` で無効 |
 | `TASK_TOKEN` | Step Functions の `waitForTaskToken` トークン(省略時は通知をスキップ、ローカル検証用) |
 | `EXPECTED_DURATION_SECONDS` | リプレイの推定再生時間(進捗率算出の参考値、省略可) |
+| `FPS_LIMIT_TARGET_HZ` | 低速録画(Issue #68)の目標fps。**省略時は等倍**(既定60)。
+  自宅ワーカーへのオファー時のみ `30` が渡る(EC2 起動時は付かない)。上記「低速録画」参照 |
 
 ## 出力ファイル
 
@@ -656,8 +836,21 @@ docker push <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest
 
 ## 制約と今後
 
-- 対応タイトルは th06・th07・th08・th11。他タイトルはリプレイパーサー側は
+- 対応タイトルは th06・th07・th08・th11・th20。他タイトルはリプレイパーサー側は
   多タイトル対応済みだが、録画対応(MOD移植)は未着手(AGENTS.md参照)。
+- **th20はデシンクが起きやすい**。録画側では検知も対処もできない(リプレイファイル・
+  ゲーム本体側の現象)ため、ページAでユーザーへ事前に注意書きを出すことで対応している
+  (Issue #87)。想定尺を大幅に超えてタイムアウトへ近づいたジョブは、まずこれを疑うこと。
+- **th20の720p版はダウンスケールになる**。th20の録画は1280x960で、`upscale.py`は
+  アスペクト比を保って高さ720pxへ合わせるため960x720へ**縮小**される。ページBの主要
+  ダウンロードボタンが既定で案内するのは720p版なので、th20では既定の導線が低い解像度を
+  指すことになる。720p版が存在する理由は「低解像度録画がYouTubeで60fpsと認識されない」
+  ことへの対策(reports/21)であり、元から720p以上あるth20には当てはまらない。
+  ダウンロード導線の見直しは別途対応する(Issue #99)。
+- **`mods/common/dinput_hook.cpp`のth20対応修正(vtable[3]の二重フック防止、reports/44)は
+  th06/07/08/11のビルド済みDLLに反映されていない**。これらは`DirectInput8Create`を
+  1回しか呼ばないため現状は無害だが、ソースとビルド済み成果物が乖離している。
+  次にこれらのMODを触る際は本修正込みで再ビルドし、タイトル資産を再アップロードすること。
 - th11の文字輪郭のジャギー(Windows実機よりWineのFreeTypeベースAAが粗い)は
   原因調査済み・対策なしの既知の制約として残る(touhou-recorder reports/39)。
 - th11は画面静止検知のみで終了判定するため、Pause Menu明滅カーソル以外の要因による

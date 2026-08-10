@@ -431,11 +431,19 @@ export class SattoriStack extends Stack {
     const parseReplayFn = makeHandler("ParseReplayFn", "parseReplay.ts");
     const getJobFn = makeHandler("GetJobFn", "getJob.ts");
     const requestMagicLinkFn = makeHandler("RequestMagicLinkFn", "requestMagicLink.ts");
+    // ページAで「低速録画」(Issue #68)を選べるかの判定に使う、自宅ワーカー(Issue #49)の
+    // 空き状況の公開スナップショット。認証なしで公開するため、ハンドラ側で workerId 等の
+    // 運用情報を落としてから返す(`handlers/getWorkerAvailability.ts`)。
+    const getWorkerAvailabilityFn = makeHandler(
+      "GetWorkerAvailabilityFn",
+      "getWorkerAvailability.ts",
+    );
 
     // 権限付与
     uploadBucket.grantPut(createUploadFn); // 署名付き PUT URL 発行のため
     uploadBucket.grantRead(parseReplayFn); // アップロード済み .rpy を取得して解析するため
     jobsTable.grantReadData(getJobFn);
+    workersTable.grantReadData(getWorkerAvailabilityFn);
 
     // マジックリンクの送信要求は、status:pending の JobRecord 作成(jobsTable書き込み)、
     // レート制限カウンタの読み書き、SESでの送信権限が必要。
@@ -548,11 +556,18 @@ export class SattoriStack extends Stack {
         jobId: sfn.JsonPath.stringAt("$.jobId"),
         attempt: sfn.JsonPath.numberAt("$.attempt"),
       }),
-      // 録画ジョブ全体のフェイルセーフタイムアウト。90分を超えてもワーカーから
+      // 録画ジョブ全体のフェイルセーフタイムアウト。これを超えてもワーカーから
       // taskTokenの応答が無ければ強制的に失敗させ、HandleFailureで後始末する。
-      // 録画自体のタイムアウト(recording_common.TIMEOUT_SEC=60分)に、720pアップスケール
-      // 変換・S3アップロード・DynamoDB更新・taskToken通知の分の余裕(30分)を上乗せしている。
-      taskTimeout: sfn.Timeout.duration(Duration.minutes(90)),
+      // 内訳は「録画自体のタイムアウト + 720pアップスケール変換・S3アップロード・
+      // DynamoDB更新・taskToken通知の余裕(30分)」。
+      //
+      // 録画のタイムアウト(`worker/recording_common.py`の`TIMEOUT_SEC`)は等倍で60分
+      // だが、低速録画(Issue #68)ではゲーム進行が半分の速度になるぶん同じ比率で
+      // 伸びて120分になる。**このフェイルセーフはジョブごとに変えられない**ので、
+      // 最も長くなる低速録画に合わせて 120 + 30 = 150分にしてある。等倍のジョブが
+      // これで不利になることはない——ハートビート(下記、15分)が実際の死活監視を
+      // 担っており、ワーカーが黙ればそちらが先に発火するため。
+      taskTimeout: sfn.Timeout.duration(Duration.minutes(150)),
       // ワーカーが生きているかの死活監視(Issue #49)。ワーカーコンテナは起動直後から
       // 60秒間隔で `SendTaskHeartbeat` を送る(`worker/task_heartbeat.py`)ので、
       // 15分途絶えたら「そのワーカーはもう動いていない」と判断してよい。
@@ -798,6 +813,14 @@ export class SattoriStack extends Stack {
       path: "/jobs/{jobId}",
       methods: [apigw.HttpMethod.GET],
       integration: new HttpLambdaIntegration("GetJobInt", getJobFn),
+    });
+    httpApi.addRoutes({
+      path: "/worker-availability",
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration(
+        "GetWorkerAvailabilityInt",
+        getWorkerAvailabilityFn,
+      ),
     });
     httpApi.addRoutes({
       path: "/jobs/{jobId}/start",

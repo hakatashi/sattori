@@ -1,25 +1,27 @@
-import { isHeartbeatFresh, LAUNCH_LAMBDA_TIMEOUT_SECONDS } from "@sattori/shared";
+import {
+  isHeartbeatFresh,
+  LAUNCH_LAMBDA_TIMEOUT_SECONDS,
+  SLOW_MOTION_CAPABILITY,
+} from "@sattori/shared";
 import type { GameId, JobRecord, WorkerCapability, WorkerHeartbeat } from "@sattori/shared";
 
 /**
  * 「このジョブを誰に任せるか」の方針（Issue #49）。タイトルごとに変えられるように
  * してあるのは、th20（東方錦上京、Issue #87）で自宅ワーカーとEC2の使い分けが
- * 明確に非対称になる見込みがあるため。
+ * 明確に非対称になるため。
  *
- * th20は描画負荷が高く、原則として4xlarge級のインスタンスが要る。さらに録画品質を
- * 担保するため 1/2 倍速で録画して後処理で等速へ戻す方式（Issue #68）を採りたいが、
- * 録画に倍の実時間がかかるためEC2では割に合わない。したがって
- * **「低速録画できる自宅ワーカーが空いていれば自宅で低速録画、いなければ4xlarge級の
- * EC2で等速録画」**という振り分けになる。これは
+ * th20は描画負荷が高く、原則として4xlarge級のインスタンスが要る（`ec2.ts` の
+ * `TH20_CANDIDATE_INSTANCE_TYPES`）。さらに録画品質を担保するため 1/2 倍速で録画して
+ * 後処理で等速へ戻す方式（Issue #68）を採るが、録画に倍の実時間がかかるためEC2では
+ * 割に合わない。したがって **「低速録画できる自宅ワーカーが空いていれば自宅で低速録画、
+ * いなければ4xlarge級のEC2で等速録画」** という振り分けになる。
  *
- *   - `requiredCapabilities: ["slow-motion-recording"]` … 能力を持つワーカーにだけ
- *     オファーする
- *   - `offerWindowSeconds` … 自宅ワーカーを待つ価値が高いので既定より長くする
- *   - EC2側の候補インスタンスタイプ（`ec2.ts` の `getCandidateInstanceTypes`）を
- *     th20だけ4xlarge級にする
- *
- * の3点で表現できる。**その時が来たら `GAME_ROUTING_POLICIES` にth20の行を足す**のが
- * 想定手順で、ルーティングの判定ロジック自体は変更しなくてよい設計にしてある。
+ * 低速録画の要求（`slow-motion-recording` 能力）は**タイトルではなくジョブの
+ * オプション**に紐づく（`routingPolicyFor()` が `options.slowMotion` から足す）。
+ * th20でもユーザーが低速録画を外していれば、その能力を持たない自宅ワーカーへ
+ * オファーして構わない——EC2を1台起こさずに済むこと自体に価値があるため、
+ * 不要な条件でオファー先を狭めない。`GAME_ROUTING_POLICIES` の行が受け持つのは
+ * 「自宅ワーカーを待つ価値がどれだけあるか」（`offerWindowSeconds`）だけである。
  */
 export interface GameRoutingPolicy {
   /**
@@ -76,13 +78,46 @@ export const DEFAULT_ROUTING_POLICY: GameRoutingPolicy = {
 };
 
 /**
- * タイトルごとの上書き。現在は全タイトルが既定の方針で足りるため空
- * （th20を追加する際の想定は上の `GameRoutingPolicy` のコメント参照）。
+ * タイトルごとの上書き。
+ *
+ * th20（Issue #87）だけオファー待ちを上限いっぱいまで延ばしている。他タイトルでは
+ * 「自宅が空いていなければEC2で同じ品質の録画ができる」ので待つ価値が薄いが、th20は
+ *
+ *   - EC2のフォールバック先が`.4xlarge`帯（他タイトルの`.xlarge`帯の約4倍の単価）
+ *   - 自宅ワーカーでしか低速録画（Issue #68）ができず、等倍録画では高負荷区間の
+ *     処理落ちを避けられない（touhou-recorder reports/46）
+ *
+ * の2点で、数十秒の録画開始遅延を払ってでも自宅ワーカーを待つ価値が明確に高い。
+ * ハートビートが新鮮なワーカーがいる場合しかオファーしないので、自宅サーバーが
+ * 落ちている平常時にこの待ちが発生することはない。
  */
-export const GAME_ROUTING_POLICIES: Partial<Record<GameId, GameRoutingPolicy>> = {};
+export const GAME_ROUTING_POLICIES: Partial<Record<GameId, GameRoutingPolicy>> = {
+  th20: {
+    offerToHomeWorker: true,
+    requiredCapabilities: [],
+    offerWindowSeconds: MAX_OFFER_WINDOW_SECONDS,
+  },
+};
 
-export function routingPolicyFor(game: GameId): GameRoutingPolicy {
-  return GAME_ROUTING_POLICIES[game] ?? DEFAULT_ROUTING_POLICY;
+/**
+ * ジョブに適用する方針を決める。タイトル固有の行（`GAME_ROUTING_POLICIES`）に、
+ * ジョブのオプション由来の要求能力を重ねる。
+ *
+ * 低速録画（Issue #68）を希望するジョブは `slow-motion-recording` を宣言している
+ * ワーカーにしかオファーしない。宣言していないワーカーがclaimすると、
+ * `FPS_LIMIT_TARGET_HZ` 付きの環境変数を渡したまま低速録画に対応しない挙動を
+ * されるおそれがあるため（実際には同一イメージなので動くが、能力宣言を唯一の
+ * 契約として扱い、ワーカー側の実装差を許容できるようにしておく）。
+ */
+export function routingPolicyFor(job: Pick<JobRecord, "game" | "options">): GameRoutingPolicy {
+  const base = GAME_ROUTING_POLICIES[job.game] ?? DEFAULT_ROUTING_POLICY;
+  if (!job.options.slowMotion || base.requiredCapabilities.includes(SLOW_MOTION_CAPABILITY)) {
+    return base;
+  }
+  return {
+    ...base,
+    requiredCapabilities: [...base.requiredCapabilities, SLOW_MOTION_CAPABILITY],
+  };
 }
 
 /** そのワーカーがこのジョブを引き受けられる状態か。 */

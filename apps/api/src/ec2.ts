@@ -59,8 +59,40 @@ const TH11_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
   "m7i.2xlarge", // Intel Sapphire Rapids(メモリ倍増版)。reports/43実測で重複フレーム率3.7%
 ];
 
+/**
+ * th20専用の候補インスタンスタイプ（Issue #87）。th20は内部描画解像度が960p相当
+ * （1280x960）へ上がっており、Xvfb+wined3d+llvmpipeのソフトウェアレンダリングでは
+ * th11をさらに上回る描画負荷になる。touhou-recorder `reports/46` のeu-south-2実機
+ * 比較で、th11の基準である`.2xlarge`帯（8vCPU）では**高負荷区間（スペルカード
+ * 「巌となるさざれ石」）のゲーム内実測fpsが11.7〜32.5fpsまで持続的に落ち込む**一方、
+ * `.4xlarge`帯（16vCPU/32GiB）では13.2fpsへの単発の落ち込み1回を除き57.6〜60.0fpsを
+ * 維持した。総録画時間（＝ゲーム進行速度の低下を映す指標）もローカル基準に対して
+ * `.2xlarge`が+8.9%に対し`.4xlarge`は-1.8%と、実機の全指標で明確な差が出ている。
+ *
+ * **`c7i.4xlarge` 1タイプしか挙げていないのは意図的**。reports/46 でth20の実機検証を
+ * 通ったのはこのタイプだけで、他タイプ（`c7a`/`m7i`の`.4xlarge`）は「同じvCPU数・
+ * 同じリージョンで検証済みの系統だから」という推測でしか根拠づけられない。この種の
+ * 推測は繰り返し裏切られている（AGENTS.md §3）ため、Spotプール数の後退（＝
+ * `InsufficientInstanceCapacity` 起因の起動失敗）を承知のうえで検証済みの1本に絞る。
+ * プールを広げたい場合はth20での実機検証を先に行うこと（Issue #98）。
+ *
+ * なお**th20は原則として自宅ワーカーで低速録画する**方針（Issue #68、
+ * `workerRouting.ts`）なので、このEC2経路は自宅ワーカーが空いていないときの
+ * フォールバック（等倍録画）である。
+ */
+const TH20_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
+  "c7i.4xlarge", // Intel Sapphire Rapids 16vCPU/32GiB。reports/46実測で重複フレーム率1.4%
+];
+
 function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
-  return game === "th11" ? TH11_CANDIDATE_INSTANCE_TYPES : DEFAULT_CANDIDATE_INSTANCE_TYPES;
+  switch (game) {
+    case "th11":
+      return TH11_CANDIDATE_INSTANCE_TYPES;
+    case "th20":
+      return TH20_CANDIDATE_INSTANCE_TYPES;
+    default:
+      return DEFAULT_CANDIDATE_INSTANCE_TYPES;
+  }
 }
 
 /**
@@ -77,7 +109,13 @@ export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: stri
   // 環境変数の中身は自宅ワーカー（Issue #49）と共有する（`workerEnv.ts`）。
   // taskToken だけはスクリプト冒頭で $TASK_TOKEN に格納済み（bootstrap 失敗時の
   // SendTaskFailure 通知と共有するため）なので、二重埋め込みを避けそれを参照する。
-  const envFlags = Object.entries(buildWorkerEnv(config, job, taskToken)).map(([key, value]) =>
+  //
+  // **EC2 では低速録画（Issue #68）を行わない**（録画に倍の実時間がかかり、その分
+  // Spot料金も倍になるため。低速録画は電気代しかかからない自宅ワーカー限定）。
+  // ユーザーが低速録画を選んでいても、この経路まで落ちてきた時点で等倍録画になる。
+  const envFlags = Object.entries(
+    buildWorkerEnv(config, job, taskToken, { slowMotion: false }),
+  ).map(([key, value]) =>
     key === "TASK_TOKEN" ? `-e TASK_TOKEN="$TASK_TOKEN"` : `-e ${key}=${value}`,
   );
 

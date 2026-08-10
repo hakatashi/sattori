@@ -35,7 +35,7 @@ const failedJob: JobRecord = {
   game: "th11",
   replayKey: "replays/abc.rpy",
   status: "failed",
-  options: { watermark: false },
+  options: { watermark: false, slowMotion: false },
   outputPath: "videos/job-1.mp4",
   outputPath720p: null,
   error: "録画に複数回失敗しました",
@@ -81,7 +81,7 @@ describe("buildRetryJob", () => {
     // 引き継ぐもの
     expect(retried.game).toBe("th11");
     expect(retried.replayKey).toBe("replays/abc.rpy");
-    expect(retried.options).toEqual({ watermark: false });
+    expect(retried.options).toEqual({ watermark: false, slowMotion: false });
     expect(retried.email).toBe("user@example.com");
     expect(retried.language).toBe("en");
     expect(retried.estimatedDurationSeconds).toBe(900);

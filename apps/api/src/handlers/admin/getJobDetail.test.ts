@@ -31,7 +31,7 @@ const recordingJob: JobRecord = {
   game: "th11",
   replayKey: "replays/abc.rpy",
   status: "recording",
-  options: { watermark: true },
+  options: { watermark: true, slowMotion: false },
   outputPath: "videos/job-1.mp4",
   outputPath720p: null,
   error: null,

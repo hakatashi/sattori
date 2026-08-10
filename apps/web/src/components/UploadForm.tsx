@@ -1,13 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import {
   DEFAULT_RECORDING_OPTIONS,
+  defaultSlowMotionFor,
   EMAIL_PATTERN,
   parseReplayInfo,
+  SLOW_MOTION_CAPABILITY,
   type ReplayInfo,
 } from "@sattori/shared";
-import { createUpload, requestMagicLink, SattoriApiError, uploadReplay } from "../api/client.ts";
+import {
+  createUpload,
+  getWorkerAvailability,
+  requestMagicLink,
+  SattoriApiError,
+  uploadReplay,
+} from "../api/client.ts";
 import { useLocale } from "../i18n/LocaleContext.ts";
 import { toLocalizedPath } from "../i18n/paths.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
@@ -160,7 +168,7 @@ const gameTitles = [
     japanese: "東方錦上京",
     english: "Fossilized Wonders",
     shortName: "FW",
-    supported: false,
+    supported: true,
     icon: 'th20.png',
   },
 ];
@@ -193,9 +201,54 @@ export function UploadForm({ onMagicLinkSent }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  /**
+   * 低速録画（Issue #68）が今選べるか。自宅ワーカー（Issue #49）が
+   * `slow-motion-recording` を宣言して空いているときだけ true になる。
+   * 取得に失敗した場合も false のまま——選択肢を出しておいて実際には等倍で
+   * 録画される、という食い違いを避け、安全側（グレーアウト）に倒す。
+   */
+  const [slowMotionAvailable, setSlowMotionAvailable] = useState(false);
+  /**
+   * ユーザーが低速録画のチェックを手で動かしたか。動かしていない間は
+   * タイトルごとの既定（th20のみオン）に追従させ、一度でも触ったらその意思を尊重する。
+   */
+  const [slowMotionTouched, setSlowMotionTouched] = useState(false);
+  const [slowMotion, setSlowMotion] = useState(false);
 
   const busy = phase !== "idle" && phase !== "ready";
   const emailValid = EMAIL_PATTERN.test(email);
+  // 低速録画は自宅ワーカーが使える場合に限り有効。可否が変わった／別タイトルの
+  // リプレイに差し替えられた場合に、実際に送信される値が取り残されないよう、
+  // 「チェック状態」ではなくこの導出値を唯一の真実として扱う。
+  const slowMotionChecked = slowMotionAvailable && slowMotion;
+
+  // 自宅ワーカーの空き状況はページ表示時に1回だけ取得する。実際に録画が始まるのは
+  // ユーザーがマジックリンクを開いた後（最大24時間後）で、その時点の可否とは
+  // どのみち一致しないため、ポーリングして精度を上げても意味がない。
+  useEffect(() => {
+    let cancelled = false;
+    getWorkerAvailability()
+      .then((availability) => {
+        if (!cancelled) {
+          setSlowMotionAvailable(
+            availability.available && availability.capabilities.includes(SLOW_MOTION_CAPABILITY),
+          );
+        }
+      })
+      .catch(() => {
+        // 低速録画が選べないだけで、アップロード自体は問題なく続けられる。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // タイトルが確定した（＝リプレイを解析できた）時点で、そのタイトルの既定へ寄せる。
+  useEffect(() => {
+    if (!slowMotionTouched) {
+      setSlowMotion(defaultSlowMotionFor(preview?.game ?? null, slowMotionAvailable));
+    }
+  }, [preview?.game, slowMotionAvailable, slowMotionTouched]);
 
   function selectFile(selected: File | null) {
     setErrorMessage(null);
@@ -302,7 +355,13 @@ export function UploadForm({ onMagicLinkSent }: Props) {
     setErrorMessage(null);
     try {
       setPhase("starting");
-      await requestMagicLink(replayKey, { watermark }, email, locale, preview);
+      await requestMagicLink(
+        replayKey,
+        { watermark, slowMotion: slowMotionChecked },
+        email,
+        locale,
+        preview,
+      );
       onMagicLinkSent(email);
     } catch (err) {
       const message =
@@ -381,6 +440,23 @@ export function UploadForm({ onMagicLinkSent }: Props) {
       {preview && phase === "processing" && (
         <small className={styles.optionHint}>{t("uploadForm.uploading")}</small>
       )}
+      {/*
+        th20固有の注意書き（Issue #87）。他タイトルには無い2つの既知の制約を、
+        メールアドレスを入力して録画を依頼してしまう前に知らせる。
+        - デシンク（リプレイずれ）が頻発する: リプレイファイル・ゲーム本体側の現象で、
+          録画側では検知も対処もできない（touhou-recorder reports/45）。
+        - 等倍録画では品質が落ちる: 低速録画（Issue #68）が使えないときのみ該当するため、
+          自宅ワーカーが空いていて低速録画が選べる状態なら出さない。
+      */}
+      {preview?.game === "th20" && (
+        <div className={styles.notice} role="note">
+          <p className={styles.noticeTitle}>{t("uploadForm.th20NoticeTitle")}</p>
+          <ul className={styles.noticeList}>
+            <li>{t("uploadForm.th20NoticeDesync")}</li>
+            {!slowMotionChecked && <li>{t("uploadForm.th20NoticeNormalSpeed")}</li>}
+          </ul>
+        </div>
+      )}
 
       <p className={clsx(styles.stepLabel, styles.stepLabelSecondary)}>
         <span className={styles.stepNumber}>STEP 3</span>
@@ -410,6 +486,34 @@ export function UploadForm({ onMagicLinkSent }: Props) {
             <small className={styles.optionHint}>
               {t("uploadForm.watermarkHintLine1")}<br/>
               {t("uploadForm.watermarkHintLine2")}
+            </small>
+          </span>
+        </label>
+        {/*
+          低速録画（Issue #68）。ゲームを1/2倍速で動かして録画し、後処理で等倍へ戻す。
+          録画に実時間で倍かかるためEC2では行わず、電気代しかかからない自宅ワーカー
+          （Issue #49）が空いているときにだけ選べる。使えない間はグレーアウトし、
+          その理由をヒントに出す（黙って消すと「前は在ったのに」と混乱するため）。
+        */}
+        <label
+          className={clsx(styles.option, !slowMotionAvailable && styles.optionDisabled)}
+        >
+          <input
+            type="checkbox"
+            checked={slowMotionChecked}
+            onChange={(e) => {
+              setSlowMotionTouched(true);
+              setSlowMotion(e.target.checked);
+            }}
+            disabled={busy || !slowMotionAvailable}
+          />
+          <span>
+            {t("uploadForm.slowMotionOption")}
+            <small className={styles.optionHint}>
+              {t("uploadForm.slowMotionHintLine1")}<br/>
+              {slowMotionAvailable
+                ? t("uploadForm.slowMotionHintLine2")
+                : t("uploadForm.slowMotionUnavailable")}
             </small>
           </span>
         </label>

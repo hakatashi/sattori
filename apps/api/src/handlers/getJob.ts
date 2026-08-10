@@ -1,5 +1,9 @@
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
-import { calculateDownloadExpiresAt, type GetJobResponse } from "@sattori/shared";
+import {
+  calculateDownloadExpiresAt,
+  type GetJobResponse,
+  isSlowMotionRecording,
+} from "@sattori/shared";
 import { loadConfig } from "../config.js";
 import { buildCdnUrl, buildVideoDownloadUrl } from "../downloads.js";
 import { error, json } from "../http.js";
@@ -61,6 +65,9 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     previewVideoUrl,
     previewImageUrl,
     replayInfo: job.replayInfo ?? null,
+    // ユーザーの希望（`options.slowMotion`）そのままではなく、EC2へフォールバック
+    // したかどうかまで織り込んだ「実際に低速録画で走るか」を返す（Issue #68）。
+    slowMotion: isSlowMotionRecording(job.options, job.workerKind),
   };
   return json(200, response);
 };

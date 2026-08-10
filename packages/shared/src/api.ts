@@ -2,6 +2,7 @@ import type { GameId } from "./games.js";
 import type { JobStatus, RecordingOptions } from "./job.js";
 import type { SupportedLanguage } from "./language.js";
 import type { ReplayInfo } from "./replay.js";
+import type { WorkerCapability } from "./worker.js";
 
 /**
  * フロントエンド（apps/web）とバックエンド（apps/api）で共有するAPI契約。
@@ -139,6 +140,38 @@ export interface GetJobResponse {
    * `POST /magic-links` 時点で `replayInfo` が渡されていなかった旧ジョブでは null。
    */
   replayInfo: ReplayInfo | null;
+  /**
+   * このジョブが低速録画（Issue #68）で走る（走った）か。`isSlowMotionRecording()`
+   * の結果そのもの——ユーザーの希望（`RecordingOptions.slowMotion`）ではなく、
+   * EC2 へフォールバックしたかどうかまで織り込んだ値である。
+   * ジョブページの進捗バー・残り時間推定が、録画フェーズに実時間で倍かかることを
+   * 織り込むために使う（`apps/web/src/hooks/jobProgressBudget.ts`）。
+   */
+  slowMotion: boolean;
+}
+
+/**
+ * GET /worker-availability : 常駐ワーカー（自宅ワーカー、Issue #49）が今この瞬間に
+ * ジョブを引き受けられるかの公開スナップショット。ページAの詳細設定で
+ * 「低速録画」（Issue #68）を選べるかどうかの判定にだけ使う。
+ *
+ * **これはあくまで「今の」状態**で、実際に録画が始まるのはユーザーがメールの
+ * マジックリンクを開いた後（最大24時間後）なので、ここで true でも録画時には
+ * 自宅ワーカーが埋まっている・落ちていることがある。その場合はEC2での等倍録画へ
+ * 静かにフォールバックする（`isSlowMotionRecording()` 参照）。
+ *
+ * ワーカーの `workerId`・台数・負荷といった運用情報は**返さない**。この
+ * エンドポイントは認証なしで公開されるため、開発者の自宅環境の稼働状況が
+ * 必要以上に外から見えないようにする。
+ */
+export interface GetWorkerAvailabilityResponse {
+  /** 今オファーを受けられる常駐ワーカーが1台以上いるか。 */
+  available: boolean;
+  /**
+   * 上記のワーカー群が申告している追加能力の和集合（`WorkerCapability`）。
+   * 低速録画が選べるかは `capabilities.includes(SLOW_MOTION_CAPABILITY)` で判定する。
+   */
+  capabilities: WorkerCapability[];
 }
 
 /** APIエラーの統一形。 */

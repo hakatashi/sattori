@@ -73,7 +73,7 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   により上書きする（`AGENTS.md`の設計判断参照。ここでのUserDataはプレースホルダで
   実際に使われることはない）。
 - **Step Functions**: `RecordingStateMachine`（Standard）。`Launch`
-  （`waitForTaskToken`、90分タイムアウト+**15分のハートビートタイムアウト**）→
+  （`waitForTaskToken`、150分タイムアウト+**15分のハートビートタイムアウト**）→
   失敗時 `WaitBeforeCheck`（3分）→
   `HandleFailure` → `ShouldRetry?`（`shouldRetry`なら`IncrementAttempt`して
   `Launch`へ、そうでなければ`Fail`）。`HandleFailure`自体が例外を投げても
@@ -83,8 +83,16 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   ハートビートタイムアウト（Issue #49）はワーカーの死活監視で、コンテナが60秒ごとに
   `SendTaskHeartbeat`を送る（`worker/task_heartbeat.py`）。**主目的は自宅ワーカー**
   ——自宅マシンの停電・回線断はAWS側から一切観測できず、これが無いとジョブが
-  タスクタイムアウト（90分）まで「録画中」で固まる。EC2ワーカーにとっても
-  ハング時の失敗検知が90分→15分に縮まる。**ハートビートを送らない古いワーカー
+  タスクタイムアウト（150分）まで「録画中」で固まる。EC2ワーカーにとっても
+  ハング時の失敗検知が150分→15分に縮まる。
+  **タスクタイムアウトが150分なのは低速録画（Issue #68）に合わせているため**。
+  録画自体のタイムアウト（`worker/recording_common.py`の`TIMEOUT_SEC`）は等倍で60分だが、
+  低速録画ではゲーム進行が半分の速度になるぶん同じ比率で伸びて120分になる。これは
+  ジョブごとに変えられないフェイルセーフなので、最も長くなるケースに合わせて
+  120 + 30（変換・アップロードの余裕）= 150分にしてある。等倍のジョブがこれで不利に
+  なることはない——実際の死活監視はハートビート（15分）が担っており、ワーカーが
+  黙ればそちらが先に発火する。自宅デーモンの`HOME_WORKER_DRAIN_TIMEOUT_SEC`も
+  同じ150分に揃えてある（`home-worker/README.md`）。**ハートビートを送らない古いワーカー
   イメージがECRに残っていると全ジョブが15分でタイムアウトするため、
   ワーカーイメージのpushを`cdk deploy`より先に行うこと**（下記デプロイ手順）。
 - **IAM**: ワーカーロール（ECR pull / S3 / DynamoDB / ログ送出 /

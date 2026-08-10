@@ -103,6 +103,14 @@ export function JobProgressView({ job, loadError }: ViewProps) {
             {overall.remainingMinutes !== null && (
               <span>{t("jobProgress.etaMinutes", { minutes: overall.remainingMinutes })}</span>
             )}
+            {/*
+              低速録画(Issue #68)は録画に実時間で2倍かかる。残り時間の見積もりには
+              織り込んであるが、他のジョブと比べて明らかに長いことの説明が無いと
+              「止まっているのでは」と受け取られるため、理由をその場に出しておく。
+            */}
+            {job.slowMotion && !done && (
+              <span className={styles.slowMotionHint}>{t("jobProgress.slowMotionHint")}</span>
+            )}
             {overall.retrySuspected && (
               <span className={styles.retryHint}>{t("jobProgress.retryHint")}</span>
             )}

@@ -95,7 +95,16 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     game,
     replayKey: body.replayKey,
     status: "pending",
-    options: { watermark: body.options.watermark !== false },
+    options: {
+      watermark: body.options.watermark !== false,
+      // 低速録画（Issue #68）は明示的に true を指定されたときだけ有効にする
+      // （ウォーターマークと逆で、既定は「しない」）。ここでは自宅ワーカーの
+      // 空きを検証しない——実際に録画が始まるのはユーザーがマジックリンクを
+      // 開いた後（最大24時間後）で、この時点の可否を確かめても意味がないため。
+      // 録画時に自宅ワーカーがいなければ`Launch`がEC2での等倍録画へ静かに
+      // フォールバックする（`handlers/sfn/launch.ts`・`workerRouting.ts`）。
+      slowMotion: body.options.slowMotion === true,
+    },
     outputPath: null,
     outputPath720p: null,
     outputBytes: null,

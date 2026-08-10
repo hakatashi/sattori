@@ -149,6 +149,40 @@ li.supportedTitle.supported {
   margin-top: 0.15rem;
 }
 
+/* 低速録画が選べない(自宅ワーカーが空いていない)ときの見た目。項目自体は残し、
+   何が選べないのかとその理由が読めるようにしておく。 */
+.optionDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* タイトル固有の注意書き(現状th20のみ、Issue #87)。エラーではないので
+   --danger ではなく警告色で、STEP2のプレビュー直下に置く。 */
+.notice {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--panel-border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: 0.9rem;
+}
+
+.noticeTitle {
+  margin: 0 0 0.4rem;
+  font-weight: 600;
+}
+
+.noticeList {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text-muted);
+}
+
+.noticeList li + li {
+  margin-top: 0.3rem;
+}
+
 .error {
   margin: 0.75rem 0 0;
   color: var(--danger);

@@ -30,7 +30,7 @@ function baseJob(overrides: Partial<JobRecord>): JobRecord {
     game: "th07",
     replayKey: "replays/abc.rpy",
     status: "recording",
-    options: { watermark: true },
+    options: { watermark: true, slowMotion: false },
     outputPath: null,
     outputPath720p: null,
     error: null,

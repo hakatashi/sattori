@@ -1,3 +1,4 @@
+import { SLOW_MOTION_TARGET_HZ } from "@sattori/shared";
 import type {
   AdminJobRecord,
   JobRecord,
@@ -5,6 +6,17 @@ import type {
   WorkerEnvironment,
 } from "@sattori/shared";
 import type { ApiConfig } from "./config.js";
+
+/** `buildWorkerEnv()` の、ジョブレコードからは決まらない起動側の都合。 */
+export interface WorkerEnvOptions {
+  /**
+   * この起動で低速録画（Issue #68）を行うか。**ジョブの `options.slowMotion` を
+   * そのまま渡してはいけない**——低速録画は自宅ワーカーへのオファーでのみ有効で、
+   * EC2 Fleet 起動時は常に false になる（録画に倍の実時間＝倍のコストがかかるため）。
+   * 呼び出し側（`handlers/sfn/launch.ts`）が割り当て先に応じて決める。
+   */
+  slowMotion: boolean;
+}
 
 /**
  * 録画ワーカーコンテナ（`worker/entrypoint.py`）へ渡す環境変数一式を組み立てる。
@@ -15,14 +27,16 @@ import type { ApiConfig } from "./config.js";
  * そのまま `docker run` へ渡す。ワーカー側は「自分がどこで動いているか」を一切
  * 知らずに済み、環境差分はすべてこの関数の出力の違いとして表現される。
  *
- * この構造は Issue #68（1/2倍速録画。自宅ワーカーでのみ行う予定）の受け皿でもある。
+ * この構造は Issue #68（1/2倍速録画。自宅ワーカーでのみ行う）の受け皿でもある。
  * 低速録画は「自宅ワーカーなら分岐する」ではなく「起動側が録画速度を指定する
- * 環境変数を足すかどうか」で表現すること。
+ * 環境変数（`FPS_LIMIT_TARGET_HZ`）を足すかどうか」で表現する。ワーカーは
+ * 自分がEC2にいるのか自宅にいるのかを知らないまま、渡された値に従うだけでよい。
  */
 export function buildWorkerEnv(
   config: ApiConfig,
   job: JobRecord,
   taskToken: string,
+  options: WorkerEnvOptions,
 ): WorkerEnvironment {
   const env: WorkerEnvironment = {
     AWS_DEFAULT_REGION: config.ec2.region,
@@ -40,6 +54,12 @@ export function buildWorkerEnv(
   if (job.estimatedDurationSeconds !== null) {
     // ワーカーの録画進捗率算出用の参考値（取得できていなければ付与しない）。
     env.EXPECTED_DURATION_SECONDS = String(job.estimatedDurationSeconds);
+  }
+  if (options.slowMotion) {
+    // MOD（Present/DirectSound/fps表示のフック）と録画スクリプトの実時間依存
+    // パラメータが、この1つの値から同じ比率でスケールする（`worker/README.md`
+    // 「低速録画」参照）。**未指定＝等倍**が既定なので、等倍録画では付与しない。
+    env.FPS_LIMIT_TARGET_HZ = String(SLOW_MOTION_TARGET_HZ);
   }
   return env;
 }

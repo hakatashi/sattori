@@ -86,6 +86,7 @@ RECORDING_SCRIPTS = {
     "th07": "record_th07.py",
     "th08": "record_th08.py",
     "th11": "record_th11.py",
+    "th20": "record_th20.py",
 }
 
 _sfn = None
