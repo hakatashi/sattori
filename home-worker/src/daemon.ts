@@ -420,7 +420,8 @@ export class HomeWorkerDaemon {
       }
     } finally {
       running.finished.set();
-      await shipper.flush();
+      // 残りを送りきり、定期flushのタイマーも止める（ジョブごとに1本張るため）。
+      await shipper.close();
       this.#running.delete(jobId);
     }
   }
@@ -489,8 +490,19 @@ export class HomeWorkerDaemon {
    *
    * 取り消し済みでもまだ止められていない（`docker kill` が失敗した）間はループを
    * 続けて再試行する。「止めたことにする」より「止まるまで諦めない」方を選ぶ。
+   *
+   * **確認できない状態がどれだけ続いても録画は止めない**（`touchClaim` の失敗が続く
+   * のはDynamoDB接続や認証情報の不調であり、取り消しの証拠ではない）。止めれば
+   * そのジョブは丸ごとやり直しになる一方、止めずに得られる最悪の結果は「同じ動画を
+   * 同じキーへ二重に書く」「statusが巻き戻る」程度で、金銭コストも増えない
+   * （EC2と違い自宅の電気代はAWSの請求に現れない）。停止済みジョブが`done`へ戻って
+   * 完了メールが飛ぶ、という本当に困る結果はジョブレコード側の拒否票
+   * （`JobRecord.stopRequestedAt`）が止めるので、ここは完走に賭けてよい。
+   * ただし**未確認のまま経過した時間はログに出す**（運用時に沈黙で見えなくなるのを
+   * 避けるため。判断を変えるのではなく見えるようにするだけ）。
    */
   async watchClaim(jobId: string, running: ClaimWatchTarget): Promise<void> {
+    let confirmedAtMs = Date.now();
     while (!running.finished.isSet) {
       await running.finished.wait(this.#claimCheckIntervalMs);
       if (running.finished.isSet) {
@@ -512,12 +524,18 @@ export class HomeWorkerDaemon {
       } catch (err) {
         // 一時的なAPI障害では止めない（止めるほうが損失が大きい）。取り消しは
         // 「条件が崩れた」と分かったときにしか宣言しない。
-        this.#log(`claimの確認に失敗しました(継続) jobId=${jobId}: ${String(err)}`);
+        const unconfirmedSec = Math.round((Date.now() - confirmedAtMs) / 1000);
+        this.#log(
+          `claimの確認に失敗しました(継続 最後の確認から${unconfirmedSec}秒) ` +
+            `jobId=${jobId}: ${String(err)}`,
+        );
         continue;
       }
       if (!stillMine) {
         await this.#enforceRevocation(jobId, running);
+        continue;
       }
+      confirmedAtMs = Date.now();
     }
   }
 

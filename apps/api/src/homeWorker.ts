@@ -124,6 +124,44 @@ export async function getAssignedWorkerId(
 }
 
 /**
+ * オファーの条件失敗（`attribute_not_exists(assignedWorkerId)` が崩れていた）の
+ * **理由を見分ける**ための読み取り。`assignedWorkerId` の存在だけでは次の2つを
+ * 区別できない:
+ *
+ * - (a) この試行のオファーを本当に誰かがclaimした（`Launch` の再入）。
+ * - (b) 前の試行の割り当てが解除しきれずに残っている（`HandleFailure` の
+ *   `releaseHomeWorkerAssignment` が一時障害で失敗したケース。あちらは失敗を
+ *   ログだけにして `shouldRetry` を返す）。
+ *
+ * 判別には `homeWorkerEnv.TASK_TOKEN` を使う。**オファーの書き込みが taskToken を
+ * デーモンへ渡す唯一の経路**なので、レコードに載っているトークンが今回のものなら
+ * (a)、違う（または無い）なら (b) である。
+ *
+ * claim直後を取りこぼすと判断を誤るため強い整合性で読む。トークンそのものは
+ * ネストしたパスで射影し、環境変数一式を引っ張ってこない。
+ */
+export async function getHomeWorkerAssignment(
+  jobsTable: string,
+  jobId: string,
+): Promise<{ assignedWorkerId: string | null; taskToken: string | null }> {
+  const result = await client.send(
+    new GetCommand({
+      TableName: jobsTable,
+      Key: { jobId },
+      ProjectionExpression: "assignedWorkerId, homeWorkerEnv.TASK_TOKEN",
+      ConsistentRead: true,
+    }),
+  );
+  const item = result.Item as
+    | (Pick<JobRecord, "assignedWorkerId"> & { homeWorkerEnv?: { TASK_TOKEN?: string } })
+    | undefined;
+  return {
+    assignedWorkerId: item?.assignedWorkerId ?? null,
+    taskToken: item?.homeWorkerEnv?.TASK_TOKEN ?? null,
+  };
+}
+
+/**
  * 自宅ワーカーへの割り当てを解除する（Step Functionsの失敗ハンドラから呼ぶ）。
  * `assignedWorkerId` を消すことで、走っている自宅ワーカーは次のジョブハートビート
  * （条件付き更新）で claim の取り消しに気づき、コンテナを停止する。EC2ワーカーに

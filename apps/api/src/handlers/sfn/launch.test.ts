@@ -273,6 +273,62 @@ describe("sfn/launch handler（自宅ワーカーへのオファー、Issue #49�
     expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(0);
   });
 
+  it("オファーが書けず、レコードのtaskTokenが今回のものならEC2を起動しない", async () => {
+    // Launchの再入で、今回のトークンを持つデーモンが既に走っている状況。
+    ddbMock.on(ScanCommand).resolves({ Items: [heartbeat()] });
+    ddbMock
+      .on(GetCommand)
+      .resolvesOnce({ Item: job })
+      .resolves({
+        Item: { assignedWorkerId: "home-1", homeWorkerEnv: { TASK_TOKEN: "token-xyz" } },
+      });
+    ddbMock
+      .on(UpdateCommand)
+      .rejects(new ConditionalCheckFailedException({ message: "claimed", $metadata: {} }));
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 2, taskToken: "token-xyz" });
+
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(0);
+  });
+
+  it("オファーが書けず、残っていたのが前の試行の割り当てなら解除してEC2を起動する", async () => {
+    // `HandleFailure` の割り当て解除が一時障害で失敗すると、陳腐化した
+    // `assignedWorkerId` が残る。これをclaim済みと誤読すると、今回のtaskTokenを
+    // 誰も持たないまま15分のタイムアウトを待つ（リトライ1周が丸ごと無駄になる）。
+    ddbMock.on(ScanCommand).resolves({ Items: [heartbeat()] });
+    ddbMock
+      .on(GetCommand)
+      .resolvesOnce({ Item: job })
+      .resolves({
+        // 前の試行のトークンが残っている（今回のトークンは誰も持っていない）。
+        Item: { assignedWorkerId: "home-1", homeWorkerEnv: { TASK_TOKEN: "token-old" } },
+      });
+    ddbMock.on(UpdateCommand).resolves({});
+    // オファーの書き込み（未claimを条件にする更新）だけが条件チェックで失敗する。
+    ddbMock
+      .on(UpdateCommand, { ConditionExpression: "attribute_not_exists(assignedWorkerId)" })
+      .rejects(new ConditionalCheckFailedException({ message: "stale", $metadata: {} }));
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-abc123"], InstanceType: "c7i.xlarge", AvailabilityZone: "eu-south-2a" }],
+    });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 2, taskToken: "token-xyz" });
+
+    // 陳腐化した割り当てを解除してからEC2へフォールバックする（解除は走っている
+    // 古いコンテナを止める手段も兼ねる）。
+    const releaseCalls = ddbMock
+      .commandCalls(UpdateCommand)
+      .filter((call) => call.args[0].input.UpdateExpression?.includes("REMOVE assignedWorkerId"));
+    expect(releaseCalls).toHaveLength(1);
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+  });
+
   it("ハートビートの読み取りに失敗してもEC2起動へフォールバックする", async () => {
     ddbMock.on(ScanCommand).rejects(new Error("throttled"));
     ddbMock.on(GetCommand).resolves({ Item: job });
