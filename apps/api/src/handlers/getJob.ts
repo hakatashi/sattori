@@ -26,13 +26,19 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     return error(404, "not_found", "ジョブが見つかりません");
   }
 
+  // `outputPath` が何を指すかはジョブによって変わる。解像度が実際に変わる録画
+  // （th06/07/08/11）では録画そのままの副次版だが、解像度が変わらない録画
+  // （th20）や低速録画では**変換結果そのもの**が入り、720p版は作られない
+  // （`worker/convert.py` の `needs_separate_raw_output()`）。ファイル名の
+  // ` #raw` 接尾辞は前者にだけ付けたいので、720p版の有無で役割を見分ける。
+  const outputPathVariant = job.outputPath720p === null ? "delivery" : "raw";
   const downloadUrl =
     job.status === "done" && job.outputPath
-      ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath, job, "original")
+      ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath, job, outputPathVariant)
       : null;
   const downloadUrl720p =
     job.status === "done" && job.outputPath720p
-      ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath720p, job, "720p")
+      ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath720p, job, "delivery")
       : null;
   // ページBのプレビュープレイヤー(Issue #71)用のURL。ダウンロード用と違い
   // `response-content-disposition`を付けない(付けるとCloudFrontのキャッシュキーが

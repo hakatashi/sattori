@@ -37,10 +37,10 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     : null;
 
   const videoUrl = job.outputPath
-    ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath, job, "original")
+    ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath, job, job.outputPath720p === null ? "delivery" : "raw")
     : null;
   const video720pUrl = job.outputPath720p
-    ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath720p, job, "720p")
+    ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath720p, job, "delivery")
     : null;
   const previewImageUrl = job.previewImagePath
     ? buildCdnUrl(config.cdnDomain, job.previewImagePath)

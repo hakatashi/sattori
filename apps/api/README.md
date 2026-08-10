@@ -311,10 +311,14 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
 - **ダウンロード**（`downloads.ts`）: 動画URLの組み立て（`buildVideoDownloadUrl`）は
   `getJob.ts`から移設して共有。ユーザー向け`GET /jobs/{jobId}`と異なり、statusが
   `done`でなくても`outputPath`/`outputPath720p`があればURLを返す（`converting`中の
-  生動画チェックポイントを取得したい運用ニーズのため）。`.rpy`は`UploadBucket`が
+  生動画チェックポイントを取得したい運用ニーズのため）。**低速録画（Issue #68）の
+  ジョブでは、`converting`中の`outputPath`が指すのは半分の速度の生データである**
+  （等倍へ戻すのは変換工程。`worker/README.md`「低速録画」）。ユーザー向けの
+  `GET /jobs/{jobId}`は`done`のときしかURLを返さないのでこれが漏れることはないが、
+  管理画面で変換中の動画を開いたときは意図した挙動として扱うこと。`.rpy`は`UploadBucket`が
   CloudFront配信されていない`BLOCK_ALL`バケットのため、動画とは別にS3署名付き
   GET URL（`createPresignedReplayDownloadUrl`、TTL 900秒）を発行する。
-  720p変換のffmpeg生ログ（`ffmpegLogUrl`、Issue #58フォローアップ）も同様にS3署名付き
+  配信用変換のffmpeg生ログ（`ffmpegLogUrl`、Issue #58フォローアップ）も同様にS3署名付き
   URL（`createPresignedFfmpegLogDownloadUrl`）で配る。CDN配信しないのは一般ユーザー
   向け配信物ではないため。S3キー（`worker-logs/{jobId}/ffmpeg-upscale.log`）は
   `executionArn`と同じ考え方でjobIdから決定的に導出し（`buildFfmpegUpscaleLogKey`）
@@ -346,7 +350,7 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   LambdaにはjobsTable読み取り権限を持たせず、既に`GET /admin/jobs/{jobId}`を叩いている
   フロントからクエリパラメータで受け取る。インスタンスが終了済みだと出力が取得できず
   `consoleOutput: null`に縮退することがある（500にはしない）。
-  当初、720p変換の`worker/upscale.py`がffmpegの`-progress`生出力（frame=/fps=/
+  当初、配信用変換の`worker/convert.py`（当時は`upscale.py`）がffmpegの`-progress`生出力（frame=/fps=/
   bitrate=等）を全行このログストリームへ流していたが、1ジョブで数千行に達し
   実機の管理画面で他のログを埋もれさせる問題が判明した。クライアント側フィルタ
   （後述）だけでは`GetLogEvents`のページ自体がノイズで埋まる問題は解決しないため、

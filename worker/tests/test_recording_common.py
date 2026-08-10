@@ -647,6 +647,36 @@ def test_build_still_mask_still_accepts_a_single_rect_tuple():
     assert mask[0, 0] == True  # noqa: E712
 
 
+# --- 重複フレーム率の閾値換算(Issue #68) ----------------------------------
+
+
+def test_duplicate_rate_threshold_is_unchanged_for_normal_speed_recordings():
+    """等倍(scale=1)では換算しても値が変わらない＝既存タイトルの判定は不変。"""
+    assert rc.duplicate_rate_threshold_for_raw(30.0, 1.0) == 30.0
+
+
+def test_duplicate_rate_threshold_accounts_for_the_frames_slow_motion_duplicates():
+    """1/2倍速の生データは、完璧に目標fpsを維持していても重複50%になる。
+
+    等倍換算の閾値30%は、生データでは65%に相当する。
+    """
+    assert rc.duplicate_rate_threshold_for_raw(30.0, 2.0) == pytest.approx(65.0)
+
+
+def test_duplicate_rate_threshold_passes_a_healthy_slow_motion_recording():
+    # 目標fpsを完璧に維持できた低速録画の生データは重複50%。閾値を換算しないと
+    # 正常な録画が必ず「処理落ち」と判定されてリトライされてしまう。
+    threshold = rc.duplicate_rate_threshold_for_raw(rc.MAX_DUPLICATE_RATE_DEFAULT, 2.0)
+    assert 50.0 <= threshold
+
+
+def test_duplicate_rate_threshold_still_catches_a_real_stutter():
+    # 目標30fpsのはずが実際には15fpsしか出ていない生データは重複75%で、換算後の
+    # 閾値(65%)を超えるので正しくリトライされる。
+    threshold = rc.duplicate_rate_threshold_for_raw(rc.MAX_DUPLICATE_RATE_DEFAULT, 2.0)
+    assert 75.0 > threshold
+
+
 def test_prepare_instance_places_cfg_and_replay_into_the_appdata_profile(tmp_path, monkeypatch):
     """th20(th125以降のエンジン)はゲーム本体ディレクトリではなく%APPDATA%を読む。"""
     monkeypatch.setattr(rc.getpass, "getuser", lambda: "root")

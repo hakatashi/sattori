@@ -24,6 +24,15 @@ function shortGameTitle(replayInfo: ReplayInfo): string {
 }
 
 /**
+ * 動画の役割。**解像度ではなく役割で区別する**——`delivery`が常に720pとは限らない
+ * ため（720pに満たない録画だけ引き上げ、th20の1280x960はそのまま。`worker/convert.py`）。
+ *
+ * - `delivery`: ユーザーへ渡す本命。ウォーターマークが合成されている
+ * - `raw`: 録画そのままの版。解像度が実際に変わる録画でのみ副次リンクとして併せて提供する
+ */
+export type VideoVariant = "delivery" | "raw";
+
+/**
  * 動画ダウンロード時のファイル名を組み立てる。
  * 例: "東方地霊殿 Lunatic 霊夢A 442,469,780 (プレイヤー koyi) #TouhouSattori.mp4"
  * リプレイ解析情報が欠けている項目は省く（`replayInfo`自体が無ければjobIdのみで組み立てる）。
@@ -31,7 +40,7 @@ function shortGameTitle(replayInfo: ReplayInfo): string {
 export function buildDownloadFilename(
   jobId: string,
   replayInfo: ReplayInfo | null,
-  variant: "720p" | "original",
+  variant: VideoVariant,
 ): string {
   if (!replayInfo) {
     return `${jobId} ${HASHTAG}.mp4`;
@@ -47,9 +56,9 @@ export function buildDownloadFilename(
     .join(" ");
 
   const player = replayInfo.player ? ` (プレイヤー ${replayInfo.player})` : "";
-  const resolutionSuffix = variant === "original" ? " #raw" : "";
+  const variantSuffix = variant === "raw" ? " #raw" : "";
 
-  return sanitizeFilename(`${headline}${player}${resolutionSuffix} ${HASHTAG}.mp4`);
+  return sanitizeFilename(`${headline}${player}${variantSuffix} ${HASHTAG}.mp4`);
 }
 
 /**

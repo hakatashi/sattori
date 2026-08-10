@@ -41,7 +41,7 @@ pending → queued → launching → recording → converting → done | failed
   24時間（bot/濫用対策としての期限。アップロード用S3の自動削除とは独立）以内に
   起動されなければ受付期限切れとして扱う（`JobRecord.pendingExpiresAt`）。
 - `queued` 以降はワーカー・Step Functionsが書き込む。`converting` は録画完了
-  （生動画チェックポイントアップロード済み）〜720p変換〜出力アップロード完了までを指す。
+  （生動画チェックポイントアップロード済み）〜配信用変換〜出力アップロード完了までを指す。
 - `isTerminalStatus()` が `done`/`failed` を終端状態として判定する（フロントエンドの
   ポーリング停止判定に使用）。
 

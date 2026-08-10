@@ -68,7 +68,10 @@ describe("JobProgressView のダウンロード", () => {
     expect(link.hasAttribute("download")).toBe(true);
   });
 
-  it("720p版が無ければ「動画をダウンロード」が元解像度版へフォールバックする", () => {
+  it("出力が1本のジョブは downloadUrl へフォールバックし、副次リンクを出さない", () => {
+    // th20・低速録画のジョブは、解像度が変わらない/生データが半分の速度で使えない
+    // ため出力を1本に集約する(`worker/convert.py` の needs_separate_raw_output())。
+    // このときAPIは downloadUrl720p を null で返し、downloadUrl が本命になる。
     render(
       <JobProgressView job={buildDoneJob({ downloadUrl720p: null })} loadError={null} />,
     );

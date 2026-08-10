@@ -46,7 +46,7 @@ DL→完了メール）はすべて実装済みで、現在は初回リリース
         ▼(B)
 [EC2 Fleet ワーカー(Spot, Docker: Wine+Xvfb+ffmpeg+Python)]
    S3から.rpy取得 → 録画 → 生動画をS3へチェックポイントUP →
-   720pアップスケール変換 → 変換後動画をS3へUP → DynamoDB更新 →
+   配信用変換(等倍化・解像度合わせ・ウォーターマークを1パス) → 変換後動画をS3へUP → DynamoDB更新 →
    taskToken通知 → 自動シャットダウン
         ▼
 [S3(出力) → CloudFront(OAC)] → ブラウザからDL
