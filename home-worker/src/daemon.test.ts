@@ -5,7 +5,10 @@
  * 「対応外タイトルを取らない」「空きを超えて取らない」「claimが取り消されたら
  * 必ずコンテナを止める（＝二重録画を起こさない）」という判断のほうである。
  */
+import { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
 import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { ECRClient, GetAuthorizationTokenCommand } from "@aws-sdk/client-ecr";
+import { SFNClient } from "@aws-sdk/client-sfn";
 import { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,9 +23,25 @@ import type { Config } from "./config.js";
 const ddbMock = mockClient(DynamoDBDocumentClient);
 // クライアントの実体は使われるが `send` はモックされるため、AWSへは一切出て行かない。
 mockClient(DynamoDBClient);
+/**
+ * デーモンが触るAWSクライアントは**すべて**差し替える。`claimAndStartOffers()` は
+ * claimに続けて `ecrLogin()`（ECR `GetAuthorizationToken`）まで進むため、ECRを
+ * 差し替え忘れると、認証情報がある開発マシンでは実際にAWSを叩いて通り、CIでは
+ * 認証情報の探索（IMDSを含む）で数秒待たされてタイムアウトする——実際にそれで
+ * CIだけが落ちた。ログ転送(CloudWatch Logs)と失敗通知(Step Functions)も同様。
+ */
+const ecrMock = mockClient(ECRClient);
+const sfnMock = mockClient(SFNClient);
+const logsMock = mockClient(CloudWatchLogsClient);
 
 beforeEach(() => {
   ddbMock.reset();
+  ecrMock.reset();
+  sfnMock.reset();
+  logsMock.reset();
+  ecrMock.on(GetAuthorizationTokenCommand).resolves({
+    authorizationData: [{ authorizationToken: Buffer.from("AWS:password").toString("base64") }],
+  });
 });
 
 /** ロールを持たない検証用の認証情報供給（AWSへは触れない）。 */
