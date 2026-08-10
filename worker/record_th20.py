@@ -34,7 +34,7 @@ touhou-recorder での事前検証(reports/44〜48、Issue #87)を踏まえた�
   ゲーム進行ごとスローモーション化して実時間あたりのCPU負荷が下がり、等倍では
   処理落ちしていた高負荷区間(最低19.8fps)が安定する(reports/47)。有効化は
   起動側が渡す`FPS_LIMIT_TARGET_HZ`のみで決まり、このスクリプトに分岐は無い
-  (`recording_common.slow_motion_scale()`・`descale.py`)。
+  (`recording_common.slow_motion_scale()`・`convert.py`)。
 - **デシンク(リプレイずれ)が起きやすいタイトル**である点は録画側では対処できない
   (リプレイファイル・ゲーム本体側の現象。reports/45で、撃破できないスペルカードを
   時間切れまで再生し続けて尺が40分近くまで伸びた実例を確認済み)。ページAで
@@ -104,7 +104,9 @@ def main():
     parser.add_argument("--max-attempts", type=int, default=3, help="異常検知時の最大試行回数")
     parser.add_argument(
         "--max-duplicate-rate", type=float, default=30.0,
-        help="録画開始15秒以降の重複フレーム率(%%)がこれを超えたら処理落ちとみなし自動リトライする",
+        help="録画開始15秒以降の重複フレーム率(%%、**等倍換算**)がこれを超えたら処理落ちとみなし"
+             "自動リトライする。低速録画では生データの重複率が構造的に上がるため、閾値の方を"
+             "スケールに応じて換算する(recording_common.duplicate_rate_threshold_for_raw())",
     )
     args = parser.parse_args()
 

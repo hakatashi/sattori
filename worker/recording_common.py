@@ -622,7 +622,7 @@ def build_video_ffmpeg_cmd(config, x, y, w, h, video_output):
     ほぼ0起点のウォーターマーク動画(ファイル入力)と overlay filter 内で
     フレーム同期が全く噛み合わず、overlay の `eof_action=pass` が即座に発動して
     ウォーターマークが一切合成されない不具合が本番のth08録画で発覚した。
-    ウォーターマークは upscale.py 側(`-copyts`を使わない通常のファイル入力
+    ウォーターマークは convert.py 側(`-copyts`を使わない通常のファイル入力
     同士の合成で、かつどのみち720p変換のために既に発生する再エンコード1回に
     相乗りできる)で行う。
     """

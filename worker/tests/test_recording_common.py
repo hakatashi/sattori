@@ -343,7 +343,7 @@ def test_mux_audio_video_uses_stream_copy(monkeypatch):
     # ウォーターマークはこの関数(録画直後のmux)では合成しない。x11grabの生ptsが
     # wallclockベース(実epoch秒)のまま`-copyts`でfiltergraphに渡ると、ほぼ0起点の
     # ウォーターマーク動画とoverlayのフレーム同期が噛み合わず不発になる不具合が
-    # あったため、ウォーターマーク合成はupscale.py側(720p変換と同時)に移した。
+    # あったため、ウォーターマーク合成はconvert.py側(配信用変換と同時)に移した。
     monkeypatch.setattr(rc, "ffprobe_start_time", lambda path, env: None)
     captured = {}
 
