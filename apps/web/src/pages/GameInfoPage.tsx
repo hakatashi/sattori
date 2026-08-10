@@ -16,6 +16,7 @@ const TITLE_INFO: TitleInfo[] = [
   { id: "th07", version: "ver 1.00b", vpatchRev: 4, cherryBugFix: true },
   { id: "th08", version: "ver 1.00d" },
   { id: "th11", version: "ver 1.00a" },
+  { id: "th20", version: "ver 1.00c" },
 ];
 
 /** 対応タイトルのバージョン・パッチ情報ページ（`/info`）。フッターからナビゲーションする。 */
