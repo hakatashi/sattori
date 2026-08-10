@@ -188,8 +188,9 @@ API Gateway自身の形式で、このAPIの`ApiError`（code/message）形で�
   `CostsPage.tsx`（`/admin/costs`、日次/週次/月次の集計と推移）。計算は
   `@sattori/shared`の`estimateJobCost()`をそのまま呼ぶ（集計APIと同じ実装を共有し、
   画面ごとに数字が食い違わないようにする）。**ジョブ詳細のコストはサーバーに計算させて
-  いない**——`AdminJobDetailResponse`は`JobRecord`をそのまま返すので、フロントで
-  推定関数を呼べば足り、APIの契約を増やさずに済むため。
+  いない**——`AdminJobDetailResponse`は`JobRecord`をほぼそのまま返す（`AdminJobRecord`。
+  秘密値を含む`homeWorkerEnv`だけ伏せてある）ので、フロントで推定関数を呼べば足り、
+  APIの契約を増やさずに済むため。
   積み上げ棒はCSSのflexで描き、チャートライブラリは入れていない（この規模の図に
   依存を1本増やす価値がない）。系列色は色覚特性・ライト/ダーク双方のコントラストを
   検証済みのカテゴリカルパレットを固定順で割り当てており（`CostsPage.module.css`

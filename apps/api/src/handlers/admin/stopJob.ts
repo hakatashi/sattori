@@ -4,8 +4,9 @@ import { ADMIN_STOPPED_JOB_ERROR, isTerminalStatus } from "@sattori/shared";
 import type { AdminStopJobResponse } from "@sattori/shared";
 import { loadConfig, required } from "../../config.js";
 import { findJobInstanceIds, terminateInstance } from "../../ec2.js";
+import { releaseHomeWorkerAssignment } from "../../homeWorker.js";
 import { error, json } from "../../http.js";
-import { getJob, updateJobStatus } from "../../jobs.js";
+import { getJob, markJobStopRequested, updateJobStatus } from "../../jobs.js";
 import { buildExecutionArn, getExecutionLiveness } from "../../stepFunctions.js";
 import type { ExecutionLiveness } from "../../stepFunctions.js";
 
@@ -22,8 +23,9 @@ const sfn = new SFNClient({});
  * 起動し続ける」窓が常に存在する（`stepFunctions.ts`の`getExecutionLiveness`参照）。
  * statusだけで弾くと、まさにこの機能が止めたい暴走ジョブを止められない。
  *
- * **順序が重要**: (1) Step Functions実行の停止 → (2) EC2インスタンスのterminate →
- * (3) ジョブを`failed`に確定、の順で行う。先にインスタンスをterminateすると、
+ * **順序が重要**: (0) ワーカーからのstatus更新を封じる拒否票(`stopRequestedAt`)を立てる →
+ * (1) Step Functions実行の停止 → (2) EC2インスタンスのterminate・
+ * 自宅ワーカー（Issue #49）への割り当て解除 → (3) ジョブを`failed`に確定、の順で行う。先にインスタンスをterminateすると、
  * ワーカーからのtaskToken通知が永久に来なくなった実行がタスクタイムアウト(90分)後に
  * `HandleFailure`経由でリトライへ回り、**停止したはずのジョブが別インスタンスで
  * 再起動してしまう**（`infra/lib/sattori-stack.ts`のリトライループ）。
@@ -108,6 +110,30 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     );
   }
 
+  // 生き残ったワーカーがこのジョブを`done`へ戻せないようにする拒否票を、後始末より
+  // **先に**立てる（`markJobStopRequested`）。EC2はterminateで即座に黙るが、自宅
+  // ワーカー（Issue #49）は割り当て解除に気づくまで最大`CLAIM_CHECK_INTERVAL_SEC`
+  // 走り続けるため、その間に完走すると`done`とdoneAtが書かれて完了メールまで飛ぶ。
+  // ここで失敗したら停止処理には進まない（黙らせられないワーカーを残したまま
+  // 「停止した」と見せるほうが危険なため）。
+  try {
+    await markJobStopRequested(config.jobsTable, jobId);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "admin_mark_stop_requested_failed",
+        jobId,
+        name: err instanceof Error ? err.name : undefined,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    return error(
+      502,
+      "mark_stop_requested_failed",
+      "停止要求の記録に失敗しました。ジョブの状態は変更していません",
+    );
+  }
+
   let executionStopped = false;
   try {
     await sfn.send(
@@ -174,11 +200,37 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     }
   }
 
-  // ここまでの間にワーカーが完走している可能性がある（例: `converting`のジョブを
-  // 停止した直後に720pのアップロードが終わり、`done`とdoneAtが書かれて完了メールも
-  // 飛ぶ）。無条件に上書きすると「完了メールは届いたのに画面はfailed」という最悪の
-  // 食い違いになるため、`done`でない場合のみ`failed`を書く（handleFailure.tsが
-  // 同じ競合に対して行っているガードと同じ方針）。
+  // 自宅ワーカー（Issue #49）への割り当ても解除する。EC2の`TerminateInstances`と
+  // 同じ位置づけの後始末で、`assignedWorkerId`が消えるとデーモンは次のジョブ
+  // ハートビート（条件付き更新）でclaimの取り消しに気づき、コンテナを停止する。
+  // 失敗を握りつぶすと「停止済み表示のまま自宅で録画が走り続ける」ことになるため、
+  // terminate失敗時と同様に502で打ち切り、ジョブ状態は書き換えない。
+  let homeWorkerReleased = false;
+  try {
+    await releaseHomeWorkerAssignment(config.jobsTable, jobId);
+    homeWorkerReleased = job.assignedWorkerId !== undefined;
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "admin_release_home_worker_failed",
+        jobId,
+        name: err instanceof Error ? err.name : undefined,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    return error(
+      502,
+      "release_home_worker_failed",
+      "自宅ワーカーへの割り当て解除に失敗しました。Step Functions実行は停止済みのため、時間をおいて再度停止を実行してください",
+    );
+  }
+
+  // 停止要求を記録する**前に**ワーカーが完走していた可能性がある（`done`とdoneAtが
+  // 書かれ、完了メールも飛んでいる）。無条件に上書きすると「完了メールは届いたのに
+  // 画面はfailed」という最悪の食い違いになるため、`done`でない場合のみ`failed`を書く
+  // （handleFailure.tsが同じ競合に対して行っているガードと同じ方針）。
+  // 記録した後に完走したケースは`stopRequestedAt`がワーカーの書き込みを弾くので、
+  // ここへ到達する時点で`done`に化けていることはない。
   const statusUpdated = await updateJobStatus(
     config.jobsTable,
     jobId,
@@ -195,6 +247,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       executionLiveness: liveness,
       executionStopped,
       terminatedInstanceIds: [...instanceIds],
+      homeWorkerReleased,
       statusUpdated,
     }),
   );
@@ -204,6 +257,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     status: statusUpdated ? "failed" : "done",
     executionStopped,
     instanceTerminated,
+    homeWorkerReleased,
   };
   return json(200, response);
 };

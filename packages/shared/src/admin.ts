@@ -1,5 +1,6 @@
 import type { CostBreakdown, CostGranularity } from "./cost.js";
 import type { JobRecord, JobStatus } from "./job.js";
+import type { RedactedWorkerEnvironment } from "./worker.js";
 
 /**
  * 管理画面（`/admin`、Issue #51）向けのAPI契約。`api.ts` の契約は「ユーザー向け」で
@@ -27,6 +28,7 @@ export type AdminJobSummary = Pick<
   | "updatedAt"
   | "email"
   | "error"
+  | "workerKind"
   | "instanceType"
   | "availabilityZone"
   | "progress"
@@ -65,14 +67,25 @@ export interface AdminJobDownloads {
   ffmpegLogUrl: string | null;
 }
 
+/**
+ * 管理APIが返すジョブレコード。`JobRecord`をほぼそのまま返す（email・instanceId等の
+ * 内部データを含む）。要件が「ジョブの詳細を全て確認できること」であり、ホワイトリスト
+ * 方式だと`JobRecord`拡張のたびに更新漏れが生じるため、あえて絞り込まない。
+ *
+ * **唯一の例外が`homeWorkerEnv`**（Issue #49）。これは生きた Step Functions の
+ * `TASK_TOKEN`——実行を任意に成功/失敗させられるベアラ——を含むため、
+ * `RedactedWorkerEnvironment` に狭めてある。`JobRecord` をそのまま代入すると
+ * **型エラーになる**ので、`apps/api/src/workerEnv.ts` の `toAdminJobRecord()` を
+ * 通し忘れることはできない（この不変条件を散文でしか書いていなかった結果、
+ * トークンがレスポンスへ露出していた）。
+ */
+export type AdminJobRecord = Omit<JobRecord, "homeWorkerEnv"> & {
+  homeWorkerEnv?: RedactedWorkerEnvironment;
+};
+
 /** GET /admin/jobs/{jobId} のレスポンス。 */
 export interface AdminJobDetailResponse {
-  /**
-   * `JobRecord`をそのまま返す（email・instanceId等の内部データを含む）。
-   * 要件が「ジョブの詳細を全て確認できること」であり、ホワイトリスト方式だと
-   * `JobRecord`拡張のたびに更新漏れが生じるため、あえて絞り込まない。
-   */
-  job: JobRecord;
+  job: AdminJobRecord;
   downloads: AdminJobDownloads;
 }
 
@@ -172,6 +185,11 @@ export interface AdminStopJobResponse {
    * （まだ起動していない）の場合は false。
    */
   instanceTerminated: boolean;
+  /**
+   * 自宅ワーカー（Issue #49）への割り当てを解除したか。EC2ワーカーのジョブ・
+   * 未割り当てのジョブでは false（解除処理自体は冪等に走るが、解除対象は無い）。
+   */
+  homeWorkerReleased: boolean;
 }
 
 /** POST /admin/jobs/{jobId}/retry のレスポンス（Issue #59）。 */
@@ -201,6 +219,12 @@ export interface AdminCostBucket {
   doneCount: number;
   /** うち`failed`で終わったジョブ数。 */
   failedCount: number;
+  /**
+   * うち自宅ワーカー（Issue #49）が実行したジョブ数。EC2課金が発生しないぶん
+   * バケットの合計額が下がるため、「安いのは自宅ワーカーが吸収したからなのか、
+   * そもそも録画数が少なかったのか」を区別できるようにする。
+   */
+  homeWorkerJobCount: number;
   breakdown: CostBreakdown;
   /** `breakdown`の合計（USD）。CloudFrontの配信料は含まない（`cloudFront`参照）。 */
   totalUsd: number;

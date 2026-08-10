@@ -34,21 +34,90 @@ API契約自体は `packages/shared/README.md` を参照。
    Step Functions の実行を開始する（`attempt: INITIAL_ATTEMPT`、`retryPolicy.ts`）。
    条件不成立（既に起動済み）なら `JobAlreadyStartedError` を捕まえて現在の状態を
    冪等に返すだけで、Step Functionsは再起動しない。
-2. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト60分）が
-   `launchRecordingInstance()`（`ec2.ts`）でEC2 Fleetを1台起動し、ジョブを
-   `launching` に更新する。**このハンドラの戻り値はStep Functionsの実行結果に
-   影響しない** — 成功/失敗の確定はワーカー自身が`taskToken`経由で
-   `SendTaskSuccess`/`SendTaskFailure`を呼ぶことで行う。
+2. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト90分・ハートビート
+   タイムアウト15分）がワーカーを1台**割り当て**る。割り当て先は自宅ワーカー
+   （Issue #49、後述）かEC2 Fleetのどちらかで、EC2の場合は
+   `launchRecordingInstance()`（`ec2.ts`）でSpotインスタンスを1台起動し、ジョブを
+   `launching` に更新する（自宅ワーカーの場合は**claimと同じ条件付き更新の中で
+   デーモンが**`launching`にする。後から書くと、先に走り出したコンテナの`recording`を
+   上書きしうるため）。
+   **このハンドラの戻り値はStep Functionsの実行結果に影響しない** — 成功/失敗の確定は
+   ワーカー自身が`taskToken`経由で`SendTaskSuccess`/`SendTaskFailure`を呼ぶことで行う。
 3. Spot中断・タイムアウト等で失敗すると、3分の待機（インフラ側の`WaitBeforeCheck`。
    Spot中断の早期失敗通知はワーカーの処理継続中に送られるため、即座に判定せず
    猶予を置く）を挟んで `sfn/handleFailure.ts` が呼ばれる。ジョブが待機中に
    `done` へ遷移していれば何もしない。未完了なら孤児化した可能性のあるインスタンスを
-   `terminateInstance()` し、`retryPolicy.ts` の `MAX_ATTEMPTS`（**10回**）未満なら
+   `terminateInstance()` し、自宅ワーカーへの割り当て・オファーを
+   `releaseHomeWorkerAssignment()`（`homeWorker.ts`）で解除したうえで、
+   `retryPolicy.ts` の `MAX_ATTEMPTS`（**10回**）未満なら
    `shouldRetry: true` を返してリトライ、上限に達していればジョブを `failed` に確定する
    （ワーカー自身が既に`failed`を書き込んでいれば上書きしない）。
 4. `handleFailure.ts` 自体がAWS APIの一時的な障害で例外を投げても、ジョブが
    非終端状態のまま固まらないよう、インフラ側でリトライ＋最終的な`Fail`遷移が
    用意されている（`infra/README.md`参照）。
+
+## 自宅ワーカーへのジョブ割り当て（`homeWorker.ts` / `workerRouting.ts`, Issue #49）
+
+開発者の自宅サーバーがオンラインで余力があるとき、EC2の代わりにそこで録画させる。
+自宅マシンはNAT配下でAWS側から到達できないため**Pull型**にしてある。デーモン本体と
+運用手順は [`home-worker/README.md`](../../home-worker/README.md) を参照。
+
+`Launch` が行うこと:
+
+1. `routingPolicyFor(job.game)`（`workerRouting.ts`）でそのタイトルの方針を引く。
+   タイトルごとに「オファーするか」「要求する追加能力」「待機秒数」を変えられる
+   ——th20（Issue #87）で自宅とEC2の使い分けが非対称になる見込みのため
+   （低速録画できる自宅ワーカーがいれば自宅、いなければ4xlarge級EC2で等速録画。
+   Issue #68）。現在は全タイトルが既定の方針で足りるので上書きは空。
+2. `WorkersTable` のハートビート（`selectHomeWorker()`）を見て、引き受けられる
+   ワーカーがいるか判定する。**いなければ何もせず即EC2を起動する**ので、自宅が
+   落ちている平常時に録画開始が遅れることはない。
+3. いれば `offerJobToHomeWorker()` でジョブレコードにオファーを書く。オファーには
+   ワーカーコンテナへ渡す環境変数一式（`workerEnv.ts`、taskTokenを含む）を添える
+   ので、デーモンはそれをそのまま`docker run`へ渡すだけでよい。オファーは
+   sparse GSI `HomeWorkerOfferIndex` に載り、デーモンはこれをポーリングして
+   条件付き更新で原子的にclaimする（同じ更新で`workerKind: "home"`・
+   `status: "launching"`も確定する）。
+4. `offerWindowSeconds`（既定20秒）待ってclaimされなければ
+   `withdrawHomeWorkerOffer()` で**条件付きに**撤回し、EC2へフォールバックする。
+   撤回が条件チェックで失敗した（＝待機中にclaimされた）場合はEC2を起動しない。
+   **ここを踏み外すと同じリプレイを2台で録画する**ため、期限切れとclaimの競合は
+   必ずDynamoDBの条件付き更新で決着させること。
+
+オファーの書き込み自体が条件チェックで失敗した場合は、**claim済みと決めつけない**
+（`handleOfferConflict()`）。`HandleFailure`の割り当て解除は失敗をログだけにして
+`shouldRetry`を返すため、前の試行の`assignedWorkerId`が残ったまま再入することがある。
+これをclaim済みと誤読すると、今回のtaskTokenを誰も持たないまま15分のタイムアウトを
+待つことになる（リトライ1周が丸ごと無駄になる）。判別は`homeWorkerEnv.TASK_TOKEN`が
+今回のトークンかどうかで行う——**オファーの書き込みがトークンをデーモンへ渡す唯一の
+経路**なので、これが証拠になる。陳腐化していたら割り当てを解除してEC2へ回す（解除は
+走り続けている古いコンテナを止める手段も兼ねる）。
+
+この待機は`Launch` Lambdaの実行時間をそのまま消費するため、`offerWindowSeconds`には
+上限がある（`MAX_OFFER_WINDOW_SECONDS` = `LAUNCH_LAMBDA_TIMEOUT_SECONDS` −
+オファー以外の処理ぶんの余裕20秒）。溢れると、オファーは撤回済みなのにEC2も起動して
+いない状態で15分のハートビートタイムアウトを待つ、丸ごと無駄なリトライが1周発生する。
+Lambdaのタイムアウトは`@sattori/shared`の`LAUNCH_LAMBDA_TIMEOUT_SECONDS`を唯一の
+出典にしてCDKが設定しており、両者の整合はテストで守っている（th20向けに待機を伸ばす
+なら定数も併せて上げること）。
+
+ハートビートの読み取り・オファーの書き込みで想定外の例外が出た場合は握りつぶして
+EC2起動へフォールバックする。自宅ワーカーはコスト削減のためのbest-effortな経路に
+過ぎず、その不調でユーザーの録画そのものを落としてはならない。
+
+`assignedWorkerId` が「誰がこのジョブのtaskTokenを持っているか」の唯一の真実で、
+**AWS側がこの属性を消すことがclaimの取り消し**になる（デーモンは30秒ごとに
+「自分のものか」を条件付き更新で確認し、崩れたらコンテナを停止する）。消す側は
+`sfn/handleFailure.ts` と `admin/stopJob.ts` の2箇所。
+
+取り消しは**同期的ではない**（EC2の`TerminateInstances`と違い、デーモンが次の確認で
+気づくまでコンテナは走り続ける）。その間にコンテナが完走すると`done`とdoneAtが書かれ、
+DynamoDB Streams経由で停止したはずのジョブの完了メールがユーザーへ飛ぶため、
+`admin/stopJob.ts` は後始末より**先に**`stopRequestedAt`（`markJobStopRequested()`）を
+立てる。ワーカー（`worker/status.py`）は`attribute_not_exists(stopRequestedAt)`を条件に
+しかstatusを書けないので、この票が立った後の書き込みは一切通らない。
+「取り消しに気づかせる」（デーモン側の努力）と「気づく前に完走されても壊れない」
+（レコード側の拒否票）の二段構えで、どちらが遅れても最悪の結果にならないようにしてある。
 
 ## EC2 Fleet インスタンスタイプの分散配置（`ec2.ts`, Issue #29）
 
@@ -93,6 +162,25 @@ API契約自体は `packages/shared/README.md` を参照。
 Step Functionsのリトライで`Launch`は最大10回走るため、毎回上書きすると
 それ以前の試行で稼働していたEC2の課金時間が推定から丸ごと抜け落ちる
 （＝失敗を繰り返した高コストなジョブほど安く見えるという、監視として最悪の挙動になる）。
+
+## ワーカーコンテナの環境変数（`workerEnv.ts`）
+
+ワーカーコンテナ（`worker/entrypoint.py`）へ渡す環境変数は `buildWorkerEnv()` が
+一元的に組み立て、**EC2（UserDataの`docker run -e`）と自宅ワーカー（オファーに添えて
+`JobRecord.homeWorkerEnv` に書き、デーモンがそのまま`docker run`へ渡す）で共有する**。
+
+こうしておくとワーカー側は「自分がどこで動いているか」を一切知らずに済み、環境差分は
+すべてこの関数の出力の違いとして表現される。1/2倍速録画（Issue #68。自宅ワーカーでのみ
+行う予定）のような分岐も、ワーカーの`if`ではなく「起動側が録画速度の環境変数を足すか
+どうか」で表現すること。
+
+`TASK_TOKEN`（Step Functionsの実行を任意に成功/失敗させられるベアラ）を含むため、
+ログや外部への出力では必ず `redactWorkerEnv()` を通すこと。**この約束は型で強制して
+ある**——`redactWorkerEnv()` の戻り値だけが `RedactedWorkerEnvironment`（ブランド付き）
+になり、管理APIのレスポンス型 `AdminJobRecord.homeWorkerEnv` はそれしか受け付けない
+ので、`JobRecord` をそのまま返そうとするとコンパイルエラーになる
+（`toAdminJobRecord()` が唯一の変換口）。散文の約束だけだった間、実際に
+`GET /admin/jobs/{jobId}` が生きたトークンをそのまま返していた。
 
 ## ワーカー起動スクリプト（UserData, `ec2.ts` の `buildUserData()`）
 

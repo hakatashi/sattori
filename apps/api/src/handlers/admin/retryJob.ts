@@ -32,8 +32,25 @@ const sfn = new SFNClient({});
  */
 export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): JobRecord {
   const timestamp = now.toISOString();
+  // 自宅ワーカー（Issue #49）のオファー/claim関連は「結果側」の値なので引き継がない。
+  // これらは`| null`ではなく optional で、`null`を書くこと自体に意味がある
+  // （`homeWorkerOfferState`はsparse GSI `HomeWorkerOfferIndex`のキー属性で、
+  // 引き継ぐと新ジョブが起動前から「オファー中」としてインデックスに載り、
+  // 自宅ワーカーに横取りされる）ため、スプレッド前に取り除く。
+  // `stopRequestedAt`（緊急停止の拒否票）も同じ理由で引き継がない。引き継ぐと
+  // 新ジョブのワーカーが最初からstatusを1つも書けなくなり、録画が完走しても
+  // `queued`のまま固まる（`worker/status.py`参照）。
+  const {
+    homeWorkerOfferState: _offerState,
+    homeWorkerOfferExpiresAt: _offerExpiresAt,
+    homeWorkerEnv: _offerEnv,
+    assignedWorkerId: _assignedWorkerId,
+    homeWorkerHeartbeatAt: _homeWorkerHeartbeatAt,
+    stopRequestedAt: _stopRequestedAt,
+    ...carried
+  } = source;
   return {
-    ...source,
+    ...carried,
     jobId: newJobId,
     // マジックリンク（メール確認）は元ジョブで済んでいるため`pending`を経由せず、
     // `queued`で作成して直ちにStep Functionsを起動する。`pendingExpiresAt`は
@@ -49,6 +66,7 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
     error: null,
     launchedAt: null,
     doneAt: null,
+    workerKind: null,
     instanceId: null,
     instanceType: null,
     availabilityZone: null,

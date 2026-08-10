@@ -23,6 +23,7 @@ function summary(jobId: string, createdAt: string, status: AdminJobSummary["stat
     updatedAt: createdAt,
     email: null,
     error: null,
+    workerKind: null,
     instanceType: null,
     availabilityZone: null,
     progress: null,

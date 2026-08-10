@@ -114,6 +114,10 @@ export function JobDetailPage() {
               <dl className={styles.fields}>
                 <dt>instanceId</dt>
                 <dd>{data.job.instanceId ?? "-"}</dd>
+                <dt>workerKind</dt>
+                <dd>{data.job.workerKind ?? "-"}</dd>
+                <dt>assignedWorkerId</dt>
+                <dd>{data.job.assignedWorkerId ?? "-"}</dd>
                 <dt>instanceType</dt>
                 <dd>{data.job.instanceType ?? "-"}</dd>
                 <dt>availabilityZone</dt>

@@ -1,6 +1,7 @@
 import type { GameId } from "./games.js";
 import type { SupportedLanguage } from "./language.js";
 import type { ReplayInfo } from "./replay.js";
+import type { HomeWorkerOfferState, WorkerEnvironment, WorkerKind } from "./worker.js";
 
 /**
  * 録画ジョブのライフサイクル。ワーカー（worker/）が進行に応じて DynamoDB を更新し、
@@ -189,6 +190,60 @@ export interface JobRecord {
    * （通常のジョブでは null）。
    */
   retriedFromJobId: string | null;
+  /**
+   * このジョブを実行している（実行した）ワーカーの種別（Issue #49）。ジョブ作成時は
+   * null で、`Launch` の割り当てが確定した時点で `ec2`（EC2 Fleetを起動した）か
+   * `home`（自宅ワーカーがclaimした）が入る。**コスト推定はこの値で分岐する**
+   * （自宅ワーカーのジョブにはEC2/EBS/IPv4の課金が一切発生しない。`cost.ts`）。
+   * Step Functionsのリトライで割り当てが変われば上書きされるため、最後の試行の
+   * 種別を表す。
+   */
+  workerKind: WorkerKind | null;
+  /**
+   * 自宅ワーカーへオファー中であることを示すマーカー（Issue #49）。
+   * `HomeWorkerOfferIndex`（sparse GSI）のパーティションキーで、**オファー中の
+   * ジョブだけがこの属性を持つ**（撤回・claim時は属性ごと削除する）ため、
+   * インデックスがそのまま「いまオファー中のジョブ一覧」になる。
+   *
+   * 以下のオファー関連フィールドと `stopRequestedAt` だけ `| null` ではなく optional
+   * なのは、DynamoDBのNULL型を書くとGSIのキー属性として不適合になるうえ「属性が無い」
+   * ことをそのまま条件式（`attribute_not_exists`）で表現したいため。
+   */
+  homeWorkerOfferState?: HomeWorkerOfferState;
+  /** オファーの期限（ISO 8601）。GSIのソートキーも兼ねる。 */
+  homeWorkerOfferExpiresAt?: string;
+  /**
+   * オファーに添えるワーカーコンテナの環境変数一式（`taskToken`を含む）。
+   * 自宅デーモンはこれをそのまま `docker run -e` へ渡すだけでよく、
+   * ワーカー起動パラメータの組み立てロジックをAWS側（`apps/api/src/workerEnv.ts`）
+   * に一本化できる。ジョブ完了時にデーモンが削除する（使用済みtaskTokenを
+   * 残さないため）。
+   */
+  homeWorkerEnv?: WorkerEnvironment;
+  /**
+   * ジョブをclaimした自宅ワーカーのID（`WorkerHeartbeat.workerId`）。
+   * claim済みかどうかの唯一の真実で、デーモンは自分のIDである限りにおいてのみ
+   * 実行を続ける（`HandleFailure`がこの属性を消すと、デーモンは次のハートビート
+   * 更新で気づいてコンテナを停止する＝claimの取り消し手段を兼ねる）。
+   */
+  assignedWorkerId?: string;
+  /** 自宅ワーカーが最後にジョブの生存を報告した時刻（ISO 8601、運用調査用）。 */
+  homeWorkerHeartbeatAt?: string;
+  /**
+   * 管理画面から緊急停止（`POST /admin/jobs/{jobId}/stop`、Issue #59）が要求された
+   * 時刻（ISO 8601）。**この属性があるジョブに対するワーカーからのstatus更新は
+   * すべて拒否される**（`worker/status.py` の `update_status` が
+   * `attribute_not_exists(stopRequestedAt)` を条件に書くため）。
+   *
+   * 停止処理は「Step Functions実行の停止 → ワーカーの後始末 → `failed` の確定」の
+   * 順に進むが、EC2の`TerminateInstances`と違って自宅ワーカー（Issue #49）の停止は
+   * 同期的ではない（デーモンが`CLAIM_CHECK_INTERVAL_SEC`ごとのポーリングで
+   * claimの取り消しに気づくまで、コンテナは走り続ける）。その間にコンテナが
+   * 完走すると`done`とdoneAtが書かれ、DynamoDB Streams経由で
+   * **停止したはずのジョブの完了メールがユーザーへ飛ぶ**。この拒否票は、
+   * 停止要求がワーカーの生存期間より確実に長生きするようにするためのもの。
+   */
+  stopRequestedAt?: string;
   /**
    * `POST /magic-links` 押下時点でユーザーが選択していた表示言語
    * （`RequestMagicLinkRequest.language` をそのまま転記）。マジックリンク

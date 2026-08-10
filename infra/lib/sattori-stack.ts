@@ -26,7 +26,11 @@ import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations
 import { HttpLambdaAuthorizer, HttpLambdaResponseType } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
-import { OUTPUT_RETENTION_DAYS } from "@sattori/shared";
+import {
+  HOME_WORKER_OFFER_INDEX,
+  LAUNCH_LAMBDA_TIMEOUT_SECONDS,
+  OUTPUT_RETENTION_DAYS,
+} from "@sattori/shared";
 import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import type { Construct } from "constructs";
 
@@ -162,6 +166,34 @@ export class SattoriStack extends Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+    // 自宅ワーカー(Issue #49)がジョブを引き取るためのオファー用sparse GSI。
+    // PK=homeWorkerOfferState(値は"open"の1種類のみ), SK=homeWorkerOfferExpiresAt。
+    // **オファー中のジョブだけがこの属性を持つ**(claim・撤回時にREMOVEする)ため、
+    // インデックス自体が「いまオファー中のジョブ一覧」になり、自宅デーモンは
+    // JobsTable全体をScanせずに数msでポーリングできる。同時にオファー中のジョブは
+    // 高々数件なのでProjectionはALLでよい(StatusCreatedAtIndexと同じ理由で、
+    // 後から射影属性を増やせないINCLUDEを避ける)。
+    jobsTable.addGlobalSecondaryIndex({
+      indexName: HOME_WORKER_OFFER_INDEX,
+      partitionKey: { name: "homeWorkerOfferState", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "homeWorkerOfferExpiresAt", type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // 常駐ワーカー(自宅サーバー、Issue #49)のハートビート。自宅マシンは動的
+    // グローバルIP・NAT配下でAWS側から到達できないため、「AWSが自宅を叩く」のでは
+    // なく「自宅が自分の生存と空き状況をここに書き、ジョブを取りに来る」Pull型に
+    // している。`Launch`はこのテーブルを読んで、そもそもオファーする価値があるか
+    // (＝録画開始を数十秒遅らせる価値があるか)を判断する。
+    // アイテムはワーカー台数ぶん(現状1件)しかない。デーモンが止まったレコードは
+    // TTLで自動的に消える。
+    const workersTable = new dynamodb.Table(this, "WorkersTable", {
+      partitionKey: { name: "workerId", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+      timeToLiveAttribute: "ttl",
+    });
+
     // メール送信のレート制限(同一メール24時間5件まで、Issue #9)用カウンタ。
     // PK: 正規化後のメールアドレスのみ(1メール1item)。件数チェックと記録を
     // 条件付きUpdateItem1回に一本化して原子的に行うため、Query対象のログitemは
@@ -280,6 +312,48 @@ export class SattoriStack extends Stack {
       role: workerRole,
     });
 
+    // 自宅サーバーの常駐デーモン(`home-worker/`、Issue #49)が assume するロール。
+    // 権限は「EC2ワーカーができること」+「オファーの探索とclaim」+「コンテナログの
+    // CloudWatch転送」に限定する。EC2ワーカーと違いインスタンスプロファイルを
+    // 使えないため、**長期のアクセスキーを自宅マシンへ置かずに済むよう
+    // AssumeRoleで短命クレデンシャル(既定1時間)にする**のが要点。
+    //
+    // 信頼ポリシーはアカウント内プリンシパル全体にしてある。実際に assume できるのは
+    // 「自身のIAMポリシーで`sts:AssumeRole`を許可された」プリンシパルだけなので、
+    // 誰が使えるかの実質的な制御は手動で作るIAMユーザー側のポリシーで行う
+    // (アクセスキーはCloudFormationで作れない・作るべきでないため、管理画面トークンの
+    // SSM投入と同じく手動運用にしている。手順は`infra/README.md`参照)。
+    const homeWorkerRole = new iam.Role(this, "HomeWorkerRole", {
+      assumedBy: new iam.AccountPrincipal(this.account),
+      description: "Sattori home recording worker (Issue #49)",
+      // デーモンはコンテナ起動時にこの期間ぶんの一時認証情報を発行して渡す
+      // (`home-worker/src/credentials.ts`)。**ジョブ1本の最長所要時間(録画60分+変換)
+      // より確実に長い**必要がある——短いと録画の途中でコンテナ内のS3/DynamoDB
+      // 呼び出しが認証エラーで落ちる(コンテナ内には再取得の手段が無い)。
+      maxSessionDuration: Duration.hours(4),
+    });
+    uploadBucket.grantRead(homeWorkerRole);
+    outputBucket.grantReadWrite(homeWorkerRole);
+    titleAssetsBucket.grantRead(homeWorkerRole);
+    // ジョブのオファー探索(GSIのQuery)・claim・進捗更新。`grantReadWriteData`は
+    // テーブル本体とすべてのインデックスを対象に含む。
+    jobsTable.grantReadWriteData(homeWorkerRole);
+    // 自分のハートビートを書く。他ワーカーの行を消せる必要は無いのでDeleteは与えない。
+    workersTable.grant(homeWorkerRole, "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem");
+    workerRepo.grantPull(homeWorkerRole);
+    // EC2ワーカーはdockerのawslogsドライバがログを送るが、自宅ではdockerデーモンに
+    // AWS認証情報を持たせたくないため、デーモン自身がコンテナ出力を読んで
+    // 同じロググループ・同じストリーム名(=jobId)へ転送する。これにより管理画面の
+    // ログ表示(Issue #58)がワーカーの種別によらず同じように使える。
+    workerLogGroup.grantWrite(homeWorkerRole);
+    // 録画の成否をtaskToken経由で通知する(EC2ワーカーと同じ契約)。
+    homeWorkerRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["states:SendTaskSuccess", "states:SendTaskFailure", "states:SendTaskHeartbeat"],
+        resources: ["*"],
+      }),
+    );
+
     // Docker 同梱の ECS 最適化 AL2023 AMI を利用(UserData で docker run するだけ)。
     const workerAmiId = ssm.StringParameter.valueForStringParameter(
       this,
@@ -320,6 +394,7 @@ export class SattoriStack extends Stack {
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
       EMAIL_RATE_LIMIT_TABLE: emailRateLimitTable.tableName,
       SETTINGS_TABLE: settingsTable.tableName,
+      WORKERS_TABLE: workersTable.tableName,
       SES_FROM_ADDRESS: sesFromAddress,
       // eu-south-2にはSESが存在しないため、Lambda側(apps/api/src/ses.ts)は
       // このリージョンを明示して`SESv2Client`を生成する。
@@ -421,10 +496,20 @@ export class SattoriStack extends Stack {
     // Spot中断/タイムアウト時は HandleFailure が孤児インスタンスをterminateしつつ
     // リトライ可否を判定する(Issue #11)。
 
-    const launchFn = makeHandler("LaunchFn", "sfn/launch.ts");
+    // Launch は自宅ワーカー(Issue #49)へのオファー後、claimされるかを最大
+    // `GameRoutingPolicy.offerWindowSeconds`(既定20秒)ぶんポーリングして待つため、
+    // 既定の30秒タイムアウトでは足りない。待機は自宅ワーカーのハートビートが
+    // 新鮮なときにしか発生しないので、通常のジョブでこの時間を消費することはない。
+    // タイムアウト値は`@sattori/shared`の定数を唯一の出典にしてある(apps/api側の
+    // `MAX_OFFER_WINDOW_SECONDS`がこの値から導出され、テストで整合を守っている)。
+    const launchFn = makeHandler("LaunchFn", "sfn/launch.ts", commonEnv, {
+      timeout: Duration.seconds(LAUNCH_LAMBDA_TIMEOUT_SECONDS),
+    });
     const handleFailureFn = makeHandler("HandleFailureFn", "sfn/handleFailure.ts");
 
     jobsTable.grantReadWriteData(launchFn);
+    // オファー可否の判断にハートビートを読む(書き込むのは自宅デーモンだけ)。
+    workersTable.grantReadData(launchFn);
     // launchFn は EC2 Fleet を起動し、ワーカーロールを PassRole する。
     launchFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -468,6 +553,21 @@ export class SattoriStack extends Stack {
       // 録画自体のタイムアウト(recording_common.TIMEOUT_SEC=60分)に、720pアップスケール
       // 変換・S3アップロード・DynamoDB更新・taskToken通知の分の余裕(30分)を上乗せしている。
       taskTimeout: sfn.Timeout.duration(Duration.minutes(90)),
+      // ワーカーが生きているかの死活監視(Issue #49)。ワーカーコンテナは起動直後から
+      // 60秒間隔で `SendTaskHeartbeat` を送る(`worker/task_heartbeat.py`)ので、
+      // 15分途絶えたら「そのワーカーはもう動いていない」と判断してよい。
+      //
+      // これが要るのは主に自宅ワーカーのためである。EC2ワーカーなら電源断・Spot中断は
+      // インスタンスの消滅として観測できるが、自宅マシンの停電・回線断・クラッシュは
+      // AWS側から一切見えず、これが無いとタスクタイムアウト(90分)までジョブが
+      // 「録画中」のまま固まる。ハートビートが途切れれば`HandleFailure`が走り、
+      // claimを解除して(＝復帰したデーモンが録画を続けないようにして)EC2で
+      // やり直せる。EC2ワーカーにとっても失敗検知が90分→15分に縮まる副次的な利点がある。
+      //
+      // **デプロイ順序の注意**: ハートビートを送らない古いワーカーイメージが
+      // ECRに残っていると、全ジョブが15分でタイムアウトする。ワーカーイメージの
+      // push を `cdk deploy` より先に行うこと(`infra/README.md`参照)。
+      heartbeatTimeout: sfn.Timeout.duration(Duration.minutes(15)),
       resultPath: sfn.JsonPath.DISCARD,
     });
 
@@ -845,5 +945,11 @@ function handler(event) {
     new CfnOutput(this, "WorkerRepoUri", { value: workerRepo.repositoryUri });
     // タイトル資産アップロード先(worker/README.md「タイトル資産のS3アップロード手順」参照)。
     new CfnOutput(this, "TitleAssetsBucketName", { value: titleAssetsBucket.bucketName });
+    // 自宅ワーカー(Issue #49)の設定に必要な値。`home-worker/README.md`参照。
+    new CfnOutput(this, "HomeWorkerRoleArn", { value: homeWorkerRole.roleArn });
+    new CfnOutput(this, "JobsTableName", { value: jobsTable.tableName });
+    new CfnOutput(this, "WorkersTableName", { value: workersTable.tableName });
+    new CfnOutput(this, "UploadBucketName", { value: uploadBucket.bucketName });
+    new CfnOutput(this, "OutputBucketName", { value: outputBucket.bucketName });
   }
 }

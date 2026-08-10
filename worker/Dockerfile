@@ -49,7 +49,7 @@ COPY assets/watermark/watermark-60fps.webm /app/assets/watermark/watermark-60fps
 COPY assets/replay_end_templates/ /app/assets/replay_end_templates/
 
 # ワーカーのソース(リポジトリ管理)
-COPY recording_common.py record_th06.py record_th07.py record_th08.py record_th11.py entrypoint.py status.py upscale.py interruption_watcher.py progress_reporter.py title_assets.py pulse.py /app/
+COPY recording_common.py record_th06.py record_th07.py record_th08.py record_th11.py entrypoint.py status.py upscale.py interruption_watcher.py task_heartbeat.py progress_reporter.py title_assets.py pulse.py /app/
 
 RUN mkdir -p /app/instances /app/runs
 
