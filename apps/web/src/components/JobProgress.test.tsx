@@ -44,6 +44,7 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     previewVideoUrl: null,
     previewImageUrl: null,
     replayInfo: REPLAY_INFO,
+    slowMotion: false,
     ...overrides,
   };
 }
@@ -156,6 +157,7 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     previewVideoUrl: null,
     previewImageUrl: null,
     replayInfo: REPLAY_INFO,
+    slowMotion: false,
     ...overrides,
   };
 }

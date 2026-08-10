@@ -43,7 +43,7 @@ const doneJob: JobRecord = {
   game: "th11",
   replayKey: "replays/abc.rpy",
   status: "done",
-  options: { watermark: true },
+  options: { watermark: true, slowMotion: false },
   outputPath: "output/job-1/video.mp4",
   outputPath720p: "output/job-1/video-720p.mp4",
   error: null,
@@ -206,5 +206,41 @@ describe("GET /jobs/{jobId}", () => {
     const { handler } = await import("./getJob.js");
     const res = await handler(makeEvent("missing"), {} as never, () => {});
     expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(404);
+  });
+
+  /**
+   * 低速録画（Issue #68）。`slowMotion` はユーザーの希望そのままではなく、
+   * EC2 へフォールバックしたかどうかまで織り込んだ「実際に低速録画で走るか」。
+   * ジョブページの残り時間推定がこの値で2倍のバジェットを取る。
+   */
+  it("自宅ワーカーが引き受けた低速録画ジョブは slowMotion:true を返す", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, options: { watermark: true, slowMotion: true }, workerKind: "home" },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+
+    expect(parseBody(res as APIGatewayProxyStructuredResultV2).slowMotion).toBe(true);
+  });
+
+  it("EC2へフォールバックしたジョブは、希望されていても slowMotion:false を返す", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, options: { watermark: true, slowMotion: true }, workerKind: "ec2" },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+
+    expect(parseBody(res as APIGatewayProxyStructuredResultV2).slowMotion).toBe(false);
+  });
+
+  it("低速録画を希望していないジョブは常に slowMotion:false を返す", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...doneJob, workerKind: "home" } });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+
+    expect(parseBody(res as APIGatewayProxyStructuredResultV2).slowMotion).toBe(false);
   });
 });

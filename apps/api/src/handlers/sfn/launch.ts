@@ -92,7 +92,7 @@ async function tryOfferToHomeWorker(
   job: JobRecord,
   event: LaunchTaskEvent,
 ): Promise<boolean> {
-  const policy = routingPolicyFor(job.game);
+  const policy = routingPolicyFor(job);
   if (!policy.offerToHomeWorker) {
     return false;
   }
@@ -116,7 +116,11 @@ async function tryOfferToHomeWorker(
   }
 
   const expiresAt = new Date(Date.now() + policy.offerWindowSeconds * 1000).toISOString();
-  const env = buildWorkerEnv(config, job, event.taskToken);
+  // 低速録画（Issue #68）が有効になるのはこの経路だけ。EC2 Fleet 起動時
+  // （`ec2.buildUserData`）は常に等倍で、そちらがフォールバック先になる。
+  const env = buildWorkerEnv(config, job, event.taskToken, {
+    slowMotion: job.options.slowMotion,
+  });
   try {
     const offered = await offerJobToHomeWorker({
       jobsTable: config.jobsTable,
