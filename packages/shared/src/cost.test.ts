@@ -153,6 +153,15 @@ describe("estimateJobCost", () => {
     expect(estimate.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
   });
 
+  it("th20の.4xlarge帯を.xlarge帯へ丸めない（約1/4で計上され月間コストガードが効かなくなる）", () => {
+    const estimate = estimateJobCost(
+      makeJob({ spotPricePerHour: null, instanceType: "c7i.4xlarge" }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+
+    expect(estimate.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
+  });
+
   it("インスタンスタイプも不明ならゲームからサイズ帯を推定する（th11は.2xlarge帯）", () => {
     const th11 = estimateJobCost(
       makeJob({ spotPricePerHour: null, instanceType: null, game: "th11" }),
@@ -163,9 +172,16 @@ describe("estimateJobCost", () => {
       new Date("2026-08-02T00:00:00.000Z"),
     );
 
+    const th20 = estimateJobCost(
+      makeJob({ spotPricePerHour: null, instanceType: null, game: "th20" }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+
     expect(th11.spotPriceSource).toBe("fallback-game");
     expect(th11.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
     expect(th07.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.xlarge);
+    // `launching`（インスタンスタイプ記録前）や管理画面からの再実行で通る経路。
+    expect(th20.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
   });
 
   it("配信量は720p版1回ぶん、保管量は両方の合計とする", () => {
