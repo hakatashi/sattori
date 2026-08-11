@@ -115,14 +115,21 @@ def test_does_not_touch_frame_rate_or_audio_for_a_normal_speed_recording():
     assert cmd[cmd.index("-map", cmd.index("-map") + 1) + 1] == "0:a"
 
 
-def test_copies_audio_when_the_sample_rate_cannot_be_probed():
-    # 音声トラック無し等。映像だけでも救う(丸ごと失敗させない)。
+def test_drops_audio_when_the_sample_rate_cannot_be_probed():
+    """音声トラック無し等。映像だけでも救う(丸ごと失敗させない)。
+
+    ここで音声をそのまま通すと、映像だけPTSが半分になった横に2倍の長さの音声が
+    残り、冒頭からずれた・尺も倍の動画になる。無音の方が被害が小さい。
+    """
     cmd = convert.build_convert_cmd(
         "in.mp4", "out.mp4", width=1280, height=960, time_scale=2.0, audio_sample_rate=None,
     )
 
     assert "asetrate" not in filter_of(cmd)
     assert "setpts=0.5*PTS" in filter_of(cmd)
+    assert "-an" in cmd
+    assert "0:a" not in cmd
+    assert "-c:a" not in cmd
 
 
 def test_overlays_the_watermark_in_the_same_pass():
