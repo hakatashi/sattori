@@ -467,8 +467,18 @@ export function UploadForm({ onMagicLinkSent }: Props) {
         <div className={styles.notice} role="note">
           <p className={styles.noticeTitle}>{t("uploadForm.th20NoticeTitle")}</p>
           <ul className={styles.noticeList}>
-            <li>{t("uploadForm.th20NoticeDesync")}</li>
-            {!slowMotionChecked && <li>{t("uploadForm.th20NoticeNormalSpeed")}</li>}
+            <li>
+              <Trans
+                i18nKey="uploadForm.th20NoticeDesync"
+                components={[
+                  <a key="thprac" href="https://github.com/touhouworldcup/thprac" target="_blank" rel="noopener noreferrer"/>
+                ]}
+              />
+            </li>
+            <li>
+              {t("uploadForm.th20NoticeFrameDrop")}
+              {!slowMotionChecked && t("uploadForm.th20NoticeNormalSpeed")}
+            </li>
           </ul>
         </div>
       )}
@@ -526,7 +536,7 @@ export function UploadForm({ onMagicLinkSent }: Props) {
             {t("uploadForm.slowMotionOption")}
             <small className={styles.optionHint}>
               {t("uploadForm.slowMotionHintLine1")}<br/>
-              {slowMotionHint}
+              <span className={styles.slowMotionHint}>{slowMotionHint}</span>
             </small>
           </span>
         </label>
