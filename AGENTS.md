@@ -114,6 +114,12 @@ SESと合わせて`SattoriEdgeStack`（us-east-1固定の付帯スタック、`i
   `FPS_LIMIT_TARGET_HZ` を渡すかどうかだけで決まり（`apps/api/src/workerEnv.ts`）、
   自宅ワーカーがclaimしなければ EC2 での等倍録画へ静かにフォールバックする。
   定数と判定は `packages/shared/src/slowMotion.ts` に一本化してある。
+  **加えて低速録画は「対応タイトル」でしか選べない**（`SLOW_MOTION_SUPPORTED_GAME_IDS`、
+  現状 th20 のみ。他タイトルへの展開は Issue #101）。速度を落とす仕組みはタイトルの
+  MOD 側（Present フック）にあるため、フックを組み込んで実機検証を済ませたタイトル以外で
+  要求すると、ゲームは等倍で動くのに後処理だけが等倍化を行い2倍速の動画になる。
+  ワーカーはこの食い違いを検知できないので、UI（グレーアウト）と API（`POST /magic-links`
+  での握り潰し）の両方で入口を塞いでいる。
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。CloudFront 永年無料枠で egress を
   実質ゼロにできる。
 - **録画ワーカー（`worker/`）だけ Python**。PoC の numpy/PIL によるフレーム差分・

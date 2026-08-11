@@ -10,7 +10,7 @@ API契約自体は `packages/shared/README.md` を参照。
 | --- | --- | --- |
 | `createUpload.ts` | `POST /uploads` | `.rpy` アップロード用の署名付きPUT URLを発行（ファイル本体はLambdaを経由しない） |
 | `parseReplay.ts` | `POST /replays/parse` | アップロード済みリプレイを取得し `@sattori/shared` の `parseReplayInfo()` で解析。同じロジックはブラウザでも直接動くため（`apps/web/README.md`「ページAのフロー」参照）、現在のページAはこのAPIを呼ばず解析をクライアント内で完結させている。将来他のクライアント（管理画面の再解析等）が使う可能性を見込んで残してある |
-| `requestMagicLink.ts` | `POST /magic-links` | レート制限チェック→`status: "pending"`の`JobRecord`作成→SESでマジックリンク送信。メール送信自体が失敗したらジョブを削除してロールバックする |
+| `requestMagicLink.ts` | `POST /magic-links` | レート制限チェック→`status: "pending"`の`JobRecord`作成→SESでマジックリンク送信。メール送信自体が失敗したらジョブを削除してロールバックする。低速録画（Issue #68）の要求は**低速録画に対応したタイトル（`supportsSlowMotion()`、Issue #101）でなければ握り潰す**（等倍で録画できる以上エラーにはしない） |
 | `startJob.ts` | `POST /jobs/{jobId}/start` | `pending`→`queued`への原子遷移＋Step Functions `StartExecution` |
 | `getJob.ts` | `GET /jobs/{jobId}` | ジョブ状態取得。完了時はCloudFrontのダウンロードURL・プレビュー再生URLを組み立てる。低速録画（Issue #68）で走るかどうか（`isSlowMotionRecording()`）も返す |
 | `getWorkerAvailability.ts` | `GET /worker-availability` | 常駐ワーカー（自宅ワーカー、Issue #49）の空き状況。ページAが「低速録画」を選べるか判定するためだけの公開エンドポイント。**認証なしで公開されるため`workerId`・台数・負荷は返さない**（開発者の自宅環境の稼働状況を必要以上に外へ出さない） |

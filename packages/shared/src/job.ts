@@ -41,7 +41,11 @@ export interface RecordingOptions {
    * ことで、等倍では処理落ちするタイトル（th20）の録画品質を担保する。
    * 詳細と定数は `slowMotion.ts` 参照。
    *
-   * **自宅ワーカー（Issue #49）がこの能力を宣言している場合しか選べない**
+   * **低速録画に対応したタイトル（`SLOW_MOTION_SUPPORTED_GAME_IDS`）でしか選べない**。
+   * 非対応タイトルではページAがグレーアウトし、`POST /magic-links` も true を握り潰す
+   * （Issue #101）。
+   *
+   * さらに**自宅ワーカー（Issue #49）がこの能力を宣言している場合しか選べない**
    * （EC2 Spot では録画に倍の実時間＝倍のコストがかかるため）。ページAは
    * `GET /worker-availability` で可否を確認し、使えない間はチェックボックスを
    * グレーアウトする。ここが true でも、実際に自宅ワーカーがclaimしなければ
