@@ -121,9 +121,11 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
     else:
         graph.append("[base]null[v]")
 
-    audio_maps = []
-    audio_codec = ["-c:a", "copy"]
-    if time_scale != 1.0 and audio_sample_rate:
+    if time_scale == 1.0:
+        # 等倍録画。音声は触る必要がないのでそのまま通す。
+        audio_maps = ["-map", "0:a"]
+        audio_codec = ["-c:a", "copy"]
+    elif audio_sample_rate:
         # サンプルレートを上げて読む(asetrate)ことで早回しし、元のレートへ戻す
         # (aresample)。テープの早回しと同じ原理で、速度・ピッチとも同じ比率で戻る。
         asetrate = int(round(audio_sample_rate * time_scale))
@@ -131,7 +133,12 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
         audio_maps = ["-map", "[a]"]
         audio_codec = ["-c:a", "aac", "-b:a", "192k"]
     else:
-        audio_maps = ["-map", "0:a"]
+        # 等倍へ戻すのにサンプルレートが分からない場合は**音声を落とす**。
+        # `-c:a copy` で残すと、映像だけPTSが半分になった横で time_scale 倍の長さの
+        # 音声が丸ごと残り、冒頭からずれた・尺も倍の動画になる(呼び出し側が出す
+        # 「映像のみ等倍へ変換します」の警告とも食い違う)。無音の方が被害が小さい。
+        audio_maps = []
+        audio_codec = ["-an"]
 
     cmd = ["ffmpeg", "-y", "-i", input_path]
     if watermark_path:
