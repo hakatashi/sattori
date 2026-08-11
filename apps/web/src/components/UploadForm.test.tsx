@@ -342,11 +342,12 @@ describe("UploadForm の低速録画オプション", () => {
     selectFile("th20_ud0000.rpy");
 
     await waitFor(() => expect(screen.getByText(/リプレイずれ/)).toBeTruthy());
-    // 低速録画が選べない状況なので、等倍録画の品質に関する注意も併せて出る。
+    // 低速録画が選べない状況なので、低速録画で改善できる旨の案内も併せて出る。
     expect(screen.getByText(/描画が重く/)).toBeTruthy();
+    expect(screen.getByText(/ある程度の改善/)).toBeTruthy();
   });
 
-  it("低速録画が有効なら、等倍録画の品質に関する注意書きは出さない", async () => {
+  it("低速録画が有効なら、低速録画をすすめる案内は出さない", async () => {
     mockedClient.getWorkerAvailability.mockResolvedValue({
       available: true,
       capabilities: ["slow-motion-recording"],
@@ -356,6 +357,8 @@ describe("UploadForm の低速録画オプション", () => {
     selectFile("th20_ud0000.rpy");
 
     await waitFor(() => expect(screen.getByText(/リプレイずれ/)).toBeTruthy());
-    expect(screen.queryByText(/描画が重く/)).toBeNull();
+    // 処理落ちの注意自体は常に出すが、低速録画をすすめる一文だけを落とす。
+    expect(screen.getByText(/描画が重く/)).toBeTruthy();
+    expect(screen.queryByText(/ある程度の改善/)).toBeNull();
   });
 });
