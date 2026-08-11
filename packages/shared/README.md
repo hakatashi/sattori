@@ -169,8 +169,14 @@ API側の実装詳細（GSI設計・authorizer・ダウンロードURLの発行�
 - `estimateJobCost(job, now)`: 1ジョブぶんの内訳（`ec2Spot` / `ebs` / `publicIpv4` /
   `s3Storage` / `misc`）と合計を返す純関数。`now`を引数に取るのは、実行中ジョブの
   推定値をテストで固定できるようにするため。
-- 単価は**eu-south-2・2026-08-03時点**（`docs/aws-region-cost-analysis.md`）。
-  リージョンを移す場合はここの定数も入れ替える。
+- 単価は**eu-south-2・2026-08-03時点**（`docs/aws-region-cost-analysis.md`。`.4xlarge`帯
+  のみ2026-08-12時点）。リージョンを移す場合はここの定数も入れ替える。
+- **Spot単価のフォールバックはサイズ帯（`.xlarge`/`.2xlarge`/`.4xlarge`）ごとに持つ**。
+  `apps/api/src/ec2.ts`の候補インスタンスタイプに新しい帯を足したら、
+  `FALLBACK_SPOT_PRICE_USD_PER_HOUR`と`sizeClassOf()`/`sizeClassOfGame()`にも必ず
+  足すこと。帯が抜けると既定の`.xlarge`へ静かに丸められ、推定コストが実額の数分の一に
+  なる——この値は月間コストガード（`apps/api/src/costGuard.ts`）の入力でもあるため、
+  キルスイッチが効かないまま予算を超過しうる。
 - **課金対象時間は`launchedAt`〜終了時刻の実時間**。試行間の待機（`WaitBeforeCheck`の
   3分など）もEC2稼働として数えるため、リトライしたジョブでは**過大側**に出る。
   試行ごとの正確な稼働区間を持つにはLaunch/Terminateの時刻を全試行ぶん記録する必要が
