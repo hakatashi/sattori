@@ -4,6 +4,11 @@
   margin: 0 0 1rem;
 }
 
+.userPageLink {
+  margin: -0.5rem 0 1rem;
+  font-size: 0.875rem;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type {
   AdminExecutionResponse,
@@ -213,6 +213,28 @@ describe("JobDetailPage", () => {
     );
   });
 
+  it("ユーザー向けジョブページ(ページB)へのリンクを別タブで開く形で表示する", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+    renderJobDetailPage();
+
+    await waitFor(() => expect(screen.getByText(/ユーザー向けジョブページを開く/)).toBeTruthy());
+    const link = screen.getByText(/ユーザー向けジョブページを開く/) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/jobs/job-1");
+    expect(link.getAttribute("target")).toBe("_blank");
+  });
+
+  it("英語のジョブでは/en付きのユーザー向けジョブページへリンクする", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue({
+      ...detailResponse,
+      job: { ...job, language: "en" },
+    });
+    renderJobDetailPage();
+
+    await waitFor(() => expect(screen.getByText(/ユーザー向けジョブページを開く/)).toBeTruthy());
+    const link = screen.getByText(/ユーザー向けジョブページを開く/) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/en/jobs/job-1");
+  });
+
   it("ログストリームが見つからない場合はコンソール出力へフォールバックする", async () => {
     mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
     mocked.fetchAdminLogs.mockResolvedValue({
@@ -225,6 +247,189 @@ describe("JobDetailPage", () => {
 
     await waitFor(() => expect(screen.getByText(/boot failed: ECR login error/)).toBeTruthy());
     expect(screen.getByText(/ログストリームが見つかりません/)).toBeTruthy();
+  });
+
+  describe("自宅ワーカーが実行したジョブ(Issue #49)", () => {
+    const homeJob: AdminJobRecord = {
+      ...job,
+      workerKind: "home",
+      instanceId: null,
+      instanceType: null,
+      availabilityZone: null,
+      assignedWorkerId: "home-1",
+      homeWorkerHeartbeatAt: "2026-07-30T00:05:00.000Z",
+    };
+
+    it("EC2の欄ではなく自宅ワーカーの欄を表示する", async () => {
+      mocked.fetchAdminJobDetail.mockResolvedValue({ ...detailResponse, job: homeJob });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByText("ワーカー（自宅サーバー）")).toBeTruthy());
+      expect(screen.getByText("home-1")).toBeTruthy();
+      // EC2固有のフィールドは常に空になるだけなので出さない。
+      expect(screen.queryByText("instanceType")).toBeNull();
+      expect(screen.queryByText("availabilityZone")).toBeNull();
+      expect(screen.queryByText("spotPricePerHour")).toBeNull();
+    });
+
+    it("緊急停止の説明をEC2の強制終了ではなく割り当て解除として表示する", async () => {
+      mocked.fetchAdminJobDetail.mockResolvedValue({ ...detailResponse, job: homeJob });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByText(/自宅ワーカーへの割り当てを解除/)).toBeTruthy());
+      expect(screen.queryByText(/緊急停止するとEC2インスタンスを強制終了/)).toBeNull();
+    });
+
+    it("コスト推定でSpot単価を出さず、EC2課金が無いことを注記する", async () => {
+      mocked.fetchAdminJobDetail.mockResolvedValue({ ...detailResponse, job: homeJob });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByText("コスト推定")).toBeTruthy());
+      // 計算に使われていないフォールバック単価が「この単価で課金された」と
+      // 読まれてしまうため、自宅ワーカーのジョブでは表示しない。
+      expect(screen.queryByText("Spot単価")).toBeNull();
+      expect(screen.getByText(/自宅ワーカーが実行したため/)).toBeTruthy();
+      expect(screen.getByText(/自宅ワーカーが実行（EC2課金なし）/)).toBeTruthy();
+    });
+
+    it("ログストリームが無い場合はEC2のUserDataではなくデーモン側の確認を促す", async () => {
+      mocked.fetchAdminJobDetail.mockResolvedValue({ ...detailResponse, job: homeJob });
+      mocked.fetchAdminLogs.mockResolvedValue({
+        logStreamFound: false,
+        events: [],
+        nextBackwardToken: null,
+        consoleOutput: null,
+      });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByText(/journalctl -u sattori-home-worker/)).toBeTruthy());
+      expect(screen.queryByText(/UserData\(bootstrap\)段階/)).toBeNull();
+      // インスタンスが存在しないので、コンソール出力のフォールバックにも触れない。
+      expect(screen.queryByText(/コンソール出力も取得できませんでした/)).toBeNull();
+    });
+  });
+
+  describe("ワーカーログの追尾", () => {
+    const olderEvent = { timestamp: 1753833600000, message: "recording started" };
+    const newerEvent = { timestamp: 1753833660000, message: "converting started" };
+
+    beforeEach(() => {
+      // jsdomはレイアウトを計算せずscrollHeight/clientHeightが常に0になるため、
+      // 「末尾までスクロールしているか」を判定できるよう寸法を与える。
+      Object.defineProperty(HTMLPreElement.prototype, "scrollHeight", {
+        configurable: true,
+        value: 500,
+      });
+      Object.defineProperty(HTMLPreElement.prototype, "clientHeight", {
+        configurable: true,
+        value: 100,
+      });
+    });
+
+    afterEach(() => {
+      Reflect.deleteProperty(HTMLPreElement.prototype, "scrollHeight");
+      Reflect.deleteProperty(HTMLPreElement.prototype, "clientHeight");
+      vi.useRealTimers();
+    });
+
+    it("初回読み込み後にログの末尾までスクロールする", async () => {
+      mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+      mocked.fetchAdminLogs.mockResolvedValue({
+        logStreamFound: true,
+        events: [olderEvent],
+        nextBackwardToken: null,
+        consoleOutput: null,
+      });
+      renderJobDetailPage();
+
+      await waitFor(() => expect(screen.getByText(/recording started/)).toBeTruthy());
+      expect((screen.getByText(/recording started/) as HTMLPreElement).scrollTop).toBe(500);
+    });
+
+    it("実行中のジョブでは定期的に最新のログを取得し、末尾へスクロールする", async () => {
+      vi.useFakeTimers();
+      mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+      mocked.fetchAdminLogs
+        .mockResolvedValueOnce({
+          logStreamFound: true,
+          events: [olderEvent],
+          nextBackwardToken: null,
+          consoleOutput: null,
+        })
+        .mockResolvedValue({
+          logStreamFound: true,
+          events: [olderEvent, newerEvent],
+          nextBackwardToken: null,
+          consoleOutput: null,
+        });
+      renderJobDetailPage();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText(/recording started/)).toBeTruthy();
+      const pre = screen.getByText(/recording started/) as HTMLPreElement;
+      pre.scrollTop = 500;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(mocked.fetchAdminLogs).toHaveBeenCalledTimes(2);
+      expect(screen.getByText(/converting started/)).toBeTruthy();
+      expect(pre.scrollTop).toBe(500);
+    });
+
+    it("末尾から離れてスクロールしている間は自動取得しない", async () => {
+      vi.useFakeTimers();
+      mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+      mocked.fetchAdminLogs.mockResolvedValue({
+        logStreamFound: true,
+        events: [olderEvent],
+        nextBackwardToken: null,
+        consoleOutput: null,
+      });
+      renderJobDetailPage();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      const pre = screen.getByText(/recording started/) as HTMLPreElement;
+      // 履歴を遡って読んでいる状態（scrollHeight 500 - scrollTop 0 - clientHeight 100）。
+      pre.scrollTop = 0;
+      fireEvent.scroll(pre);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+
+      expect(mocked.fetchAdminLogs).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/自動取得を停止しています/)).toBeTruthy();
+      // 勝手に末尾へ飛ばさない。
+      expect(pre.scrollTop).toBe(0);
+    });
+
+    it("終了済みのジョブでは自動取得しない", async () => {
+      vi.useFakeTimers();
+      mocked.fetchAdminJobDetail.mockResolvedValue({
+        ...detailResponse,
+        job: { ...job, status: "done", doneAt: "2026-07-30T00:10:00.000Z" },
+      });
+      mocked.fetchAdminLogs.mockResolvedValue({
+        logStreamFound: true,
+        events: [olderEvent],
+        nextBackwardToken: null,
+        consoleOutput: null,
+      });
+      renderJobDetailPage();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+
+      expect(mocked.fetchAdminLogs).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText(/秒ごとに最新のログを自動取得/)).toBeNull();
+    });
   });
 
   describe("操作パネル(Issue #59)", () => {

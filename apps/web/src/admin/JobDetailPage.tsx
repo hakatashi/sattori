@@ -1,5 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { calculateDownloadExpiresAt, OUTPUT_RETENTION_DAYS } from "@sattori/shared";
+import type { WorkerKind } from "@sattori/shared";
+import { toLocalizedPath } from "../i18n/paths.ts";
 import { fetchAdminJobDetail } from "./adminApi.ts";
 import { useAdminResource } from "./useAdminResource.ts";
 import { StatusBadge } from "./StatusBadge.tsx";
@@ -16,6 +18,13 @@ function formatDateTime(iso: string | null): string {
   return new Date(iso).toLocaleString("ja-JP");
 }
 
+/** `workerKind`の表示名。未割り当て(null)も含めて1つのRecordで引けるようにする。 */
+const WORKER_KIND_LABEL: Record<WorkerKind | "unassigned", string> = {
+  ec2: "ec2（EC2 Fleet / Spot）",
+  home: "home（自宅サーバーの常駐デーモン）",
+  unassigned: "-（未割り当て）",
+};
+
 /**
  * ジョブ詳細(`GET /admin/jobs/{jobId}`)。`JobRecord`の全フィールドと
  * ダウンロード導線、Step Functionsの実行状態(`ExecutionPanel`)を表示する。
@@ -31,6 +40,8 @@ export function JobDetailPage() {
     return <p>jobIdが指定されていません</p>;
   }
 
+  const isHomeWorker = data?.job.workerKind === "home";
+
   return (
     <section>
       <p>
@@ -43,6 +54,21 @@ export function JobDetailPage() {
 
       {data && (
         <>
+          {/* ユーザー向けジョブページ(ページB)。jobId自体が認可の秘密値なので
+              (AGENTS.md §3)、管理者もこのURLを開けばユーザーと同じ画面をそのまま
+              確認できる。言語はジョブに記録された表示言語(マジックリンクメールの
+              リンクと同じ)に合わせる。同一SPA内だが`<Link>`にすると管理画面から
+              離脱してしまうため、別タブで開く。 */}
+          <p className={styles.userPageLink}>
+            <a
+              href={toLocalizedPath(`/jobs/${encodeURIComponent(jobId)}`, data.job.language)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              ユーザー向けジョブページを開く ↗
+            </a>
+          </p>
+
           <div className={styles.grid}>
             <div className={styles.panel}>
               <h2 className={styles.panelHeading}>ジョブ情報</h2>
@@ -109,21 +135,48 @@ export function JobDetailPage() {
               <JobActionsPanel job={data.job} onJobChanged={reload} />
             </div>
 
+            {/* ワーカーはEC2 Fleetと自宅サーバーの2種類あり(Issue #49)、意味のある
+                フィールドがまったく違う。自宅ワーカーのジョブにEC2の欄（instanceType・
+                Spot単価など）を並べても常に「-」で、EC2で走ったかのような誤解を招くため、
+                `workerKind`で表示を切り替える。 */}
             <div className={styles.panel}>
-              <h2 className={styles.panelHeading}>EC2インスタンス</h2>
+              <h2 className={styles.panelHeading}>
+                {isHomeWorker ? "ワーカー（自宅サーバー）" : "ワーカー（EC2インスタンス）"}
+              </h2>
               <dl className={styles.fields}>
-                <dt>instanceId</dt>
-                <dd>{data.job.instanceId ?? "-"}</dd>
                 <dt>workerKind</dt>
-                <dd>{data.job.workerKind ?? "-"}</dd>
-                <dt>assignedWorkerId</dt>
-                <dd>{data.job.assignedWorkerId ?? "-"}</dd>
-                <dt>instanceType</dt>
-                <dd>{data.job.instanceType ?? "-"}</dd>
-                <dt>availabilityZone</dt>
-                <dd>{data.job.availabilityZone ?? "-"}</dd>
-                <dt>spotPricePerHour</dt>
-                <dd>{data.job.spotPricePerHour === null ? "-" : `$${data.job.spotPricePerHour}`}</dd>
+                <dd>{WORKER_KIND_LABEL[data.job.workerKind ?? "unassigned"]}</dd>
+                {isHomeWorker ? (
+                  <>
+                    <dt>assignedWorkerId</dt>
+                    <dd>{data.job.assignedWorkerId ?? "-"}</dd>
+                    <dt>homeWorkerHeartbeatAt</dt>
+                    <dd>{formatDateTime(data.job.homeWorkerHeartbeatAt ?? null)}</dd>
+                  </>
+                ) : (
+                  <>
+                    <dt>instanceId</dt>
+                    <dd>{data.job.instanceId ?? "-"}</dd>
+                    <dt>instanceType</dt>
+                    <dd>{data.job.instanceType ?? "-"}</dd>
+                    <dt>availabilityZone</dt>
+                    <dd>{data.job.availabilityZone ?? "-"}</dd>
+                    <dt>spotPricePerHour</dt>
+                    <dd>
+                      {data.job.spotPricePerHour === null ? "-" : `$${data.job.spotPricePerHour}`}
+                    </dd>
+                  </>
+                )}
+                {/* 自宅ワーカーへオファー中のジョブだけが持つ属性(sparse GSIのキー)。
+                    割り当てが決まる前の待ち状態を管理画面から追えるようにする。 */}
+                {data.job.homeWorkerOfferState && (
+                  <>
+                    <dt>homeWorkerOfferState</dt>
+                    <dd>{data.job.homeWorkerOfferState}</dd>
+                    <dt>homeWorkerOfferExpiresAt</dt>
+                    <dd>{formatDateTime(data.job.homeWorkerOfferExpiresAt ?? null)}</dd>
+                  </>
+                )}
               </dl>
             </div>
 
@@ -213,6 +266,8 @@ export function JobDetailPage() {
           <ExecutionPanel jobId={jobId} />
           <LogsPanel
             jobId={jobId}
+            status={data.job.status}
+            workerKind={data.job.workerKind}
             instanceId={data.job.instanceId}
             ffmpegLogUrl={data.downloads.ffmpegLogUrl}
           />
