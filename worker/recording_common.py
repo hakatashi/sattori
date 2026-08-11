@@ -51,6 +51,7 @@ GameConfig.build_env() が渡す`PULSE_SINK`で固定する。
 import getpass
 import io
 import json
+import math
 import os
 import re
 import signal
@@ -107,10 +108,24 @@ def slow_motion_scale(env=None):
         return 1.0
     return NATIVE_FRAME_RATE_HZ / target_hz
 
+
+def scaled_poll_count(base_count, time_scale):
+    """実時間の長さをポーリング回数で表した定数を、低速録画のスケールに合わせて伸ばす。
+
+    ポーリングは実時間駆動(`POLL_INTERVAL_SEC`)なので、`n回連続`という条件は
+    `n * POLL_INTERVAL_SEC` **実時間秒**を意味する。低速録画ではその間にゲームが
+    半分しか進まないため、回数を据え置くと条件がゲーム内時間で 1/time_scale に
+    縮んでしまう。切り上げるのは、条件を本来より緩める方向へ丸めないため。
+    """
+    return math.ceil(base_count * time_scale)
+
 # 終了検知(画面静止判定)の閾値・待機。PoC(touhou-recorder reports/13・14)の
 # 実測に基づく。変更する場合は当該レポートの根拠を必ず確認すること。
 STILL_MAD_THRESHOLD = 2.0
-STILL_CONSECUTIVE_REQUIRED = 8  # 8 * POLL_INTERVAL_SEC = 16秒
+# 連続回数はいずれも「等倍録画での秒数」をポーリング回数で表したもの。低速録画では
+# attempt_recording() が time_scale 倍して使う(ポーリング間隔は実時間駆動なので、
+# 回数を据え置くとゲーム内時間で必要な静止の長さが縮んでしまう)。
+STILL_CONSECUTIVE_REQUIRED = 8  # 8 * POLL_INTERVAL_SEC = 16秒(等倍録画時)
 POLL_INTERVAL_SEC = 2.0
 POST_START_GRACE_SEC = 15.0
 TIMEOUT_SEC = 60 * 60
@@ -135,8 +150,9 @@ END_TEMPLATE_ROWS = 40  # 160x120にダウンサンプルした座標系での�
 END_TEMPLATE_MAD_THRESHOLD = 15.0  # 実測: テンプレート自己一致は0.0〜0.32、無関係な画面
                                    # (ステージクリア画面・ゲームプレイ中・タイトル等)とは
                                    # 40〜140超と大きなマージンがある(reports/33・34)
-END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒。動画圧縮ノイズ等による
-                                       # 単発の偶然一致を弾くため連続一致を要求する(reports/34)
+END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録画時。上記の通り
+                                       # 低速録画では time_scale 倍される)。動画圧縮ノイズ等に
+                                       # よる単発の偶然一致を弾くため連続一致を要求する(reports/34)
 
 # 進捗スクリーンショットの書き出し間隔。POLL_INTERVAL_SEC(2秒)毎に取得している
 # フレームのうち5回に1回だけ保存する(=約10秒毎)。既存のMAD差分検知用のffmpeg
@@ -791,6 +807,15 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     stutter_probe_period_sec = STUTTER_PROBE_PERIOD_SEC * time_scale
     stutter_probe_active_until_sec = STUTTER_PROBE_ACTIVE_UNTIL_SEC * time_scale
     timeout_sec = TIMEOUT_SEC * time_scale
+    # 終了検知の「連続回数」も同じ比率で伸ばす。ポーリングは実時間駆動
+    # (POLL_INTERVAL_SEC)なので、回数を据え置くと**ゲーム内時間で必要な静止の長さが
+    # 1/time_scale に縮む**——低速録画のth20なら16秒→8秒相当になり、会話イベントや
+    # 弾幕の薄い区間でリプレイ途中の誤検知を招く(しかも classification は "good" に
+    # なるためリトライされず、途中で切れた動画がそのまま配信される)。
+    still_consecutive_required = scaled_poll_count(STILL_CONSECUTIVE_REQUIRED, time_scale)
+    end_template_consecutive_required = scaled_poll_count(
+        END_TEMPLATE_CONSECUTIVE_REQUIRED, time_scale,
+    )
     end_template = load_end_template(config.end_template_path)
     if end_template is None:
         log(
@@ -991,7 +1016,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
                 f"poll: elapsed={elapsed:.1f}s template_MAD={template_d:.2f} "
                 f"end_template_consecutive={end_template_consecutive}"
             )
-            if end_template_consecutive >= END_TEMPLATE_CONSECUTIVE_REQUIRED:
+            if end_template_consecutive >= end_template_consecutive_required:
                 log("リプレイ選択画面と連続して一致したためリプレイ終了と判定しました")
                 detected = True
                 break
@@ -1003,7 +1028,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
                 else:
                     consecutive_still = 0
                 log(f"poll: elapsed={elapsed:.1f}s MAD={d:.2f} still={consecutive_still}")
-                if consecutive_still >= STILL_CONSECUTIVE_REQUIRED:
+                if consecutive_still >= still_consecutive_required:
                     log("画面が一定時間変化しなくなったためリプレイ終了と判定しました")
                     detected = True
                     break

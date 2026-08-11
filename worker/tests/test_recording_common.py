@@ -601,6 +601,26 @@ def test_slow_motion_scale_clamps_invalid_or_non_slowing_values_to_one(value):
     assert rc.slow_motion_scale({"FPS_LIMIT_TARGET_HZ": value}) == 1.0
 
 
+def test_scaled_poll_count_is_unchanged_for_normal_speed_recordings():
+    assert rc.scaled_poll_count(rc.STILL_CONSECUTIVE_REQUIRED, 1.0) == 8
+    assert rc.scaled_poll_count(rc.END_TEMPLATE_CONSECUTIVE_REQUIRED, 1.0) == 2
+
+
+def test_scaled_poll_count_keeps_the_required_duration_in_game_time():
+    """終了検知の連続回数は「実時間の長さ」なので、低速録画では伸ばす必要がある。
+
+    据え置くと、th20(低速録画で唯一のタイトルかつ終了検知テンプレートを持たない)で
+    必要な静止が16秒→ゲーム内8秒相当まで縮み、会話イベント等でリプレイ途中を
+    終了と誤判定する。しかも classification は "good" になるためリトライされない。
+    """
+    assert rc.scaled_poll_count(rc.STILL_CONSECUTIVE_REQUIRED, 2.0) == 16
+    assert rc.scaled_poll_count(rc.END_TEMPLATE_CONSECUTIVE_REQUIRED, 2.0) == 4
+
+
+def test_scaled_poll_count_rounds_up_so_the_condition_never_loosens():
+    assert rc.scaled_poll_count(3, 1.5) == 5  # 4.5 -> 5
+
+
 # --- th20 向けの GameConfig 拡張(Issue #87) --------------------------------
 
 
