@@ -116,6 +116,7 @@
     "slowMotionHintLine1": "The game is run at half speed while recording and restored to normal speed afterwards. This reduces frame drops and keeps busy scenes smooth.",
     "slowMotionHintLine2": "Recording takes roughly twice as long to finish.",
     "slowMotionUnavailable": "The recording server that supports slow-motion recording is busy right now, so this option is unavailable.",
+    "slowMotionUnsupportedGame": "This title does not support slow-motion recording yet, so this option is unavailable.",
     "th20NoticeTitle": "About Fossilized Wonders replays",
     "th20NoticeDesync": "This title is prone to replay desync (playback diverging from the run that was recorded), so the video may not match what the replay originally showed. This comes from the replay file and the game itself, so re-recording produces the same result.",
     "th20NoticeNormalSpeed": "This title is demanding to render, and recording at normal speed can drop frames during busy scenes. \"Slow-motion recording\" in the advanced settings avoids this, but it is unavailable right now.",

@@ -20,6 +20,12 @@ import type { WorkerCapability, WorkerKind } from "./worker.js";
  * 下がって処理落ちが解消する（reports/47 で最低19.8fps→安定30.0fpsを実証）。
  * 録画後に映像のPTS圧縮＋音声のリサンプルで等倍へ戻す（`worker/descale.py`）。
  *
+ * ## なぜ th20 限定なのか
+ *
+ * 速度を落とす仕組みがタイトルのMOD側にあるため、フックを組み込んで実機検証を済ませた
+ * タイトルでしか使えない（`SLOW_MOTION_SUPPORTED_GAME_IDS`）。他タイトルへの展開は
+ * Issue #101。
+ *
  * ## なぜ自宅ワーカー限定なのか
  *
  * 録画に**実時間で倍かかる**ため、EC2 Spot では単純にコストが倍になる。電気代しか
@@ -55,9 +61,31 @@ export const SLOW_MOTION_TIME_SCALE = NATIVE_FRAME_RATE_HZ / SLOW_MOTION_TARGET_
 export const SLOW_MOTION_CAPABILITY: WorkerCapability = "slow-motion-recording";
 
 /**
+ * 低速録画に**対応している**タイトル（Issue #101）。
+ *
+ * 速度を落とす仕組みはタイトルのMOD側にある——`IDirect3DDevice9::Present` を絞る
+ * `fps_limiter_hook`・音程を保つ `dsound_hook`・fps表示を補正する `fps_display_hook`
+ * ——ので、これらを組み込んで実機検証まで済んだタイトルだけが対象になる。現状
+ * `th20_hook.dll` のみ。
+ *
+ * **非対応タイトルで低速録画を要求してはならない**。ゲームは等倍で動くのに後処理だけが
+ * 等倍化（PTS圧縮＋音声リサンプル）を行うため、2倍速・高ピッチの動画が出来上がり、
+ * しかも元の生動画は削除される（`worker/convert.py` の `needs_separate_raw_output()`）。
+ * ワーカーはこの食い違いを検知できないので、UI（グレーアウト）と API（受付時の
+ * 握り潰し）の両方で入口を塞ぐ。
+ */
+export const SLOW_MOTION_SUPPORTED_GAME_IDS: readonly GameId[] = ["th20"];
+
+/** そのタイトルが低速録画に対応しているか。タイトル未確定（解析前）なら false。 */
+export function supportsSlowMotion(game: GameId | null): game is GameId {
+  return game !== null && SLOW_MOTION_SUPPORTED_GAME_IDS.includes(game);
+}
+
+/**
  * 低速録画を既定でオンにするタイトル。等倍録画では品質が担保できないことが実機検証で
  * 判明しているタイトルだけを挙げる（現状 th20 のみ）。他タイトルは等倍で十分な品質が
  * 出ているため、倍の時間をかける既定にはしない（ユーザーが明示的に選ぶことは可能）。
+ * 当然ながら `SLOW_MOTION_SUPPORTED_GAME_IDS` の部分集合でなければならない。
  */
 export const SLOW_MOTION_DEFAULT_GAME_IDS: readonly GameId[] = ["th20"];
 
@@ -66,7 +94,7 @@ export const SLOW_MOTION_DEFAULT_GAME_IDS: readonly GameId[] = ["th20"];
  * （低速録画自体が選べないため）。
  */
 export function defaultSlowMotionFor(game: GameId | null, available: boolean): boolean {
-  if (!available || game === null) {
+  if (!available || !supportsSlowMotion(game)) {
     return false;
   }
   return SLOW_MOTION_DEFAULT_GAME_IDS.includes(game);

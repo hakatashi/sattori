@@ -7,6 +7,7 @@ import {
   EMAIL_PATTERN,
   parseReplayInfo,
   SLOW_MOTION_CAPABILITY,
+  supportsSlowMotion,
   type ReplayInfo,
 } from "@sattori/shared";
 import {
@@ -217,10 +218,24 @@ export function UploadForm({ onMagicLinkSent }: Props) {
 
   const busy = phase !== "idle" && phase !== "ready";
   const emailValid = EMAIL_PATTERN.test(email);
-  // 低速録画は自宅ワーカーが使える場合に限り有効。可否が変わった／別タイトルの
-  // リプレイに差し替えられた場合に、実際に送信される値が取り残されないよう、
-  // 「チェック状態」ではなくこの導出値を唯一の真実として扱う。
-  const slowMotionChecked = slowMotionAvailable && slowMotion;
+  // 低速録画に対応したタイトルか（Issue #101）。非対応タイトルで要求すると、ゲームは
+  // 等倍で動くのに後処理だけが等倍化を行って2倍速の動画が出来上がるため、可否とは
+  // 別にここで塞ぐ。タイトル未確定（解析前）も非対応として扱う。
+  const slowMotionSupported = supportsSlowMotion(preview?.game ?? null);
+  // 低速録画は「対応タイトル」かつ「自宅ワーカーが使える」場合に限り有効。可否が
+  // 変わった／別タイトルのリプレイに差し替えられた場合に、実際に送信される値が
+  // 取り残されないよう、「チェック状態」ではなくこの導出値を唯一の真実として扱う。
+  const slowMotionSelectable = slowMotionAvailable && slowMotionSupported;
+  const slowMotionChecked = slowMotionSelectable && slowMotion;
+  // 選べない理由はユーザーから見て意味が違う（タイトル側の未対応は待っても変わらないが、
+  // ワーカーの混雑は時間をおけば変わる）ので区別して出す。タイトルが未確定の間は
+  // 「まだリプレイを選んでいない」だけなので、非対応とは言わない。
+  const slowMotionHint =
+    preview && !slowMotionSupported
+      ? t("uploadForm.slowMotionUnsupportedGame")
+      : slowMotionAvailable
+        ? t("uploadForm.slowMotionHintLine2")
+        : t("uploadForm.slowMotionUnavailable");
 
   // 自宅ワーカーの空き状況はページ表示時に1回だけ取得する。実際に録画が始まるのは
   // ユーザーがマジックリンクを開いた後（最大24時間後）で、その時点の可否とは
@@ -496,7 +511,7 @@ export function UploadForm({ onMagicLinkSent }: Props) {
           その理由をヒントに出す（黙って消すと「前は在ったのに」と混乱するため）。
         */}
         <label
-          className={clsx(styles.option, !slowMotionAvailable && styles.optionDisabled)}
+          className={clsx(styles.option, !slowMotionSelectable && styles.optionDisabled)}
         >
           <input
             type="checkbox"
@@ -505,15 +520,13 @@ export function UploadForm({ onMagicLinkSent }: Props) {
               setSlowMotionTouched(true);
               setSlowMotion(e.target.checked);
             }}
-            disabled={busy || !slowMotionAvailable}
+            disabled={busy || !slowMotionSelectable}
           />
           <span>
             {t("uploadForm.slowMotionOption")}
             <small className={styles.optionHint}>
               {t("uploadForm.slowMotionHintLine1")}<br/>
-              {slowMotionAvailable
-                ? t("uploadForm.slowMotionHintLine2")
-                : t("uploadForm.slowMotionUnavailable")}
+              {slowMotionHint}
             </small>
           </span>
         </label>

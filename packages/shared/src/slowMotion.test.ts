@@ -7,8 +7,10 @@ import {
   recordingWallClockScale,
   SLOW_MOTION_CAPABILITY,
   SLOW_MOTION_DEFAULT_GAME_IDS,
+  SLOW_MOTION_SUPPORTED_GAME_IDS,
   SLOW_MOTION_TARGET_HZ,
   SLOW_MOTION_TIME_SCALE,
+  supportsSlowMotion,
 } from "./slowMotion.js";
 import { WORKER_CAPABILITIES } from "./worker.js";
 
@@ -27,6 +29,29 @@ describe("低速録画の定数", () => {
       expect(SUPPORTED_GAME_IDS).toContain(game);
     }
   });
+
+  it("既定でオンにするタイトルは、低速録画に対応したタイトルの部分集合である", () => {
+    for (const game of SLOW_MOTION_DEFAULT_GAME_IDS) {
+      expect(SLOW_MOTION_SUPPORTED_GAME_IDS).toContain(game);
+    }
+  });
+});
+
+describe("supportsSlowMotion", () => {
+  it("MODにPresentフックを組み込んで実機検証したタイトル(th20)だけ true", () => {
+    expect(supportsSlowMotion("th20")).toBe(true);
+  });
+
+  it("未対応タイトルは false(等倍で動くのに後処理だけ等倍化され2倍速になるため)", () => {
+    expect(supportsSlowMotion("th06")).toBe(false);
+    expect(supportsSlowMotion("th07")).toBe(false);
+    expect(supportsSlowMotion("th08")).toBe(false);
+    expect(supportsSlowMotion("th11")).toBe(false);
+  });
+
+  it("タイトル未確定(解析前)は false", () => {
+    expect(supportsSlowMotion(null)).toBe(false);
+  });
 });
 
 describe("defaultSlowMotionFor", () => {
@@ -34,7 +59,7 @@ describe("defaultSlowMotionFor", () => {
     expect(defaultSlowMotionFor("th20", true)).toBe(true);
   });
 
-  it("他タイトルは自宅ワーカーが使えても既定オフ(倍の時間をかける既定にしない)", () => {
+  it("低速録画に未対応のタイトルは自宅ワーカーが使えても常にオフ", () => {
     expect(defaultSlowMotionFor("th11", true)).toBe(false);
     expect(defaultSlowMotionFor("th07", true)).toBe(false);
   });

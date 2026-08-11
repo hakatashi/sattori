@@ -224,6 +224,46 @@ describe("POST /magic-links", () => {
     expect(parseBody(result)).toMatchObject({ code: "unsupported_game" });
   });
 
+  it("低速録画に対応したタイトル(th20)なら options.slowMotion をそのまま保存する", async () => {
+    const { handler } = await import("./requestMagicLink.js");
+    await handler(
+      makeEvent({
+        replayKey: "replays/abc.rpy",
+        game: "th20",
+        options: { watermark: true, slowMotion: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ slowMotion: true });
+  });
+
+  it("低速録画に未対応のタイトルなら options.slowMotion を握り潰す(Issue #101)", async () => {
+    // 等倍で動くゲームに後処理の等倍化だけが掛かると2倍速の動画が出来上がるため、
+    // ページAのグレーアウトをすり抜けた要求はここで落とす(録画自体は等倍で行える
+    // のでエラーにはしない)。
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: "replays/abc.rpy",
+        game: "th07",
+        options: { watermark: true, slowMotion: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(202);
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ slowMotion: false });
+  });
+
   it("レート制限に達していれば429を返しメールを送らない", async () => {
     ddbMock.on(UpdateCommand).rejects(
       new ConditionalCheckFailedException({ message: "condition failed", $metadata: {} }),

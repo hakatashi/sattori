@@ -250,8 +250,9 @@ describe("UploadForm", () => {
 });
 
 /**
- * 低速録画（Issue #68）の詳細設定。要件は「自宅ワーカーが利用可能なとき、かつその
- * 場合に限り選べる」「利用可能ならth20だけ既定オン」「利用不可ならグレーアウト」。
+ * 低速録画（Issue #68）の詳細設定。要件は「低速録画に対応したタイトル（Issue #101）で、
+ * かつ自宅ワーカーが利用可能なとき、かつその場合に限り選べる」「選べるならth20だけ
+ * 既定オン」「選べないならグレーアウト」。
  */
 describe("UploadForm の低速録画オプション", () => {
   function slowMotionCheckbox(): HTMLInputElement {
@@ -286,7 +287,7 @@ describe("UploadForm の低速録画オプション", () => {
     expect(slowMotionCheckbox().disabled).toBe(false);
   });
 
-  it("th20以外は自宅ワーカーが使えても既定オフのまま（倍の時間をかける既定にしない）", async () => {
+  it("低速録画に未対応のタイトルは、自宅ワーカーが使えてもグレーアウトする（Issue #101）", async () => {
     mockedClient.getWorkerAvailability.mockResolvedValue({
       available: true,
       capabilities: ["slow-motion-recording"],
@@ -297,7 +298,41 @@ describe("UploadForm の低速録画オプション", () => {
 
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
     expect(slowMotionCheckbox().checked).toBe(false);
-    expect(slowMotionCheckbox().disabled).toBe(false);
+    expect(slowMotionCheckbox().disabled).toBe(true);
+    expect(screen.getByText(/まだ低速録画に対応していない/)).toBeTruthy();
+  });
+
+  it("非対応タイトルへ差し替えたら、チェック済みでも送信される値がオフに戻る", async () => {
+    mockedClient.getWorkerAvailability.mockResolvedValue({
+      available: true,
+      capabilities: ["slow-motion-recording"],
+    });
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
+    const onSent = vi.fn();
+    renderUploadForm(onSent);
+    selectFile("th20_ud0000.rpy");
+    await waitFor(() => expect(slowMotionCheckbox().checked).toBe(true));
+
+    // th20（既定オン）から th07（未対応）へ差し替える。
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+    selectFile("th7_07.rpy");
+    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    expect(slowMotionCheckbox().checked).toBe(false);
+
+    mockedClient.requestMagicLink.mockResolvedValue({});
+    fillEmail("koishi@example.com");
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(nextStepButton());
+    });
+    await waitFor(() => expect(onSent).toHaveBeenCalled());
+    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
+      expect.anything(),
+      { watermark: true, slowMotion: false },
+      "koishi@example.com",
+      "ja",
+      SAMPLE_REPLAY_INFO,
+    );
   });
 
   it("th20のリプレイではデシンクの注意書きを録画前に表示する", async () => {
