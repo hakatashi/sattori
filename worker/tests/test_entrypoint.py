@@ -171,6 +171,89 @@ def test_falls_back_to_normal_speed_when_the_head_request_fails(entrypoint):
     assert entrypoint.read_checkpoint_time_scale(s3) == 1.0
 
 
+# --- 変換から再開するかの判定 ---------------------------------------------
+
+
+def test_resumes_when_the_raw_checkpoint_is_actually_in_s3(entrypoint):
+    assert entrypoint.raw_checkpoint_exists(FakeS3()) is True
+
+
+def test_does_not_resume_when_the_raw_checkpoint_is_gone(entrypoint):
+    """完了済みジョブのリトライで落ちないこと。
+
+    出力が1本のジョブでは `outputPath` が変換結果を指し生データは削除されるので、
+    ジョブレコード側を見て「再開できる」と判断すると、存在しない生データを取りに
+    行って `done` を `failed` へ書き換えてしまう。実体の有無で判定する。
+    """
+    s3 = FakeS3(head_error=RuntimeError("NoSuchKey"))
+
+    assert entrypoint.raw_checkpoint_exists(s3) is False
+
+
+class FakeThread:
+    """`InterruptionWatcher` / `TaskHeartbeat` の差し替え。"""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+@pytest.fixture
+def main_calls(entrypoint, monkeypatch, tmp_path):
+    """`main()` を実S3・実スレッド無しで走らせ、どの経路を通ったかを記録する。"""
+    calls = []
+    monkeypatch.setattr(entrypoint, "WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setattr(entrypoint, "boto3", type("B", (), {"client": staticmethod(lambda name: FakeS3())}))
+    monkeypatch.setattr(entrypoint, "InterruptionWatcher", FakeThread)
+    monkeypatch.setattr(entrypoint, "TaskHeartbeat", FakeThread)
+    monkeypatch.setattr(entrypoint, "notify_task_result", lambda ok, **k: calls.append(f"notify:{ok}"))
+    monkeypatch.setattr(entrypoint, "record", lambda s3: calls.append("record"))
+    monkeypatch.setattr(entrypoint, "download_checkpoint_video", lambda s3: calls.append("download"))
+    monkeypatch.setattr(entrypoint, "convert_and_upload", lambda s3, scale: calls.append(f"convert:{scale}"))
+    return calls
+
+
+def test_main_skips_everything_when_the_job_is_already_done(entrypoint, monkeypatch, main_calls):
+    """完了済みジョブの重複実行(コンテナは完走したがハートビートが途切れた場合)。
+
+    録画をやり直しても同じものが出来るだけで、実時間を数十分捨て完了メールを
+    二重に飛ばす分だけ悪い。
+    """
+    monkeypatch.setattr(entrypoint, "get_job", lambda job_id: {"status": "done"})
+    monkeypatch.setattr(entrypoint, "raw_checkpoint_exists", lambda s3: False)
+
+    entrypoint.main()
+
+    assert main_calls == ["notify:True"]
+
+
+def test_main_records_from_scratch_when_the_checkpoint_is_gone(entrypoint, monkeypatch, main_calls):
+    # 完了していない(=やり直す価値がある)ジョブで、生データだけが無い場合。
+    monkeypatch.setattr(entrypoint, "get_job", lambda job_id: {"status": "converting"})
+    monkeypatch.setattr(entrypoint, "raw_checkpoint_exists", lambda s3: False)
+
+    entrypoint.main()
+
+    assert main_calls == ["record", "convert:1.0", "notify:True"]
+
+
+def test_main_resumes_from_the_checkpoint_with_its_recorded_time_scale(
+    entrypoint, monkeypatch, main_calls,
+):
+    monkeypatch.setattr(entrypoint, "get_job", lambda job_id: {"status": "converting"})
+    monkeypatch.setattr(entrypoint, "raw_checkpoint_exists", lambda s3: True)
+    monkeypatch.setattr(entrypoint, "read_checkpoint_time_scale", lambda s3: 2.0)
+
+    entrypoint.main()
+
+    assert main_calls == ["download", "convert:2.0", "notify:True"]
+
+
 def test_upload_video_attaches_metadata_when_given(entrypoint):
     s3 = FakeS3()
 

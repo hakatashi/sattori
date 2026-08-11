@@ -28,8 +28,9 @@ def _now():
 
 def get_job(job_id):
     """ジョブレコード全体を取得する(存在しなければ None)。
-    録画完了チェックポイント(outputPathの有無)を見て、変換から再開すべきかを
-    entrypoint.py が判定するために使う。
+    既に完了している(`done`)ジョブの重複実行かどうかを entrypoint.py が
+    判定するために使う。変換から再開すべきかは**このレコードではなく**S3の
+    生データチェックポイントの実体で判定する(`entrypoint.raw_checkpoint_exists()`)。
     """
     table_name = os.environ.get("JOBS_TABLE")
     if not table_name:

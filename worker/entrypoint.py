@@ -2,10 +2,11 @@
 """Sattori 録画ワーカーのエントリポイント。
 
 EC2 Fleet インスタンスの UserData から `docker run` で起動される。処理の流れ:
-  1. DynamoDBのジョブレコードを確認する。生動画チェックポイント(outputPath)が
-     既にあれば「変換から再開」(録画をスキップし、S3から生動画をダウンロードする)。
-     これは録画完了後・変換中にSpot中断でリトライになった場合、録画からやり直さず
-     変換だけ再実行できるようにするためのもの(Issue #11)。
+  1. 生動画チェックポイント(S3の`videos/{jobId}.mp4`)の有無を確認する。既にあれば
+     「変換から再開」(録画をスキップし、S3から生動画をダウンロードする)。これは
+     録画完了後・変換中にSpot中断でリトライになった場合、録画からやり直さず変換だけ
+     再実行できるようにするためのもの(Issue #11)。併せてDynamoDBのジョブレコードも
+     確認し、既に`done`なら完了済みジョブの重複実行として何もせず成功通知する。
   2. (通常経路) GAME環境変数に応じたタイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)が
      未展開ならS3からダウンロード・展開(title_assets.py、Issue #22。ワーカーイメージ
      自体はタイトル数に依存しない共通部分のみで構成し、タイトル固有アセットは実行時に
@@ -190,6 +191,28 @@ def upload_video(s3, path, key, metadata=None):
     return size
 
 
+def raw_checkpoint_exists(s3):
+    """変換から再開できる生データのチェックポイントがS3に在るか。
+
+    **ジョブレコードの `outputPath` では判定できない**。出力を1本に集約する構成
+    (`convert.py` の `needs_separate_raw_output()` が False——th20や低速録画)では、
+    完了時に `outputPath` が変換結果を指し、生データは削除される。完了済みのジョブが
+    Step Functions にリトライされた場合(ハートビート途切れなどで、コンテナ自体は
+    完走していたケース)に「`outputPath` があるから再開できる」と誤認すると、存在
+    しない生データを取りに行って落ち、`done` を `failed` へ書き換えてしまう。
+    実体の有無をS3へ直接聞くこと。
+
+    取得に失敗した場合は「無い」とみなす。録画からやり直す分だけ実時間を捨てるが、
+    出来上がるものは正しい。
+    """
+    try:
+        s3.head_object(Bucket=OUTPUT_BUCKET, Key=OUTPUT_KEY)
+        return True
+    except Exception as err:  # noqa: BLE001 - 404も一時障害も「再開しない」に倒す
+        log(f"生データのチェックポイントは見つかりませんでした(録画から開始): {err}")
+        return False
+
+
 def read_checkpoint_time_scale(s3):
     """生データのチェックポイントに添えた実時間スケールを読む(既定1.0＝等倍)。
 
@@ -362,20 +385,28 @@ def main():
 
     try:
         job = get_job(JOB_ID)
-        resuming = bool(job and job.get("outputPath"))
 
-        if resuming:
-            log("生動画チェックポイントを検出しました。変換から再開します")
-            download_checkpoint_video(s3)
-            # 録画時の実時間スケールは生データ自身に添えてある。環境変数から
-            # 取り直すと、自宅ワーカーが低速で録った後にEC2でリトライされた場合に
-            # 半分の速度のまま配信してしまう(`TIME_SCALE_METADATA_KEY`参照)。
-            time_scale = read_checkpoint_time_scale(s3)
+        if job and job.get("status") == "done":
+            # 完了済みジョブの重複実行。コンテナは完走していたのにハートビートが
+            # 途切れて Step Functions がリトライした、という経路で起こりうる
+            # (`home-worker/README.md` §3)。動画は既にS3にあり status も `done` な
+            # ので、録画をやり直しても同じものが出来るだけ——実時間を数十分捨て、
+            # 完了メールをもう一度飛ばす分だけ悪い。何もせず成功として通知する。
+            log("ジョブは既に完了しています。録画をやり直さず成功として通知します")
         else:
-            record(s3)
-            time_scale = slow_motion_scale()
+            if raw_checkpoint_exists(s3):
+                log("生動画チェックポイントを検出しました。変換から再開します")
+                download_checkpoint_video(s3)
+                # 録画時の実時間スケールは生データ自身に添えてある。環境変数から
+                # 取り直すと、自宅ワーカーが低速で録った後にEC2でリトライされた場合に
+                # 半分の速度のまま配信してしまう(`TIME_SCALE_METADATA_KEY`参照)。
+                time_scale = read_checkpoint_time_scale(s3)
+            else:
+                record(s3)
+                time_scale = slow_motion_scale()
 
-        convert_and_upload(s3, time_scale)
+            convert_and_upload(s3, time_scale)
+
         log("ジョブ完了")
         watcher.stop()
         heartbeat.stop()
