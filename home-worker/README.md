@@ -201,8 +201,11 @@ ExecStart=/home/hakatashi/.asdf/installs/nodejs/24.9.0/bin/node dist/main.js
 Restart=always
 RestartSec=10
 # 実行中の録画を完走させてから終了する（SIGTERM後は新規claimを止めるだけ）。
+# `HOME_WORKER_DRAIN_TIMEOUT_SEC`（既定9000秒＝150分）より必ず長く取ること。
+# 短いとドレインの途中で systemd に SIGKILL され、claim のハートビートとログ転送が
+# 止まったままコンテナだけが dockerd 配下に取り残される。
 KillSignal=SIGTERM
-TimeoutStopSec=5400
+TimeoutStopSec=9600
 
 [Install]
 WantedBy=multi-user.target

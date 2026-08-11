@@ -20,7 +20,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     loadThreshold: 0.7,
     dockerCpus: null,
     dockerExtraArgs: [],
-    drainTimeoutSec: 90 * 60,
+    drainTimeoutSec: 150 * 60,
     credentialDurationSec: 4 * 60 * 60,
     ...overrides,
   };
