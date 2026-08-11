@@ -26,6 +26,11 @@ interface Props {
  *
  * どちらも取り返しのつかない操作（EC2の強制終了・新規インスタンス起動による課金）
  * なので、`window.confirm`による確認を必須にしている。
+ *
+ * 文言は`workerKind`で出し分ける（Issue #49）。自宅ワーカーが実行したジョブに
+ * 「EC2インスタンスを強制終了し」「課金が発生します」と出すのは端的に誤りで、
+ * 停止の効き方（terminateで即座に止まるEC2 / claim解除に気づくまで最大30秒走り続ける
+ * 自宅ワーカー）まで違う。
  */
 export function JobActionsPanel({ job, onJobChanged }: Props) {
   const { token, onUnauthorized } = useAdminAuth();
@@ -41,6 +46,14 @@ export function JobActionsPanel({ job, onJobChanged }: Props) {
   // 再実行済みのジョブをもう一度再実行すると、同じリプレイを録画するジョブが
   // 二重に走る。API側も原子的に排他するが、UIでも押せないようにしておく。
   const alreadyRetried = job.retriedToJobId !== null;
+  const isHomeWorker = job.workerKind === "home";
+  // 割り当て前（`workerKind`がnull）のジョブは、これからEC2・自宅のどちらで走るか
+  // 決まっていないため、どちらとも取れる言い方にする。
+  const workerLabel = isHomeWorker
+    ? "自宅ワーカーのコンテナ"
+    : job.workerKind === "ec2"
+      ? "EC2インスタンス"
+      : "ワーカー（EC2インスタンスまたは自宅ワーカーのコンテナ）";
 
   /** 2つの操作で共通の、実行中フラグ・エラー整形・401/403からの復帰処理。 */
   const run = (action: "stop" | "retry", perform: () => Promise<void>) => {
@@ -63,7 +76,7 @@ export function JobActionsPanel({ job, onJobChanged }: Props) {
 
   const handleStop = () => {
     const confirmed = window.confirm(
-      `ジョブ ${job.jobId} を緊急停止します。実行中のEC2インスタンス(自宅ワーカーの場合はコンテナ)は強制終了され、録画結果は失われます。よろしいですか？`,
+      `ジョブ ${job.jobId} を緊急停止します。実行中の${workerLabel}は停止され、録画結果は失われます。よろしいですか？`,
     );
     if (!confirmed) {
       return;
@@ -82,8 +95,10 @@ export function JobActionsPanel({ job, onJobChanged }: Props) {
   };
 
   const handleRetry = () => {
+    // 再実行は`workerKind: null`の新しいジョブを作るため（`retryJob.ts`）、元ジョブが
+    // 自宅ワーカーで走っていたとしても、割り当ては改めて決まる（＝EC2が起動しうる）。
     const confirmed = window.confirm(
-      `ジョブ ${job.jobId} を新しいジョブとして再実行します。EC2インスタンスが起動し課金が発生します。よろしいですか？`,
+      `ジョブ ${job.jobId} を新しいジョブとして再実行します。自宅ワーカーが空いていなければEC2インスタンスが起動し、課金が発生します。よろしいですか？`,
     );
     if (!confirmed) {
       return;
@@ -119,7 +134,9 @@ export function JobActionsPanel({ job, onJobChanged }: Props) {
       <p className={styles.note}>
         {terminal
           ? "終了済みのジョブです。再実行すると新しいjobIdのジョブとして複製・起動されます（元ジョブは変更されません）。"
-          : "実行中のジョブです。緊急停止するとEC2インスタンスを強制終了し、statusをfailedに確定します。"}
+          : isHomeWorker
+            ? "実行中のジョブです。緊急停止すると自宅ワーカーへの割り当てを解除し、statusをfailedに確定します（コンテナはデーモンが解除に気づくまで最大30秒走り続けますが、その結果がジョブへ書き戻されることはありません）。"
+            : `実行中のジョブです。緊急停止すると${workerLabel}を強制終了し、statusをfailedに確定します。`}
       </p>
       {alreadyRetried && (
         <p className={styles.note}>
@@ -129,7 +146,7 @@ export function JobActionsPanel({ job, onJobChanged }: Props) {
       {job.status === "failed" && (
         <p className={styles.note}>
           statusがfailedでも、Step
-          Functionsがリトライ中でEC2が起動し続けていることがあります（ワーカーは実行の終了より先にfailedを記録するため）。実行状態は下の「Step
+          Functionsがリトライ中で新しいワーカー（EC2または自宅）が起動し続けていることがあります（ワーカーは実行の終了より先にfailedを記録するため）。実行状態は下の「Step
           Functions実行」で確認でき、まだ動いていれば緊急停止できます。
         </p>
       )}
