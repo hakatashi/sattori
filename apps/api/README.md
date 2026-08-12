@@ -10,9 +10,10 @@ API契約自体は `packages/shared/README.md` を参照。
 | --- | --- | --- |
 | `createUpload.ts` | `POST /uploads` | `.rpy` アップロード用の署名付きPUT URLを発行（ファイル本体はLambdaを経由しない） |
 | `parseReplay.ts` | `POST /replays/parse` | アップロード済みリプレイを取得し `@sattori/shared` の `parseReplayInfo()` で解析。同じロジックはブラウザでも直接動くため（`apps/web/README.md`「ページAのフロー」参照）、現在のページAはこのAPIを呼ばず解析をクライアント内で完結させている。将来他のクライアント（管理画面の再解析等）が使う可能性を見込んで残してある |
-| `requestMagicLink.ts` | `POST /magic-links` | レート制限チェック→`status: "pending"`の`JobRecord`作成→SESでマジックリンク送信。メール送信自体が失敗したらジョブを削除してロールバックする |
+| `requestMagicLink.ts` | `POST /magic-links` | レート制限チェック→`status: "pending"`の`JobRecord`作成→SESでマジックリンク送信。メール送信自体が失敗したらジョブを削除してロールバックする。低速録画（Issue #68）の要求は**低速録画に対応したタイトル（`supportsSlowMotion()`、Issue #101）でなければ握り潰す**（等倍で録画できる以上エラーにはしない） |
 | `startJob.ts` | `POST /jobs/{jobId}/start` | `pending`→`queued`への原子遷移＋Step Functions `StartExecution` |
-| `getJob.ts` | `GET /jobs/{jobId}` | ジョブ状態取得。完了時はCloudFrontのダウンロードURL・プレビュー再生URLを組み立てる |
+| `getJob.ts` | `GET /jobs/{jobId}` | ジョブ状態取得。完了時はCloudFrontのダウンロードURL・プレビュー再生URLを組み立てる。低速録画（Issue #68）で走るかどうか（`isSlowMotionRecording()`）も返す |
+| `getWorkerAvailability.ts` | `GET /worker-availability` | 常駐ワーカー（自宅ワーカー、Issue #49）の空き状況。ページAが「低速録画」を選べるか判定するためだけの公開エンドポイント。**認証なしで公開されるため`workerId`・台数・負荷は返さない**（開発者の自宅環境の稼働状況を必要以上に外へ出さない） |
 | `sendCompletionEmail.ts` | JobsTableのDynamoDB Streams | ジョブが`done`に遷移した瞬間を検知しSESで完了メール送信 |
 | `sfn/launch.ts` | Step Functions `Launch`タスク | EC2 Fleetでワーカーを1台起動（`waitForTaskToken`。成否確定はワーカー自身が行う） |
 | `sfn/handleFailure.ts` | Step Functions `HandleFailure`タスク | 孤児インスタンスをterminateしつつリトライ可否を判定 |
@@ -34,7 +35,7 @@ API契約自体は `packages/shared/README.md` を参照。
    Step Functions の実行を開始する（`attempt: INITIAL_ATTEMPT`、`retryPolicy.ts`）。
    条件不成立（既に起動済み）なら `JobAlreadyStartedError` を捕まえて現在の状態を
    冪等に返すだけで、Step Functionsは再起動しない。
-2. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト90分・ハートビート
+2. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト150分・ハートビート
    タイムアウト15分）がワーカーを1台**割り当て**る。割り当て先は自宅ワーカー
    （Issue #49、後述）かEC2 Fleetのどちらかで、EC2の場合は
    `launchRecordingInstance()`（`ec2.ts`）でSpotインスタンスを1台起動し、ジョブを
@@ -64,11 +65,16 @@ API契約自体は `packages/shared/README.md` を参照。
 
 `Launch` が行うこと:
 
-1. `routingPolicyFor(job.game)`（`workerRouting.ts`）でそのタイトルの方針を引く。
-   タイトルごとに「オファーするか」「要求する追加能力」「待機秒数」を変えられる
-   ——th20（Issue #87）で自宅とEC2の使い分けが非対称になる見込みのため
-   （低速録画できる自宅ワーカーがいれば自宅、いなければ4xlarge級EC2で等速録画。
-   Issue #68）。現在は全タイトルが既定の方針で足りるので上書きは空。
+1. `routingPolicyFor(job)`（`workerRouting.ts`）でこのジョブの方針を決める。
+   タイトルごとに「オファーするか」「要求する追加能力」「待機秒数」を変えられる。
+   - **th20（Issue #87）だけオファー待ちを上限（`MAX_OFFER_WINDOW_SECONDS`）まで
+     伸ばしてある**。他タイトルは「自宅が空いていなければEC2で同じ品質の録画ができる」
+     ので待つ価値が薄いが、th20はEC2フォールバック先が`.4xlarge`帯（他タイトルの
+     約4倍の単価）で、かつ低速録画（Issue #68）は自宅ワーカーでしかできない。
+   - **低速録画の要求（`slow-motion-recording`）はタイトルではなくジョブのオプションに
+     紐づく**。`job.options.slowMotion` が立っているときだけ `requiredCapabilities` へ
+     足す。th20でもユーザーが低速録画を外していれば能力を要求しない——EC2を1台
+     起こさずに済むこと自体に価値があるので、不要な条件でオファー先を狭めない。
 2. `WorkersTable` のハートビート（`selectHomeWorker()`）を見て、引き受けられる
    ワーカーがいるか判定する。**いなければ何もせず即EC2を起動する**ので、自宅が
    落ちている平常時に録画開始が遅れることはない。
@@ -139,6 +145,19 @@ DynamoDB Streams経由で停止したはずのジョブの完了メールがユ�
   8vCPU/16GiB以上(`.2xlarge`帯)にすると重複フレーム率が明確に改善する。
   コスト影響は`.xlarge`比で概ね2倍。3タイプすべてeu-south-2実機で検証済み
   （`reports/42`・`43`、重複フレーム率0.4〜4.5%、いずれも想定尺どおりの自然終了）。
+
+- **th20専用**（`TH20_CANDIDATE_INSTANCE_TYPES`）: `c7i.4xlarge` のみ。th20は内部描画
+  解像度が960p相当（1280x960）へ上がり、th11をさらに上回る描画負荷になる。
+  touhou-recorder `reports/46` のeu-south-2実機比較で、`.2xlarge`帯では高負荷区間
+  （スペルカード「巌となるさざれ石」）のゲーム内実測fpsが11.7〜32.5fpsまで持続的に
+  落ち込む一方、`.4xlarge`帯（16vCPU/32GiB）は単発の落ち込み1回を除き57.6〜60.0fpsを
+  維持した。総録画時間もローカル基準比で`.2xlarge`が+8.9%、`.4xlarge`が-1.8%と、
+  全指標で明確な差が出ている。
+  **1タイプしかないのは意図的**で、th20の実機検証を通ったのがこれだけだから
+  （他タイプは「同じvCPU数・同じ系統だから」という推測でしか根拠づけられない）。
+  Spotプールの分散が他タイトルより後退している点は Issue #98 で追う。
+  なお**th20は原則として自宅ワーカーでの低速録画へ振り分けられる**ので、この経路は
+  自宅が空いていないときのフォールバック（等倍録画）である。
 
 **インスタンスタイプの変更は録画品質（重複フレーム率）に直結するリスクがあり、
 「同スペック帯・同価格帯だから安全」とは限らない**（`z1d.xlarge`は高クロック特化
@@ -292,10 +311,14 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
 - **ダウンロード**（`downloads.ts`）: 動画URLの組み立て（`buildVideoDownloadUrl`）は
   `getJob.ts`から移設して共有。ユーザー向け`GET /jobs/{jobId}`と異なり、statusが
   `done`でなくても`outputPath`/`outputPath720p`があればURLを返す（`converting`中の
-  生動画チェックポイントを取得したい運用ニーズのため）。`.rpy`は`UploadBucket`が
+  生動画チェックポイントを取得したい運用ニーズのため）。**低速録画（Issue #68）の
+  ジョブでは、`converting`中の`outputPath`が指すのは半分の速度の生データである**
+  （等倍へ戻すのは変換工程。`worker/README.md`「低速録画」）。ユーザー向けの
+  `GET /jobs/{jobId}`は`done`のときしかURLを返さないのでこれが漏れることはないが、
+  管理画面で変換中の動画を開いたときは意図した挙動として扱うこと。`.rpy`は`UploadBucket`が
   CloudFront配信されていない`BLOCK_ALL`バケットのため、動画とは別にS3署名付き
   GET URL（`createPresignedReplayDownloadUrl`、TTL 900秒）を発行する。
-  720p変換のffmpeg生ログ（`ffmpegLogUrl`、Issue #58フォローアップ）も同様にS3署名付き
+  配信用変換のffmpeg生ログ（`ffmpegLogUrl`、Issue #58フォローアップ）も同様にS3署名付き
   URL（`createPresignedFfmpegLogDownloadUrl`）で配る。CDN配信しないのは一般ユーザー
   向け配信物ではないため。S3キー（`worker-logs/{jobId}/ffmpeg-upscale.log`）は
   `executionArn`と同じ考え方でjobIdから決定的に導出し（`buildFfmpegUpscaleLogKey`）
@@ -327,7 +350,7 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   LambdaにはjobsTable読み取り権限を持たせず、既に`GET /admin/jobs/{jobId}`を叩いている
   フロントからクエリパラメータで受け取る。インスタンスが終了済みだと出力が取得できず
   `consoleOutput: null`に縮退することがある（500にはしない）。
-  当初、720p変換の`worker/upscale.py`がffmpegの`-progress`生出力（frame=/fps=/
+  当初、配信用変換の`worker/convert.py`（当時は`upscale.py`）がffmpegの`-progress`生出力（frame=/fps=/
   bitrate=等）を全行このログストリームへ流していたが、1ジョブで数千行に達し
   実機の管理画面で他のログを埋もれさせる問題が判明した。クライアント側フィルタ
   （後述）だけでは`GetLogEvents`のページ自体がノイズで埋まる問題は解決しないため、
@@ -351,7 +374,7 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   場合は「止められる余地がある」側に倒して停止処理へ進む。
   **(1) `StopExecution` → (2) `TerminateInstances` → (3)
   `updateJobStatus(failed)` の順序が重要**で、先にインスタンスをterminateすると
-  taskToken応答が来なくなった実行がタスクタイムアウト（90分）後に`HandleFailure`
+  taskToken応答が来なくなった実行がタスクタイムアウト（150分）後に`HandleFailure`
   経由でリトライへ回り、**止めたはずのジョブが別インスタンスで再起動してしまう**。
   各段階の失敗はそこで打ち切って502を返し、ジョブ状態は書き換えない（実際には
   止まっていないのに`failed`と表示されるのが最も危険なため）。`StopExecution`は
@@ -362,7 +385,7 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   （`ec2.ts`の`findJobInstanceIds()`）。instanceIdはLaunch Lambdaが`CreateFleet`の
   **後**に書き込むため、起動直後のジョブではDynamoDBを読んだ時点で未記録のことがあり
   （Step Functionsは実行中のLambda呼び出しをキャンセルしない）、取り逃すと孤児
-  インスタンスが最大90分課金され続ける。最後の`failed`確定は`status`が`done`でない
+  インスタンスが最大150分課金され続ける。最後の`failed`確定は`status`が`done`でない
   ことを条件にした原子的更新にしている（停止処理中にワーカーが完走し、完了メールまで
   飛んだのに画面は`failed`という食い違いを避けるため。この場合レスポンスの`status`は
   `done`になる）。

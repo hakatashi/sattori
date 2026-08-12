@@ -20,7 +20,13 @@
   冪等に返す |
 | `GET /jobs/{jobId}` | ジョブ状態取得（ポーリング用）。完了時に CloudFront のDL URL、
   進行中は現在フェーズ内で実際に処理が完了した秒数(`progress`。全体に対する割合では
-  ない)とプレビュー画像URL(`previewImageUrl`)も返す |
+  ない)とプレビュー画像URL(`previewImageUrl`)も返す。低速録画で走るかどうか
+  (`slowMotion`)も返す（後述） |
+| `GET /worker-availability` | 常駐ワーカー（自宅ワーカー、Issue #49）の空き状況。
+  ページAが詳細設定の「低速録画」を有効化してよいかの判定にだけ使う。**認証なしで
+  公開されるため`workerId`・台数・負荷は返さない**（開発者の自宅環境の稼働状況を
+  必要以上に外へ出さない）。あくまで「今の」状態で、実際に録画が始まるのはユーザーが
+  マジックリンクを開いた後（最大24時間後）なので、可否は一致しない前提 |
 
 `EMAIL_PATTERN`（簡易メール形式チェック）はフロントエンドとバックエンドの両方が
 同じ判定基準を使うようここに一本化してある。
@@ -35,7 +41,7 @@ pending → queued → launching → recording → converting → done | failed
   24時間（bot/濫用対策としての期限。アップロード用S3の自動削除とは独立）以内に
   起動されなければ受付期限切れとして扱う（`JobRecord.pendingExpiresAt`）。
 - `queued` 以降はワーカー・Step Functionsが書き込む。`converting` は録画完了
-  （生動画チェックポイントアップロード済み）〜720p変換〜出力アップロード完了までを指す。
+  （生動画チェックポイントアップロード済み）〜配信用変換〜出力アップロード完了までを指す。
 - `isTerminalStatus()` が `done`/`failed` を終端状態として判定する（フロントエンドの
   ポーリング停止判定に使用）。
 
@@ -76,7 +82,29 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
   DynamoDBのNULL型はGSIのキー属性として不適合で、「属性が無い」ことをそのまま
   条件式（`attribute_not_exists`）で表現したいため。
 - `WorkerCapability`に定義があること自体は「実装済み」を意味しない（能力の宣言は
-  デーモン側の設定で行う）。`slow-motion-recording`はIssue #68の受け皿。
+  デーモン側の設定で行う）。`slow-motion-recording`は低速録画（Issue #68、後述）。
+
+## 低速録画（`src/slowMotion.ts`、Issue #68）
+
+ゲームを 1/2 倍速で走らせて録画し、後処理で等倍へ戻す方式。等倍では処理落ちして
+品質を担保できない th20（Issue #87）のための手段で、ユーザー向けの呼称は「低速録画」。
+フロントエンド・API・ワーカーが同じ定数を参照するためここに一本化してある。
+
+- `SLOW_MOTION_TARGET_HZ`（30）: ワーカーへ`FPS_LIMIT_TARGET_HZ`として渡る値。
+- `SLOW_MOTION_TIME_SCALE`（2）: 録画フェーズが実時間で何倍かかるか。ジョブページの
+  進捗バジェット（`apps/web/src/hooks/jobProgressBudget.ts`）と録画のハードタイム
+  アウト（`worker/recording_common.py`）が同じ係数を使う。
+- `SLOW_MOTION_DEFAULT_GAME_IDS`（th20のみ）/ `defaultSlowMotionFor()`: 既定でオンに
+  するタイトル。**自宅ワーカーが使えなければ常にfalse**（そもそも選べないため）。
+- `isSlowMotionRecording(options, workerKind)`: **`options.slowMotion`はユーザーの希望に
+  すぎない**。オファーが時間内にclaimされずEC2へフォールバックした場合は等倍録画に
+  なるため、`workerKind`まで見て「実際に低速録画で走るか」を判定する。割り当てが
+  未確定（`null`）の間は低速録画とみなす——ジョブページの残り時間推定が、割り当て確定の
+  瞬間に大きく飛ぶのを避けるため。`GET /jobs/{jobId}`の`slowMotion`はこの結果を返す。
+
+**低速録画は自宅ワーカー限定**（EC2では録画時間＝Spot料金が倍になるため）。この制約は
+ワーカー側の分岐ではなく、起動側が`FPS_LIMIT_TARGET_HZ`を渡すかどうかで表現する
+（`apps/api/src/workerEnv.ts`、AGENTS.md §3）。
 
 契約の詳細と運用は`apps/api/README.md`「自宅ワーカーへのジョブ割り当て」・
 `home-worker/README.md`を参照。
@@ -141,8 +169,14 @@ API側の実装詳細（GSI設計・authorizer・ダウンロードURLの発行�
 - `estimateJobCost(job, now)`: 1ジョブぶんの内訳（`ec2Spot` / `ebs` / `publicIpv4` /
   `s3Storage` / `misc`）と合計を返す純関数。`now`を引数に取るのは、実行中ジョブの
   推定値をテストで固定できるようにするため。
-- 単価は**eu-south-2・2026-08-03時点**（`docs/aws-region-cost-analysis.md`）。
-  リージョンを移す場合はここの定数も入れ替える。
+- 単価は**eu-south-2・2026-08-03時点**（`docs/aws-region-cost-analysis.md`。`.4xlarge`帯
+  のみ2026-08-12時点）。リージョンを移す場合はここの定数も入れ替える。
+- **Spot単価のフォールバックはサイズ帯（`.xlarge`/`.2xlarge`/`.4xlarge`）ごとに持つ**。
+  `apps/api/src/ec2.ts`の候補インスタンスタイプに新しい帯を足したら、
+  `FALLBACK_SPOT_PRICE_USD_PER_HOUR`と`sizeClassOf()`/`sizeClassOfGame()`にも必ず
+  足すこと。帯が抜けると既定の`.xlarge`へ静かに丸められ、推定コストが実額の数分の一に
+  なる——この値は月間コストガード（`apps/api/src/costGuard.ts`）の入力でもあるため、
+  キルスイッチが効かないまま予算を超過しうる。
 - **課金対象時間は`launchedAt`〜終了時刻の実時間**。試行間の待機（`WaitBeforeCheck`の
   3分など）もEC2稼働として数えるため、リトライしたジョブでは**過大側**に出る。
   試行ごとの正確な稼働区間を持つにはLaunch/Terminateの時刻を全試行ぶん記録する必要が

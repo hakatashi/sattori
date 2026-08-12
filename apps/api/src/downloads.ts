@@ -7,7 +7,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { buildContentDispositionValue, buildDownloadFilename } from "@sattori/shared";
-import type { JobRecord } from "@sattori/shared";
+import type { JobRecord, VideoVariant } from "@sattori/shared";
 
 const s3 = new S3Client({});
 
@@ -29,7 +29,7 @@ export function buildVideoDownloadUrl(
   cdnDomain: string,
   outputPath: string,
   job: Pick<JobRecord, "jobId" | "replayInfo">,
-  variant: "720p" | "original",
+  variant: VideoVariant,
 ): string {
   const filename = buildDownloadFilename(job.jobId, job.replayInfo, variant);
   const url = new URL(`https://${cdnDomain}/${outputPath}`);

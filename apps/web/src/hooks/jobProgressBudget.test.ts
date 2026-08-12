@@ -86,3 +86,35 @@ describe("isPhaseOverrun", () => {
     expect(isPhaseOverrun(100, 100 * PHASE_OVERRUN_FACTOR + 1)).toBe(true);
   });
 });
+
+describe("computePhaseBudgets（低速録画、Issue #68）", () => {
+  it("録画フェーズの悲観バジェットは実時間で2倍になる", () => {
+    const budgets = computePhaseBudgets(900, true);
+
+    expect(budgets.recording).toBe(1800);
+    // 変換の対象は等倍へ戻した後の動画なので、尺は低速録画でも変わらない。
+    expect(budgets.converting).toBe(300);
+    expect(budgets.total).toBe(LAUNCHING_BUDGET_SECONDS + 1800 + 300);
+  });
+
+  it("recordingContent はコンテンツ長のままで、低速録画かどうかに依らない", () => {
+    // ワーカーが報告する progress はコンテンツ秒数なので、実時間の recording と
+    // 直接比べてはいけない。この値が両者の換算係数・分母になる。
+    expect(computePhaseBudgets(900, true).recordingContent).toBe(900);
+    expect(computePhaseBudgets(900, false).recordingContent).toBe(900);
+  });
+
+  it("既定(引数省略)は等倍録画として計算する", () => {
+    expect(computePhaseBudgets(900)).toEqual(computePhaseBudgets(900, false));
+  });
+
+  it("低速録画の録画バジェットは、リトライ疑いの誤検知を防ぐのに十分な余裕がある", () => {
+    // 悲観バジェットの PHASE_OVERRUN_FACTOR 倍を超えるとリトライ疑いになる。
+    // 等倍のバジェットのままだと、2倍かかる録画は必ずこれを踏む。
+    const naive = computePhaseBudgets(900, false).recording;
+    const actualWallClock = 900 * 2;
+
+    expect(isPhaseOverrun(naive, actualWallClock)).toBe(true);
+    expect(isPhaseOverrun(computePhaseBudgets(900, true).recording, actualWallClock)).toBe(false);
+  });
+});

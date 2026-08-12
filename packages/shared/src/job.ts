@@ -36,10 +36,29 @@ export function isTerminalStatus(status: JobStatus): boolean {
 export interface RecordingOptions {
   /** ウォーターマーク合成の有無。デフォルト true（合成する）。 */
   watermark: boolean;
+  /**
+   * 低速録画（Issue #68）。ゲームを 1/2 倍速で走らせて録画し、後処理で等倍へ戻す
+   * ことで、等倍では処理落ちするタイトル（th20）の録画品質を担保する。
+   * 詳細と定数は `slowMotion.ts` 参照。
+   *
+   * **低速録画に対応したタイトル（`SLOW_MOTION_SUPPORTED_GAME_IDS`）でしか選べない**。
+   * 非対応タイトルではページAがグレーアウトし、`POST /magic-links` も true を握り潰す
+   * （Issue #101）。
+   *
+   * さらに**自宅ワーカー（Issue #49）がこの能力を宣言している場合しか選べない**
+   * （EC2 Spot では録画に倍の実時間＝倍のコストがかかるため）。ページAは
+   * `GET /worker-availability` で可否を確認し、使えない間はチェックボックスを
+   * グレーアウトする。ここが true でも、実際に自宅ワーカーがclaimしなければ
+   * EC2 での等倍録画へフォールバックする（`apps/api/src/handlers/sfn/launch.ts`）。
+   * デフォルト false（既定でオンにするのは th20 のみで、その判断は
+   * `defaultSlowMotionFor()` がフロントエンド側で行う）。
+   */
+  slowMotion: boolean;
 }
 
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   watermark: true,
+  slowMotion: false,
 };
 
 /**

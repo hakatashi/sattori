@@ -35,7 +35,7 @@ const job: JobRecord = {
   game: "th07",
   replayKey: "replays/abc.rpy",
   status: "queued",
-  options: { watermark: true },
+  options: { watermark: true, slowMotion: false },
   outputPath: null,
   outputPath720p: null,
   outputBytes: null,

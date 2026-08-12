@@ -12,7 +12,7 @@ import {
 import type { GameRoutingPolicy } from "./workerRouting.js";
 
 const NOW = new Date("2026-08-09T12:00:00.000Z");
-const JOB = { game: "th07" } as const;
+const JOB = { game: "th07", options: { watermark: true, slowMotion: false } } as const;
 
 function heartbeat(overrides: Partial<WorkerHeartbeat> = {}): WorkerHeartbeat {
   return {
@@ -31,7 +31,31 @@ function heartbeat(overrides: Partial<WorkerHeartbeat> = {}): WorkerHeartbeat {
 
 describe("routingPolicyFor", () => {
   it("タイトル固有の指定が無ければ既定の方針を返す", () => {
-    expect(routingPolicyFor("th07")).toEqual(DEFAULT_ROUTING_POLICY);
+    expect(routingPolicyFor(JOB)).toEqual(DEFAULT_ROUTING_POLICY);
+  });
+
+  it("低速録画を希望するジョブは slow-motion-recording を宣言したワーカーにだけオファーする", () => {
+    const policy = routingPolicyFor({
+      game: "th20",
+      options: { watermark: true, slowMotion: true },
+    });
+    expect(policy.requiredCapabilities).toContain("slow-motion-recording");
+  });
+
+  it("低速録画を希望しなければ、th20でも能力の要求は足さない(オファー先を無用に狭めない)", () => {
+    const policy = routingPolicyFor({
+      game: "th20",
+      options: { watermark: true, slowMotion: false },
+    });
+    expect(policy.requiredCapabilities).toEqual([]);
+  });
+
+  it("th20は自宅ワーカーを待つ価値が高いのでオファー待機を上限まで伸ばしてある", () => {
+    // EC2フォールバック先が`.4xlarge`帯と高価で、かつ低速録画は自宅でしかできない。
+    expect(routingPolicyFor(JOB).offerWindowSeconds).toBeLessThan(
+      routingPolicyFor({ game: "th20", options: { watermark: true, slowMotion: true } })
+        .offerWindowSeconds,
+    );
   });
 
   it("オファー待機は自宅デーモンのポーリング間隔より十分長い", () => {

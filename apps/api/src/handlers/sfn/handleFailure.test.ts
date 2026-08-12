@@ -30,7 +30,7 @@ const baseJob: JobRecord = {
   game: "th07",
   replayKey: "replays/abc.rpy",
   status: "launching",
-  options: { watermark: true },
+  options: { watermark: true, slowMotion: false },
   outputPath: null,
   outputPath720p: null,
   error: null,
