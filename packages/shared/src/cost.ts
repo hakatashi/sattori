@@ -80,14 +80,23 @@ export const CLOUDFRONT_USD_PER_GB = 0.085;
  * 実行された旧ジョブ、または`DescribeSpotPriceHistory`が失敗したジョブ）に使う
  * フォールバック単価（USD/時、eu-south-2）。
  *
- * インスタンスタイプ個別ではなくサイズ帯（`.xlarge` / `.2xlarge`）で持つ:
+ * インスタンスタイプ個別ではなくサイズ帯（`.xlarge` / `.2xlarge` / `.4xlarge`）で持つ:
  * 候補タイプは`price-capacity-optimized`で選ばれるためどれが確保されるか事前に
  * 決まらず、同帯なら価格差も小さいので、帯の代表値で十分という判断。
+ *
+ * **`apps/api/src/ec2.ts`の候補インスタンスタイプに新しいサイズ帯を足したら、必ず
+ * ここにも足すこと**（AGENTS.md §6）。帯が抜けていると`sizeClassOf()`が既定の
+ * `xlarge`へ落ち、th20（`.4xlarge`）なら実額の約1/4で計上される——推定コストは
+ * 月間コストガード（`costGuard.ts`）の入力でもあるため、キルスイッチが効かないまま
+ * 予算を数倍超過しうる。
  *
  * 暫定値: 2026-08-03時点の直近3日間のSpot価格履歴の単純平均から算出（`c7i`/`c7a`/
  * `c7i-flex`の3タイプ平均）。この後`apps/api/src/ec2.ts`の候補に追加した`m7i`系も、
  * touhou-recorder reports/43の実測（$0.043〜0.104/時間の範囲）を見る限り同じ帯に
- * 収まっており、この定数を大きく動かす必要はないと判断した。ただしus-east-1時代
+ * 収まっており、この定数を大きく動かす必要はないと判断した。`.4xlarge`帯は
+ * 2026-08-12時点の`c7i.4xlarge`直近3日間の履歴（42点、$0.110〜0.123）の単純平均
+ * $0.1178 を採る——th20のEC2候補はこの1タイプのみ（`ec2.ts`）なので帯の代表値も
+ * 実タイプの値そのものでよい。ただしus-east-1時代
  * （`docs/aws-region-cost-analysis.md` §2）と同様の30日間・時間重み付き平均（TWA）
  * での再計測がまだのため、実際の値とは数%ずれうる。次にこの定数を見直す際は
  * TWAで再計測すること。
@@ -95,6 +104,7 @@ export const CLOUDFRONT_USD_PER_GB = 0.085;
 export const FALLBACK_SPOT_PRICE_USD_PER_HOUR = {
   xlarge: 0.045,
   "2xlarge": 0.092,
+  "4xlarge": 0.118,
 } as const;
 
 /**
@@ -245,16 +255,30 @@ export interface JobCostEstimate {
 
 /** インスタンスタイプ（例 `c7i.2xlarge`）からサイズ帯を取り出す。 */
 function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD_PER_HOUR {
+  if (instanceType.endsWith(".4xlarge")) {
+    return "4xlarge";
+  }
   return instanceType.endsWith(".2xlarge") ? "2xlarge" : "xlarge";
 }
 
 /**
- * ゲームからサイズ帯を推定する。th11だけ`.2xlarge`帯の候補リストを使う
- * （`apps/api/src/ec2.ts`の`TH11_CANDIDATE_INSTANCE_TYPES`、touhou-recorder
- * reports/40）。
+ * ゲームからサイズ帯を推定する。th11だけ`.2xlarge`帯、th20だけ`.4xlarge`帯の候補
+ * リストを使う（`apps/api/src/ec2.ts`の`TH11_CANDIDATE_INSTANCE_TYPES` /
+ * `TH20_CANDIDATE_INSTANCE_TYPES`、touhou-recorder reports/40・46）。
+ *
+ * インスタンスタイプがまだ記録されていない段階（`launching`）や、リトライで
+ * リセットされた場合（`retryJob.ts`）に使われる。ここが実態とずれると、`ec2.ts`の
+ * 候補を変えたときに推定コストが静かに過小になる。
  */
 function sizeClassOfGame(game: GameId): keyof typeof FALLBACK_SPOT_PRICE_USD_PER_HOUR {
-  return game === "th11" ? "2xlarge" : "xlarge";
+  switch (game) {
+    case "th11":
+      return "2xlarge";
+    case "th20":
+      return "4xlarge";
+    default:
+      return "xlarge";
+  }
 }
 
 function resolveSpotPrice(job: JobCostInput): {

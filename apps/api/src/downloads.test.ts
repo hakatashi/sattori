@@ -35,7 +35,7 @@ describe("downloads", () => {
       "cdn.example.net",
       "videos/job-1_720p.mp4",
       { jobId: "job-1", replayInfo: REPLAY_INFO },
-      "720p",
+      "delivery",
     );
     const parsed = new URL(url);
     expect(parsed.origin + parsed.pathname).toBe("https://cdn.example.net/videos/job-1_720p.mp4");

@@ -30,6 +30,7 @@ const BASE: Omit<
   game: "th07",
   updatedAt: new Date().toISOString(),
   replayInfo: SAMPLE_REPLAY_INFO,
+  slowMotion: false,
 };
 
 function buildJob(overrides: Partial<GetJobResponse> & { status: JobStatus }): GetJobResponse {

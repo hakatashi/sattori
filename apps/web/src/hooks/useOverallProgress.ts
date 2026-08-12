@@ -53,6 +53,11 @@ function computeElapsedSeconds(params: {
   budgets: PhaseBudgets;
 }): number {
   const { status, phaseElapsedSeconds, phaseProgressSeconds, budgets } = params;
+  // 進捗(phaseProgressSeconds)はワーカーが報告する「コンテンツ秒数」で、バジェットは
+  // 実時間。低速録画(Issue #68)ではこの2つの単位が2倍ずれるため、必ず換算してから
+  // 突き合わせる(等倍録画では係数1で従来と同じ)。
+  const wallClockPerContentSecond =
+    budgets.recordingContent > 0 ? budgets.recording / budgets.recordingContent : 1;
   switch (status) {
     case "pending":
     case "queued":
@@ -60,16 +65,22 @@ function computeElapsedSeconds(params: {
     case "launching":
       return Math.min(phaseElapsedSeconds, budgets.launching);
     case "recording":
-      return budgets.launching + Math.min(phaseProgressSeconds ?? 0, budgets.recording);
+      return (
+        budgets.launching +
+        Math.min((phaseProgressSeconds ?? 0) * wallClockPerContentSecond, budgets.recording)
+      );
     case "converting":
     case "failed": {
-      // phaseProgressSecondsはconvertingでは「変換済みコンテンツ秒数(0〜budgets.recording)」
-      // であり、悲観バジェット(budgets.converting = budgets.recording/MIN_CONVERTING_RATE、
+      // phaseProgressSecondsはconvertingでは「変換済みコンテンツ秒数
+      // (0〜budgets.recordingContent)」であり、悲観バジェット
+      // (budgets.converting = budgets.recordingContent/MIN_CONVERTING_RATE、
       // wall-clock換算で圧縮された値)とは単位が異なる。そのままminで比較すると、実際の変換が
       // まだ半分も終わっていない段階でbudgets.convertingに達してしまい、全体%が早期に頭打ちに
       // なる。実際の変換進捗率(content秒数ベース)をbudgets.convertingの持ち分に按分することで、
       // 変換の実進捗に応じて全体%が伸びるようにする。
-      const ratio = Math.min(1, (phaseProgressSeconds ?? 0) / budgets.recording);
+      // 変換の対象は等倍に戻した後の動画なので、分母は実時間の`recording`ではなく
+      // コンテンツ長の`recordingContent`である(低速録画でも変換の尺は変わらない)。
+      const ratio = Math.min(1, (phaseProgressSeconds ?? 0) / budgets.recordingContent);
       return budgets.launching + budgets.recording + ratio * budgets.converting;
     }
     case "done":
@@ -172,7 +183,12 @@ export function useOverallProgress(
     return { percent: 0, remainingMinutes: null, retrySuspected: false };
   }
 
-  const budgets = computePhaseBudgets(job.replayInfo?.estimatedDurationSeconds ?? null);
+  const budgets = computePhaseBudgets(
+    job.replayInfo?.estimatedDurationSeconds ?? null,
+    // 低速録画(Issue #68)は録画フェーズに実時間で2倍かかる。これを渡さないと
+    // 録画の途中でバジェットを使い切り、残り時間が消えたうえリトライ疑いを誤検知する。
+    job.slowMotion,
+  );
   const phaseStart = phaseStartRef.current;
   const phaseElapsedSeconds =
     phaseStart && phaseStart.jobId === job.jobId && phaseStart.status === job.status

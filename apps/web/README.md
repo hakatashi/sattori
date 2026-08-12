@@ -36,11 +36,47 @@
    ため、解析だけ先に終わってプレビューが表示され、アップロードは裏で続く状態になりうる
    （STEP2の下に「アップロード中…」を表示）。
 2. 解析成功で`ReplayPreview`にゲーム名/キャラ/スコア/クリア可否等を表示。
-   詳細設定でウォーターマークON/OFF（既定ON、`DEFAULT_RECORDING_OPTIONS`）。
+   詳細設定でウォーターマークON/OFF（既定ON、`DEFAULT_RECORDING_OPTIONS`）と
+   **低速録画**（Issue #68、後述）。th20のリプレイならタイトル固有の注意書きも出す。
 3. メール入力＋解析・アップロードとも成功で「次のステップ」ボタンが活性化
    （`requestMagicLink()`に渡す`replayKey`はアップロード完了後にしか手に入らないため、
    ボタンはアップロード完了も待つ）。押下で`requestMagicLink()`（`POST /magic-links`）を
    呼び、`MagicLinkSent`画面へ遷移する。
+
+### 低速録画オプション（Issue #68）
+
+ゲームを 1/2 倍速で走らせて録画し後処理で等倍へ戻す方式で、等倍では処理落ちする
+th20（Issue #87）の品質を担保する。UI上の要件は「**低速録画に対応したタイトル**で、
+かつ自宅ワーカーが使えるとき、かつその場合に限り選べる」「選べるなら th20 だけ
+既定オン」「選べないならグレーアウト」。
+
+- 対応タイトルは`supportsSlowMotion(game)`（`@sattori/shared`、現状 th20 のみ。
+  他タイトルへの展開は Issue #101）で判定する。速度を落とす仕組みがタイトルのMOD側に
+  あるため、**非対応タイトルで要求するとゲームは等倍で動くのに後処理だけが等倍化を
+  行い、2倍速の動画が出来上がる**（しかも生データは削除される）。`POST /magic-links`
+  も同じ判定で握り潰すが、UIはその前に選ばせない。
+- マウント時に`getWorkerAvailability()`（`GET /worker-availability`）を**1回だけ**引く。
+  実際に録画が始まるのはユーザーがマジックリンクを開いた後（最大24時間後）で、その
+  時点の可否とはどのみち一致しないため、ポーリングして精度を上げても意味がない。
+  取得に失敗した場合も「使えない」（グレーアウト）に倒す——選択肢を出しておいて実際は
+  等倍で録画される、という食い違いを避けるため。
+- 既定値は`defaultSlowMotionFor(game, available)`（`@sattori/shared`）が決める。
+  ユーザーが一度でもチェックを触ったらその意思を尊重し、以後タイトルが変わっても
+  追従させない。
+- 送信する値は「チェック状態」ではなく
+  `slowMotionAvailable && supportsSlowMotion(game) && slowMotion`という導出値を使う。
+  可否やタイトルが変わったときにstateが取り残されないようにするため。
+- 選べない理由（タイトル未対応／ワーカーが混雑）はヒント文で区別して出す。前者は
+  待っても変わらないが、後者は時間をおけば変わるため。
+
+### th20の注意書き（Issue #87）
+
+th20のリプレイを解析したときだけ、STEP2のプレビュー直下に2点を出す。**メールアドレスを
+入力して録画を依頼してしまう前に**知らせるのが目的:
+
+- **デシンク（リプレイずれ）が頻発する**: リプレイファイル・ゲーム本体側の現象で、
+  録画側では検知も対処もできない（touhou-recorder reports/45）。再録画しても同じ結果。
+- **等倍録画では品質が落ちる**: 低速録画が有効なときは該当しないので出さない。
 
 ## ページBのフロー（`pages/JobPage.tsx`）
 
@@ -49,6 +85,14 @@
 2. 起動後は`JobProgress`が`useJobPolling`フック経由でポーリング表示を行う。
 
 ### ポーリング（`hooks/useJobPolling.ts`）
+
+低速録画（Issue #68）のジョブは録画フェーズに実時間で2倍かかる。進捗バジェット
+（`hooks/jobProgressBudget.ts`）はこれを`GetJobResponse.slowMotion`から織り込む。
+**織り込まないと録画の途中でバジェットを使い切り、「残り約○分」が消えたうえ
+`isPhaseOverrun()`がリトライ疑いを誤検知する**（悲観バジェットの1.5倍を、2倍かかる
+録画は必ず超えるため）。ワーカーが報告する`progress`は実時間ではなく**コンテンツ秒数**
+なので、バジェット（実時間）と突き合わせる箇所では`recordingContent`を換算係数に使う。
+変換フェーズは等倍に戻した後の動画が対象なのでスケールしない。
 
 `getJob()`を3秒間隔（`POLL_INTERVAL_MS`）で呼び続け、`isTerminalStatus()`
 （`done`/`failed`）に達したら停止する。月間最大1000回規模ではWebSocket/SSEは過剰、
@@ -62,9 +106,15 @@
 ブラウザ標準のダウンロード機構（進捗表示・タブを離れても継続）を使うため、
 fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
 
+**出力が1本のジョブでは`downloadUrl720p`が null になる**（th20・低速録画。解像度が
+変わらない/生データが半分の速度で使えないため、変換結果1本に集約する。
+`worker/convert.py`の`needs_separate_raw_output()`）。主要ボタンは
+`downloadUrl720p ?? downloadUrl`のフォールバックでそのまま本命を指し、副次リンク
+（「変換前の動画をダウンロード」）は両方揃っているときだけ出す。
+
 ## 完了後のプレビュー再生（`components/JobProgress.tsx`、Issue #71）
 
-`status: "done"`のとき、`GetJobResponse.previewVideoUrl`（720p版のCDN URL。
+`status: "done"`のとき、`GetJobResponse.previewVideoUrl`（配信版のCDN URL。
 ダウンロード用と違い`response-content-disposition`は付かない）を`<video controls>`で
 そのまま再生できるようにしている。
 

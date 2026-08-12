@@ -51,6 +51,12 @@
   font-style: italic;
 }
 
+/* 低速録画(Issue #68)で走っていることの表示。異常ではないので retryHint と違い
+   斜体にはせず、事実の注記として控えめに出す。 */
+.slowMotionHint {
+  color: var(--text-muted);
+}
+
 .grid {
   display: grid;
   grid-template-columns: 400px 1fr;

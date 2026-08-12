@@ -106,8 +106,19 @@ static HRESULT WINAPI MyDirectInput8Create(HINSTANCE hinst, DWORD dwVersion,
     HRESULT hr = g_origDI8Create(hinst, dwVersion, riidltf, ppvOut, punkOuter);
     if (SUCCEEDED(hr) && ppvOut && *ppvOut) {
         void** vtable = *(void***)(*ppvOut);
-        PatchVTable(vtable, 3, (void*)MyCreateDevice, (void**)&g_origCreateDevice);
-        Log("DirectInput8Create: hooked CreateDevice (vtable[3])");
+        // th20で、タイトルメニュー用とリプレイ再生開始後のゲームプレイ用で
+        // DirectInput8Createが2回呼ばれることを確認した(reports/44参照)。
+        // 2回目のIDirectInput8インスタンスもMyCreateDeviceと同じ既存のフック済み
+        // 静的vtableを共有しているため、ここでチェック無しに再度PatchVTableすると
+        // g_origCreateDeviceにMyCreateDevice自身が上書き保存されてしまい、次回
+        // CreateDevice呼び出し時に無限再帰(スタックオーバーフロー)でクラッシュする
+        // (MyCreateDevice側のvtable[9]同様のチェックをここにも追加して対応)。
+        if (vtable[3] != (void*)MyCreateDevice) {
+            PatchVTable(vtable, 3, (void*)MyCreateDevice, (void**)&g_origCreateDevice);
+            Log("DirectInput8Create: hooked CreateDevice (vtable[3])");
+        } else {
+            Log("DirectInput8Create: CreateDevice already hooked (shared vtable), skipping");
+        }
     }
     return hr;
 }

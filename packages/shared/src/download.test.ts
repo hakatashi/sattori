@@ -16,13 +16,13 @@ const SAMPLE_REPLAY_INFO: ReplayInfo = {
 
 describe("buildDownloadFilename", () => {
   it("副題を除いたタイトル・難易度・キャラ・スコア・プレイヤー名からファイル名を組み立てる", () => {
-    expect(buildDownloadFilename("job-1", SAMPLE_REPLAY_INFO, "720p")).toBe(
+    expect(buildDownloadFilename("job-1", SAMPLE_REPLAY_INFO, "delivery")).toBe(
       "東方地霊殿 Lunatic 霊夢A 442,469,780 (プレイヤー koyi) #TouhouSattori.mp4",
     );
   });
 
   it("オリジナル解像度版は区別できるサフィックスを付ける", () => {
-    expect(buildDownloadFilename("job-1", SAMPLE_REPLAY_INFO, "original")).toBe(
+    expect(buildDownloadFilename("job-1", SAMPLE_REPLAY_INFO, "raw")).toBe(
       "東方地霊殿 Lunatic 霊夢A 442,469,780 (プレイヤー koyi) #raw #TouhouSattori.mp4",
     );
   });
@@ -35,16 +35,16 @@ describe("buildDownloadFilename", () => {
       score: null,
       player: "",
     };
-    expect(buildDownloadFilename("job-1", info, "720p")).toBe("東方地霊殿 #TouhouSattori.mp4");
+    expect(buildDownloadFilename("job-1", info, "delivery")).toBe("東方地霊殿 #TouhouSattori.mp4");
   });
 
   it("replayInfoが無ければjobIdのみで組み立てる", () => {
-    expect(buildDownloadFilename("job-1", null, "720p")).toBe("job-1 #TouhouSattori.mp4");
+    expect(buildDownloadFilename("job-1", null, "delivery")).toBe("job-1 #TouhouSattori.mp4");
   });
 
   it("ファイルシステムで使えない記号を全角に置き換える", () => {
     const info: ReplayInfo = { ...SAMPLE_REPLAY_INFO, player: 'a/b:c*d?e"f<g>h|i' };
-    expect(buildDownloadFilename("job-1", info, "720p")).toBe(
+    expect(buildDownloadFilename("job-1", info, "delivery")).toBe(
       "東方地霊殿 Lunatic 霊夢A 442,469,780 (プレイヤー a／b：c＊d？e”f＜g＞h｜i) #TouhouSattori.mp4",
     );
   });

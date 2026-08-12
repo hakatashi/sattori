@@ -157,13 +157,13 @@ IAM ユーザー側に付けるポリシー:
 | `HOME_WORKER_ROLE_ARN` | (なし) | CfnOutput `HomeWorkerRoleArn`。**本番では必ず指定する**（未指定だと環境の認証情報をそのままコンテナへ渡す） |
 | `HOME_WORKER_ID` | `home-1` | ワーカー識別子。複数台にするなら一意にすること |
 | `HOME_WORKER_MAX_CONCURRENCY` | `2` | 同時録画数の上限。**上げる前に「実機検証の記録」を読むこと** — 2並列でもCPU温度が上限に張り付くため、安全な並列度は冷却状態とホストの他負荷に依存する |
-| `HOME_WORKER_SUPPORTED_GAMES` | `th06,th07,th08,th11` | 引き受けるタイトル |
-| `HOME_WORKER_CAPABILITIES` | (なし) | 追加能力。**実際にできることだけ**を書く（`packages/shared/src/worker.ts`） |
+| `HOME_WORKER_SUPPORTED_GAMES` | `th06,th07,th08,th11,th20` | 引き受けるタイトル |
+| `HOME_WORKER_CAPABILITIES` | `WORKER_CAPABILITIES` 全部（現状 `slow-motion-recording` のみ） | 追加能力（`packages/shared/src/worker.ts`）。低速録画（Issue #68）の実体は EC2 と共通のワーカーイメージ側にあり、デーモンは `homeWorkerEnv` をそのまま `docker run` へ渡すだけなので、自宅ワーカーは無条件に対応できる＝既定で全部宣言する。**「対応はできるが引き受けたくない」場合は空文字（`HOME_WORKER_CAPABILITIES=`）で降りられる**（変数ごと消すと既定に戻るので効かない） |
 | `HOME_WORKER_LOAD_THRESHOLD` | `0.7` | 1コアあたりのロードアベレージがこれを超えている間は新規 claim を止める |
 | `HOME_WORKER_POLL_INTERVAL_SEC` | `3` | オファー探索の間隔 |
 | `HOME_WORKER_DOCKER_CPUS` | (なし) | `docker run --cpus` |
 | `HOME_WORKER_DOCKER_ARGS` | (なし) | `docker run` への追加引数（シェルと同じ空白区切り） |
-| `HOME_WORKER_DRAIN_TIMEOUT_SEC` | `5400` | 終了シグナル後、実行中ジョブの完走を待つ上限 |
+| `HOME_WORKER_DRAIN_TIMEOUT_SEC` | `9000` | 終了シグナル後、実行中ジョブの完走を待つ上限。低速録画（Issue #68）の録画タイムアウト（120分＝等倍60分の2倍）＋変換の余裕（30分）で、Step Functions 側の `taskTimeout`（150分）と揃えてある。**短くすると AWS 側がまだ待っているジョブをデーモンが先に打ち切ることになる** |
 | `WORKER_LOG_GROUP` | `/sattori/worker` | ログ転送先（EC2 ワーカーと同じ） |
 
 ### 4.3 起動
@@ -201,8 +201,11 @@ ExecStart=/home/hakatashi/.asdf/installs/nodejs/24.9.0/bin/node dist/main.js
 Restart=always
 RestartSec=10
 # 実行中の録画を完走させてから終了する（SIGTERM後は新規claimを止めるだけ）。
+# `HOME_WORKER_DRAIN_TIMEOUT_SEC`（既定9000秒＝150分）より必ず長く取ること。
+# 短いとドレインの途中で systemd に SIGKILL され、claim のハートビートとログ転送が
+# 止まったままコンテナだけが dockerd 配下に取り残される。
 KillSignal=SIGTERM
-TimeoutStopSec=5400
+TimeoutStopSec=9600
 
 [Install]
 WantedBy=multi-user.target
@@ -316,20 +319,30 @@ JobsTable を汚さないため）、`TASK_TOKEN` はダミー（Step Functions 
 `task_heartbeat.py` は送信失敗（ダミートークンによる `InvalidToken`）を握りつぶして
 録画を継続した。
 
-## 7. 今後の展開
+## 7. 低速録画（Issue #68）と th20 の振り分け
 
-th20（東方錦上京、Issue #87）は描画負荷が高く、原則として4xlarge級のインスタンスが要る。
-録画品質を担保するため 1/2 倍速で録画して後処理で等速へ戻す方式（Issue #68）を採りたいが、
+th20（東方錦上京、Issue #87）は描画負荷が高く、等倍で録るなら4xlarge級のインスタンスが要る。
+録画品質を担保するには 1/2 倍速で録画して後処理で等速へ戻す方式（Issue #68）が有効だが、
 録画に倍の実時間がかかるため EC2 では割に合わない。そこで
 **「低速録画できる自宅ワーカーが空いていれば自宅で低速録画、いなければ4xlarge級の EC2 で
-等速録画」**という振り分けを行う予定である。
+等速録画」**という振り分けになっている。
 
-この振り分けは `apps/api/src/workerRouting.ts` の `GAME_ROUTING_POLICIES` に th20 の行を
-足すだけで表現できるように設計してある（`requiredCapabilities: ["slow-motion-recording"]`
-＋ EC2 側の候補インスタンスタイプを th20 だけ4xlarge級にする）。デーモン側は
-`HOME_WORKER_CAPABILITIES=slow-motion-recording` を宣言し、録画速度そのものは
-**AWS 側が渡す環境変数**として受け取る——ワーカーコンテナに「自宅かEC2か」の分岐を
-持ち込まないため（`apps/api/src/workerEnv.ts`）。
+- **能力の宣言**: デーモンは既定で `slow-motion-recording` を宣言する（§4.2 の
+  `HOME_WORKER_CAPABILITIES`）。宣言の実体はワーカーコンテナ側にあるので、
+  デーモンが何か特別なことをするわけではない。
+- **オファーの条件**: 低速録画を希望するジョブは、この能力を宣言したワーカーにしか
+  オファーされない（`apps/api/src/workerRouting.ts` の `routingPolicyFor()`）。
+  th20 はオファー待ちの上限（`MAX_OFFER_WINDOW_SECONDS`）まで自宅ワーカーを待つ。
+- **録画速度の指定**: デーモンは録画速度を一切知らない。AWS 側がオファーに添える
+  `homeWorkerEnv` に `FPS_LIMIT_TARGET_HZ=30` が入っているかどうかがすべてで、
+  デーモンはそれをそのまま `docker run -e` へ渡す（`apps/api/src/workerEnv.ts`）。
+  **EC2 起動時はこの変数を付けない**ので、同じイメージが等倍で走る。
+- **所要時間**: 録画フェーズが実時間で2倍になるため、`HOME_WORKER_DRAIN_TIMEOUT_SEC`
+  の既定と Step Functions の `taskTimeout` を 150 分に揃えてある（§4.2）。
+  1本の th20 で自宅マシンを1時間以上占有することになる点に注意。
+
+ワーカーコンテナ側の実装（Present フックによるスローモーション化、DirectSound の
+周波数スケール、録画後の等倍変換）は `worker/README.md`「低速録画」を参照。
 
 ## 8. テスト
 

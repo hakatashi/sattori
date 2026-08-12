@@ -11,7 +11,7 @@ function makeJob(overrides: Partial<JobRecord> = {}): JobRecord {
     game: "th07",
     replayKey: "replays/abc.rpy",
     status: "done",
-    options: { watermark: true },
+    options: { watermark: true, slowMotion: false },
     outputPath: "videos/job-1.mp4",
     outputPath720p: "videos/job-1-720p.mp4",
     outputBytes: 700 * 1024 * 1024,

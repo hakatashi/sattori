@@ -48,8 +48,10 @@ start_timeとして保持し、mux_audio_video()がその差分を実測して�
 作成・破棄は record_with_retry() が pulse.job_sink() で行い、Wine側の出力先は
 GameConfig.build_env() が渡す`PULSE_SINK`で固定する。
 """
+import getpass
 import io
 import json
+import math
 import os
 import re
 import signal
@@ -62,12 +64,68 @@ from PIL import Image
 
 import pulse
 
+# 既定のXvfb画面サイズ(640x480ウィンドウ+ウィンドウ装飾分の余白)。th20は内部描画解像度が
+# 960p相当(1280x960ウィンドウ)へ上がっており収まらないため、GameConfig.xvfb_screenで
+# タイトルごとに上書きできる(touhou-recorder reports/44)。
 XVFB_SCREEN = "800x600x24"
+
+# ---------------------------------------------------------------------------
+# 低速録画(Issue #68)
+# ---------------------------------------------------------------------------
+# 起動側(apps/api/src/workerEnv.ts)が`FPS_LIMIT_TARGET_HZ`を渡してきた場合、MOD
+# (mods/common/fps_limiter_hook.cpp)がIDirect3DDevice9::Presentをその周波数へ
+# スロットルする。th20はレンダリングfpsとゲームロジック更新が直結しているため、
+# これはゲーム進行そのもののスローモーション化になる(touhou-recorder reports/47)。
+# 実時間あたりのCPU負荷が下がり、等倍では処理落ちしていた高負荷区間(最低19.8fps)が
+# 安定して目標fpsを維持できるようになる。
+#
+# **ワーカーは「自分がEC2にいるのか自宅にいるのか」を知らない**。低速録画かどうかは
+# この環境変数の有無だけで決まり、未設定なら従来どおり等倍で動く(全タイトル共通)。
+#
+# ここで得られるスケール係数は「実時間がゲーム内時間の何倍になるか」で、等倍なら1.0、
+# 30Hz指定なら2.0。**MOD内部の待機(dllmain.cppのScaledSleep)だけでなく、それを監視する
+# こちら側のタイムアウト・猶予時間も同じ比率で伸ばさないと低速録画は成立しない**
+# (reports/47で、スケール未適用のPOST_START_GRACE_SECのままステージ開始の導入演出中に
+# 処理落ち検知が走り、3回とも誤リトライする事象が実際に発生した)。
+NATIVE_FRAME_RATE_HZ = 60.0
+
+
+def slow_motion_scale(env=None):
+    """`FPS_LIMIT_TARGET_HZ`から実時間のスケール係数を求める(等倍なら1.0)。
+
+    未設定・数値でない・0以下・60超のいずれも1.0へ丸める(高速化方向には使わない。
+    このスケールはあくまで「ゲームを遅くしたぶん、監視側の時間も伸ばす」ためのもので、
+    1.0未満にするとタイムアウトが本来より短くなって誤検知を招くだけ)。
+    """
+    raw = (env if env is not None else os.environ).get("FPS_LIMIT_TARGET_HZ")
+    if not raw:
+        return 1.0
+    try:
+        target_hz = float(raw)
+    except ValueError:
+        return 1.0
+    if target_hz <= 0 or target_hz >= NATIVE_FRAME_RATE_HZ:
+        return 1.0
+    return NATIVE_FRAME_RATE_HZ / target_hz
+
+
+def scaled_poll_count(base_count, time_scale):
+    """実時間の長さをポーリング回数で表した定数を、低速録画のスケールに合わせて伸ばす。
+
+    ポーリングは実時間駆動(`POLL_INTERVAL_SEC`)なので、`n回連続`という条件は
+    `n * POLL_INTERVAL_SEC` **実時間秒**を意味する。低速録画ではその間にゲームが
+    半分しか進まないため、回数を据え置くと条件がゲーム内時間で 1/time_scale に
+    縮んでしまう。切り上げるのは、条件を本来より緩める方向へ丸めないため。
+    """
+    return math.ceil(base_count * time_scale)
 
 # 終了検知(画面静止判定)の閾値・待機。PoC(touhou-recorder reports/13・14)の
 # 実測に基づく。変更する場合は当該レポートの根拠を必ず確認すること。
 STILL_MAD_THRESHOLD = 2.0
-STILL_CONSECUTIVE_REQUIRED = 8  # 8 * POLL_INTERVAL_SEC = 16秒
+# 連続回数はいずれも「等倍録画での秒数」をポーリング回数で表したもの。低速録画では
+# attempt_recording() が time_scale 倍して使う(ポーリング間隔は実時間駆動なので、
+# 回数を据え置くとゲーム内時間で必要な静止の長さが縮んでしまう)。
+STILL_CONSECUTIVE_REQUIRED = 8  # 8 * POLL_INTERVAL_SEC = 16秒(等倍録画時)
 POLL_INTERVAL_SEC = 2.0
 POST_START_GRACE_SEC = 15.0
 TIMEOUT_SEC = 60 * 60
@@ -92,8 +150,9 @@ END_TEMPLATE_ROWS = 40  # 160x120にダウンサンプルした座標系での�
 END_TEMPLATE_MAD_THRESHOLD = 15.0  # 実測: テンプレート自己一致は0.0〜0.32、無関係な画面
                                    # (ステージクリア画面・ゲームプレイ中・タイトル等)とは
                                    # 40〜140超と大きなマージンがある(reports/33・34)
-END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒。動画圧縮ノイズ等による
-                                       # 単発の偶然一致を弾くため連続一致を要求する(reports/34)
+END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録画時。上記の通り
+                                       # 低速録画では time_scale 倍される)。動画圧縮ノイズ等に
+                                       # よる単発の偶然一致を弾くため連続一致を要求する(reports/34)
 
 # 進捗スクリーンショットの書き出し間隔。POLL_INTERVAL_SEC(2秒)毎に取得している
 # フレームのうち5回に1回だけ保存する(=約10秒毎)。既存のMAD差分検知用のffmpeg
@@ -145,7 +204,7 @@ MAX_DUPLICATE_RATE_DEFAULT = 30.0
 class GameConfig:
     """タイトルごとに異なる値をまとめたもの(record_th07.py / record_th08.py が組み立てる)。"""
 
-    game_id: str  # "th06" / "th07" / "th08"(ログメッセージ・自動再生ログのファイル名接頭辞に使う)
+    game_id: str  # "th06"〜"th20"(ログメッセージ・自動再生ログのファイル名接頭辞に使う)
     display: str  # Xvfb のディスプレイ番号(例 ":97")。同一ホストでの多重起動を避けるため
     wineprefix: str
     instance_dir: str
@@ -193,7 +252,22 @@ class GameConfig:
     # 画面全体のMADが閾値をわずかに超え続けて自然終了を検知できない事例が実機で
     # 発生した(touhou-recorder reports/37・38)。この矩形をMAD計算から除外することで
     # 明滅の影響を受けずに静止判定できる。未指定(None)なら従来通り除外なしで計算する。
-    still_detect_exclude_rect: tuple[int, int, int, int] | None = None
+    # **矩形のリストも受け付ける**(th20はリプレイ終了後も2箇所で背景アニメーションが
+    # 継続するため、touhou-recorder reports/45)。
+    still_detect_exclude_rect: (
+        tuple[int, int, int, int] | list[tuple[int, int, int, int]] | None
+    ) = None
+    # Xvfbの画面サイズ("WxHx24")。未指定なら全タイトル共通の XVFB_SCREEN(800x600x24)。
+    # th20は1280x960ウィンドウで起動するため個別指定が要る(reports/44)。
+    xvfb_screen: str | None = None
+    # th125以降のエンジン(th20を含む)は、cfg とリプレイをゲーム本体ディレクトリでは
+    # なく WINEPREFIX 内の `%APPDATA%/ShanghaiAlice/{title}/` から読み込む
+    # (touhou-recorder reports/44)。True にすると prepare_instance() が
+    # `resolve_appdata_dir()` の指す場所にも cfg とリプレイを配置する。
+    uses_appdata_profile: bool = False
+    # `%APPDATA%` へ配置する必要のある cfg のファイル名(uses_appdata_profile が
+    # True のときのみ意味を持つ)。未指定なら f"{game_id}.cfg"。
+    cfg_filename: str | None = None
 
     def __post_init__(self):
         if self.game_exe is None:
@@ -203,6 +277,10 @@ class GameConfig:
         object.__setattr__(self, "hook_dll", f"{self.game_id}_hook.dll")
         object.__setattr__(self, "log_path", f"{self.instance_dir}/{self.game_id}_autoplay.log")
         object.__setattr__(self, "pulse_source", f"{self.pulse_sink}.monitor")
+        if self.xvfb_screen is None:
+            object.__setattr__(self, "xvfb_screen", XVFB_SCREEN)
+        if self.cfg_filename is None:
+            object.__setattr__(self, "cfg_filename", f"{self.game_id}.cfg")
         if self.end_template_path is None:
             module_dir = os.path.dirname(os.path.abspath(__file__))
             object.__setattr__(
@@ -235,9 +313,9 @@ def ensure_xvfb(config, env, log=print):
     if check.returncode == 0:
         log(f"Xvfb {config.display} は起動済みとみなして再利用します")
         return
-    log(f"Xvfb {config.display} を起動します")
+    log(f"Xvfb {config.display} を起動します (screen={config.xvfb_screen})")
     subprocess.Popen(
-        ["Xvfb", config.display, "-screen", "0", XVFB_SCREEN],
+        ["Xvfb", config.display, "-screen", "0", config.xvfb_screen],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     time.sleep(1.5)
@@ -248,11 +326,36 @@ def ensure_xvfb(config, env, log=print):
     time.sleep(1.0)
 
 
+def resolve_appdata_dir(config):
+    """th125以降のエンジン(th20)がcfg/リプレイを読む`%APPDATA%/ShanghaiAlice/{title}/`の
+    実体パスを、**実行中のUNIXユーザーから**組み立てる。
+
+    Wineはユーザープロファイルを`drive_c/users/<UNIXユーザー名>`にマッピングし、
+    プレフィックスに無ければ起動時にそのユーザーぶんを新規作成する。したがって
+    タイトル資産アーカイブに入っている`users/hakatashi/...`(アーカイブを作った開発機の
+    ユーザー名)を決め打ちにすると、rootで動く本番コンテナは空の`users/root/`を
+    参照してcfgを見つけられず、初回起動時の解像度選択ダイアログで止まる
+    (touhou-recorder reports/46 のバグ1と同じ症状。あちらはコンテナのユーザー名を
+    `hakatashi`へ改名して回避したが、こちらは**ユーザー名に依存しない**方を採る——
+    ワーカーイメージの実行ユーザーと、資産アーカイブを作った開発機のユーザー名を
+    一致させ続ける運用上の約束を増やしたくないため)。
+    """
+    return (
+        f"{config.wineprefix}/drive_c/users/{getpass.getuser()}"
+        f"/AppData/Roaming/ShanghaiAlice/{config.game_id}"
+    )
+
+
 def prepare_instance(config, replay_path, log=print):
     """ゲーム一式を instance ディレクトリへ複製し、録画対象リプレイだけを
     正規スロット名で replay/ 配下に配置する。extra_dlls(th06のvpatch_th06.dll等)は
     game_dir_src配下に同梱されている前提のため、以下のrsyncで自動的にコピーされる
-    (個別のcpは不要)。"""
+    (個別のcpは不要)。
+
+    `uses_appdata_profile`(th20)のタイトルは、ゲームが実際に読むのは instance
+    ディレクトリではなく WINEPREFIX 側の `%APPDATA%` なので、cfg とリプレイを
+    そちらにも配置する。instance 側への配置も残しておく——他タイトルと処理を
+    共通化できるうえ、ゲームに読まれないだけで害が無いため。"""
     subprocess.run(
         ["rsync", "-a", "--exclude=replay", f"{config.game_dir_src}/", f"{config.instance_dir}/"],
         check=True,
@@ -264,6 +367,25 @@ def prepare_instance(config, replay_path, log=print):
     subprocess.run(["cp", replay_path, f"{replay_dir}/{config.canonical_slot}"], check=True)
     subprocess.run(["cp", config.injector_path, config.instance_dir], check=True)
     subprocess.run(["cp", config.hook_dll_path, config.instance_dir], check=True)
+    if config.uses_appdata_profile:
+        appdata_dir = resolve_appdata_dir(config)
+        appdata_replay_dir = f"{appdata_dir}/replay"
+        os.makedirs(appdata_replay_dir, exist_ok=True)
+        # 前回の録画で置いたリプレイが残っていると、ユーザーリプレイ一覧の1件目が
+        # 今回の対象とは限らなくなる(MODは常に1件目を選ぶ)。必ず空にしてから置く。
+        for f in os.listdir(appdata_replay_dir):
+            os.remove(f"{appdata_replay_dir}/{f}")
+        subprocess.run(
+            ["cp", replay_path, f"{appdata_replay_dir}/{config.canonical_slot}"], check=True
+        )
+        cfg_src = f"{config.game_dir_src}/{config.cfg_filename}"
+        if os.path.exists(cfg_src):
+            subprocess.run(["cp", cfg_src, f"{appdata_dir}/{config.cfg_filename}"], check=True)
+        else:
+            # cfgが無いと初回起動時の解像度選択ダイアログが出てウィンドウ検出に失敗する。
+            # 資産アーカイブの作り忘れをここで診断できるようにしておく(reports/44)。
+            log(f"WARNING: {cfg_src} が見つかりません。初回起動ダイアログで停止する可能性があります")
+        log(f"%APPDATA%配下にもcfg/リプレイを配置しました ({appdata_dir})")
     if os.path.exists(config.log_path):
         os.remove(config.log_path)
     log(f"instance 準備完了 (対象リプレイを {config.canonical_slot} として配置)")
@@ -416,16 +538,23 @@ def build_still_mask(rect, w, h):
     """GameConfig.still_detect_exclude_rect(元のウィンドウ座標系のx0,y0,x1,y1)を、
     grab_frame()が常にリサイズする160x120グレースケール座標系のブールマスク
     (True=静止判定に使う画素)に変換する。rect未設定ならNone(呼び出し側はマスク無しの
-    従来通りのmad()にフォールバックする)。"""
+    従来通りのmad()にフォールバックする)。
+
+    **矩形のリストも受け付ける**。th11は明滅する選択カーソル1箇所だけだったが、th20は
+    リプレイ終了後も2箇所(左側の立ち絵まわりと右下)で背景アニメーションが継続するため、
+    どちらも除外しないと静止判定が成立しない(touhou-recorder reports/45)。"""
     if not rect:
         return None
-    x0, y0, x1, y1 = rect
-    rx0 = int(x0 * 160 / w)
-    rx1 = int(np.ceil(x1 * 160 / w))
-    ry0 = int(y0 * 120 / h)
-    ry1 = int(np.ceil(y1 * 120 / h))
+    # 単一の矩形(x0,y0,x1,y1)とリストの両方を受けるため、前者はリストへ包む。
+    # 「先頭要素が数値かどうか」で見分ける(tuple/listの別には依存しない)。
+    rects = [rect] if isinstance(rect[0], (int, float)) else list(rect)
     mask = np.ones((120, 160), dtype=bool)
-    mask[ry0:ry1, rx0:rx1] = False
+    for x0, y0, x1, y1 in rects:
+        rx0 = int(x0 * 160 / w)
+        rx1 = int(np.ceil(x1 * 160 / w))
+        ry0 = int(y0 * 120 / h)
+        ry1 = int(np.ceil(y1 * 120 / h))
+        mask[ry0:ry1, rx0:rx1] = False
     return mask
 
 
@@ -446,14 +575,18 @@ def load_end_template(path):
     return np.asarray(img, dtype=np.float32)[:END_TEMPLATE_ROWS, :]
 
 
-def probe_stutter(config, env, x, y, w, h):
-    """短時間(約1.5秒)に複数フレームを0.15秒間隔で連続キャプチャし、隣接フレーム間が
+def probe_stutter(config, env, x, y, w, h, interval_sec=STUTTER_PROBE_INTERVAL_SEC):
+    """短時間(約1.5秒)に複数フレームを`interval_sec`間隔で連続キャプチャし、隣接フレーム間が
     ほぼ同一(MAD<STILL_MAD_THRESHOLD)である割合を返す。60fpsで本来動いているはずの
     短い間隔でこの割合が高ければ、処理落ち(重複フレーム多発、reports/12・13・22)の
-    疑いが強い。"""
+    疑いが強い。
+
+    低速録画(Issue #68)ではゲームの描画頻度自体が下がるため、呼び出し側が同じ比率で
+    伸ばした間隔を渡す。等倍と同じ0.15秒のままだと、正常に目標fpsを維持できていても
+    隣接フレームが重複と判定され、処理落ちを誤検知する。"""
     frames = [grab_frame_gray(config, env, x, y, w, h)]
     for _ in range(STUTTER_PROBE_SAMPLES - 1):
-        time.sleep(STUTTER_PROBE_INTERVAL_SEC)
+        time.sleep(interval_sec)
         frames.append(grab_frame_gray(config, env, x, y, w, h))
     dup_count = sum(
         1 for i in range(1, len(frames)) if mad(frames[i - 1], frames[i]) < STILL_MAD_THRESHOLD
@@ -505,7 +638,7 @@ def build_video_ffmpeg_cmd(config, x, y, w, h, video_output):
     ほぼ0起点のウォーターマーク動画(ファイル入力)と overlay filter 内で
     フレーム同期が全く噛み合わず、overlay の `eof_action=pass` が即座に発動して
     ウォーターマークが一切合成されない不具合が本番のth08録画で発覚した。
-    ウォーターマークは upscale.py 側(`-copyts`を使わない通常のファイル入力
+    ウォーターマークは convert.py 側(`-copyts`を使わない通常のファイル入力
     同士の合成で、かつどのみち720p変換のために既に発生する再エンコード1回に
     相乗りできる)で行う。
     """
@@ -581,6 +714,29 @@ def mux_audio_video(video_path, audio_path, output_path, env, log=print):
     return result.returncode == 0
 
 
+def duplicate_rate_threshold_for_raw(threshold_percent, time_scale):
+    """等倍換算の重複フレーム率の閾値を、**等倍へ戻す前の生データ**に対する閾値へ換算する。
+
+    低速録画(Issue #68)の生データは、ゲームが目標fpsを完璧に維持できていても各フレームが
+    `time_scale` 枚ずつ並ぶ(録画自体は等倍と同じ`-framerate 60`で撮るため)。等倍の閾値を
+    そのまま当てると、正常な録画が必ず「処理落ち」と判定されてリトライされてしまう。
+
+    ユニークなフレーム数 U は等倍化しても変わらず、総フレーム数だけが `time_scale` 倍に
+    なる。生データの尺 T、等倍化後の尺 T/scale として
+
+        raw = 1 - U/(60T)                     等倍化後 = 1 - U/(60T/scale)
+
+    から `等倍化後 = scale*raw - (scale-1)`、逆に解いて
+
+        raw = (等倍化後 + scale - 1) / scale
+
+    等倍(scale=1)では換算しても値が変わらないので、既存タイトルの判定は一切変わらない。
+    """
+    if time_scale <= 1.0:
+        return threshold_percent
+    return (threshold_percent + (time_scale - 1) * 100.0) / time_scale
+
+
 def measure_duplicate_rate(video_path, start_sec, duration_sec):
     """録画動画の指定区間について、mpdecimateフィルタで重複フレーム率(%)を計測する。
     ウィンドウ再作成等による処理落ち(reports/12・13・22)の事後検知に使う。
@@ -629,6 +785,7 @@ def _failure_result(config, env, log):
         "classification": "setup_error",
         "fps_runaway_hz": None,
         "total_record_sec": 0.0,
+        "time_scale": 1.0,
     }
 
 
@@ -637,6 +794,28 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     classification は "good" / "fps_runaway" / "stutter" / "timeout" / "setup_error" のいずれか。
     """
     env = config.build_env()
+    # 低速録画(Issue #68)のスケール係数。等倍なら1.0で、以下の時間依存パラメータは
+    # すべて従来値のままになる。
+    time_scale = slow_motion_scale(env)
+    if time_scale != 1.0:
+        log(
+            f"低速録画モード: FPS_LIMIT_TARGET_HZ={env.get('FPS_LIMIT_TARGET_HZ')} "
+            f"(実時間はゲーム内時間の{time_scale:.2f}倍。監視の猶予・タイムアウトも同じ比率で伸ばします)"
+        )
+    post_start_grace_sec = POST_START_GRACE_SEC * time_scale
+    stutter_probe_interval_sec = STUTTER_PROBE_INTERVAL_SEC * time_scale
+    stutter_probe_period_sec = STUTTER_PROBE_PERIOD_SEC * time_scale
+    stutter_probe_active_until_sec = STUTTER_PROBE_ACTIVE_UNTIL_SEC * time_scale
+    timeout_sec = TIMEOUT_SEC * time_scale
+    # 終了検知の「連続回数」も同じ比率で伸ばす。ポーリングは実時間駆動
+    # (POLL_INTERVAL_SEC)なので、回数を据え置くと**ゲーム内時間で必要な静止の長さが
+    # 1/time_scale に縮む**——低速録画のth20なら16秒→8秒相当になり、会話イベントや
+    # 弾幕の薄い区間でリプレイ途中の誤検知を招く(しかも classification は "good" に
+    # なるためリトライされず、途中で切れた動画がそのまま配信される)。
+    still_consecutive_required = scaled_poll_count(STILL_CONSECUTIVE_REQUIRED, time_scale)
+    end_template_consecutive_required = scaled_poll_count(
+        END_TEMPLATE_CONSECUTIVE_REQUIRED, time_scale,
+    )
     end_template = load_end_template(config.end_template_path)
     if end_template is None:
         log(
@@ -708,7 +887,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     x, y, w, h, winid = geom
     log(f"クロップ座標を確定: x={x} y={y} w={w} h={h} (winid={winid})")
 
-    # 確定した座標がXVFB_SCREEN(800x600)の範囲外にはみ出す場合は左上(0,0)へ移動する
+    # 確定した座標がXvfbの画面(config.xvfb_screen)の範囲外にはみ出す場合は左上(0,0)へ移動する
     # (th11の安定位置(185,211)は 185+640=825 > 800 で範囲外。この状態のままだと
     # x11grabが起動に失敗する、touhou-recorder reports/35)。
     # 移動後の実座標は必ず再取得すること: xdotool windowmoveは(装飾のあるウィンドウの場合)
@@ -717,7 +896,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     # 不具合として発覚、touhou-recorder reports/37)。さらにxdotool windowmoveの反映は
     # 非同期なので、ここでもwait_for_stable_geometry()で座標が落ち着くのを待ってから
     # 画面内に収まったかを判定し、収まるまで最大20回リトライする。
-    screen_w, screen_h = (int(v) for v in XVFB_SCREEN.split("x")[:2])
+    screen_w, screen_h = (int(v) for v in config.xvfb_screen.split("x")[:2])
     if x + w > screen_w or y + h > screen_h:
         for _ in range(20):
             subprocess.run(["xdotool", "windowmove", winid, "0", "0"], env=env)
@@ -761,8 +940,11 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     )
     record_start = time.time()
 
+    # MODのメニュー自動操作(dllmain.cppのScaledSleep)は低速録画時に同じ比率だけ
+    # 実時間が伸びるため、その完了を待つこちらのタイムアウトも伸ばす。伸ばし忘れると
+    # 「シーケンス完了ログが検出できない」と誤判定する(touhou-recorder reports/47)。
     sequence_complete_time = wait_for_log_marker(
-        config.log_path, "sequence complete", timeout=20, poll_interval=0.1,
+        config.log_path, "sequence complete", timeout=20 * time_scale, poll_interval=0.1,
         log_all=True, seen_lines=seen_lines, log=log,
     )
     if sequence_complete_time is None:
@@ -770,7 +952,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         sequence_complete_time = time.time()
 
     gameplay_start = sequence_complete_time
-    log(f"リプレイ再生開始とみなす時刻から監視開始(猶予{POST_START_GRACE_SEC}秒)")
+    log(f"リプレイ再生開始とみなす時刻から監視開始(猶予{post_start_grace_sec:.1f}秒)")
 
     prev_frame = None
     consecutive_still = 0
@@ -779,11 +961,11 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     stutter_detected = False
     fps_runaway_hz = None
     poll_count = 0
-    next_stutter_probe = POST_START_GRACE_SEC
+    next_stutter_probe = post_start_grace_sec
     while True:
         elapsed = time.time() - gameplay_start
-        if elapsed > TIMEOUT_SEC:
-            log(f"TIMEOUT: {TIMEOUT_SEC}秒経過したため強制停止します")
+        if elapsed > timeout_sec:
+            log(f"TIMEOUT: {timeout_sec:.0f}秒経過したため強制停止します")
             break
 
         runaway_hz = scan_fps_runaway(config.log_path)
@@ -792,14 +974,14 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
             fps_runaway_hz = runaway_hz
             break
 
-        if elapsed < POST_START_GRACE_SEC:
+        if elapsed < post_start_grace_sec:
             time.sleep(POLL_INTERVAL_SEC)
             continue
 
-        if elapsed >= next_stutter_probe and elapsed < STUTTER_PROBE_ACTIVE_UNTIL_SEC:
-            dup_fraction = probe_stutter(config, env, x, y, w, h)
+        if elapsed >= next_stutter_probe and elapsed < stutter_probe_active_until_sec:
+            dup_fraction = probe_stutter(config, env, x, y, w, h, stutter_probe_interval_sec)
             elapsed_after_probe = time.time() - gameplay_start
-            next_stutter_probe = elapsed_after_probe + STUTTER_PROBE_PERIOD_SEC
+            next_stutter_probe = elapsed_after_probe + stutter_probe_period_sec
             log(f"stutter probe: elapsed={elapsed_after_probe:.1f}s dup_fraction={dup_fraction:.2f}")
             if dup_fraction >= STUTTER_DUP_FRACTION_THRESHOLD:
                 log(f"WARNING: 短間隔サンプリングでの重複フレーム率({dup_fraction:.2f})が閾値を超えました。早期終了します")
@@ -810,7 +992,14 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         frame, color_frame = grab_frame(config, env, x, y, w, h)
         poll_count += 1
         if progress_dir and poll_count % PROGRESS_SNAPSHOT_EVERY_N_POLLS == 0:
-            save_progress_snapshot(progress_dir, color_frame, elapsed, expected_duration_seconds)
+            # 進捗は**実時間ではなくコンテンツ秒数**(＝完成品の動画で何秒ぶん進んだか)
+            # で報告する。分母の expected_duration_seconds がリプレイの再生時間である
+            # 以上、低速録画で伸びた実時間をそのまま入れると進捗率が半分に見えてしまう。
+            # 実時間が倍かかること自体はフロントエンド側がジョブの `slowMotion` を見て
+            # 残り時間の見積もりに織り込む(`apps/web/src/hooks/jobProgressBudget.ts`)。
+            save_progress_snapshot(
+                progress_dir, color_frame, elapsed / time_scale, expected_duration_seconds,
+            )
         if end_template is not None:
             # テンプレートが使えるゲームでは、画面静止を待たずに毎回テンプレート照合する
             # (静止待ちを挟むと、リプレイ選択画面に戻った後さらにSTILL_CONSECUTIVE_REQUIRED
@@ -827,7 +1016,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
                 f"poll: elapsed={elapsed:.1f}s template_MAD={template_d:.2f} "
                 f"end_template_consecutive={end_template_consecutive}"
             )
-            if end_template_consecutive >= END_TEMPLATE_CONSECUTIVE_REQUIRED:
+            if end_template_consecutive >= end_template_consecutive_required:
                 log("リプレイ選択画面と連続して一致したためリプレイ終了と判定しました")
                 detected = True
                 break
@@ -839,7 +1028,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
                 else:
                     consecutive_still = 0
                 log(f"poll: elapsed={elapsed:.1f}s MAD={d:.2f} still={consecutive_still}")
-                if consecutive_still >= STILL_CONSECUTIVE_REQUIRED:
+                if consecutive_still >= still_consecutive_required:
                     log("画面が一定時間変化しなくなったためリプレイ終了と判定しました")
                     detected = True
                     break
@@ -907,6 +1096,10 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         "classification": classification,
         "fps_runaway_hz": fps_runaway_hz,
         "total_record_sec": total_record_sec,
+        # この試行の録画に適用されていた実時間スケール(等倍なら1.0)。出力は等倍へ
+        # 戻す前の生データなので、重複フレーム率の判定にこの値が要る
+        # (`duplicate_rate_threshold_for_raw()`)。
+        "time_scale": time_scale,
     }
 
 
@@ -948,10 +1141,18 @@ def _record_with_retry(config, replay_path, output_path, *,
             log("WARNING: 処理落ちの早期検知によりこの試行を破棄してリトライします")
             continue
 
+        # 判定対象は**等倍へ戻す前の生データ**なので、閾値の方をスケールに合わせて
+        # 換算する(`duplicate_rate_threshold_for_raw()`)。等倍録画では換算しても
+        # 値が変わらないため、th06/07/08/11の挙動は従来どおり。
+        time_scale = result.get("time_scale", 1.0)
+        threshold = duplicate_rate_threshold_for_raw(max_duplicate_rate, time_scale)
         dup_rate = measure_duplicate_rate(output_path, 15, min(30, max(5, result["total_record_sec"] - 15)))
-        log(f"録画開始15秒以降の重複フレーム率: {dup_rate}%")
-        if dup_rate is not None and dup_rate > max_duplicate_rate:
-            log(f"WARNING: 重複フレーム率({dup_rate}%)が閾値({max_duplicate_rate}%)を超えました。破棄してリトライします")
+        log(
+            f"録画開始15秒以降の重複フレーム率: {dup_rate}% "
+            f"(閾値{threshold:.1f}% = 等倍換算{max_duplicate_rate}%、time_scale={time_scale})"
+        )
+        if dup_rate is not None and dup_rate > threshold:
+            log(f"WARNING: 重複フレーム率({dup_rate}%)が閾値({threshold:.1f}%)を超えました。破棄してリトライします")
             continue
 
         log(f"試行{attempt}で正常な録画を確認しました")
