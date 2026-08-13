@@ -27,6 +27,14 @@
 | [0013](0013-per-job-pulseaudio-sink.md) | 2026-08 | worker | 並列録画の音声混成をジョブ専用の PulseAudio sink で防ぐ | 有効 |
 | [0014](0014-slow-motion-scaling-across-pipeline.md) | 2026-08 | worker / apps/web | 低速録画の倍率をフック・監視・変換・品質チェックのすべてへ一貫して適用する | 有効 |
 | [0015](0015-resume-from-raw-video-checkpoint.md) | 2026-08 | worker / apps/api | リトライ時の再開可否は S3 の生動画の実体で判定し、録画時の倍率はそのオブジェクトに添えて運ぶ | 有効 |
+| [0016](0016-ec2-fleet-instance-type-diversification.md) | 2026-08 | apps/api | EC2 Fleet の候補インスタンスタイプはタイトルごとに実機検証で決める | 有効 |
+| [0017](0017-orphan-sweep-from-aws-instances.md) | 2026-08 | apps/api | 孤児インスタンスの掃除はジョブレコードではなく AWS 上の実インスタンスを起点に走査する | 有効 |
+| [0018](0018-home-worker-pull-assignment.md) | 2026-08 | apps/api / home-worker | 自宅ワーカーへの割り当ては Pull 型にし、競合はすべて条件付き更新で決着させる | 有効 |
+| [0019](0019-userdata-ecs-agent-off-and-bootstrap-failure-notification.md) | 2026-07 | apps/api | UserData で ECS エージェントを止め、コンテナ起動前の失敗は UserData 自身が通知する | 有効 |
+| [0020](0020-worker-env-redaction-enforced-by-type.md) | 2026-08 | apps/api / packages/shared | taskToken の秘匿は散文の約束ではなく型で強制する | 有効 |
+| [0021](0021-cost-estimation-side-data-never-fails-the-job.md) | 2026-08 | apps/api | コスト推定用の付随データは、取得に失敗してもジョブを落とさず、後から上書きしない | 有効 |
+| [0022](0022-cost-guard-by-estimated-amount-not-job-count.md) | 2026-07 | apps/api | 新規受付の自動停止は録画回数ではなく推定コスト額で判定する | 有効 |
+| [0023](0023-elapsed-time-interpolation-never-rewinds.md) | 2026-08 | apps/web / worker | 経過時間表示はサーバー値を上限とする内挿にし、決して巻き戻さない | 有効 |
 
 ## 書き方
 

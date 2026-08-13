@@ -40,7 +40,7 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
 - **DynamoDB**: `JobsTable`（`jobId`パーティションキー、オンデマンド課金。
   DynamoDB Streams `NEW_AND_OLD_IMAGES`を有効化し完了メール送信のトリガーに使う。
   管理画面のジョブ一覧取得用GSI`StatusCreatedAtIndex`（PK=`status`, SK=`createdAt`,
-  Projection=ALL）を追加済み、Issue #51。詳細は`apps/api/README.md`「管理API」）、
+  Projection=ALL）を追加済み、Issue #51。詳細は`apps/api/docs/admin-api.md`）、
   `EmailRateLimitTable`（`normalizedEmail`パーティションキーのみ・1メール1item、
   TTL属性で自動削除。`apps/api/README.md`参照）、
   `SettingsTable`（`settingKey`パーティションキーのみ・固定値1item、キルスイッチ・
@@ -121,7 +121,8 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   からは辿れないインスタンスが残って課金だけが続くため、ジョブ起点の後始末
   （`HandleFailure`・管理画面の緊急停止）では構造的に拾えない。判定を安全側へ倒す
   仕組み（15分の猶予・実行中ジョブでは最新1台を保護）は`apps/api/README.md`
-  「孤児インスタンスの検知」参照。
+  「孤児インスタンスの検知」と
+  [`docs/decisions/0017`](../docs/decisions/0017-orphan-sweep-from-aws-instances.md)参照。
 - **CloudWatch Logs**: `/sattori/worker`（2週間保持）。EC2ワーカーはdockerの
   `awslogs`ドライバで、自宅ワーカーは常駐デーモンが`PutLogEvents`で
   （dockerデーモンにAWS認証情報を持たせないため）、いずれも`{jobId}`という同じ
@@ -145,7 +146,8 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
 運用調査用のジョブ一覧・詳細画面。既存のWeb配信（`WebCdn`・CloudFront Function
 `WebRouting`）は拡張子の無いパスを`/index.html`へ落とすため、`/admin`配下も
 **追加インフラ無し**でSPAとして配信できる。フロント側の構成は
-`apps/web/README.md`「管理画面」、API側は`apps/api/README.md`「管理API」を参照。
+[`apps/web/docs/admin-ui.md`](../apps/web/docs/admin-ui.md)、API側は
+[`apps/api/docs/admin-api.md`](../apps/api/docs/admin-api.md)を参照。
 
 追加したインフラはAPI Gateway側のみ:
 
