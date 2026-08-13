@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 import numpy as np
 import pytest
@@ -50,19 +51,33 @@ def _forbidden_popen(*args, **kwargs):
     raise AssertionError(f"外部プロセスを起動してはならない: {args!r}")
 
 
-def _recording_popen(commands):
+def _recording_popen(commands, output="", returncode=0, timeout_on=()):
     """subprocess.Popenの差し替え。起動コマンドをcommandsへ記録し、即座に正常終了した
-    ことにするダミーのプロセスハンドルを返す。"""
+    ことにするダミーのプロセスハンドルを返す。
+
+    `timeout_on`に含まれる試行回数(1始まり)では`communicate()`が
+    `subprocess.TimeoutExpired`を送出する(thpracが確認ダイアログを出して常駐した
+    ケースの再現、Issue #110)。"""
     class _Proc:
+        def __init__(self, attempt):
+            self._attempt = attempt
+            self._killed = False
+            self.returncode = returncode
+
         def wait(self, timeout=None):
-            return 0
+            return returncode
+
+        def communicate(self, timeout=None):
+            if self._attempt in timeout_on and not self._killed:
+                raise subprocess.TimeoutExpired("wine", timeout)
+            return output, None
 
         def kill(self):
-            pass
+            self._killed = True
 
     def popen(cmd, *args, **kwargs):
         commands.append(list(cmd))
-        return _Proc()
+        return _Proc(len(commands))
 
     return popen
 
@@ -259,7 +274,98 @@ def test_attach_thprac_reports_failure_when_image_is_not_mapped(tmp_path, monkey
     monkeypatch.setattr(rc, "find_live_game_pid", lambda name: "1234")
     monkeypatch.setattr(rc, "thprac_attached", lambda pid, exe: False)
 
-    assert rc.attach_thprac(config, {}, log=lambda *a: None) is False
+    assert rc.attach_thprac(config, {}, confirm_timeout=0.0, log=lambda *a: None) is False
+
+
+def test_attach_thprac_retries_when_the_first_attempt_does_not_map(tmp_path, monkeypatch):
+    """ゲーム起動直後はアタッチ先として認識されず1回目が空振りすることがある
+    (本番で発生、Issue #110)。試行を打ち切らずリトライすること。"""
+    (tmp_path / "thprac.exe").write_bytes(b"")
+    config = make_config(game_id="th20", instance_dir=str(tmp_path), thprac_exe="thprac.exe")
+    commands = []
+    monkeypatch.setattr(rc.subprocess, "Popen", _recording_popen(commands))
+    monkeypatch.setattr(rc, "find_live_game_pid", lambda name: "1234")
+    # 1回目のwine実行で確認したときはまだ載っておらず、2回目で載る。
+    monkeypatch.setattr(rc, "thprac_attached", lambda pid, exe: len(commands) >= 2)
+
+    assert rc.attach_thprac(config, {}, confirm_timeout=0.0, log=lambda *a: None) is True
+    assert len(commands) == 2
+
+
+def test_attach_thprac_gives_up_after_the_configured_attempts(tmp_path, monkeypatch):
+    (tmp_path / "thprac.exe").write_bytes(b"")
+    config = make_config(game_id="th20", instance_dir=str(tmp_path), thprac_exe="thprac.exe")
+    commands = []
+    monkeypatch.setattr(rc.subprocess, "Popen", _recording_popen(commands))
+    monkeypatch.setattr(rc, "find_live_game_pid", lambda name: "1234")
+    monkeypatch.setattr(rc, "thprac_attached", lambda pid, exe: False)
+
+    assert rc.attach_thprac(config, {}, attempts=2, confirm_timeout=0.0, log=lambda *a: None) is False
+    assert len(commands) == 2
+
+
+def test_attach_thprac_logs_the_exit_code_and_output(tmp_path, monkeypatch):
+    """thpracの出力と終了コードは必ずログに残す(Issue #110)。
+
+    旧実装は両方とも捨てていたため、本番でアタッチが失敗したときにthprac自身が
+    何を言っていたのかを事後に確認できなかった。"""
+    (tmp_path / "thprac.exe").write_bytes(b"")
+    config = make_config(game_id="th20", instance_dir=str(tmp_path), thprac_exe="thprac.exe")
+    popen = _recording_popen([], output="no game found\n", returncode=1)
+    monkeypatch.setattr(rc.subprocess, "Popen", popen)
+    monkeypatch.setattr(rc, "find_live_game_pid", lambda name: "1234")
+    monkeypatch.setattr(rc, "thprac_attached", lambda pid, exe: True)
+    logs = []
+
+    assert rc.attach_thprac(config, {}, log=logs.append) is True
+    assert any("exit=1" in line for line in logs)
+    assert any("no game found" in line for line in logs)
+
+
+def test_attach_thprac_kills_and_stops_retrying_on_timeout(tmp_path, monkeypatch):
+    """タイムアウトはthpracが確認ダイアログを出したまま常駐している可能性が高く
+    (reports/50)、リトライしても同じ状態を積み増すだけなので即座に諦めること。
+
+    アタッチは録画開始より前に行われるため、ここで粘るとリプレイ冒頭を取りこぼす
+    (Issue #110)。"""
+    (tmp_path / "thprac.exe").write_bytes(b"")
+    config = make_config(game_id="th20", instance_dir=str(tmp_path), thprac_exe="thprac.exe")
+    commands = []
+    monkeypatch.setattr(rc.subprocess, "Popen", _recording_popen(commands, timeout_on=(1,)))
+    monkeypatch.setattr(rc, "find_live_game_pid", lambda name: "1234")
+    monkeypatch.setattr(rc, "thprac_attached", lambda pid, exe: True)
+    logs = []
+
+    assert rc.attach_thprac(config, {}, log=logs.append) is False
+    assert len(commands) == 1
+    assert any("タイムアウト" in line for line in logs)
+
+
+def test_wait_for_thprac_attached_polls_until_the_image_appears(monkeypatch):
+    """thpracプロセスの終了と注入の完了は非同期でありうるため、終了直後に1回だけ
+    /proc/<pid>/mapsを読む一発勝負にしない(Issue #110)。"""
+    config = make_config(game_id="th20", thprac_exe="thprac.exe")
+    calls = []
+    monkeypatch.setattr(rc, "find_live_game_pid", lambda name: "1234")
+    monkeypatch.setattr(rc.time, "sleep", lambda _s: None)
+
+    def attached(pid, exe):
+        calls.append(pid)
+        return len(calls) >= 3
+
+    monkeypatch.setattr(rc, "thprac_attached", attached)
+
+    assert rc.wait_for_thprac_attached(config) == "1234"
+    assert len(calls) == 3
+
+
+def test_wait_for_thprac_attached_returns_none_within_the_timeout(monkeypatch):
+    config = make_config(game_id="th20", thprac_exe="thprac.exe")
+    monkeypatch.setattr(rc, "find_live_game_pid", lambda name: "1234")
+    monkeypatch.setattr(rc, "thprac_attached", lambda pid, exe: False)
+    monkeypatch.setattr(rc.time, "sleep", lambda _s: None)
+
+    assert rc.wait_for_thprac_attached(config, timeout=0.0) is None
 
 
 def test_thprac_attached_detects_the_injected_image_in_proc_maps(tmp_path, monkeypatch):

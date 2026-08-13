@@ -131,10 +131,22 @@ POST_START_GRACE_SEC = 15.0
 TIMEOUT_SEC = 60 * 60
 
 # thpracのアタッチ(attach_thprac()、th20のみ。reports/50)の待ち時間。実測では
-# 引数なしの`--attach`は約1秒で正常終了する。低速録画でも伸ばす必要はない
+# 引数なしの`--attach`は0.4〜1.0秒で正常終了する(対象が見つからず空振りで終わる場合
+# でも0.37秒かかる。Issue #110の実測)。低速録画でも伸ばす必要はない
 # (アタッチはゲーム内時間に依存しない一回限りの外部プロセス実行のため)。
-# ここで待ちきれなくてもthprac無しで録画を続行するだけなので、短めに切ってよい。
-THPRAC_ATTACH_TIMEOUT_SEC = 60.0
+#
+# **この予算は小さく保つこと**。アタッチは録画(ffmpeg)開始より前に行われ、猶予は
+# MOD側のタイトルロゴ待ち(th20は10秒、低速録画なら20秒)しかない。ここで長く待つと
+# 録画開始が遅れて**リプレイ冒頭を取りこぼす**が、それを検知する仕組みは無い
+# (重複フレーム率も画面静止検知も冒頭の欠落は捕まえられない)。旧実装はthpracが
+# 確認ダイアログを出したまま常駐した場合に60秒待つ作りになっていた(Issue #110)。
+THPRAC_ATTACH_TIMEOUT_SEC = 10.0
+# アタッチの試行回数。ゲーム起動直後はWindows側から「動いている東方ゲーム」として
+# 認識できるようになるまでに揺らぎがあり、1回目が空振りすることがある(Issue #110)。
+THPRAC_ATTACH_ATTEMPTS = 3
+# thpracプロセスの終了後、/proc/<pid>/mapsにイメージが現れるまで待つ猶予。
+# 終了直後に1回だけ読む一発勝負にすると、注入がわずかに遅れただけで失敗と記録される。
+THPRAC_ATTACH_CONFIRM_SEC = 3.0
 
 # 終了検知(リプレイ選択画面テンプレート照合)。touhou-recorder reports/33・34で判明した
 # 通り、画面静止(STILL_MAD_THRESHOLD/STILL_CONSECUTIVE_REQUIRED)だけでは「リプレイ終了時に
@@ -499,7 +511,25 @@ def thprac_attached(pid, thprac_exe):
         return False
 
 
-def attach_thprac(config, env, timeout=THPRAC_ATTACH_TIMEOUT_SEC, log=print):
+def wait_for_thprac_attached(config, timeout=THPRAC_ATTACH_CONFIRM_SEC, poll_interval=0.2):
+    """ゲームプロセスにthpracのイメージが現れるまで待ち、現れたらそのPIDを返す。
+
+    thpracプロセスの終了直後に1回だけ`/proc/<pid>/maps`を読む一発勝負にしていたところ、
+    実際にはアタッチできていた可能性を潰せなかった(Issue #110)。注入はthprac自身の
+    終了とは非同期に完了しうるので、短い猶予を持ってポーリングする。"""
+    t0 = time.time()
+    while True:
+        pid = find_live_game_pid(config.process_name)
+        if pid and thprac_attached(pid, config.thprac_exe):
+            return pid
+        if time.time() - t0 >= timeout:
+            return None
+        time.sleep(poll_interval)
+
+
+def attach_thprac(config, env, timeout=THPRAC_ATTACH_TIMEOUT_SEC,
+                  attempts=THPRAC_ATTACH_ATTEMPTS,
+                  confirm_timeout=THPRAC_ATTACH_CONFIRM_SEC, log=print):
     """起動直後のゲームプロセスにthprac(config.thprac_exe)をアタッチする(reports/50)。
 
     injector.exeが`CREATE_SUSPENDED`でゲームを起動して自作MODを注入する既存の経路は
@@ -507,6 +537,14 @@ def attach_thprac(config, env, timeout=THPRAC_ATTACH_TIMEOUT_SEC, log=print):
     ゲームを起動させるとMODの注入タイミング(DirectInput8Create呼び出し前のIATフック)が
     崩れるため。th20はタイトルロゴアニメーションだけで10秒待つので、アタッチが
     数秒遅れても操作シーケンスには十分間に合う。
+
+    **呼び出しはゲームウィンドウが出現した後に行うこと**。PIDが生えた直後はゲームが
+    まだ`CREATE_SUSPENDED`のままで、Windows側からは「動いている東方ゲーム」として
+    成立していない。本番でこのレースに負けてアタッチが失敗した実例がある(Issue #110)。
+    それでも稀に空振りしうるので、`attempts`回まで試行する。
+
+    thpracの出力と終了コードは必ずログへ残す(旧実装は`DEVNULL`へ捨てており、失敗時に
+    thprac自身が何を言っていたのか事後に分からなかった。同Issue)。
 
     `--attach` にPIDを渡さないのは、pgrepで得られるのはLinuxのPIDであり、Wineが
     ゲームプロセスに割り当てるWindows側のPIDとは別物だからである(LinuxのPIDを渡すと
@@ -530,28 +568,47 @@ def attach_thprac(config, env, timeout=THPRAC_ATTACH_TIMEOUT_SEC, log=print):
             "(th20はデシンクが起きやすくなります、reports/50)")
         return False
 
-    log(f"thprac をアタッチします ({config.thprac_exe})")
     t0 = time.time()
-    proc = subprocess.Popen(
-        ["wine", config.thprac_exe, "--attach"],
-        cwd=config.instance_dir, env=env,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    try:
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        log(f"WARNING: thprac のアタッチが{timeout}秒でタイムアウトしました。"
-            "thprac無しで録画します")
-        return False
+    for attempt in range(1, attempts + 1):
+        log(f"thprac をアタッチします ({config.thprac_exe}, 試行 {attempt}/{attempts})")
+        proc = subprocess.Popen(
+            ["wine", config.thprac_exe, "--attach"],
+            cwd=config.instance_dir, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        try:
+            out, _ = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            # Xvfb上では誰も閉じられない確認ダイアログを出したまま常駐している可能性が
+            # 高い(reports/50)。同じ状態を積み増すだけなのでリトライはしない。
+            proc.kill()
+            out, _ = proc.communicate()
+            log(f"WARNING: thprac のアタッチが{timeout}秒でタイムアウトしました。"
+                "thprac無しで録画します")
+            log_thprac_output(out, log)
+            return False
+        log(f"thprac 終了 (exit={proc.returncode}, {time.time()-t0:.1f}s)")
+        log_thprac_output(out, log)
 
-    pid = find_live_game_pid(config.process_name)
-    if pid and thprac_attached(pid, config.thprac_exe):
-        log(f"thprac アタッチ完了 ({time.time()-t0:.1f}s, pid={pid})")
-        return True
-    log("WARNING: thprac のイメージがゲームプロセスにマップされていません"
-        "(アタッチ失敗)。thprac無しで録画します")
+        pid = wait_for_thprac_attached(config, timeout=confirm_timeout)
+        if pid:
+            log(f"thprac アタッチ完了 ({time.time()-t0:.1f}s, pid={pid})")
+            return True
+        log(f"WARNING: thprac のイメージがゲームプロセスにマップされていません"
+            f"(試行 {attempt}/{attempts})")
+    log("WARNING: thprac をアタッチできませんでした。thprac無しで録画します"
+        "(th20はデシンクが起きやすくなります、reports/50・Issue #110)")
     return False
+
+
+def log_thprac_output(out, log):
+    """thpracプロセスの出力を1行ずつワーカーログへ流す(Issue #110)。
+
+    普段は無出力だが、アタッチが失敗したときにthprac自身が何を言っていたのかを
+    事後に確認できるかどうかが原因究明を分ける。"""
+    for line in (out or "").splitlines():
+        if line.strip():
+            log(f"thprac出力: {line.rstrip()}")
 
 
 def kill_wine_and_wait(config, env, process_name):
@@ -925,12 +982,6 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         return _failure_result(config, env, log)
     log(f"game_pid={game_pid} ({time.time()-t0:.1f}s)")
 
-    # thpracを設定しているタイトル(th20)は、ここで後付けアタッチする。ウィンドウ検出の
-    # 前に済ませるのは、MODのタイトルロゴ待ち(th20は10秒)が終わってメニュー操作が
-    # 始まるより先にthpracのパッチを当てたいため。失敗しても録画は続行する
-    # (thprac無しの従来動作に戻るだけ。attach_thprac()参照)。
-    attach_thprac(config, env, log=log)
-
     geom = None
     t0 = time.time()
     while time.time() - t0 < 20:
@@ -943,6 +994,15 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         return _failure_result(config, env, log)
     log(f"ウィンドウを検出しました: x={geom[0]} y={geom[1]} w={geom[2]} h={geom[3]} "
         f"(winid={geom[4]}。この時点の座標はまだ確定値ではない)")
+
+    # thpracを設定しているタイトル(th20)は、ここで後付けアタッチする。**ウィンドウが
+    # 出現した後**なのは、PIDが生えただけの時点ではゲームがまだ`CREATE_SUSPENDED`で、
+    # Windows側からは「動いている東方ゲーム」として成立しておらず、thpracがアタッチ先を
+    # 見つけられずに終了することがあるため(本番で発生、Issue #110)。それでもMODの
+    # タイトルロゴ待ち(th20は10秒、低速録画なら20秒)が終わってメニュー操作が始まるまでには
+    # 十分間に合う。失敗しても録画は続行する(thprac無しの従来動作に戻るだけ。
+    # attach_thprac()参照)。
+    attach_thprac(config, env, log=log)
 
     # ここで得た座標をそのままクロップ座標に使ってはならない。この検出はウィンドウが
     # Xサーバー上でviewableになった直後に成立するが、ゲームによってはその後さらに自分で
