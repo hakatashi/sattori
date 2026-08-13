@@ -162,7 +162,7 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   aws ssm put-parameter --region eu-south-2 --name /sattori/admin/token \
     --type SecureString --value "$(openssl rand -hex 32)" --overwrite
   ```
-  投入・ローテーション手順の詳細は`CLAUDE.local.md`参照。
+  投入・ローテーション手順の詳細は`deploy-sattori` skill 参照。
 - **ルート**: `GET /admin/jobs`・`GET /admin/jobs/{jobId}`・
   `GET /admin/jobs/{jobId}/execution`・`GET /admin/jobs/{jobId}/logs`（Issue #58）・
   `POST /admin/jobs/{jobId}/stop`・`POST /admin/jobs/{jobId}/retry`（Issue #59）の
@@ -182,6 +182,9 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   タグ`sattori:jobId`から回収するために使う。
 
 ## デプロイ手順
+
+> 実際に流すコマンド（ECRリポジトリURI・バケット名の解決を含む）は `deploy-sattori` skill に
+> ある。ここではスタック構成上、何をどの順で行う必要があるかを説明する。
 
 ```bash
 pnpm build                                                       # web の dist を作る(CDKがBucketDeploymentで配信)
@@ -206,7 +209,8 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの 
    `SattoriEdgeStack`のCfnOutputを確認して外部DNSへ手動追加する
    （`hakatashi.com`はRoute 53以外で管理しているため自動検証はできない）
 5. タイトル資産（ゲーム本体+WINEPREFIX+MOD）をS3へアップロードする
-   （`worker/README.md`「タイトル資産のS3アップロード手順」参照）
+   （`upload-title-assets` skill。アーカイブ構成は`worker/README.md`
+   「タイトル資産のS3アップロード手順」）
 6. （自宅ワーカーを使う場合のみ）`HomeWorkerRole`をassumeするIAMユーザーを手動で
    作成し、自宅サーバーの常駐デーモンを設定する（`home-worker/README.md`参照。
    アクセスキーはCloudFormationで作るべきではないため手動運用）
