@@ -1,0 +1,28 @@
+# タイトル別の技術的背景
+
+対応タイトルごとの「なぜこの設定なのか」「何を踏んだか」を1タイトル1ファイルで置く場所
+（`docs/documentation-guidelines.md` の分類 ②）。**そのタイトルのゲームデータ・MOD・
+`GameConfig` を触る前に、該当する1件だけを開くこと。**
+
+タイトル横断で効く判断（終了検知の方式・クロップ座標の確定・音声分離・低速録画）は
+[`docs/decisions/`](../../../docs/decisions/README.md) にある。
+
+## 一覧
+
+| タイトル | 背景 | 特に外しやすい点 |
+| --- | --- | --- |
+| th06 東方紅魔郷 | [th06.md](th06.md) | 実行ファイルを `th06.exe` へリネームしない（VsyncPatch） |
+| th07 東方妖々夢 | [th07.md](th07.md) | 日本語フォントの配置・レジストリ登録 |
+| th08 東方永夜抄 | [th08.md](th08.md) | ゲームデータは ver1.00d 相当（ver1.00a は fps 暴走） |
+| th11 東方地霊殿 | [th11.md](th11.md) | 入力は GetKeyboardState 経由・終了検知は画面静止のみ |
+| th20 東方錦上京 | [th20.md](th20.md) | cfg は `%APPDATA%`・Present フック必須・thprac 必須 |
+
+## 新しいタイトルを足すとき
+
+このディレクトリに `thNN.md` を1つ足し、上の一覧と
+[`worker/README.md`](../../README.md) の対応タイトル表に1行ずつ追加する。README 本体には
+背景を書かない（タイトル数に比例して増えるため。Issue #112・#115）。
+
+書く内容は「他タイトルの慣習をそのまま流用すると外すところ」を優先する。実機検証で得た
+数値そのものは [`docs/reports/`](../../../docs/reports/README.md) か touhou-recorder の
+`reports/NN` に置き、ここからは参照する。

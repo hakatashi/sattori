@@ -23,8 +23,8 @@ Sattori の「まだできていないこと」「できているが条件付き
 現在の対応タイトルは th06・th07・th08・th11・th20 の5本。
 
 リプレイパーサー自体は th06〜th20 の大半に対応済みで、**残作業は録画対応**
-（Wine 上での MOD 移植・実機検証）である。タイトルごとの状況は `worker/README.md`、
-個別の Issue は #13 配下（#73〜#86）を参照。
+（Wine 上での MOD 移植・実機検証）である。タイトルごとの状況は
+[`worker/docs/titles/`](../worker/docs/titles/README.md)、個別の Issue は #13 配下（#73〜#86）を参照。
 
 ### 低速録画は th20 のみ
 
@@ -39,7 +39,7 @@ API（`POST /magic-links` での握り潰し）の両方で入口を塞いでい
 ## 2. th20 固有の制約
 
 th20（東方錦上京）はタイトル固有の制約が多い。詳細は
-`worker/README.md`「th20対応の技術的背景」。
+[`worker/docs/titles/th20.md`](../worker/docs/titles/th20.md)。
 
 - cfg / リプレイが `%APPDATA%/ShanghaiAlice/th20/` から読まれる（TH125以降のエンジン）。
 - 1280x960 ウィンドウのため Xvfb の画面サイズが他タイトルと別。
