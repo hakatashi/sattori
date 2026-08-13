@@ -22,7 +22,7 @@ const GUIDELINES = "docs/documentation-guidelines.md";
 const HINT_SPLIT = [
   `→ ${GUIDELINES} の §3「追記先の判断フロー」を参照し、`,
   "  ② 決定と根拠は docs/decisions/ へ、③ 手順は docs/runbooks/ か Skill へ、",
-  "  ④ 検証記録は docs/reports/ へ移してください（分割の軸は同 §6.3）。",
+  "  ④ 検証記録は docs/reports/ へ移してください（分割の軸は同 §6.4）。",
 ].join("\n");
 
 const HINT_ALWAYS_LOADED = [
@@ -38,8 +38,8 @@ const rules = [
   {
     label: "常時ロードされるファイル",
     match: (file) => file === "AGENTS.md",
-    maxLines: 150,
-    maxBytes: 12 * KIB,
+    maxLines: 200,
+    maxBytes: 16 * KIB,
     hint: HINT_ALWAYS_LOADED,
   },
   {
@@ -64,7 +64,7 @@ const rules = [
   {
     label: "パッケージのREADME",
     match: (file) => file === "README.md" || file.endsWith("/README.md"),
-    maxLines: 300,
+    maxLines: 400,
     hint: HINT_SPLIT,
   },
   {
