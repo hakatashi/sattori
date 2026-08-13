@@ -46,6 +46,27 @@ def make_config(**overrides):
     return rc.GameConfig(**kwargs)
 
 
+def _forbidden_popen(*args, **kwargs):
+    raise AssertionError(f"外部プロセスを起動してはならない: {args!r}")
+
+
+def _recording_popen(commands):
+    """subprocess.Popenの差し替え。起動コマンドをcommandsへ記録し、即座に正常終了した
+    ことにするダミーのプロセスハンドルを返す。"""
+    class _Proc:
+        def wait(self, timeout=None):
+            return 0
+
+        def kill(self):
+            pass
+
+    def popen(cmd, *args, **kwargs):
+        commands.append(list(cmd))
+        return _Proc()
+
+    return popen
+
+
 def test_game_config_derives_exe_dll_and_log_path_from_game_id():
     config = make_config()
 
@@ -186,6 +207,78 @@ def test_game_config_allows_overriding_end_template_path():
     config = make_config(end_template_path="/custom/th08.png")
 
     assert config.end_template_path == "/custom/th08.png"
+
+
+def test_game_config_thprac_exe_defaults_to_none():
+    config = make_config()
+
+    assert config.thprac_exe is None
+
+
+def test_attach_thprac_does_nothing_when_title_has_no_thprac(monkeypatch):
+    # th06/07/08/11はthprac_exe未指定。wineを起動せず即Falseで抜けること。
+    monkeypatch.setattr(rc.subprocess, "Popen", _forbidden_popen)
+
+    assert rc.attach_thprac(make_config(), {}, log=lambda *a: None) is False
+
+
+def test_attach_thprac_warns_and_continues_when_binary_is_missing(tmp_path, monkeypatch):
+    # タイトル資産アーカイブにthpracを入れ忘れた場合。録画は続行できなければならない
+    # (thprac無しの従来動作に戻るだけ、reports/50)。
+    monkeypatch.setattr(rc.subprocess, "Popen", _forbidden_popen)
+    config = make_config(game_id="th20", instance_dir=str(tmp_path), thprac_exe="thprac.exe")
+    logs = []
+
+    assert rc.attach_thprac(config, {}, log=logs.append) is False
+    assert any("見つかりません" in line for line in logs)
+
+
+def test_attach_thprac_attaches_without_passing_a_pid(tmp_path, monkeypatch):
+    """`--attach`にPIDを渡さないことが本質(reports/50)。
+
+    pgrepで得られるのはLinuxのPIDで、Wineがゲームに割り当てるWindows側のPIDとは
+    別物のため、渡すとthpracが確認ダイアログを出したまま常駐して固まる。
+    """
+    (tmp_path / "thprac.exe").write_bytes(b"")
+    config = make_config(game_id="th20", instance_dir=str(tmp_path), thprac_exe="thprac.exe")
+    commands = []
+    monkeypatch.setattr(rc.subprocess, "Popen", _recording_popen(commands))
+    monkeypatch.setattr(rc, "find_live_game_pid", lambda name: "1234")
+    monkeypatch.setattr(rc, "thprac_attached", lambda pid, exe: True)
+
+    assert rc.attach_thprac(config, {}, log=lambda *a: None) is True
+    assert commands == [["wine", "thprac.exe", "--attach"]]
+
+
+def test_attach_thprac_reports_failure_when_image_is_not_mapped(tmp_path, monkeypatch):
+    # thprac.exeが正常終了しても、ゲームプロセスにイメージが載っていなければ
+    # アタッチできていない(/proc/<pid>/mapsで検証する、reports/50)。
+    (tmp_path / "thprac.exe").write_bytes(b"")
+    config = make_config(game_id="th20", instance_dir=str(tmp_path), thprac_exe="thprac.exe")
+    monkeypatch.setattr(rc.subprocess, "Popen", _recording_popen([]))
+    monkeypatch.setattr(rc, "find_live_game_pid", lambda name: "1234")
+    monkeypatch.setattr(rc, "thprac_attached", lambda pid, exe: False)
+
+    assert rc.attach_thprac(config, {}, log=lambda *a: None) is False
+
+
+def test_thprac_attached_detects_the_injected_image_in_proc_maps(tmp_path, monkeypatch):
+    maps = tmp_path / "maps"
+    maps.write_text(
+        "0c540000-0c541000 r--p 00000000 00:00 0 /instance/thprac.v2.3.0.3.exe\n"
+        "75670000-75671000 r--p 00000000 00:00 0 /instance/th20_hook.dll\n"
+    )
+    monkeypatch.setattr(
+        rc, "open", lambda path, *a, **k: maps.open(*a, **k), raising=False
+    )
+
+    assert rc.thprac_attached("1234", "thprac.v2.3.0.3.exe") is True
+    assert rc.thprac_attached("1234", "thprac.v9.9.9.9.exe") is False
+
+
+def test_thprac_attached_returns_false_when_the_process_is_gone():
+    # PID 0 の /proc/0/maps は存在しない。OSErrorを握って False を返すこと。
+    assert rc.thprac_attached("0", "thprac.exe") is False
 
 
 def test_load_end_template_returns_none_when_path_is_none():

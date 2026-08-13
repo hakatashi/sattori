@@ -130,6 +130,12 @@ POLL_INTERVAL_SEC = 2.0
 POST_START_GRACE_SEC = 15.0
 TIMEOUT_SEC = 60 * 60
 
+# thpracのアタッチ(attach_thprac()、th20のみ。reports/50)の待ち時間。実測では
+# 引数なしの`--attach`は約1秒で正常終了する。低速録画でも伸ばす必要はない
+# (アタッチはゲーム内時間に依存しない一回限りの外部プロセス実行のため)。
+# ここで待ちきれなくてもthprac無しで録画を続行するだけなので、短めに切ってよい。
+THPRAC_ATTACH_TIMEOUT_SEC = 60.0
+
 # 終了検知(リプレイ選択画面テンプレート照合)。touhou-recorder reports/33・34で判明した
 # 通り、画面静止(STILL_MAD_THRESHOLD/STILL_CONSECUTIVE_REQUIRED)だけでは「リプレイ終了時に
 # 自動的に戻るリプレイ選択画面」と「ステージクリア後に一時的に表示されるリザルト画面」を
@@ -268,6 +274,13 @@ class GameConfig:
     # `%APPDATA%` へ配置する必要のある cfg のファイル名(uses_appdata_profile が
     # True のときのみ意味を持つ)。未指定なら f"{game_id}.cfg"。
     cfg_filename: str | None = None
+    # ゲーム起動直後にアタッチする thprac(https://github.com/touhouworldcup/thprac)の
+    # 実行ファイル名。game_dir_src 配下に同梱されている前提で、prepare_instance() の
+    # rsync が instance_dir へコピーする。None(既定)ならアタッチしない。
+    # th20 はデシンク(リプレイずれ)が頻発するが、その主因は thprac が常時修正して
+    # いる ZUN 側のバグ(未初期化 AnmVM の残骸漏れ・宝珠の use-after-free 等)であり、
+    # thprac を噛ませるだけで実測4本すべてのずれが解消した(reports/50)。
+    thprac_exe: str | None = None
 
     def __post_init__(self):
         if self.game_exe is None:
@@ -472,6 +485,73 @@ def find_live_game_pid(process_name):
         if state != "Z":
             return pid
     return None
+
+
+def thprac_attached(pid, thprac_exe):
+    """指定PIDのプロセスにthpracのイメージがマップ済みかを /proc/<pid>/maps で確認する。
+
+    thpracは自分自身のexeイメージを対象プロセスへ注入するため、アタッチが成功すると
+    ゲームプロセスのマップにthpracのexeが現れる(reports/50)。"""
+    try:
+        with open(f"/proc/{pid}/maps") as f:
+            return thprac_exe in f.read()
+    except OSError:
+        return False
+
+
+def attach_thprac(config, env, timeout=THPRAC_ATTACH_TIMEOUT_SEC, log=print):
+    """起動直後のゲームプロセスにthprac(config.thprac_exe)をアタッチする(reports/50)。
+
+    injector.exeが`CREATE_SUSPENDED`でゲームを起動して自作MODを注入する既存の経路は
+    一切変えず、**起動後に後付けでアタッチする**方式を採っている。thprac側に
+    ゲームを起動させるとMODの注入タイミング(DirectInput8Create呼び出し前のIATフック)が
+    崩れるため。th20はタイトルロゴアニメーションだけで10秒待つので、アタッチが
+    数秒遅れても操作シーケンスには十分間に合う。
+
+    `--attach` にPIDを渡さないのは、pgrepで得られるのはLinuxのPIDであり、Wineが
+    ゲームプロセスに割り当てるWindows側のPIDとは別物だからである(LinuxのPIDを渡すと
+    該当プロセスが見つからず、Xvfb上では誰も閉じられない確認ダイアログを出したまま
+    thpracが常駐して固まる)。引数なしの`--attach`は「最初に見つかった東方ゲームの
+    プロセス」へ自動でアタッチする。
+
+    **同一WINEPREFIXで複数の東方ゲームを同時に走らせるとアタッチ先が不定になる**点に
+    注意。Sattoriのワーカーは1コンテナ=1ジョブで、自宅ワーカーの並列録画も
+    コンテナごとにWINEPREFIXが分かれる(=Windows側のプロセス列挙も分離される)ため、
+    現状の構成では競合しない。
+
+    戻り値: アタッチに成功したら True。失敗しても録画自体は続行できる(thpracなしの
+    従来動作に戻るだけ)ため、呼び出し側は False を失敗として扱わないこと。"""
+    if not config.thprac_exe:
+        return False
+    thprac_path = f"{config.instance_dir}/{config.thprac_exe}"
+    if not os.path.exists(thprac_path):
+        # タイトル資産アーカイブの作り忘れをここで診断できるようにしておく。
+        log(f"WARNING: {thprac_path} が見つかりません。thprac無しで録画します"
+            "(th20はデシンクが起きやすくなります、reports/50)")
+        return False
+
+    log(f"thprac をアタッチします ({config.thprac_exe})")
+    t0 = time.time()
+    proc = subprocess.Popen(
+        ["wine", config.thprac_exe, "--attach"],
+        cwd=config.instance_dir, env=env,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        log(f"WARNING: thprac のアタッチが{timeout}秒でタイムアウトしました。"
+            "thprac無しで録画します")
+        return False
+
+    pid = find_live_game_pid(config.process_name)
+    if pid and thprac_attached(pid, config.thprac_exe):
+        log(f"thprac アタッチ完了 ({time.time()-t0:.1f}s, pid={pid})")
+        return True
+    log("WARNING: thprac のイメージがゲームプロセスにマップされていません"
+        "(アタッチ失敗)。thprac無しで録画します")
+    return False
 
 
 def kill_wine_and_wait(config, env, process_name):
@@ -844,6 +924,12 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         log(f"ERROR: {config.process_name} プロセスが検出できませんでした")
         return _failure_result(config, env, log)
     log(f"game_pid={game_pid} ({time.time()-t0:.1f}s)")
+
+    # thpracを設定しているタイトル(th20)は、ここで後付けアタッチする。ウィンドウ検出の
+    # 前に済ませるのは、MODのタイトルロゴ待ち(th20は10秒)が終わってメニュー操作が
+    # 始まるより先にthpracのパッチを当てたいため。失敗しても録画は続行する
+    # (thprac無しの従来動作に戻るだけ。attach_thprac()参照)。
+    attach_thprac(config, env, log=log)
 
     geom = None
     t0 = time.time()

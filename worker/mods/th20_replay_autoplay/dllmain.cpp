@@ -33,6 +33,7 @@
 #include "../common/fps_limiter_hook.h"
 #include "../common/dsound_hook.h"
 #include "../common/fps_display_hook.h"
+#include "../common/score_monitor.h"
 
 using namespace autoplay;
 
@@ -131,6 +132,23 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         // 表示計算に使われていることを実証済みの特定コールサイトのみ時刻の
         // 進み方を補正し、等倍相当のfps値を表示させる(reports/48参照)。
         InstallFpsDisplayCorrectionHook();
+        // デシンク(リプレイずれ)の事後調査用に、ゲーム内スコア・ステージ番号・
+        // 残機・グレイズを1秒間隔でMODログへ出力する(reports/50)。録画パイプラインの
+        // 判定には使わない(score_monitor.h参照)。
+        // RVAはthpracのthprac_th20.cpp(rel_addrs::GAME_SIDE0 = 0x1ba568 と
+        // GlobalsSide構造体)由来。GlobalsSide本体は RVA(GAME_SIDE0 + 0x88) に
+        // 直に置かれており、score(uint64)がその先頭、life_stocksが+0xb8、
+        // grazeが+0xe4、ステージ番号が+0x1f4。th20 ver1.00cで検証済み。
+        {
+            const uint32_t kGlobalsSide = 0x1ba568 + 0x88; // = 0x1ba5f0
+            ScoreMonitorConfig sm;
+            sm.scoreRva = kGlobalsSide + 0x00;
+            sm.livesRva = kGlobalsSide + 0xb8;
+            sm.grazeRva = kGlobalsSide + 0xe4;
+            sm.stageRva = kGlobalsSide + 0x1f4;
+            sm.intervalMs = 1000;
+            StartScoreMonitorThread(sm);
+        }
         StartFpsMonitorThread();
         CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
     }
