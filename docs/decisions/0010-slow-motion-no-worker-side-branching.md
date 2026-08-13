@@ -57,7 +57,8 @@ th20 は Xvfb + wined3d + llvmpipe のソフトウェアレンダリングに対
 
 - `packages/shared/src/slowMotion.ts`（`SLOW_MOTION_SUPPORTED_GAME_IDS`・`slowMotionScale`）
 - `apps/api/src/workerEnv.ts` / `workerRouting.ts`（誰に何を渡すか）
-- `worker/`（`FPS_LIMIT_TARGET_HZ` の有無だけを見る。`worker/README.md`「低速録画」）
+- `worker/`（`FPS_LIMIT_TARGET_HZ` の有無だけを見る。`worker/README.md` §5。倍率をどこまで
+  一貫して適用するかは [`0014`](0014-slow-motion-scaling-across-pipeline.md)）
 - `apps/web`（低速録画オプションの表示・進捗バジェットへの織り込み）
 - **未対応タイトルで低速録画を要求すると2倍速の動画ができ、ワーカーはそれを検知できない**
   （`docs/known-limitations.md` §1）。分岐をワーカーに置かない代償であり、

@@ -1010,7 +1010,7 @@ function handler(event) {
     new CfnOutput(this, "WebCdnDomain", { value: webDistribution.distributionDomainName });
     new CfnOutput(this, "MediaCdnDomain", { value: mediaDistribution.distributionDomainName });
     new CfnOutput(this, "WorkerRepoUri", { value: workerRepo.repositoryUri });
-    // タイトル資産アップロード先(worker/README.md「タイトル資産のS3アップロード手順」参照)。
+    // タイトル資産アップロード先(worker/README.md §8 参照)。
     new CfnOutput(this, "TitleAssetsBucketName", { value: titleAssetsBucket.bucketName });
     // 自宅ワーカー(Issue #49)の設定に必要な値。`home-worker/README.md`参照。
     new CfnOutput(this, "HomeWorkerRoleArn", { value: homeWorkerRole.roleArn });

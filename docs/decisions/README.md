@@ -22,6 +22,11 @@
 | [0008](0008-th20-appdata-resolved-from-unix-user.md) | 2026-08 | worker | th20 の `%APPDATA%` 配置先を実行中の UNIX ユーザーから解決する | 有効 |
 | [0009](0009-thprac-post-attach.md) | 2026-08 | worker / apps/web | th20 のデシンク対策に thprac を「後付けアタッチ」で適用する | 有効 |
 | [0010](0010-slow-motion-no-worker-side-branching.md) | 2026-08 | worker / apps/api | 低速録画をワーカー側の分岐にせず、起動側が渡す環境変数だけで表す | 有効 |
+| [0011](0011-replay-end-template-matching.md) | 2026-07 | worker | リプレイの終了検知を画面静止ではなくリプレイ選択画面テンプレートとの照合で行う | 有効 |
+| [0012](0012-crop-geometry-after-window-stabilizes.md) | 2026-08 | worker | x11grab のクロップ座標はウィンドウ発見時ではなく座標が安定してから確定する | 有効 |
+| [0013](0013-per-job-pulseaudio-sink.md) | 2026-08 | worker | 並列録画の音声混成をジョブ専用の PulseAudio sink で防ぐ | 有効 |
+| [0014](0014-slow-motion-scaling-across-pipeline.md) | 2026-08 | worker / apps/web | 低速録画の倍率をフック・監視・変換・品質チェックのすべてへ一貫して適用する | 有効 |
+| [0015](0015-resume-from-raw-video-checkpoint.md) | 2026-08 | worker / apps/api | リトライ時の再開可否は S3 の生動画の実体で判定し、録画時の倍率はそのオブジェクトに添えて運ぶ | 有効 |
 
 ## 書き方
 

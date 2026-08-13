@@ -57,8 +57,9 @@ export function buildWorkerEnv(
   }
   if (options.slowMotion) {
     // MOD（Present/DirectSound/fps表示のフック）と録画スクリプトの実時間依存
-    // パラメータが、この1つの値から同じ比率でスケールする（`worker/README.md`
-    // 「低速録画」参照）。**未指定＝等倍**が既定なので、等倍録画では付与しない。
+    // パラメータが、この1つの値から同じ比率でスケールする
+    // （`docs/decisions/0014-slow-motion-scaling-across-pipeline.md`）。
+    // **未指定＝等倍**が既定なので、等倍録画では付与しない。
     env.FPS_LIMIT_TARGET_HZ = String(SLOW_MOTION_TARGET_HZ);
   }
   return env;
