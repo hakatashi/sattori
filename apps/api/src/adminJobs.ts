@@ -173,7 +173,7 @@ export interface ListJobsResult {
  * 必ず返す以上、その和集合には全体の上位limit件が必ず含まれる。
  *
  * status遷移中のジョブが複数ストリームに現れうるため、マージ後にjobIdでdedupeする。
- * ページを跨いだ重複・欠落は管理画面の性質上許容する(`apps/api/README.md`参照)。
+ * ページを跨いだ重複・欠落は管理画面の性質上許容する(`apps/api/docs/admin-api.md`参照)。
  */
 export async function listJobs(table: string, params: ListJobsParams): Promise<ListJobsResult> {
   const statuses = params.status ? [params.status] : JOB_STATUSES;
