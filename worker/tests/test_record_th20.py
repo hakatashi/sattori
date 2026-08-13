@@ -43,6 +43,27 @@ def test_build_config_excludes_both_trailing_animation_rects():
     ]
 
 
+def test_build_config_attaches_thprac_for_desync_mitigation():
+    # th20はデシンク(リプレイずれ)が頻発するが、その主因はthpracが常時修正している
+    # ZUN側のバグであり、アタッチするだけで実測4本すべてのずれが解消した
+    # (reports/50、Issue #105)。thprac本体はgames/th20/に同梱する。
+    config = record_th20.build_config("sattori_job_test")
+
+    assert config.thprac_exe == "thprac.v2.3.0.3.exe"
+
+
+def test_other_titles_do_not_attach_thprac():
+    # thpracは引数なし`--attach`で「最初に見つかった東方ゲーム」へ繋ぐため、
+    # 検証していないタイトルへ横展開しないこと(reports/50)。
+    import record_th06
+    import record_th07
+    import record_th08
+    import record_th11
+
+    for module in (record_th06, record_th07, record_th08, record_th11):
+        assert module.build_config("sattori_job_test").thprac_exe is None
+
+
 def test_build_config_uses_a_display_number_not_shared_with_other_titles():
     """同一ホストで並列録画しても映像が混ざらないよう、タイトルごとに固定する。"""
     import record_th06
