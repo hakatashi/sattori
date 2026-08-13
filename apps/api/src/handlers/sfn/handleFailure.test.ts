@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EC2Client, TerminateInstancesCommand } from "@aws-sdk/client-ec2";
+import {
+  DescribeInstancesCommand,
+  EC2Client,
+  TerminateInstancesCommand,
+} from "@aws-sdk/client-ec2";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import type { JobRecord } from "@sattori/shared";
@@ -61,6 +65,13 @@ function statusUpdates(mock: typeof ddbMock) {
   return mock
     .commandCalls(UpdateCommand)
     .filter((call) => call.args[0].input.ExpressionAttributeValues?.[":s"] !== undefined);
+}
+
+/** `TerminateInstances` に渡されたインスタンスIDを呼び出し順に並べる。 */
+function terminatedIds(): string[] {
+  return ec2Mock
+    .commandCalls(TerminateInstancesCommand)
+    .flatMap((call) => call.args[0].input.InstanceIds ?? []);
 }
 
 /** 自宅ワーカーの割り当て解除（`REMOVE assignedWorkerId ...`）のUpdateItemだけを取り出す。 */
@@ -154,12 +165,55 @@ describe("sfn/handleFailure handler", () => {
     await expect(handler({ jobId: "job-1", attempt: 1 })).resolves.toEqual({ shouldRetry: true });
   });
 
-  it("instanceIdが無ければterminateを呼ばない", async () => {
+  it("instanceIdが無くタグからも見つからなければterminateを呼ばない", async () => {
     ddbMock.on(GetCommand).resolves({ Item: { ...baseJob, instanceId: null } });
+    ec2Mock.on(DescribeInstancesCommand).resolves({});
 
     const { handler } = await import("./handleFailure.js");
     await handler({ jobId: "job-1", attempt: 1 });
 
     expect(ec2Mock.commandCalls(TerminateInstancesCommand)).toHaveLength(0);
+  });
+
+  it("instanceIdが未記録でもタグ(sattori:jobId)から見つけたインスタンスをterminateする", async () => {
+    // Launchが`CreateFleet`の後・instanceId書き込みの前に死んだケース(Issue #23)。
+    // レコードには何も残らないので、タグから引けないと孤児が課金され続ける。
+    ddbMock.on(GetCommand).resolves({ Item: { ...baseJob, instanceId: null } });
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [{ Instances: [{ InstanceId: "i-untracked" }] }],
+    });
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+
+    const { handler } = await import("./handleFailure.js");
+    await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(terminatedIds()).toEqual(["i-untracked"]);
+  });
+
+  it("記録済みinstanceIdとタグ由来のインスタンスをまとめて重複なくterminateする", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: baseJob });
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [
+        { Instances: [{ InstanceId: "i-abc123" }, { InstanceId: "i-previous-attempt" }] },
+      ],
+    });
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+
+    const { handler } = await import("./handleFailure.js");
+    await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(terminatedIds()).toEqual(["i-abc123", "i-previous-attempt"]);
+  });
+
+  it("タグ検索が失敗しても記録済みinstanceIdのterminateは続ける", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: baseJob });
+    ec2Mock.on(DescribeInstancesCommand).rejects(new Error("throttled"));
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+
+    const { handler } = await import("./handleFailure.js");
+    const result = await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(result).toEqual({ shouldRetry: true });
+    expect(terminatedIds()).toEqual(["i-abc123"]);
   });
 });

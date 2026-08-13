@@ -2,6 +2,7 @@ import {
   CreateFleetCommand,
   CreateLaunchTemplateVersionCommand,
   DescribeInstancesCommand,
+  type DescribeInstancesCommandOutput,
   DescribeSpotPriceHistoryCommand,
   EC2Client,
   type _InstanceType as InstanceType,
@@ -15,6 +16,12 @@ const ec2 = new EC2Client({});
 
 /** インスタンスに付与しているジョブ識別用のタグキー（`buildCreateFleetInput`と対で使う）。 */
 export const JOB_ID_TAG_KEY = "sattori:jobId";
+
+/**
+ * 「まだ課金が続いている」とみなすインスタンスの状態。`terminated`/`shutting-down` は
+ * 既に課金が止まっているので、terminate対象を探す検索からは常に除外する。
+ */
+const LIVE_INSTANCE_STATES = ["pending", "running", "stopping", "stopped"];
 
 /**
  * Spot Fleet に含める候補インスタンスタイプ（th11以外）。`c7i.xlarge` 単独だと、
@@ -377,8 +384,7 @@ export async function findJobInstanceIds(jobId: string): Promise<string[]> {
     new DescribeInstancesCommand({
       Filters: [
         { Name: `tag:${JOB_ID_TAG_KEY}`, Values: [jobId] },
-        // terminated/shutting-down は既に課金が止まっているので対象外。
-        { Name: "instance-state-name", Values: ["pending", "running", "stopping", "stopped"] },
+        { Name: "instance-state-name", Values: LIVE_INSTANCE_STATES },
       ],
     }),
   );
@@ -387,4 +393,60 @@ export async function findJobInstanceIds(jobId: string): Promise<string[]> {
       .map((instance) => instance.InstanceId)
       .filter((instanceId): instanceId is string => instanceId !== undefined),
   );
+}
+
+/** タグ(`sattori:jobId`)から見つけた、まだ生きている録画インスタンス1台ぶんの情報。 */
+export interface TaggedInstance {
+  instanceId: string;
+  /** タグに書かれたジョブID。 */
+  jobId: string;
+  /**
+   * EC2が記録した起動時刻。`DescribeInstances` が返さなかった場合のみ null で、
+   * 判定側は「たった今起動した」ものとして扱う（＝猶予に守られ、terminateされない。
+   * `orphanInstances.ts` 参照）。
+   */
+  launchTime: Date | null;
+}
+
+/**
+ * ジョブIDタグを持つ「まだ生きている」インスタンスを**全ジョブ横断で**列挙する
+ * （Issue #23、孤児インスタンスの定期掃除）。
+ *
+ * `findJobInstanceIds()` がジョブ1件ぶんを引くのに対し、こちらは掃除役が
+ * 「AWS側に実在するインスタンス」を起点に走査するために使う。DynamoDBのジョブ
+ * レコードを起点にすると、**`instanceId` を書き込む前に `Launch` が死んだケース
+ * （＝Issue #23がまさに問題にしている孤児）を構造的に発見できない**ため、
+ * 向きを逆にすることが要点。
+ */
+export async function listTaggedInstances(): Promise<TaggedInstance[]> {
+  const instances: TaggedInstance[] = [];
+  let nextToken: string | undefined;
+  do {
+    const result: DescribeInstancesCommandOutput = await ec2.send(
+      new DescribeInstancesCommand({
+        Filters: [
+          // 値は問わずタグの有無だけで絞る（jobIdは事前に分からないため）。
+          { Name: "tag-key", Values: [JOB_ID_TAG_KEY] },
+          { Name: "instance-state-name", Values: LIVE_INSTANCE_STATES },
+        ],
+        NextToken: nextToken,
+      }),
+    );
+    for (const reservation of result.Reservations ?? []) {
+      for (const instance of reservation.Instances ?? []) {
+        const instanceId = instance.InstanceId;
+        const jobId = instance.Tags?.find((tag) => tag.Key === JOB_ID_TAG_KEY)?.Value;
+        if (instanceId === undefined || jobId === undefined || jobId === "") {
+          continue;
+        }
+        instances.push({
+          instanceId,
+          jobId,
+          launchTime: instance.LaunchTime ?? null,
+        });
+      }
+    }
+    nextToken = result.NextToken;
+  } while (nextToken);
+  return instances;
 }

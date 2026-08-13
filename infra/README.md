@@ -103,23 +103,37 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   RequestMagicLink/SendCompletionEmail Lambdaロール（`JobsTable`等の読み書き +
   `ses:SendEmail`。SESサンドボックス中は送信先IDも権限チェック対象になるため、
   Resourceはアカウント配下のSES identity全体`identity/*`に絞っている）、
+  SweepOrphanInstances Lambdaロール（`ec2:DescribeInstances`/`ec2:TerminateInstances`
+  ＋`states:DescribeExecution`＋`JobsTable`読み取り、Issue #23）、
   **`HomeWorkerRole`**（自宅サーバーの常駐デーモンがassumeする最小権限ロール、
   Issue #49。信頼ポリシーはアカウント内プリンシパル、`maxSessionDuration`は4時間
   ＝ジョブ1本の最長所要時間より確実に長い値。実際に誰が使えるかは、手動で作る
   IAMユーザー側の`sts:AssumeRole`ポリシーで制御する。手順は
   `home-worker/README.md`参照）。
+- **EventBridge**: `OrphanInstanceSweepRule`（`ORPHAN_SWEEP_INTERVAL_MINUTES`＝10分
+  間隔で`SweepOrphanInstancesFn`を起動、Issue #23）。孤児化した録画EC2の定期掃除で、
+  **ジョブレコードではなくAWS上に実在するインスタンス（タグ`sattori:jobId`）を起点に
+  走査する**のが要点。`Launch`が`instanceId`をDynamoDBへ書く前に死んだ場合、ジョブ側
+  からは辿れないインスタンスが残って課金だけが続くため、ジョブ起点の後始末
+  （`HandleFailure`・管理画面の緊急停止）では構造的に拾えない。判定を安全側へ倒す
+  仕組み（15分の猶予・実行中ジョブでは最新1台を保護）は`apps/api/README.md`
+  「孤児インスタンスの検知」参照。
 - **CloudWatch Logs**: `/sattori/worker`（2週間保持）。EC2ワーカーはdockerの
   `awslogs`ドライバで、自宅ワーカーは常駐デーモンが`PutLogEvents`で
   （dockerデーモンにAWS認証情報を持たせないため）、いずれも`{jobId}`という同じ
   ストリーム名で書き込む。重複フレーム診断のため失敗時も残す。
 - **Lambda**（`NodejsFunction`、CJS出力。ESM出力だとAWS SDK内部の動的
-  `require("node:https")`がLambda(ESM)で失敗するため）× 12: createUpload /
-  parseReplay / requestMagicLink / startJob / getJob / sendCompletionEmail /
-  sfn.launch / sfn.handleFailure / admin.authorizer / admin.listJobs /
-  admin.getJobDetail / admin.getExecution。`sendCompletionEmail`のみHTTP APIではなく
-  `JobsTable`のDynamoDB Streams（`eventName: MODIFY`・`NewImage.status: "done"`
-  にフィルタ）をイベントソースとする。管理系4本（`admin.*`）は`commonEnv`を使わず、
-  用途ごとの環境変数のみを個別付与する（下記「管理画面」参照）。
+  `require("node:https")`がLambda(ESM)で失敗するため）× 20: createUpload /
+  parseReplay / requestMagicLink / startJob / getJob / getWorkerAvailability /
+  sendCompletionEmail / sfn.launch / sfn.handleFailure / sweepOrphanInstances /
+  admin.authorizer / admin.listJobs / admin.getJobDetail / admin.getExecution /
+  admin.getLogs / admin.stopJob / admin.retryJob / admin.getCosts /
+  admin.getSettings / admin.updateSettings。HTTP APIをトリガーとしないものが2本あり、
+  `sendCompletionEmail`は`JobsTable`のDynamoDB Streams（`eventName: MODIFY`・
+  `NewImage.status: "done"`にフィルタ）、`sweepOrphanInstances`はEventBridgeの
+  スケジュールルール（上記、Issue #23）をイベントソースとする。管理系（`admin.*`）と
+  `sweepOrphanInstances`は`commonEnv`を使わず、用途ごとの環境変数のみを個別付与する
+  （下記「管理画面」参照）。
 - ワーカーAMIはSSMの ECS 最適化 AL2023（Docker同梱）を参照。
 
 ## 管理画面（`/admin`、Issue #51）
