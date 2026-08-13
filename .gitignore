@@ -55,3 +55,4 @@ logs/
 .claude/settings.local.json
 CLAUDE.local.md
 .agents/
+.claude/scheduled_tasks.lock

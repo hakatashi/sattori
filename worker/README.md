@@ -718,6 +718,9 @@ S3へアップロードすること。
 
 ## タイトル資産のS3アップロード手順(Issue #22)
 
+> 実際に流すコマンド(タイトルごとの同梱物・`tar`の注意点込み)は `upload-title-assets`
+> skill にある。ここではアーカイブの構成とワーカー側の展開の仕組みだけを説明する。
+
 新タイトル追加時(#13)や既存タイトルのゲーム本体・MOD更新時は、以下の3点を
 1本の tar.gz にまとめて `s3://${TITLE_ASSETS_BUCKET}/titles/{title}/assets.tar.gz`
 へアップロードする(`TITLE_ASSETS_BUCKET` は `cdk deploy` 後の `TitleAssetsBucketName`
@@ -823,6 +826,9 @@ Spot中断リトライ時の同一インスタンス再利用等を想定)。展
 `/app/prefixes/{game}-wined3d-gl` 等)と一致する。
 
 ## MOD (DLL インジェクタ / 自動再生フック) のビルド
+
+> このマシンには MSVC 環境が無く、実際には `i686-w64-mingw32-g++` でクロスビルドしている。
+> その具体的なコマンド(th20 の `-static` 必須など)は `build-mods` skill にある(Issue #102)。
 
 `mods/` はソースのみ管理しており、`injector.exe` / `th06_hook.dll` / `th07_hook.dll` /
 `th08_hook.dll` / `th11_hook.dll` 自体は `.gitignore` 済みのビルド成果物。
