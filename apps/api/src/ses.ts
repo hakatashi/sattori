@@ -1,5 +1,12 @@
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
-import { calculateDownloadExpiresAt, DEFAULT_LANGUAGE, type SupportedLanguage } from "@sattori/shared";
+import {
+  calculateDownloadExpiresAt,
+  DEFAULT_LANGUAGE,
+  GAME_TITLES,
+  localizedCharacterName,
+  type ReplayInfo,
+  type SupportedLanguage,
+} from "@sattori/shared";
 
 // SESクライアントは遅延生成する。Lambda実行リージョン(eu-south-2)にはSESが
 // 存在しないため、`SES_REGION`環境変数(infra/lib/sattori-stack.tsが設定、
@@ -14,45 +21,107 @@ function sesClient(): SESv2Client {
   return _ses;
 }
 
-// プレースホルダの文面。送信元・文言は運用開始前に調整する想定（Issue #9）。
-// 「次のステップ」押下時点で選択されていた言語（`JobRecord.language`）で出し分ける。
+// 「次のステップ」押下時点で選択されていた言語（`JobRecord.language`）で出し分ける
+// （Issue #9・#10、文面はIssue #95で確定）。本文は解析情報のブロック
+// （`formatReplayInfo()`）を挟むため、各パートを組み立てる関数として持つ。
 const MAGIC_LINK_EMAIL_SUBJECT: Record<SupportedLanguage, string> = {
   ja: "【TouhouSattori】録画を開始するリンク",
   en: "[TouhouSattori] Link to start your recording",
 };
-const MAGIC_LINK_EMAIL_BODY: Record<SupportedLanguage, (link: string) => string> = {
-  ja: (link) =>
-    `TouhouSattoriへのリクエストを受け付けました。\n\n` +
+const MAGIC_LINK_EMAIL_BODY: Record<
+  SupportedLanguage,
+  (link: string, replayInfoText: string) => string
+> = {
+  ja: (link, replayInfoText) =>
+    `リプレイファイルの録画リクエストを受け付けました。\n\n` +
+    replayInfoText +
     `以下のリンクをクリックすると録画を開始します（受付期限は24時間です）。\n${link}\n\n` +
     `このメールに心当たりがない場合は、このメールを無視してください。`,
-  en: (link) =>
-    `We've received your request on TouhouSattori.\n\n` +
+  en: (link, replayInfoText) =>
+    `We've received a request to record your replay file.\n\n` +
+    replayInfoText +
     `Click the link below to start recording (this link expires in 24 hours).\n${link}\n\n` +
     `If you don't recognize this request, please ignore this email.`,
 };
 
-// プレースホルダの文面（Issue #10）。
 const COMPLETION_EMAIL_SUBJECT: Record<SupportedLanguage, string> = {
   ja: "【TouhouSattori】録画が完了しました",
   en: "[TouhouSattori] Your recording is ready",
 };
-const COMPLETION_EMAIL_BODY: Record<SupportedLanguage, (link: string, expiresAtText: string | null) => string> = {
-  ja: (link, expiresAtText) =>
+const COMPLETION_EMAIL_BODY: Record<
+  SupportedLanguage,
+  (link: string, replayInfoText: string, expiresAtText: string | null) => string
+> = {
+  ja: (link, replayInfoText, expiresAtText) =>
     `リプレイの録画が完了しました。\n\n` +
+    replayInfoText +
     `以下のリンクから動画をダウンロードできます。\n${link}\n` +
     (expiresAtText ? `（動画は${expiresAtText}までダウンロードできます）\n` : "") +
     `\nこのメールに心当たりがない場合は、このメールを無視してください。`,
-  en: (link, expiresAtText) =>
+  en: (link, replayInfoText, expiresAtText) =>
     `Your replay recording is complete.\n\n` +
+    replayInfoText +
     `You can download the video from the link below.\n${link}\n` +
-    (expiresAtText ? `(The video will be available for download until ${expiresAtText})\n` : "") +
+    (expiresAtText ? `(The video is available for download until ${expiresAtText})\n` : "") +
     `\nIf you don't recognize this request, please ignore this email.`,
 };
 
+type ReplayInfoField = "game" | "player" | "difficulty" | "character" | "score";
+
+/** 解析情報ブロックの項目ラベル。 */
+const REPLAY_INFO_LABELS: Record<SupportedLanguage, Record<ReplayInfoField, string>> = {
+  ja: {
+    game: "作品タイトル",
+    player: "プレイヤー名",
+    difficulty: "難易度",
+    character: "自機タイプ",
+    score: "スコア",
+  },
+  en: {
+    game: "Title",
+    player: "Player",
+    difficulty: "Difficulty",
+    character: "Shot type",
+    score: "Score",
+  },
+};
+
+/**
+ * どのリプレイについてのメールなのかを本文冒頭に示すブロックを組み立てる（Issue #95）。
+ * メールは録画リクエストから最大24時間後・完了までさらに数十分後に届くため、複数の
+ * リプレイを投げたユーザーが受信箱の側でどれのメールか判別できる必要がある。
+ * 解析情報が無いジョブ（`replayInfo` が null。旧ジョブや解析に失敗したまま送信した
+ * 場合）や、値が取れなかった項目は行ごと省く。
+ * 末尾に空行を含めた文字列を返し、`replayInfo` が無ければ空文字列を返す
+ * （＝ブロックごと本文から消える）。
+ */
+function formatReplayInfo(replayInfo: ReplayInfo | null, language: SupportedLanguage): string {
+  if (!replayInfo) {
+    return "";
+  }
+  const labels = REPLAY_INFO_LABELS[language];
+  const locale = language === "en" ? "en-US" : "ja-JP";
+  // タイトルは日本語名（副題に英語名を含む）しか持たないため、英語の文面でも
+  // `GAME_TITLES` をそのまま使う（ページAの解析プレビューと同じ扱い）。
+  const rows: [string, string | null][] = [
+    [labels.game, GAME_TITLES[replayInfo.game]],
+    [labels.player, replayInfo.player || null],
+    [labels.difficulty, replayInfo.difficulty],
+    [labels.character, localizedCharacterName(replayInfo, language)],
+    [labels.score, replayInfo.score === null ? null : replayInfo.score.toLocaleString(locale)],
+  ];
+  const lines = rows
+    .filter((row): row is [string, string] => row[1] !== null)
+    .map(([label, value]) => (language === "en" ? `${label}: ${value}` : `【${label}】${value}`));
+  return `${lines.join("\n")}\n\n`;
+}
+
 /**
  * ダウンロード期限を完了メール用に整形する。メール本文はブラウザ（ジョブ画面）と
- * 異なり閲覧者のタイムゾーンが分からないため、常にUTC表記で明示する
- * （`timeZoneName: "short"` で末尾に"UTC"が付く）。
+ * 異なり閲覧者のタイムゾーンが分からないため、タイムゾーンを明示する
+ * （`timeZoneName: "short"` で末尾に "JST" / "UTC" が付く）。日本語の文面は読み手が
+ * 日本在住である前提でJST、英語の文面は特定の地域を想定できないためUTCで表記する
+ * （Issue #95）。
  */
 function formatExpiresAtForEmail(expiresAt: string, language: SupportedLanguage): string {
   const locale = language === "en" ? "en-US" : "ja-JP";
@@ -63,8 +132,8 @@ function formatExpiresAtForEmail(expiresAt: string, language: SupportedLanguage)
     month: "short",
     day: "numeric",
     hour: "numeric",
-    minute: "numeric",
-    timeZone: "UTC",
+    minute: "2-digit",
+    timeZone: language === "en" ? "UTC" : "Asia/Tokyo",
     timeZoneName: "short",
   }).format(new Date(expiresAt));
 }
@@ -93,8 +162,11 @@ export async function sendMagicLinkEmail(params: {
   webBaseUrl: string;
   jobId: string;
   language: SupportedLanguage;
+  /** 本文冒頭に載せるリプレイの解析情報（`JobRecord.replayInfo`）。無ければ省く。 */
+  replayInfo: ReplayInfo | null;
 }): Promise<void> {
   const link = buildJobPageUrl(params.webBaseUrl, params.jobId, params.language);
+  const replayInfoText = formatReplayInfo(params.replayInfo, params.language);
   await sesClient().send(
     new SendEmailCommand({
       FromEmailAddress: params.from,
@@ -102,7 +174,7 @@ export async function sendMagicLinkEmail(params: {
       Content: {
         Simple: {
           Subject: { Data: MAGIC_LINK_EMAIL_SUBJECT[params.language] },
-          Body: { Text: { Data: MAGIC_LINK_EMAIL_BODY[params.language](link) } },
+          Body: { Text: { Data: MAGIC_LINK_EMAIL_BODY[params.language](link, replayInfoText) } },
         },
       },
     }),
@@ -124,8 +196,11 @@ export async function sendCompletionEmail(params: {
   language: SupportedLanguage;
   /** JobRecord.doneAt（status "done" 遷移時刻、ISO 8601）。未設定なら期限は案内しない。 */
   doneAt: string | null;
+  /** 本文冒頭に載せるリプレイの解析情報（`JobRecord.replayInfo`）。無ければ省く。 */
+  replayInfo: ReplayInfo | null;
 }): Promise<void> {
   const link = buildJobPageUrl(params.webBaseUrl, params.jobId, params.language);
+  const replayInfoText = formatReplayInfo(params.replayInfo, params.language);
   const expiresAt = calculateDownloadExpiresAt(params.doneAt);
   const expiresAtText = expiresAt ? formatExpiresAtForEmail(expiresAt, params.language) : null;
   await sesClient().send(
@@ -135,7 +210,9 @@ export async function sendCompletionEmail(params: {
       Content: {
         Simple: {
           Subject: { Data: COMPLETION_EMAIL_SUBJECT[params.language] },
-          Body: { Text: { Data: COMPLETION_EMAIL_BODY[params.language](link, expiresAtText) } },
+          Body: {
+            Text: { Data: COMPLETION_EMAIL_BODY[params.language](link, replayInfoText, expiresAtText) },
+          },
         },
       },
     }),
