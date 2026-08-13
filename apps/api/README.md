@@ -136,6 +136,11 @@ DynamoDB Streams経由で停止したはずのジョブの完了メールがユ�
 `Overrides` に渡し、`AllocationStrategy: "price-capacity-optimized"`
 （`SingleInstanceType: false`）で配置する。
 
+> **インスタンスの起動を CDK 側へ移さないこと**（実行時に SDK で起動する理由は
+> [`docs/decisions/0002`](../../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)）。
+> eu-south-2 は us-east-1 よりキャパシティプールが少なく、起動失敗率の監視が要る
+> （[`0001`](../../docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)）。
+
 - **th06/07/08向け**（`DEFAULT_CANDIDATE_INSTANCE_TYPES`）: `c7i.xlarge` /
   `c7a.xlarge` / `c7i-flex.xlarge` / `m7i.xlarge`。2026-08のeu-south-2移設に伴い、
   旧us-east-1で使っていた`c6a`/`c6i`/`c5a`系（eu-south-2に存在しない）を削除した。
@@ -282,6 +287,10 @@ UserDataスクリプトの要点:
 - `pending`ジョブの受付期限は24時間（`jobs.ts`の`PENDING_JOB_TTL_MS`。bot/濫用対策で、
   アップロード用S3の保持期間とは独立）。
 
+> 濫用対策をここから増やす前に
+> [`docs/decisions/0007`](../../docs/decisions/0007-no-ip-rate-limit-no-recaptcha.md) を読むこと
+> —— IP 単位のレート制限・reCAPTCHA は実装漏れではなく、意図的に見送っている。
+
 ## キルスイッチ・月間コストガード（`settings.ts`, `costGuard.ts`, Issue #14）
 
 `requestMagicLink.ts`は上記のメールレート制限より前に、以下2つのグローバルな
@@ -327,8 +336,10 @@ UserDataスクリプトの要点:
 
 運用調査用の管理画面（`apps/web/src/admin/`）向け。ユーザーは管理者1人固定のため、
 Cognito等ではなくSSM Parameter Store(SecureString)に置いた共有トークンを
-Lambda Authorizerで検証する方式にしている。jobId自体を秘密値として使う
-ユーザー向けの認可方式（`startJob.ts`、AGENTS.md）とは別系統。
+Lambda Authorizerで検証する方式にしている
+（[`docs/decisions/0005`](../../docs/decisions/0005-admin-auth-ssm-shared-token.md)）。
+jobId自体を秘密値として使うユーザー向けの認可方式（`startJob.ts`、
+[`0004`](../../docs/decisions/0004-job-id-as-authorization-secret.md)）とは別系統。
 
 - **一覧取得**: `JobsTable`はPK`jobId`のみでGSIが無かったため、`StatusCreatedAtIndex`
   （PK=`status`, SK=`createdAt`, Projection=ALL）を追加した

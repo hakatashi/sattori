@@ -179,7 +179,7 @@ def upload_video(s3, path, key, metadata=None):
 
     サイズは管理画面のコスト推定(Issue #60、packages/shared/src/cost.ts)で
     S3保管料とCloudFront配信量の入力になる。動画サイズは本サービスのコスト構造で
-    最大のレバレッジ(docs/aws-region-cost-analysis.md §6)なので、平均値で丸めず
+    最大のレバレッジ(docs/research/aws-region-cost-analysis.md §6)なので、平均値で丸めず
     ジョブ単位の実測をDynamoDBへ残す。
     """
     size = os.path.getsize(path)
