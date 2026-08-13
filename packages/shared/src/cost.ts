@@ -12,7 +12,7 @@ import { OUTPUT_RETENTION_DAYS } from "./job.js";
  * 必ず誤差が乗る。用途は「どのジョブが異常に高いか」「月次でいくら使っているか」
  * を運用者が把握することであり、会計用途ではない。
  *
- * 単価と稼働前提の出典は `docs/aws-region-cost-analysis.md`（2026-07-27時点、
+ * 単価と稼働前提の出典は `docs/research/aws-region-cost-analysis.md`（2026-07-27時点、
  * us-east-1）。2026-08のeu-south-2移設に伴い、単価定数はeu-south-2の値へ入れ替えた
  * （AWS Price List APIおよびSpot価格履歴で2026-08-03に再確認）。リージョンを
  * 再度移す場合はここの定数も入れ替えること。
@@ -21,7 +21,7 @@ import { OUTPUT_RETENTION_DAYS } from "./job.js";
 /** 単価の対象リージョン。表示に添えて「どこの単価か」を明示するために持つ。 */
 export const COST_PRICING_REGION = "eu-south-2";
 
-/** 単価表の調査時点（`docs/aws-region-cost-analysis.md`）。 */
+/** 単価表の調査時点（`docs/research/aws-region-cost-analysis.md`）。 */
 export const COST_PRICING_AS_OF = "2026-08-03";
 
 /**
@@ -55,7 +55,7 @@ export const PUBLIC_IPV4_USD_PER_HOUR = 0.005;
  * Lambda・Step Functions・DynamoDB・SES・CloudWatch Logs をまとめた
  * 1ジョブあたりの概算（USD）。個別に計上しても合計で月$2程度（月1000録画）に
  * しかならず、ジョブ単位に正確に分解する労力に見合わないため定数で置く
- * （`docs/aws-region-cost-analysis.md` §4.2・§5）。
+ * （`docs/research/aws-region-cost-analysis.md` §4.2・§5）。
  */
 export const MISC_USD_PER_JOB = 2.0 / 1000;
 
@@ -63,7 +63,7 @@ export const MISC_USD_PER_JOB = 2.0 / 1000;
  * CloudFront の常時無料枠（GB/月）。12ヶ月限定ではなく Always Free。
  * 現状の月1000録画規模ではこの枠にほぼ収まっている（＝配信コストは$0）が、
  * 720p版の平均サイズが約1GiBあるため**枠を使い切る寸前**という認識が重要
- * （`docs/aws-region-cost-analysis.md` §6）。集計APIはこの枠を超えた分だけを
+ * （`docs/research/aws-region-cost-analysis.md` §6）。集計APIはこの枠を超えた分だけを
  * 課金対象として計上する。
  */
 export const CLOUDFRONT_FREE_TIER_GB_PER_MONTH = 1000;
@@ -97,7 +97,7 @@ export const CLOUDFRONT_USD_PER_GB = 0.085;
  * 2026-08-12時点の`c7i.4xlarge`直近3日間の履歴（42点、$0.110〜0.123）の単純平均
  * $0.1178 を採る——th20のEC2候補はこの1タイプのみ（`ec2.ts`）なので帯の代表値も
  * 実タイプの値そのものでよい。ただしus-east-1時代
- * （`docs/aws-region-cost-analysis.md` §2）と同様の30日間・時間重み付き平均（TWA）
+ * （`docs/research/aws-region-cost-analysis.md` §2）と同様の30日間・時間重み付き平均（TWA）
  * での再計測がまだのため、実際の値とは数%ずれうる。次にこの定数を見直す際は
  * TWAで再計測すること。
  */
@@ -111,7 +111,7 @@ export const FALLBACK_SPOT_PRICE_USD_PER_HOUR = {
  * `launchedAt` が記録されていないジョブ（このフィールドの追加より前に実行された
  * 旧ジョブ）に使う、課金対象時間のフォールバック（時間）。本番実績の
  * フルラン中心値0.60時間 × リトライ/Spot中断の割増1.10
- * （`docs/aws-region-cost-analysis.md` §1.3）。
+ * （`docs/research/aws-region-cost-analysis.md` §1.3）。
  */
 export const FALLBACK_BILLED_HOURS = 0.6 * 1.1;
 
@@ -234,7 +234,7 @@ export interface JobCostEstimate {
   spotPriceSource: SpotPriceSource;
   /**
    * このジョブが生む CloudFront 配信量の見積り（バイト）。「720p版が1回
-   * ダウンロードされる」という前提（`docs/aws-region-cost-analysis.md` §6 と同じ
+   * ダウンロードされる」という前提（`docs/research/aws-region-cost-analysis.md` §6 と同じ
    * モデル。ユーザーの大半は720p版だけを落とすと仮定）で、720p版が無ければ
    * 元解像度版で代用する。
    *

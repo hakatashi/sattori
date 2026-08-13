@@ -93,7 +93,7 @@ export interface JobRecord {
    * `outputPath`の動画のバイト数（未アップロードなら null）。ワーカーが
    * アップロード時に記録する（`worker/entrypoint.py`）。
    * S3保管料・CloudFront転送量のコスト推定（`cost.ts`）に使う。動画サイズは
-   * 本サービスのコスト構造で最大のレバレッジ（`docs/aws-region-cost-analysis.md` §6）
+   * 本サービスのコスト構造で最大のレバレッジ（`docs/research/aws-region-cost-analysis.md` §6）
    * なので、平均値で丸めずジョブ単位の実測を残す。旧ジョブでは null。
    */
   outputBytes: number | null;
