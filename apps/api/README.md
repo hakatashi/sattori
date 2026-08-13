@@ -357,7 +357,7 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
   `timingSafeEqual`（長さ不一致による`RangeError`回避と定数時間比較を両立）。
   SSMから取得したトークンは実行コンテキストに5分TTLでキャッシュし、authorizer自体の
   `resultsCacheTtl`（5分）と合わせて、トークンローテーション後の失効反映は
-  **最大10分遅れる**（許容トレードオフ。ローテーション手順は`CLAUDE.local.md`）。
+  **最大10分遅れる**（許容トレードオフ。ローテーション手順は`deploy-sattori` skill）。
 - **ダウンロード**（`downloads.ts`）: 動画URLの組み立て（`buildVideoDownloadUrl`）は
   `getJob.ts`から移設して共有。ユーザー向け`GET /jobs/{jobId}`と異なり、statusが
   `done`でなくても`outputPath`/`outputPath720p`があればURLを返す（`converting`中の
