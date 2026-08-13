@@ -59,7 +59,7 @@ th11: `reports/35`〜`reports/39`。th20: `reports/44`〜`reports/48`、Issue #8
   DirectInput GetDeviceStateではなくGetKeyboardStateフック(`PressVKey`)でキー入力を
   注入する(TH10以降のエンジン向け、reports/35) |
 | `mods/th20_replay_autoplay/` | th20 自動再生フック DLL(`th20_hook.dll`)のソース(C++, MSVC)。
-  th11と同じGetKeyboardStateフック経路に加え、以下3つの共通フックを組み込む
+  th11と同じGetKeyboardStateフック経路に加え、以下4つの共通フックを組み込む
   (後述「th20対応の技術的背景」) |
 | `mods/common/fps_limiter_hook.*` | `IDirect3DDevice9::Present`のvtableフックによる
   フレームレート制限(reports/46)。AWS実機でth20のfpsが75fps前後へ暴走しリプレイが
@@ -70,6 +70,9 @@ th11: `reports/35`〜`reports/39`。th20: `reports/44`〜`reports/48`、Issue #8
   スローダウンさせる |
 | `mods/common/fps_display_hook.*` | 画面に焼き付くfpsカウンター表示だけを等倍相当へ
   補正するフック(reports/48)。低速録画の動画に「30.0fps」と焼き付いてしまうのを防ぐ |
+| `mods/common/score_monitor.*` | ゲーム内スコア・ステージ番号・残機・グレイズの定期
+  サンプリング(reports/50)。デシンクの事後調査用の証跡で、録画パイプラインの判定には
+  使わない。RVA直指定のためth20専用 |
 
 `mods/` 配下はソース・ビルドスクリプトのみリポジトリで管理する
 (元は `touhou-recorder` の PoC で作成したもの)。ビルド方法は後述。
@@ -245,7 +248,7 @@ touhou-recorderでの事前検証(reports/35〜39)を踏まえた設計:
   `fps_monitor.cpp`を組み込んでおり、実機検証では56.6〜60.2Hzで安定していた
   (fps暴走の兆候なし、reports/35)。
 
-## th20対応の技術的背景(reports/44〜48、Issue #87)
+## th20対応の技術的背景(reports/44〜48・50、Issue #87・#105)
 
 th20(東方錦上京)は TH125 以降のエンジンで、これまでの4タイトルと構造が大きく違う。
 既存タイトルの慣習をそのまま流用すると必ず外すので、以下は個別に押さえること。
@@ -290,11 +293,99 @@ th20(東方錦上京)は TH125 以降のエンジンで、これまでの4タイ
   **この修正は共通コードなので、th06/07/08/11 の `*_hook.dll` を次に触る際は
   本修正込みで再ビルドすること**(これらは `DirectInput8Create` を1回しか呼ばないため
   現状は無害だが、ビルド済み DLL と最新ソースが乖離している状態ではある)。
-- **デシンク(リプレイずれ)が起きやすい**。リプレイファイル・ゲーム本体側の現象で
-  録画側では検知も対処もできない。reports/45 では、撃破できなくなったスペルカードを
-  時間切れまで再生し続けて尺が 40 分近くまで伸びた実例が出ている。**想定尺を大幅に
-  超えてタイムアウトへ近づいた場合は、まずデシンクを疑うこと**。ユーザーには
-  ページAで事前に注意書きを出している(`apps/web`、Issue #87)。
+- **デシンク(リプレイずれ)が起きやすい**が、有志製パッチ **thprac** の後付けアタッチで
+  対策している(下記「thprac によるデシンク対策」)。それでも**想定尺を大幅に超えて
+  タイムアウトへ近づいた場合は、まずデシンクを疑うこと**。ユーザーにはページAで
+  事前に注意書きを出している(`apps/web`、Issue #87)。
+
+### thprac によるデシンク対策(reports/50、Issue #105)
+
+th20 のデシンクの主因は、ZUN 側のバグで挙動が非決定的になることにある。有志製パッチ
+[thprac](https://github.com/touhouworldcup/thprac) は GUI 操作を要さず**常時適用される**
+修正としてこれらを潰しており(未初期化 AnmVM の残骸漏れ、宝珠タイムアウト時の
+use-after-free、`th20_expired_summon_kill_desync_fix` 等)、**Wine 上でもそのまま動作する**。
+
+reports/50 の実機検証(同一リプレイを thprac 有無の両方でフル尺録画し、リプレイ末尾の
+平文 USER セクションに入っている記録時スコアと再生時スコアの完全一致で判定)では、
+ずれていた3本すべてが完全一致に転じ、元々ずれていなかった1本にも回帰は無かった。
+ずれると自機が被弾して撃破できなくなりスペルカードが時間切れになり続けるため、
+**総録画時間も 23〜49% 短縮している**。
+
+実装は `recording_common.attach_thprac()`。**injector.exe が `CREATE_SUSPENDED` で
+ゲームを起動して自作 MOD を注入する既存の経路には一切手を入れず、起動後に後付けで
+アタッチする**(thprac 側にゲームを起動させると MOD の注入タイミング、すなわち
+`DirectInput8Create` 呼び出し前の IAT フックが崩れる)。有効化は `GameConfig.thprac_exe`
+にファイル名を指定するだけで、`games/th20/` に同梱した本体が `prepare_instance()` の
+rsync で instance ディレクトリへ運ばれる。
+
+注意点:
+
+- **`--attach` に PID を渡してはならない**。`pgrep` で得られるのは Linux の PID であり、
+  Wine がゲームプロセスに割り当てる Windows 側の PID とは別物なので、渡すと thprac が
+  対象を見つけられず、Xvfb 上では誰も閉じられない確認ダイアログを出したまま常駐して
+  固まる(実測120秒無応答)。引数なしの `--attach`(最初に見つかった東方ゲームへ自動
+  アタッチ)なら約1秒で正常終了する。
+- この仕様上、**同一 WINEPREFIX で複数の東方ゲームを同時に走らせるとアタッチ先が
+  不定になる**。Sattori は1コンテナ=1ジョブで、自宅ワーカーの並列録画もコンテナごとに
+  WINEPREFIX が分かれるため現状の構成では競合しない。
+- アタッチの成否は `/proc/<pid>/maps` に thprac のイメージが現れるかで検証する
+  (thprac は自分自身の exe イメージを対象プロセスへ注入する)。**失敗しても録画は
+  続行する** —— thprac 無しの従来動作に戻るだけなので、ジョブごと落とす価値がない。
+- **thprac はリプレイ選択画面の表示を変える**。ZUN 側のテーブル範囲外参照バグによる
+  `Ex  (null)` 表示が正しい `All` に直るため、過去の録画と並べると差分として見える。
+  ゲームプレイ画面にオーバーレイは一切出ない(reports/50 で最終フレーム目視確認済み)。
+- **「もう絶対にずれない」ことの保証ではない**。検証したのは4本のみで、thprac が
+  潰していないバグに起因するずれは残りうる。ページAの注意書きは残してある。
+
+#### 録画側の thprac では直せないずれがある
+
+ワーカーがやっているのは**再生側**の対処であり、**記録時に既に壊れたリプレイは
+原理的に直せない**。この区別は、ページAの注意書き(「プレイ時に thprac を入れて
+ください」)をワーカー側の対応後も残している理由そのものなので、消さないこと
+(Issue #105、`apps/web/README.md`「ワーカーが thprac を適用した後もこの注意書きを
+残す理由」)。
+
+デシンクの主因である **ANM 再利用バグ(AnmVM のリセット漏れによる未初期化メモリ参照)は
+「プレイ中」にランダムに発火する**。thprac はこれを常時修正しているので
+(`thprac_th20.cpp` の `THGuiCreate()` が `AnmVM_Reset_hook` を無条件で仕掛ける。
+再生中限定ではない)、プレイ時に thprac が入っていれば汚染自体が起きない。逆に
+thprac 無しでプレイした回に発火してしまうと、**保存されたリプレイが「再現不能な状態を
+通過した記録」になる**。リプレイは入力列と乱数種しか持たず再生時に再シミュレーション
+する方式なので、記録時にだけ存在した未初期化メモリの残骸は再生側からは復元できない。
+thprac 自身のリプレイ修復ツール(`TH_REPFIX_*`、ステージ遷移のタイマーオフセット調整)
+でも直せないことが、thprac の UI テキストに明記されている
+(`thprac/src/thprac/thprac_games_def.json` の `TH20_MAIN_STORY_FIXES_DESC`):
+
+> If your replay desyncs due to the fatal ANM reuse bug (which is random, causes
+> visual corruptions & can happen any time), it cannot be repaired. This bug is
+> fixed by thprac.
+
+reports/50 で解消した3本は、いずれも**再生時の非決定性**に起因する側(=ワーカーの
+thprac で直る側)だったことになる。**記録時に汚染された側のリプレイは検証サンプルに
+含まれていない**ので、そちらが来たときの挙動は未確認である。
+
+なお理屈のうえでは逆向きのリスクもある。「記録時に残骸が乗ったが、再生時にも同じ
+残骸が再現されるため結果的に一致していた」リプレイがあれば、再生側だけ thprac で
+決定的にすると逆にずれうる。ただし reports/50 では、thprac 無しでも元々ずれていない
+`th20_01` を thprac 有りで録画してスコア完全一致(=回帰なし)を確認しており、
+実測ではこの向きの事例は出ていない。
+
+残ったずれを事後調査できるよう、`mods/common/score_monitor.*`(th20 の MOD にのみ
+組み込み)がゲーム内スコア・ステージ番号・残機・グレイズを1秒間隔で MOD ログへ出力する。
+RVA は thprac のソース(`thprac_th20.cpp` の `rel_addrs` と `GlobalsSide` 構造体)由来で、
+th20 ver1.00c で実機確認済み。**録画パイプラインの判定には一切使っていない** ——
+デシンクを疑うジョブが出たときに、管理画面のワーカーログ(Issue #58)から
+「どこまでスコアが伸びたか」「残機が負になったか」を追うための証跡である。
+
+```
+ScoreMonitor: score=481237400 stage=7 lives=2 graze=12345 epoch_ms=...
+```
+
+リプレイファイル末尾の `USER` ブロックだけは平文で、記録時の最終スコアが入っている
+(画面表示はこの値の10倍)。**再生終了時点の `ScoreMonitor` の値がこれと一致すれば
+「最後までずれずに再生できた」と言い切れる**。ただし録画がタイムアウトで打ち切られた
+場合も不一致になるため、判定にはスコアの停止時刻(自然終了なら終了検知の静止待ちぶん
+24〜34秒、強制打ち切りなら0.5秒程度で途切れる)を併せて見ること(reports/50)。
 
 ## 低速録画(Issue #68)
 
@@ -674,7 +765,11 @@ aws s3 cp /tmp/th11-assets.tar.gz "s3://${TITLE_ASSETS_BUCKET}/titles/th11/asset
 
 th20の場合、`games/th20/` には**cfg(`th20.cfg`、ウィンドウモードのもの)を必ず同梱する**
 (`prepare_instance()` が `%APPDATA%` へコピーする元になる。無いと初回起動時の解像度選択
-ダイアログで止まる、reports/44)。WINEPREFIX はth11と同じくMS明朝も登録済みのものを使う:
+ダイアログで止まる、reports/44)。**thprac本体(`thprac.v2.3.0.3.exe`)も同じく
+`games/th20/` 直下に同梱すること**(デシンク対策、上記「thprac によるデシンク対策」)。
+無い場合は `attach_thprac()` が警告を出して thprac 無しで録画を続行するため、**録画は
+成功するがデシンクが再発する**(=気づきにくい)。`.pdb`(デバッグシンボル、15MB)は
+実行時に不要なので入れないこと。WINEPREFIX はth11と同じくMS明朝も登録済みのものを使う:
 
 ```bash
 cd worker
@@ -723,9 +818,10 @@ worker\mods\th20_replay_autoplay\build.bat
   それぞれ `worker/mods/th06_replay_autoplay/build/th06_hook.dll` /
   `worker/mods/th07_replay_autoplay/build/th07_hook.dll` を生成する。
 - `th20_replay_autoplay/build.bat` は上記に加えて `fps_limiter_hook.cpp` /
-  `dsound_hook.cpp` / `fps_display_hook.cpp` を含める(それぞれ Present のフレームレート
-  制御・低速録画時の音声スケール・fps表示補正。上記「th20対応の技術的背景」「低速録画」
-  参照)。mingw-w64 でクロスビルドする場合、th20だけは `-static` も必須
+  `dsound_hook.cpp` / `fps_display_hook.cpp` / `score_monitor.cpp` を含める(それぞれ
+  Present のフレームレート制御・低速録画時の音声スケール・fps表示補正・デシンク事後調査用の
+  スコアサンプリング。上記「th20対応の技術的背景」「低速録画」参照)。
+  mingw-w64 でクロスビルドする場合、th20だけは `-static` も必須
   (付けないと wine 実行時に `libgcc_s_dw2-1.dll` / `libstdc++-6.dll` が見つからず
   DLL 注入が失敗する、reports/44):
   ```bash
@@ -733,7 +829,7 @@ worker\mods\th20_replay_autoplay\build.bat
   i686-w64-mingw32-g++ -shared -O2 -o build/th20_hook.dll \
     dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
     ../common/logging.cpp ../common/fps_monitor.cpp ../common/fps_limiter_hook.cpp \
-    ../common/dsound_hook.cpp ../common/fps_display_hook.cpp \
+    ../common/dsound_hook.cpp ../common/fps_display_hook.cpp ../common/score_monitor.cpp \
     -luser32 -static-libgcc -static-libstdc++ -static
   ```
 - `th08_replay_autoplay/build.bat` / `th11_replay_autoplay/build.bat` も同様に
@@ -933,9 +1029,11 @@ docker push <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest
 
 - 対応タイトルは th06・th07・th08・th11・th20。他タイトルはリプレイパーサー側は
   多タイトル対応済みだが、録画対応(MOD移植)は未着手(AGENTS.md参照)。
-- **th20はデシンクが起きやすい**。録画側では検知も対処もできない(リプレイファイル・
-  ゲーム本体側の現象)ため、ページAでユーザーへ事前に注意書きを出すことで対応している
-  (Issue #87)。想定尺を大幅に超えてタイムアウトへ近づいたジョブは、まずこれを疑うこと。
+- **th20はデシンクが起きやすい**。thpracの後付けアタッチで大幅に改善したが
+  (reports/50、Issue #105。上記「thprac によるデシンク対策」)、**残りうるずれを
+  録画側で検知する手段は依然として無い**。ページAでユーザーへ事前に注意書きを出す
+  対応(Issue #87)は継続している。想定尺を大幅に超えてタイムアウトへ近づいたジョブは、
+  まずこれを疑い、ワーカーログの`ScoreMonitor:`行と記録時スコアを突き合わせること。
 - **`mods/common/dinput_hook.cpp`のth20対応修正(vtable[3]の二重フック防止、reports/44)は
   th06/07/08/11のビルド済みDLLに反映されていない**。これらは`DirectInput8Create`を
   1回しか呼ばないため現状は無害だが、ソースとビルド済み成果物が乖離している。
@@ -956,4 +1054,6 @@ docker push <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest
   誤マッチ等の検知ロジック側を疑う前に、まず実際に録画された映像を目視して
   デシンクによる強制終了(不自然な被弾・ゲームオーバー、その直後のリプレイ選択画面への
   遷移)が起きていないか確認すること。デシンクは検知ロジックの閾値調整やリトライでは
-  解決しない(同一リプレイなら何度録画しても同じ箇所で再現する)ため、現時点で対処法はない。
+  解決しない(同一リプレイなら何度録画しても同じ箇所で再現する)。**th20 に限っては
+  thprac の導入で大半が解消した**が(reports/50、Issue #105)、他タイトルには
+  現時点で対処法がない。

@@ -92,7 +92,9 @@
   "gameInfo": {
     "heading": "Supported title info",
     "vpatchApplied": "VsyncPatch rev{{rev}} applied",
-    "cherryBugFix": "Cherry point display bug fix applied (BugFixCherry = 1)"
+    "cherryBugFix": "Cherry point display bug fix applied (BugFixCherry = 1)",
+    "thpracApplied": "thprac v{{version}} applied",
+    "thpracPurpose": "Applied during recording to mitigate replay desync"
   },
   "uploadForm": {
     "supportedTitlesLabel": "Currently supported titles ({{count}})",
@@ -118,7 +120,7 @@
     "slowMotionUnavailable": "The recording servers are busy right now, so no server that supports slow-motion recording is available. Please try again later.",
     "slowMotionUnsupportedGame": "This title does not support slow-motion recording yet, so it is unavailable.",
     "th20NoticeTitle": "About recording replays of this title",
-    "th20NoticeDesync": "Fossilized Wonders is prone to replay desync (playback diverging from the run that was recorded), so the video may not match what the replay originally showed. This comes from the replay file and the game itself, so re-recording produces the same result. Note that players have reported that saving replays while playing with the community patch <0>thprac</0> applied avoids the desync.",
+    "th20NoticeDesync": "Fossilized Wonders is prone to replay desync (playback diverging from the run that was recorded), so the video may not match what the replay originally showed. This comes from the replay file and the game itself, so re-recording produces the same result. Also, when a desync happens during recording on TouhouSattori, the recording takes much longer to finish (up to about two hours). Note that players have reported that saving replays while playing with the community patch <0>thprac</0> applied avoids the desync.",
     "th20NoticeFrameDrop": "This title is demanding to render, and recording can drop frames during dense danmaku scenes.",
     "th20NoticeNormalSpeed": " Enabling \"Prioritize quality with slow-motion recording\" in the advanced settings should improve this to some extent.",
     "submitStarting": "Praying⋯",
