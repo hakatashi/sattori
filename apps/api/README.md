@@ -82,7 +82,8 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 
 開発者の自宅サーバーがオンラインで余力があるとき、EC2の代わりにそこで録画させる。
 自宅マシンはNAT配下でAWS側から到達できないため**Pull型**にしてある。デーモン本体と
-運用手順は [`home-worker/README.md`](../../home-worker/README.md) を参照。
+仕様は [`home-worker/README.md`](../../home-worker/README.md)、構築手順は
+[`docs/runbooks/home-worker-setup.md`](../../docs/runbooks/home-worker-setup.md) を参照。
 
 > **Pull 型にした理由・オファーと claim の競合をどう決着させるかは
 > [`docs/decisions/0018`](../../docs/decisions/0018-home-worker-pull-assignment.md) に
