@@ -105,6 +105,39 @@ describe("sendCompletionEmail (DynamoDB Streams)", () => {
     expect(body).toContain("https://sattori.hakatashi.com/jobs/job-1");
   });
 
+  it("ジョブのreplayInfoを完了メール本文の概要ブロックに載せる", async () => {
+    const { handler } = await import("./sendCompletionEmail.js");
+    const replayInfo = {
+      game: "th07" as const,
+      player: "koyi",
+      date: "01/18",
+      character: "MarisaA",
+      characterNameJa: "魔符",
+      characterNameEn: "Marisa A",
+      difficulty: "Extra",
+      stage: null,
+      score: 303766040,
+      cleared: true,
+      estimatedDurationSeconds: 847,
+    };
+    const event: DynamoDBStreamEvent = {
+      Records: [
+        modifyRecord(
+          baseJob({ status: "converting", replayInfo }),
+          baseJob({ status: "done", outputPath: "out/job-1.mp4", replayInfo }),
+        ),
+      ],
+    };
+
+    await handler(event, {} as never, () => {});
+
+    const calls = sesMock.commandCalls(SendEmailCommand);
+    const body = calls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
+    expect(body).toContain("【作品タイトル】東方妖々夢 ～ Perfect Cherry Blossom.");
+    expect(body).toContain("【自機タイプ】魔符");
+    expect(body).toContain("【スコア】303,766,040");
+  });
+
   it("languageがenのジョブなら英語の文面・/enリンクで完了メールを送る", async () => {
     const { handler } = await import("./sendCompletionEmail.js");
     const event: DynamoDBStreamEvent = {

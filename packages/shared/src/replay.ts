@@ -65,6 +65,18 @@ export function fromParsedReplay(parsed: ParsedReplay): ReplayInfo {
 }
 
 /**
+ * 表示言語に応じたローカライズ済みキャラ名（`characterNameJa`/`characterNameEn`、
+ * `@sattori/touhou-replay-parser` の `localizeCharacterName` 由来）を返し、
+ * 未知の形式などで取得できない場合は生の `character` にフォールバックする。
+ * ページAの解析プレビュー（`apps/web`）とメール本文（`apps/api/src/ses.ts`）で
+ * 同じ表記を出すために共有する。
+ */
+export function localizedCharacterName(info: ReplayInfo, language: string): string | null {
+  const localized = language === "en" ? info.characterNameEn : info.characterNameJa;
+  return localized ?? info.character;
+}
+
+/**
  * `ReplayParseErrorCode` に、Sattoriが録画対応していないタイトルを表す
  * `unsupported_game` を加えたコード。replay-parser自体はフォーマットの
  * 解析可否のみを扱い「録画対応しているか」は関知しないため、この区別は
