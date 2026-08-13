@@ -144,6 +144,22 @@ def test_a_failed_delete_does_not_fail_the_finished_job(entrypoint, monkeypatch)
     assert status_kwargs(entrypoint, "done")["output_path"] == entrypoint.OUTPUT_KEY_DELIVERY
 
 
+def test_restarts_the_progress_counter_before_converting(entrypoint, monkeypatch):
+    """変換フェーズの進捗は0から数え直す(Issue #108)。
+
+    録画から続けて来た場合は converting への遷移が既に戻しているが、生動画
+    チェックポイントからの再開ではその遷移自体が起きないため、ここでも戻す必要がある。
+    progress だけを単独で戻すと status との整合が一瞬崩れるので、status を伴う更新にする。
+    """
+    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (640, 480))
+
+    entrypoint.convert_and_upload(FakeS3(), 1.0)
+
+    first_args, first_kwargs = entrypoint._recorded_status[0]
+    assert first_args[1] == "converting"
+    assert first_kwargs["reset_progress"] is True
+
+
 # --- チェックポイントに添える実時間スケール -------------------------------
 
 
