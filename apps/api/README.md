@@ -15,6 +15,7 @@ API契約自体は `packages/shared/README.md` を参照。
 | `getJob.ts` | `GET /jobs/{jobId}` | ジョブ状態取得。完了時はCloudFrontのダウンロードURL・プレビュー再生URLを組み立てる。低速録画（Issue #68）で走るかどうか（`isSlowMotionRecording()`）も返す |
 | `getWorkerAvailability.ts` | `GET /worker-availability` | 常駐ワーカー（自宅ワーカー、Issue #49）の空き状況。ページAが「低速録画」を選べるか判定するためだけの公開エンドポイント。**認証なしで公開されるため`workerId`・台数・負荷は返さない**（開発者の自宅環境の稼働状況を必要以上に外へ出さない） |
 | `sendCompletionEmail.ts` | JobsTableのDynamoDB Streams | ジョブが`done`に遷移した瞬間を検知しSESで完了メール送信 |
+| `sweepOrphanInstances.ts` | EventBridgeのスケジュールルール（10分間隔） | 孤児化した録画EC2インスタンスの定期掃除（Issue #23。後述「孤児インスタンスの検知」） |
 | `sfn/launch.ts` | Step Functions `Launch`タスク | EC2 Fleetでワーカーを1台起動（`waitForTaskToken`。成否確定はワーカー自身が行う） |
 | `sfn/handleFailure.ts` | Step Functions `HandleFailure`タスク | 孤児インスタンスをterminateしつつリトライ可否を判定 |
 | `admin/authorizer.ts` | `/admin/*` の Lambda Authorizer | 共有トークンの検証（後述「管理API」） |
@@ -48,7 +49,9 @@ API契約自体は `packages/shared/README.md` を参照。
    Spot中断の早期失敗通知はワーカーの処理継続中に送られるため、即座に判定せず
    猶予を置く）を挟んで `sfn/handleFailure.ts` が呼ばれる。ジョブが待機中に
    `done` へ遷移していれば何もしない。未完了なら孤児化した可能性のあるインスタンスを
-   `terminateInstance()` し、自宅ワーカーへの割り当て・オファーを
+   `terminateInstance()` し（対象は`JobRecord.instanceId`と**タグ`sattori:jobId`から
+   引いたインスタンスの和集合**。後述「孤児インスタンスの検知」）、
+   自宅ワーカーへの割り当て・オファーを
    `releaseHomeWorkerAssignment()`（`homeWorker.ts`）で解除したうえで、
    `retryPolicy.ts` の `MAX_ATTEMPTS`（**10回**）未満なら
    `shouldRetry: true` を返してリトライ、上限に達していればジョブを `failed` に確定する
@@ -181,6 +184,53 @@ DynamoDB Streams経由で停止したはずのジョブの完了メールがユ�
 Step Functionsのリトライで`Launch`は最大10回走るため、毎回上書きすると
 それ以前の試行で稼働していたEC2の課金時間が推定から丸ごと抜け落ちる
 （＝失敗を繰り返した高コストなジョブほど安く見えるという、監視として最悪の挙動になる）。
+
+## 孤児インスタンスの検知（`orphanInstances.ts` / `handlers/sweepOrphanInstances.ts`, Issue #23）
+
+**孤児 = ジョブのどの状態遷移とも紐づかないまま課金され続けるEC2インスタンス。**
+`sfn/launch.ts` はEC2 Fleetの起動（＝課金開始）と`instanceId`のDynamoDBへの永続化が
+別ステップに分かれているため、その間にLambdaがタイムアウトすると
+`JobRecord.instanceId` が空のまま起動済みのインスタンスだけが残る。同じ結末になる
+経路は他にもある（`HandleFailureCrashed`へ倒れた実行、緊急停止時のterminate失敗など）。
+
+対策は3段構えで、**後段ほど「前段のハンドラ自体が失敗した場合」を拾う**:
+
+1. **窓を狭める**: `launch.ts` は `CreateFleet` の直後に `updateJobInstance()` を
+   呼ぶ（`updateJobStatus`/`updateJobWorkerKind`より先）。DynamoDB書き込み3回ぶんの
+   窓が1回ぶんに縮む。**窓そのものは原理的に消せない**（起動と記録を1つの原子的操作に
+   することはできない）。
+2. **後始末でタグからも引く**: `sfn/handleFailure.ts`・`admin/stopJob.ts` は
+   `JobRecord.instanceId` だけでなく `findJobInstanceIds()`（タグ`sattori:jobId`での
+   `DescribeInstances`）の結果も terminate する。タグはインスタンス作成時に
+   `TagSpecifications` で付くので、DynamoDBへの書き込みを待たずに発見できる。
+3. **定期掃除**: `handlers/sweepOrphanInstances.ts` がEventBridgeのスケジュール
+   （`ORPHAN_SWEEP_INTERVAL_MINUTES` = 10分間隔）で走る。**走査の起点がジョブ
+   レコードではなくAWS上に実在するインスタンス**（`listTaggedInstances()`）である点が
+   要点で、これによりレコードに痕跡が無い孤児も拾える。
+
+### 掃除役の判定（`orphanInstances.ts`）
+
+誤ってterminateすると**ユーザーの録画をその場で殺す**（しかもワーカーは
+`SendTaskFailure`すら送れず、15分のハートビートタイムアウトまで誰も気づかない）ため、
+判定は徹底して安全側に倒してある:
+
+- 起動から `ORPHAN_INSTANCE_GRACE_MINUTES`（15分）経っていないインスタンスは対象外
+  （上記1の窓と`DescribeInstances`の結果整合を吸収する猶予）。起動時刻が読めない
+  インスタンスも同様に対象外。
+- 判定の主たる根拠は**ジョブのstatusではなくStep Functions実行の生死**
+  （`getExecutionLiveness()`。理由は「管理API」の緊急停止の項と同じ——ワーカーは
+  `SendTaskFailure`より先に`failed`を書くため、statusは実行の生死の代理にならない）。
+  実行が終わっている/存在しないジョブのインスタンスは全て孤児。
+- 実行が生きているジョブでは**最も新しい1台だけは必ず残す**（今まさに録画している
+  可能性がある1台）。それより古い台は、リトライで前の試行のterminateに失敗した残骸。
+- `stopRequestedAt`（緊急停止の要求）があるジョブは実行が生きていても1台も残さない。
+- 実行の生死やジョブレコードが引けなかったジョブは**丸ごと見送る**（判定できないものは
+  terminateしない。次回の掃除で拾えばよい）。
+
+最悪の孤児寿命は「猶予15分 + 掃除間隔10分」＝25分。1ジョブぶんの調査・terminateが
+失敗しても他のジョブの掃除は続けるが、**インスタンスの列挙自体に失敗したときは例外を
+投げる**（何も掃除できていない実行を成功として記録すると、「毎回起動しているのに永久に
+何もしていない」状態が正常に見えてしまうため）。
 
 ## ワーカーコンテナの環境変数（`workerEnv.ts`）
 
@@ -435,16 +485,19 @@ Lambda Authorizerで検証する方式にしている。jobId自体を秘密値�
 ## 環境変数（`config.ts`）
 
 すべて `infra/lib/sattori-stack.ts` の `commonEnv`（+ `startJob.ts`/
-`admin/getExecution.ts`/`admin/stopJob.ts`/`admin/retryJob.ts`専用の
-`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
-`ADMIN_TOKEN_PARAMETER_NAME`、`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定）
+`admin/getExecution.ts`/`admin/stopJob.ts`/`admin/retryJob.ts`/
+`sweepOrphanInstances.ts`専用の`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
+`ADMIN_TOKEN_PARAMETER_NAME`、`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定、
+`sweepOrphanInstances.ts`専用の`JOBS_TABLE`単独指定）
 から注入される。`loadConfig()`が必須環境変数の存在を
 検証する（管理API用Lambdaは`commonEnv`を使わず個別の環境変数のみを持つ）。
 
 `STATE_MACHINE_ARN`が`commonEnv`に含まれない理由: ステートマシンは`launchFn`/
 `handleFailureFn`（Lambda ARN）を呼び出すため、これらのLambdaの環境変数がステート
 マシンARNを参照するとCloudFormationの循環依存になる。`StartExecution`/`DescribeExecution`
-系を呼ぶ`startJob.ts`・`admin/getExecution.ts`だけが個別の環境変数として受け取る。
+系を呼ぶ`startJob.ts`・`admin/getExecution.ts`・`admin/stopJob.ts`・`admin/retryJob.ts`・
+`sweepOrphanInstances.ts`だけが個別の環境変数として受け取る（いずれもステートマシンから
+呼ばれる側ではないため循環しない）。
 
 ## テスト
 
