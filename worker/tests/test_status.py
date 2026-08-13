@@ -164,6 +164,31 @@ def test_update_status_omits_done_at_for_other_statuses(monkeypatch):
     assert ":d" not in kwargs["ExpressionAttributeValues"]
 
 
+def test_update_status_resets_progress_when_requested(monkeypatch):
+    # フェーズを開始する書き込みは progress も同じ更新で 0 に戻す(Issue #108)。
+    # 別々に書くと、その間だけ「新しいフェーズ + 前のフェーズの進捗」がユーザーに見える。
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "converting", reset_progress=True)
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "progress = :zero" in kwargs["UpdateExpression"]
+    assert kwargs["ExpressionAttributeValues"][":zero"] == 0
+
+
+def test_update_status_keeps_progress_by_default(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "done", output_path="videos/job-1.mp4")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "progress" not in kwargs["UpdateExpression"]
+
+
 def test_update_progress_skips_without_table(monkeypatch):
     monkeypatch.delenv("JOBS_TABLE", raising=False)
     mock_resource = mock_dynamodb_resource(monkeypatch)
