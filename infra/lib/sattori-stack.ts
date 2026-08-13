@@ -16,6 +16,8 @@ import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as events from "aws-cdk-lib/aws-events";
+import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -29,6 +31,7 @@ import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
 import {
   HOME_WORKER_OFFER_INDEX,
   LAUNCH_LAMBDA_TIMEOUT_SECONDS,
+  ORPHAN_SWEEP_INTERVAL_MINUTES,
   OUTPUT_RETENTION_DAYS,
 } from "@sattori/shared";
 import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
@@ -543,7 +546,12 @@ export class SattoriStack extends Stack {
     jobsTable.grantReadWriteData(handleFailureFn);
     handleFailureFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["ec2:TerminateInstances"],
+        // DescribeInstancesは孤児インスタンスをタグ(sattori:jobId)から探すため
+        // (Issue #23)。`JobRecord.instanceId`はLaunchが`CreateFleet`の後に書くので、
+        // 書き込む前に死んだ試行のインスタンスはタグ経由でしか見つけられない。
+        // どちらも対象が実行時にしか決まらない(DescribeInstancesはそもそも
+        // リソースレベルの権限指定に非対応)ためResource:*で付与する。
+        actions: ["ec2:TerminateInstances", "ec2:DescribeInstances"],
         resources: ["*"],
       }),
     );
@@ -653,6 +661,42 @@ export class SattoriStack extends Stack {
     // ステートマシンは launchFn/handleFailureFn を呼び出す(Lambda ARN に依存)ため、
     // それらの環境変数がステートマシンARNを参照すると CloudFormation の循環依存になる。
     startJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
+
+    // --- 孤児インスタンスの定期掃除(Issue #23) ------------------------------
+    // ジョブ側の後始末(HandleFailure・管理画面の緊急停止)は「そのハンドラ自体が
+    // 動けたなら」という前提に立っており、Launch が `instanceId` をDynamoDBへ書く
+    // 前にタイムアウトした場合や、後始末そのものが失敗した場合には、誰にも
+    // terminateされないEC2が残って課金だけが続く。この掃除役は**AWS上に実在する
+    // インスタンス(タグ`sattori:jobId`)を起点に走査する**ことで、ジョブレコードに
+    // 痕跡が無い孤児も拾えるようにした最後の網。
+    // 判定を安全側へ倒す仕組み(猶予・最新1台の保護)は
+    // `apps/api/src/orphanInstances.ts` 参照。
+    const sweepOrphanInstancesFn = makeHandler(
+      "SweepOrphanInstancesFn",
+      "sweepOrphanInstances.ts",
+      // commonEnvは使わない(必要なのはジョブレコードの参照と実行ARNの組み立てだけ)。
+      { JOBS_TABLE: jobsTable.tableName },
+      // 生存インスタンス1台につきDescribeExecution+GetItemを直列に引くため、
+      // 既定の30秒では孤児が多数溜まった場合に足りない可能性がある。走査対象は
+      // 通常0〜数台なので、広げてもコストはほぼ増えない。
+      { timeout: Duration.minutes(3) },
+    );
+    jobsTable.grantReadData(sweepOrphanInstancesFn);
+    // 実行の生死はジョブのstatusでは代用できない(`apps/api/src/stepFunctions.ts`)。
+    stateMachine.grantExecution(sweepOrphanInstancesFn, "states:DescribeExecution");
+    sweepOrphanInstancesFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
+    sweepOrphanInstancesFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ec2:DescribeInstances", "ec2:TerminateInstances"],
+        resources: ["*"],
+      }),
+    );
+    new events.Rule(this, "OrphanInstanceSweepRule", {
+      description: "孤児化した録画EC2インスタンスを定期的に検知・terminateする(Issue #23)",
+      // 間隔は`@sattori/shared`の定数が唯一の出典(判定の猶予と対で意味を持つため)。
+      schedule: events.Schedule.rate(Duration.minutes(ORPHAN_SWEEP_INTERVAL_MINUTES)),
+      targets: [new targets.LambdaFunction(sweepOrphanInstancesFn)],
+    });
 
     // --- 管理画面(`/admin`, Issue #51) --------------------------------------
     // ユーザーは管理者1人固定のため、Cognito等ではなくSSM Parameter Store

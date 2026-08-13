@@ -137,6 +137,30 @@ export const HOME_WORKER_OFFER_INDEX = "HomeWorkerOfferIndex";
 export const LAUNCH_LAMBDA_TIMEOUT_SECONDS = 60;
 
 /**
+ * 孤児インスタンスの掃除（Issue #23）を回す間隔（分）。CDK
+ * （`infra/lib/sattori-stack.ts`）がこの値でEventBridgeのスケジュールルールを作る。
+ *
+ * 月間最大1000録画という規模では孤児が生まれること自体が稀なので、高頻度に回す
+ * 必要はない。一方で見逃した1台は最悪150分（`Launch`のタスクタイムアウト）どころか
+ * **誰も止めないまま無期限に課金され続ける**ため、間隔は「発見が遅れても致命傷に
+ * ならない」水準に留める。`ORPHAN_INSTANCE_GRACE_MINUTES` と合わせた最悪の孤児寿命は
+ * この2つの和（＝25分）になる。
+ */
+export const ORPHAN_SWEEP_INTERVAL_MINUTES = 10;
+
+/**
+ * 孤児と判定するまでの猶予（分）。**起動からこの時間が経っていないインスタンスは
+ * 絶対にterminateしない**（`apps/api/src/orphanInstances.ts`）。
+ *
+ * `Launch` は `CreateFleet` の後に `instanceId` をDynamoDBへ書くので、その隙間で
+ * 掃除役が走ると「いま正常に起動したばかりのインスタンス」を孤児と読み違えうる。
+ * 加えて `DescribeInstances` は結果整合で、直前に起動したインスタンスや直後に
+ * terminateしたインスタンスの状態が一時的に古く見える。猶予はこの2つの窓
+ * （実測では数秒〜数十秒）に対して十分な余裕を取っている。
+ */
+export const ORPHAN_INSTANCE_GRACE_MINUTES = 15;
+
+/**
  * ワーカーコンテナへ渡す環境変数一式（`apps/api/src/workerEnv.ts` が組み立てる）。
  * EC2では UserData の `docker run -e` に展開され、自宅ワーカーではオファーに
  * 添えてジョブレコードへ書かれ、デーモンがそのまま `docker run` へ渡す。
