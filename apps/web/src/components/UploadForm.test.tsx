@@ -356,7 +356,10 @@ describe("UploadForm の低速録画オプション", () => {
     renderUploadForm(vi.fn());
     selectFile("th20_ud0000.rpy");
 
-    await waitFor(() => expect(screen.getByText(/リプレイずれ/)).toBeTruthy());
+    // 注意書き自体はリプレイの解析直後（＝自宅ワーカーの空き状況を引く前）に出るので、
+    // 低速録画が実際にオンになるまで待ってから案内の有無を見る。
+    await waitFor(() => expect(slowMotionCheckbox().checked).toBe(true));
+    expect(screen.getByText(/リプレイずれ/)).toBeTruthy();
     // 処理落ちの注意自体は常に出すが、低速録画をすすめる一文だけを落とす。
     expect(screen.getByText(/描画が重く/)).toBeTruthy();
     expect(screen.queryByText(/ある程度の改善/)).toBeNull();
