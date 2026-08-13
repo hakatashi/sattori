@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { App } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
-import { LAUNCH_LAMBDA_TIMEOUT_SECONDS } from "@sattori/shared";
+import { LAUNCH_LAMBDA_TIMEOUT_SECONDS, ORPHAN_SWEEP_INTERVAL_MINUTES } from "@sattori/shared";
 import { SattoriStack } from "../lib/sattori-stack.ts";
 
 function synth(): Template {
@@ -132,15 +132,51 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("HandleFailure Lambda に EC2 terminate 権限が付与されている", () => {
+  it("HandleFailure Lambda に EC2 terminate 権限とタグ検索(DescribeInstances)権限が付与されている", () => {
+    // タグ検索はinstanceId未記録のまま死んだ試行の孤児を拾うため(Issue #23)。
     template.hasResourceProperties("AWS::IAM::Policy", {
       PolicyDocument: {
         Statement: Match.arrayWith([
           Match.objectLike({
-            Action: "ec2:TerminateInstances",
+            Action: Match.arrayWith(["ec2:TerminateInstances", "ec2:DescribeInstances"]),
           }),
         ]),
       },
+      Roles: Match.arrayWith([
+        Match.objectLike({ Ref: Match.stringLikeRegexp("^HandleFailureFnServiceRole") }),
+      ]),
+    });
+  });
+
+  it("孤児インスタンスの定期掃除ルールが共有定数の間隔で掃除Lambdaを叩く(Issue #23)", () => {
+    template.hasResourceProperties("AWS::Events::Rule", {
+      ScheduleExpression: `rate(${ORPHAN_SWEEP_INTERVAL_MINUTES} minutes)`,
+      State: "ENABLED",
+      Targets: Match.arrayWith([
+        Match.objectLike({
+          Arn: Match.objectLike({
+            "Fn::GetAtt": Match.arrayWith([Match.stringLikeRegexp("^SweepOrphanInstancesFn")]),
+          }),
+        }),
+      ]),
+    });
+  });
+
+  it("孤児掃除Lambdaにインスタンスの列挙・終了権限が付与されている(Issue #23)", () => {
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        // `Match.arrayWith` は順序も見るため、テンプレート上の並び（grant→addToRolePolicy）に合わせる。
+        Statement: Match.arrayWith([
+          // 実行の生死はジョブのstatusで代用できないため DescribeExecution を引く。
+          Match.objectLike({ Action: "states:DescribeExecution" }),
+          Match.objectLike({
+            Action: Match.arrayWith(["ec2:DescribeInstances", "ec2:TerminateInstances"]),
+          }),
+        ]),
+      },
+      Roles: Match.arrayWith([
+        Match.objectLike({ Ref: Match.stringLikeRegexp("^SweepOrphanInstancesFnServiceRole") }),
+      ]),
     });
   });
 
@@ -197,9 +233,10 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("STATE_MACHINE_ARN 環境変数を個別付与されているLambdaは4つ(循環依存回避のためcommonEnvに含めていない)", () => {
-    // StartJob / AdminGetExecution / AdminStopJob / AdminRetryJob
-    // (後ろ2つはIssue #59のジョブ緊急停止・再実行)。
+  it("STATE_MACHINE_ARN 環境変数を個別付与されているLambdaは5つ(循環依存回避のためcommonEnvに含めていない)", () => {
+    // StartJob / AdminGetExecution / AdminStopJob / AdminRetryJob / SweepOrphanInstances
+    // (AdminStopJob・AdminRetryJobはIssue #59のジョブ緊急停止・再実行、
+    // SweepOrphanInstancesはIssue #23の孤児インスタンス掃除)。
     const startJobResources = template.findResources("AWS::Lambda::Function", {
       Properties: {
         Environment: {
@@ -209,7 +246,7 @@ describe("SattoriStack", () => {
         },
       },
     });
-    expect(Object.keys(startJobResources).length).toBe(4);
+    expect(Object.keys(startJobResources).length).toBe(5);
   });
 
   it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {

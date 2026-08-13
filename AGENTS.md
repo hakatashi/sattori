@@ -55,6 +55,14 @@ DL→完了メール）はすべて実装済みで、現在は初回リリース
 [JobsTable DynamoDB Streams] → [Lambda: sendCompletionEmail] → SES で完了メール送信
 ```
 
+これとは別に、**EventBridgeの定期実行（10分間隔）で孤児EC2インスタンスを掃除する
+Lambda**（Issue #23）が走っている。ジョブ側の後始末（`HandleFailure`・緊急停止）は
+どれも「そのハンドラ自体が動けたなら」という前提に立つが、`Launch`が`instanceId`を
+DynamoDBへ書く前に死ぬと**ジョブから辿れないEC2が課金され続ける**。掃除役は
+ジョブレコードではなく**AWS上に実在するインスタンス（タグ`sattori:jobId`）を起点に
+走査する**ことでこれを拾う（判定と安全側への倒し方は`apps/api/README.md`
+「孤児インスタンスの検知」）。
+
 上記に加え、運用調査用の管理画面（`/admin`、共有トークン+Lambda Authorizerで保護、
 Issue #51）が同じ API Gateway / DynamoDB / S3 / Step Functions を覗く（参照系に加え、
 ジョブの緊急停止・再実行のみ更新系。Issue #59）。コスト推定・集計（Issue #60）も

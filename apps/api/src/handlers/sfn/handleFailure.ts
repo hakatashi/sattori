@@ -1,6 +1,6 @@
 import { isTerminalStatus } from "@sattori/shared";
 import { loadConfig } from "../../config.js";
-import { terminateInstance } from "../../ec2.js";
+import { findJobInstanceIds, terminateInstance } from "../../ec2.js";
 import { releaseHomeWorkerAssignment } from "../../homeWorker.js";
 import { getJob, updateJobStatus } from "../../jobs.js";
 import { MAX_ATTEMPTS } from "../../retryPolicy.js";
@@ -67,15 +67,40 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
     }
   }
 
+  // terminate対象は `JobRecord.instanceId` だけに頼らず、タグ(`sattori:jobId`)からも
+  // 引く（Issue #23）。`Launch` は `CreateFleet` の**後**に `instanceId` を書くため、
+  // 書き込む前にLambdaが死ぬとレコードには何も残らず、起動済みのインスタンスが
+  // 誰にもterminateされないまま課金され続ける。タグは作成時に付くのでこの窓が無い。
+  // 前の試行のterminateに失敗して複数台生き残っている場合もまとめて拾える。
+  // 検索自体の失敗は握りつぶす（記録済みinstanceIdでの終了処理は続けられるし、
+  // 取りこぼしても定期掃除（`handlers/sweepOrphanInstances.ts`）が最後の網になる）。
+  const instanceIds = new Set<string>();
   if (job?.instanceId) {
+    instanceIds.add(job.instanceId);
+  }
+  try {
+    for (const instanceId of await findJobInstanceIds(event.jobId)) {
+      instanceIds.add(instanceId);
+    }
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "find_job_instances_failed",
+        jobId: event.jobId,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+
+  for (const instanceId of instanceIds) {
     try {
-      await terminateInstance(job.instanceId);
+      await terminateInstance(instanceId);
     } catch (err) {
       console.error(
         JSON.stringify({
           event: "terminate_instance_failed",
           jobId: event.jobId,
-          instanceId: job.instanceId,
+          instanceId,
           message: err instanceof Error ? err.message : String(err),
         }),
       );

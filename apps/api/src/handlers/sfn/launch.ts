@@ -66,9 +66,15 @@ export const handler = async (event: LaunchTaskEvent): Promise<void> => {
   }
 
   const instance = await launchRecordingInstance(config, job, event.taskToken);
+  // **`instanceId` の永続化を他の更新より先に行う**（Issue #23）。`CreateFleet` が
+  // 返った時点で課金は始まっており、ここでLambdaがタイムアウトすると誰も
+  // terminateできない孤児が残る。この窓は原理的には消せない（起動と記録は
+  // 別ステップにならざるを得ない）が、DynamoDBへの書き込み3回ぶんから1回ぶんへ
+  // 縮めることはできる。窓に落ちたインスタンスの回収はタグ経由の後始末
+  // （`handleFailure.ts`）と定期掃除（`handlers/sweepOrphanInstances.ts`）が担う。
+  await updateJobInstance(config.jobsTable, event.jobId, instance);
   await updateJobStatus(config.jobsTable, event.jobId, "launching");
   await updateJobWorkerKind(config.jobsTable, event.jobId, "ec2");
-  await updateJobInstance(config.jobsTable, event.jobId, instance);
   // コスト推定の課金起点（Issue #60）。リトライで再入しても最初の1回しか記録されない。
   await markJobLaunched(config.jobsTable, event.jobId);
 };

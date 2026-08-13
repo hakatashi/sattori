@@ -14,6 +14,7 @@ import {
   fetchSpotPrice,
   findJobInstanceIds,
   launchRecordingInstance,
+  listTaggedInstances,
   terminateInstance,
 } from "./ec2.js";
 import type { ApiConfig } from "./config.js";
@@ -284,6 +285,73 @@ describe("findJobInstanceIds", () => {
   it("該当インスタンスが無ければ空配列", async () => {
     ec2Mock.on(DescribeInstancesCommand).resolves({});
     await expect(findJobInstanceIds("job-1")).resolves.toEqual([]);
+  });
+});
+
+describe("listTaggedInstances", () => {
+  beforeEach(() => {
+    ec2Mock.reset();
+  });
+
+  it("ジョブIDタグを持つ生存インスタンスを、タグの値と起動時刻つきで返す", async () => {
+    const launchTime = new Date("2026-08-14T00:00:00.000Z");
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [
+        {
+          Instances: [
+            {
+              InstanceId: "i-aaa",
+              LaunchTime: launchTime,
+              Tags: [
+                { Key: "Name", Value: "sattori-recorder" },
+                { Key: "sattori:jobId", Value: "job-1" },
+              ],
+            },
+            // タグが無い/空のインスタンスはジョブに紐づけられないので捨てる
+            // （このサービス以外が同じフィルタに引っかかることは無いはずだが、
+            // 判定できないものをterminate候補にしないため）。
+            { InstanceId: "i-notag", Tags: [{ Key: "Name", Value: "other" }] },
+          ],
+        },
+        {
+          Instances: [
+            { InstanceId: "i-bbb", Tags: [{ Key: "sattori:jobId", Value: "job-2" }] },
+          ],
+        },
+      ],
+    });
+
+    await expect(listTaggedInstances()).resolves.toEqual([
+      { instanceId: "i-aaa", jobId: "job-1", launchTime },
+      // LaunchTimeが返らなかった場合はnull（判定側が「たった今起動した」扱いにする）。
+      { instanceId: "i-bbb", jobId: "job-2", launchTime: null },
+    ]);
+    expect(ec2Mock.commandCalls(DescribeInstancesCommand)[0]?.args[0].input.Filters).toEqual([
+      { Name: "tag-key", Values: ["sattori:jobId"] },
+      { Name: "instance-state-name", Values: ["pending", "running", "stopping", "stopped"] },
+    ]);
+  });
+
+  it("NextTokenが返る限りページングして全件集める", async () => {
+    ec2Mock
+      .on(DescribeInstancesCommand)
+      .resolvesOnce({
+        Reservations: [
+          { Instances: [{ InstanceId: "i-aaa", Tags: [{ Key: "sattori:jobId", Value: "job-1" }] }] },
+        ],
+        NextToken: "token-1",
+      })
+      .resolvesOnce({
+        Reservations: [
+          { Instances: [{ InstanceId: "i-bbb", Tags: [{ Key: "sattori:jobId", Value: "job-2" }] }] },
+        ],
+      });
+
+    const instances = await listTaggedInstances();
+    expect(instances.map((instance) => instance.instanceId)).toEqual(["i-aaa", "i-bbb"]);
+    expect(ec2Mock.commandCalls(DescribeInstancesCommand)[1]?.args[0].input.NextToken).toBe(
+      "token-1",
+    );
   });
 });
 
