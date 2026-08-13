@@ -45,11 +45,20 @@ def update_status(
     job_id, status, *,
     output_path=None, output_path_720p=None,
     output_bytes=None, output_bytes_720p=None,
-    error=None,
+    error=None, reset_progress=False,
 ):
     """ジョブの status(と任意で outputPath / outputPath720p / 出力サイズ / error)を更新する。
 
     output_bytes / output_bytes_720p は管理画面のコスト推定(Issue #60)の入力。
+
+    reset_progress=True を渡すと progress を 0 に戻す。**フェーズを開始する書き込みでは
+    必ず指定すること**(Issue #108)。progress は「現在のフェーズ内で処理が完了した時間」
+    であってフェーズを跨いで意味を持たないため、status だけ先に書き換えると、次の
+    `update_progress` が届くまでの数秒間「新しいフェーズ + 前のフェーズの進捗」という
+    レコードがユーザーに見えてしまう。ジョブページの経過時間表示は巻き戻らないことを
+    保証する作りになっており(`apps/web/src/hooks/useEstimatedProgress.ts`)、その値を
+    掴むと以降の進捗が表示に反映されなくなる。status と同じ1回の更新で戻すことで、
+    この窓自体を無くす。
 
     管理画面から緊急停止(Issue #59)されたジョブには一切書き込まない
     (`attribute_not_exists(stopRequestedAt)` を条件にする)。EC2 は
@@ -90,6 +99,9 @@ def update_status(
         expr += ", #e = :e"
         names["#e"] = "error"
         values[":e"] = error
+    if reset_progress:
+        expr += ", progress = :zero"
+        values[":zero"] = 0
     if status == "done":
         # ダウンロード期限表示(ジョブ画面・完了メール)の起点。"done"への遷移は
         # ジョブの生涯で一度しか起こらないため、無条件にセットしてよい。

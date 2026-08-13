@@ -257,7 +257,9 @@ def record(s3):
     ensure_title_assets(s3, TITLE_ASSETS_BUCKET, GAME, log=log)
     download_replay(s3)
     start_pulseaudio()
-    update_status(JOB_ID, "recording")
+    # リトライで再入した場合、progress には前の試行の値が残っている。status と同じ
+    # 更新で 0 に戻し、「録画中 + 前の試行の進捗」が見える窓を作らない(Issue #108)。
+    update_status(JOB_ID, "recording", reset_progress=True)
 
     script = RECORDING_SCRIPTS.get(GAME)
     if script is None:
@@ -294,7 +296,13 @@ def record(s3):
     output_bytes = upload_video(
         s3, OUTPUT_VIDEO, OUTPUT_KEY, metadata={TIME_SCALE_METADATA_KEY: str(time_scale)},
     )
-    update_status(JOB_ID, "converting", output_path=OUTPUT_KEY, output_bytes=output_bytes)
+    update_status(
+        JOB_ID, "converting", output_path=OUTPUT_KEY, output_bytes=output_bytes,
+        # 録画フェーズ末尾の進捗(=リプレイ全長)を持ち越さない。status だけ先に
+        # 書き換えると、変換フェーズの進捗が届くまでの数秒間「変換中 100%」に
+        # 見えてしまう(Issue #108)。
+        reset_progress=True,
+    )
 
 
 def convert_and_upload(s3, time_scale):
@@ -312,8 +320,12 @@ def convert_and_upload(s3, time_scale):
       配信し、**役目を終えた生データはS3から消す**(消さないとジョブあたりの保管量が
       倍のまま残り、CloudFrontの無料枠を圧迫する。AGENTS.md §6)。
     """
-    # 録画フェーズ末尾の進捗値(秒数)が変換フェーズ開始直後も表示され続けるのを防ぐ。
-    update_progress(JOB_ID, 0)
+    # 変換フェーズの進捗をここから数え直す。上の record() から来た場合は
+    # 「converting へ遷移した書き込み」が既に 0 へ戻しているが、生動画チェックポイント
+    # からの再開(record() を丸ごと飛ばす経路)ではその書き込み自体が無く、前の試行の
+    # 変換進捗が残ったままになる。status を伴う更新にしてあるのは、progress だけを
+    # 単独で戻すと status との整合が一瞬崩れるため(Issue #108、status.py 参照)。
+    update_status(JOB_ID, "converting", reset_progress=True)
 
     def on_convert_progress(seconds):
         update_progress(JOB_ID, round(seconds))
