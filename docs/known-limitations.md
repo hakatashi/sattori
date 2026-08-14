@@ -58,7 +58,7 @@ th20（東方錦上京）はタイトル固有の制約が多い。詳細は
 ページAの注意書きはこの理由から継続しているので、**ワーカー側が thprac 対応済みで
 あることを根拠に消さないこと**。詳細と根拠は
 [`decisions/0009`](decisions/0009-thprac-post-attach.md)「補足: 録画側の thprac では
-直せないずれがある」と `apps/web/README.md`。
+直せないずれがある」と [`apps/web/docs/upload-form.md`](../apps/web/docs/upload-form.md) §2.1。
 
 ## 3. 録画品質の検証にまつわる制約
 
@@ -125,7 +125,7 @@ NAT 配下のデーモンには通知が届かないため、取り消しの捕�
 
 eu-south-2 移設により EC2 Fleet の Spot キャパシティプール数が us-east-1 運用時より
 後退している（詳細は [`decisions/0001`](decisions/0001-region-eu-south-2-ses-us-east-1.md)・
-`apps/api/README.md`）。起動失敗率が有意に悪化していないか移設後しばらくは監視すること。
+[`decisions/0016`](decisions/0016-ec2-fleet-instance-type-diversification.md)）。起動失敗率が有意に悪化していないか移設後しばらくは監視すること。
 
 ## 6. 濫用対策・管理画面の現状
 

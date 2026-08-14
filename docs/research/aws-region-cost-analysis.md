@@ -14,7 +14,8 @@
 本レポート §0・§8 は「移設は推奨しない」「`eu-south-2`は実質的に候補外」
 「もし将来どうしても移すなら`us-east-2`一択」と結論していたが、以下の理由から
 **この結論を撤回し、`eu-south-2`への移設を実施した**（`apps/api/README.md`
-「EC2 Fleet インスタンスタイプの分散配置」・`infra/README.md`参照）。
+「EC2 Fleet インスタンスタイプの分散配置」・
+[`decisions/0016`](../decisions/0016-ec2-fleet-instance-type-diversification.md)・`infra/README.md`参照）。
 
 1. **§7.2で最大のリスクとされていた「録画品質の再検証」が解消した**。
    touhou-recorder `reports/42`（2026-07-31）がeu-south-2実機でth06/07/08/11
