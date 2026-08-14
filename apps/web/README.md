@@ -1,21 +1,38 @@
 # apps/web
 
 フロントエンド SPA（Vite + React + CSS Modules、`react-router-dom`でクライアント
-サイドルーティング）。API契約は `packages/shared/README.md` を参照。
+サイドルーティング）。API契約は `packages/shared/README.md` を参照。**ここには「今どう
+なっているか」だけを書く** —— なぜそうしたかの根拠は
+[`docs/decisions/`](../../docs/decisions/README.md)、管理画面（`/admin/*`）の詳細は
+[`docs/admin-ui.md`](docs/admin-ui.md)、ページAの録画オプションとタイトル別注意書きは
+[`docs/upload-form.md`](docs/upload-form.md) にある。
 
-## ルーティング（`src/App.tsx`）
+## 目次
+
+- [1. ルーティング（`src/App.tsx`）](#1-ルーティングsrcapptsx)
+- [2. ページAのフロー（`components/UploadForm.tsx`）](#2-ページaのフローcomponentsuploadformtsx)
+- [3. ページBのフロー（`pages/JobPage.tsx`）](#3-ページbのフローpagesjobpagetsx)
+- [4. ダウンロード（`components/JobProgress.tsx`）](#4-ダウンロードcomponentsjobprogresstsx)
+- [5. 完了後のプレビュー再生（Issue #71）](#5-完了後のプレビュー再生componentsjobprogresstsxissue-71)
+- [6. 多言語対応（i18n、`src/i18n/`）](#6-多言語対応i18nsrci18n)
+- [7. APIクライアント（`src/api/client.ts`）](#7-apiクライアントsrcapiclientts)
+- [8. 管理画面（`src/admin/`、Issue #51）](#8-管理画面srcadminissue-51)
+- [9. 開発サーバ](#9-開発サーバ)
+- [10. テスト](#10-テスト)
+
+## 1. ルーティング（`src/App.tsx`）
 
 - `/` = ページA（`HomePage`）: リプレイのアップロード〜マジックリンク送信要求。
 - `/jobs/:jobId` = ページB（`JobPage`）: マジックリンクのリンク先。アクセスで自動的に
   録画を起動し、進捗ポーリング・DLボタン表示まで担う。`jobId`のみで認可する
   （メールを確認しないと分からない秘密値。URLに他の認可情報は含まない）。
 - 上記2ルートは`/en`配下（`/en`・`/en/jobs/:jobId`）にも同型で存在する（英語版、
-  詳細は下記「多言語対応」）。未定義パスはそれぞれ`/`・`/en`へリダイレクト。
+  詳細は§6）。未定義パスはそれぞれ`/`・`/en`へリダイレクト。
 - `/admin/*` = 管理画面（`src/admin/`、Issue #51）。ja/enどちらのツリーにも属さない
   独立ルートで、日本語固定・i18n非適用。`React.lazy`で別チャンクに分離しているため、
   一般ユーザーのバンドルには含まれない。ja/enツリーの`catch-all(<Route path="*">)`より
   **前**に定義する必要がある（後ろだと`/admin`が`/`へ即リダイレクトされてしまう）。
-  詳細は下記「管理画面」。
+  詳細は§8。
 - 共通レイアウト（ヘッダー・フッター）は`Layout`。ページBはページAより広い画面幅
   （2カラムのリプレイ情報+アクティビティログ）を活かすため、`useMatch`でページBのみ
   最大幅を広げている。
@@ -23,7 +40,7 @@
   `ReplayPreview`/`JobProgress`の見た目を確認できる（`dev/*Playground.tsx`、
   `import.meta.env.DEV`ガードで本番ビルドには含まれない）。
 
-## ページAのフロー（`components/UploadForm.tsx`）
+## 2. ページAのフロー（`components/UploadForm.tsx`）
 
 1. ファイル選択で即座に自動実行: 解析（`@sattori/shared`の`parseReplayInfo()`、実体は
    `@sattori/touhou-replay-parser`）とアップロード（`createUpload()`で署名付きURL取得→
@@ -37,79 +54,24 @@
    （STEP2の下に「アップロード中…」を表示）。
 2. 解析成功で`ReplayPreview`にゲーム名/キャラ/スコア/クリア可否等を表示。
    詳細設定でウォーターマークON/OFF（既定ON、`DEFAULT_RECORDING_OPTIONS`）と
-   **低速録画**（Issue #68、後述）。th20のリプレイならタイトル固有の注意書きも出す。
+   **低速録画**（Issue #68）。th20のリプレイならタイトル固有の注意書きも出す。
 3. メール入力＋解析・アップロードとも成功で「次のステップ」ボタンが活性化
    （`requestMagicLink()`に渡す`replayKey`はアップロード完了後にしか手に入らないため、
    ボタンはアップロード完了も待つ）。押下で`requestMagicLink()`（`POST /magic-links`）を
    呼び、`MagicLinkSent`画面へ遷移する。
 
-### 低速録画オプション（Issue #68）
+> **低速録画オプション（Issue #68）の出し分け条件と、th20の注意書き（Issue #87）は
+> [`docs/upload-form.md`](docs/upload-form.md) にある**。特に
+> **「ワーカーがthpracを適用した後もこの注意書きを残す理由」（Issue #105）は消さないこと**
+> —— 条件を取り違えると、選ばせたのに等倍で録画される／2倍速の壊れた動画ができる。
 
-ゲームを 1/2 倍速で走らせて録画し後処理で等倍へ戻す方式で、等倍では処理落ちする
-th20（Issue #87）の品質を担保する。UI上の要件は「**低速録画に対応したタイトル**で、
-かつ自宅ワーカーが使えるとき、かつその場合に限り選べる」「選べるなら th20 だけ
-既定オン」「選べないならグレーアウト」。
-
-- 対応タイトルは`supportsSlowMotion(game)`（`@sattori/shared`、現状 th20 のみ。
-  他タイトルへの展開は Issue #101）で判定する。速度を落とす仕組みがタイトルのMOD側に
-  あるため、**非対応タイトルで要求するとゲームは等倍で動くのに後処理だけが等倍化を
-  行い、2倍速の動画が出来上がる**（しかも生データは削除される）。`POST /magic-links`
-  も同じ判定で握り潰すが、UIはその前に選ばせない。
-- マウント時に`getWorkerAvailability()`（`GET /worker-availability`）を**1回だけ**引く。
-  実際に録画が始まるのはユーザーがマジックリンクを開いた後（最大24時間後）で、その
-  時点の可否とはどのみち一致しないため、ポーリングして精度を上げても意味がない。
-  取得に失敗した場合も「使えない」（グレーアウト）に倒す——選択肢を出しておいて実際は
-  等倍で録画される、という食い違いを避けるため。
-- 既定値は`defaultSlowMotionFor(game, available)`（`@sattori/shared`）が決める。
-  ユーザーが一度でもチェックを触ったらその意思を尊重し、以後タイトルが変わっても
-  追従させない。
-- 送信する値は「チェック状態」ではなく
-  `slowMotionAvailable && supportsSlowMotion(game) && slowMotion`という導出値を使う。
-  可否やタイトルが変わったときにstateが取り残されないようにするため。
-- 選べない理由（タイトル未対応／ワーカーが混雑）はヒント文で区別して出す。前者は
-  待っても変わらないが、後者は時間をおけば変わるため。
-
-### th20の注意書き（Issue #87）
-
-th20のリプレイを解析したときだけ、STEP2のプレビュー直下に2点を出す。**メールアドレスを
-入力して録画を依頼してしまう前に**知らせるのが目的:
-
-- **デシンク（リプレイずれ）が頻発する**: リプレイファイル・ゲーム本体側の現象で、
-  録画側では検知できない（touhou-recorder reports/45）。再録画しても同じ結果。
-  あわせて、**プレイ時に有志製パッチ [thprac](https://github.com/touhouworldcup/thprac)
-  を導入しておくとリプレイずれを回避できる**ことを案内する。
-- **等倍録画では品質が落ちる**: 低速録画が有効なときは該当しないので出さない。
-
-#### ワーカーがthpracを適用した後もこの注意書きを残す理由（Issue #105）
-
-録画ワーカーはth20の録画時にthpracをアタッチするようになった（reports/50、
-[`docs/decisions/0009`](../../docs/decisions/0009-thprac-post-attach.md)）。それでも
-**「プレイ時にthpracを入れてください」という案内は消してはいけない**。両者が効く場所が
-違うためである。
-
-| 汚染が起きた場所 | 直せるのは | Sattoriの対応 |
-| --- | --- | --- |
-| 再生時の非決定性（よくある方） | 再生側のthprac | ワーカーが自動でアタッチする（reports/50で3/3解消） |
-| 記録時のANM再利用バグ | **プレイ時のthpracのみ**（事後の修復は不可能） | この注意書きでユーザーに案内する |
-
-デシンクの主因である ANM 再利用バグは**プレイ中にランダムに発火する**ため、thprac 無しで
-プレイした回に発火すると、保存されたリプレイ自体が「再現不能な状態を通過した記録」になる。
-**再生側の対処（サーバー側のthpracも、thprac自身の `TH_REPFIX` によるタイマーオフセット
-調整も）では直せない** —— 詳細と thprac 自身の UI テキストによる裏付けは
-[`docs/decisions/0009`](../../docs/decisions/0009-thprac-post-attach.md)「補足: 録画側の
-thprac では直せないずれがある」にある。
-
-したがってこの注意書きは、①ユーザーに録画依頼前の期待値を持ってもらう（予期しない
-リプレイずれへの不満の緩和）ことに加えて、②**今後保存するリプレイを汚染させない
-唯一の手段をユーザーに伝える**という、サーバー側では代替できない役割を持つ。
-
-## ページBのフロー（`pages/JobPage.tsx`）
+## 3. ページBのフロー（`pages/JobPage.tsx`）
 
 1. マウント時に`StartJob`が自動的に`startJob()`（`POST /jobs/{jobId}/start`）を呼ぶ。
    既に起動済みのジョブへの再アクセスも冪等に成功として扱われる。
 2. 起動後は`JobProgress`が`useJobPolling`フック経由でポーリング表示を行う。
 
-### ポーリング（`hooks/useJobPolling.ts`）
+### 3.1 ポーリング（`hooks/useJobPolling.ts`）
 
 低速録画（Issue #68）のジョブは録画フェーズに実時間で2倍かかる。進捗バジェット
 （`hooks/jobProgressBudget.ts`）はこれを`GetJobResponse.slowMotion`から織り込む。
@@ -126,40 +88,22 @@ thprac では直せないずれがある」にある。
 > WebSocket/SSE ではなく単純ポーリングにした理由と採らなかった選択肢は
 > [`docs/decisions/0006`](../../docs/decisions/0006-progress-polling-not-websocket.md)。
 
-### 経過時間表示は巻き戻らない（`hooks/useEstimatedProgress.ts`、Issue #108）
+### 3.2 経過時間表示は巻き戻らない（`hooks/useEstimatedProgress.ts`、Issue #108）
 
 録画・変換フェーズの「○:○○ 経過」は、ポーリング（3秒間隔）でしか届かないサーバー値を
-実時間で補間して滑らかに見せている。この表示が満たすべき性質は2つあり、**どちらか一方
-だけでは不十分**である。
+実時間で補間して滑らかに見せている。サーバー値からの**外挿**（先読みして追い越し、次の
+ポーリングで同期＝巻き戻る）ではなく、**サーバー値を上限とする内挿**にしてある。
+フェーズに入った時点で表示値をサーバー値より`WORKER_PROGRESS_INTERVAL_SECONDS`
+（=10秒。ワーカーが進捗を書き込む間隔）だけ手前に置き、そこからフェーズの速度で進める。
+遅れが開いた場合（タブが裏に回ってティックが間引かれた等）は同じ秒数で埋め切る速度まで
+一時的に上げて追いつく。`launching`のように進捗が意味を持たないフェーズでは、レコードに
+値が残っていても表示しない。
 
-1. **同一フェーズ内で決して巻き戻らない**。時間が戻る表示は「録画がやり直しに
-   なったのか」という誤解を招く。
-2. **直近にポーリングで得たサーバー値を追い越さない**。実際にはまだ処理されていない
-   時間を先に表示してしまうと、結局その値を次のポーリングで否定することになる。
+> **この保証はワーカー側の書き込み方（フェーズ開始時に`status`と`progress`を同時に
+> 書く）に依存している**。満たすべき2つの性質と、崩したときに何が起きるかは
+> [`docs/decisions/0023`](../../docs/decisions/0023-elapsed-time-interpolation-never-rewinds.md)。
 
-そのためサーバー値からの**外挿**（先読みして追い越し、次のポーリングで同期＝巻き戻る）を
-やめ、サーバー値を上限とする**内挿**にしてある。フェーズに入った時点で表示値を
-サーバー値より`WORKER_PROGRESS_INTERVAL_SECONDS`（=10秒。ワーカーが進捗を書き込む間隔で、
-サーバー値はこのぶん古くなり得る）だけ手前に置き、そこからフェーズの速度で進める。
-次のサーバー値が届く頃に現在の上限へ到達するペースになるので、表示は止まらず、
-上限にぶつかって追い越すこともない。遅れが開いた場合（タブが裏に回ってティックが
-間引かれた、変換速度の推定が実際より遅かった等）は同じ秒数で埋め切る速度まで一時的に
-上げて追いつく。
-
-**この保証はワーカー側の書き込み方に依存している**。`progress`は「現在のフェーズ内で
-処理が完了した時間」であってフェーズを跨いで意味を持たないため、`status`だけ先に
-書き換えると「変換中なのに録画フェーズ末尾の進捗（＝リプレイ全長）」というレコードが
-数秒間ユーザーに見える。この値を掴むと、表示は巻き戻らない代わりに**変換フェーズの間
-ずっと100%のまま動かなくなる**。ワーカーはフェーズを開始する書き込みで`status`と同時に
-`progress`を0へ戻すことでこの窓自体を無くしている（`worker/status.py`の
-`update_status(reset_progress=True)`）。フェーズ遷移の書き方を変えるときはこの前提を
-壊さないこと。
-
-なお`launching`のように進捗が意味を持たないフェーズでは、レコードに値が残っていても
-表示しない（リトライで再入した`launching`には前の試行の進捗が残っており、それを出すと
-録画が始まった途端に0:00へ戻って見える）。
-
-## ダウンロード（`components/JobProgress.tsx`）
+## 4. ダウンロード（`components/JobProgress.tsx`）
 
 `GetJobResponse.downloadUrl`/`.downloadUrl720p`（CloudFront配信、
 `response-content-disposition`クエリ付き）へ単純な`<a href={...} download>`を張るだけ。
@@ -172,7 +116,7 @@ fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
 `downloadUrl720p ?? downloadUrl`のフォールバックでそのまま本命を指し、副次リンク
 （「変換前の動画をダウンロード」）は両方揃っているときだけ出す。
 
-## 完了後のプレビュー再生（`components/JobProgress.tsx`、Issue #71）
+## 5. 完了後のプレビュー再生（`components/JobProgress.tsx`、Issue #71）
 
 `status: "done"`のとき、`GetJobResponse.previewVideoUrl`（配信版のCDN URL。
 ダウンロード用と違い`response-content-disposition`は付かない）を`<video controls>`で
@@ -197,7 +141,7 @@ fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
   避けようがないので、`autoPlay`を付けない・音量を勝手に上げない等、
   「ユーザーが意図して再生したときだけ流れる」状態を保つことで抑える。
 
-## 多言語対応（i18n、`src/i18n/`）
+## 6. 多言語対応（i18n、`src/i18n/`）
 
 `i18next` + `react-i18next`。日本語（既定、プレフィックス無し）と英語（`/en`
 プレフィックス）の2言語のみ対応。
@@ -222,7 +166,7 @@ fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
 - API（Lambda）が返すエラーメッセージ（`SattoriApiError.message`）は日本語固定
   （バックエンド側は未対応）。フロント側の文言のみが対象。
 
-### エントリHTML・OGPの言語出し分け
+### 6.1 エントリHTML・OGPの言語出し分け
 
 クローラー（X/Discord/Slack等のunfurl bot）はJSを実行しないため、`<title>`・
 `description`・OGP・`<html lang>`はReact側からでは出し分けられない。そこで
@@ -245,7 +189,7 @@ fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
   （`infra/README.md`参照）。開発サーバでも同じ振り分けになるよう、`vite.config.ts`の
   `sattori:en-locale-spa-fallback`プラグインが`/en`配下を`en/index.html`へ書き換える。
 
-## API クライアント（`src/api/client.ts`）
+## 7. APIクライアント（`src/api/client.ts`）
 
 `VITE_API_BASE`（既定 `/api`）を基点に`fetch`でAPIを呼ぶ薄いラッパー。エラーレスポンス
 （`ApiError`）は`SattoriApiError`（`code`/`message`/`status`）に変換して投げる。`status`
@@ -256,109 +200,20 @@ API Gateway自身の形式で、このAPIの`ApiError`（code/message）形で�
 （`src/admin/adminApi.ts`）が`Authorization`ヘッダー付きで呼び出すのに再利用する
 （fetchとエラー整形の実装を二重化しないため）。
 
-## 管理画面（`src/admin/`、Issue #51）
+## 8. 管理画面（`src/admin/`、Issue #51）
 
-運用調査用のジョブ一覧・詳細・ダウンロード導線と、ジョブの緊急停止・再実行
-（Issue #59）。ユーザーは管理者1人固定。API側の詳細は
-`apps/api/README.md`「管理API」を参照。
+運用調査用のジョブ一覧・詳細・ダウンロード導線、ジョブの緊急停止・再実行（Issue #59）、
+コスト集計（Issue #60）、キルスイッチ・月間コストガードの設定（Issue #14）。ユーザーは
+管理者1人固定で、SSMの共有トークンを`localStorage`に保持して`Authorization: Bearer`で
+送る（本体の認可はAPI Gateway側のLambda Authorizer。
+[`docs/decisions/0005`](../../docs/decisions/0005-admin-auth-ssm-shared-token.md)）。
 
-- **認証**: SSM Parameter Store（`/sattori/admin/token`）に置いた共有トークンを
-  `localStorage`（`adminToken.ts`、キー`sattori.adminToken`）に保持し、
-  `Authorization: Bearer <token>`で送る。API Gateway側のLambda Authorizerが本体の
-  認可で、フロント側のログインゲート（`AdminApp.tsx`）はUX目的（未ログイン時は
-  API呼び出し自体を発生させない）。401/403（`AdminUnauthorizedError`、`adminApi.ts`）を
-  受けた画面は`AdminAuthContext.onUnauthorized`経由で`AdminApp`に伝わり、トークンを
-  クリアして再ログインを促す。`localStorage`への読み書きは3関数とも`try`/`catch`で
-  包んである（プライベートブラウジング等で`setItem`が例外を投げると、`/admin`配下に
-  エラーバウンダリが無いためログイン操作だけで画面が白くなる。セッション限りの
-  ログインへ縮退させる）。
-- **構成**: `AdminApp.tsx`（認証ゲート＋内部`<Routes>`）→ `JobListPage.tsx`（一覧・
-  status絞り込み・カーソルページング。状態は`useSearchParams`でURLに載せる）／
-  `JobDetailPage.tsx`（`JobRecord`全フィールド＋ダウンロード導線＋コスト推定＋
-  ユーザー向けジョブページへのリンク）／`LogsPanel.tsx`（ワーカーログ、Issue #58）／
-  `CostsPage.tsx`（コスト集計、Issue #60）／
-  `ExecutionPanel.tsx`（Step Functions実行状態、`JobDetailPage`とは別にfetchする。
-  理由は`apps/api/README.md`参照）。データ取得は共通フック`useAdminResource.ts`
-  （`AdminUnauthorizedError`を検知して`onUnauthorized`を呼ぶ）に集約。
-- **操作パネル**（`JobActionsPanel.tsx`、Issue #59）: ジョブ詳細画面から緊急停止
-  （`done`以外のときに活性）と再実行（終端状態かつ未再実行のときのみ活性）を行う。
-  緊急停止を`failed`でも押せるようにしているのは、ワーカーが`SendTaskFailure`より先に
-  `failed`を書くため「statusは`failed`なのにステートマシンはリトライ中＝EC2が起動し
-  続けている」状態がありうるため（`apps/api/README.md`参照。停止可否の最終判断は
-  API側がStep Functionsの実行状態を見て行い、止めるものが無ければ409）。逆に再実行は
-  `retriedToJobId`が既にあると押せない（同一リプレイの二重録画を避けるため。API側も
-  原子的に排他する）。どちらも
-  取り返しのつかない操作（EC2の強制終了・新規インスタンス起動による課金）なので
-  `window.confirm`での確認を必須にしている。再実行は**新しいjobIdのジョブ**が作られる
-  ため、結果メッセージからその詳細画面へのリンクを出す（元ジョブ側の
-  `retriedToJobId`／新ジョブ側の`retriedFromJobId`フィールドからも相互に辿れる）。
-  操作後は`useAdminResource`の`reload()`でジョブ詳細を取り直す。`reload()`は
-  deps変更時と違い取得中も直前の`data`を保持する（パネルが一瞬アンマウントされて
-  実行結果メッセージが消えるのを避けるため）。
-- **ユーザー向けジョブページへのリンク**（`JobDetailPage.tsx`）: ジョブ詳細から
-  ページB（`/jobs/{jobId}`、英語のジョブなら`/en/jobs/{jobId}`）を別タブで開ける。
-  jobId自体が認可の秘密値（`AGENTS.md` §3）なので、管理者もこのURLを開けば
-  ユーザーとまったく同じ画面を確認できる。同一SPA内だが`<Link>`にすると管理画面から
-  離脱してしまうため`target="_blank"`にしている。
-- **ワーカーログ**（`LogsPanel.tsx`、Issue #58）: CloudWatch Logs
-  （ロググループ`/sattori/worker`、ストリーム名=jobId）を新しい方から読む。
-  自宅ワーカーのログも同じストリームへ転送されるため（`home-worker/src/logShipper.ts`）、
-  表示側はワーカーの種別を意識しない。
-  - 初回読み込み後は末尾（最新行）まで自動スクロールする。さらに**ジョブが実行中で
-    かつ表示が末尾にある間だけ**10秒ごとに最新ページを取り直して追尾する（`tail -f`相当）。
-    末尾判定は`followingTail`のようなstateではなく**毎回DOMの実際のスクロール位置**で
-    行う（履歴を遡って読んでいる最中に末尾へ飛ばされるのを防ぐため。stateは注記の
-    表示にしか使わない）。
-  - 自動更新は「さらに古いログを読み込む」で積んだ履歴を捨てないよう、取り直した
-    最新ページを`mergeTailEvents()`で継ぎ足す。`GetLogEvents`のイベントには識別子が
-    無いため`(timestamp, message)`の一致で重なりを探す近似で、重なりが見つからない
-    （＝前回の更新から1ページぶん以上流れた）ときだけ履歴を捨てて`nextBackwardToken`も
-    取り直す。
-- **ワーカー種別（EC2 / 自宅サーバー）による文言の出し分け**（Issue #49）: ジョブ詳細の
-  ワーカー欄・操作パネル・コスト推定・ログの「ストリームが見つからない」説明は
-  `workerKind`で切り替える。自宅ワーカーのジョブに「EC2インスタンスを強制終了し」
-  「Spot単価」と出すのは端的に誤りで、停止の効き方（terminateで即座に止まるEC2 /
-  claim解除にデーモンが気づくまで最大30秒走り続ける自宅ワーカー）も課金の有無も違う。
-  コスト推定のSpot単価は**自宅ワーカーのジョブでは表示しない**（計算に使われていない
-  フォールバック定数が「この単価で課金された」と読まれてしまうため）。ただし再実行の
-  確認文言だけは自宅ワーカーのジョブでもEC2課金に触れる——再実行は`workerKind: null`の
-  新しいジョブを作るので、割り当ては改めて決まる（`apps/api/src/handlers/admin/retryJob.ts`）。
-- **コスト表示**（Issue #60）: ジョブ詳細の`JobCostPanel.tsx`（1ジョブぶんの内訳）と
-  `CostsPage.tsx`（`/admin/costs`、日次/週次/月次の集計と推移）。計算は
-  `@sattori/shared`の`estimateJobCost()`をそのまま呼ぶ（集計APIと同じ実装を共有し、
-  画面ごとに数字が食い違わないようにする）。**ジョブ詳細のコストはサーバーに計算させて
-  いない**——`AdminJobDetailResponse`は`JobRecord`をほぼそのまま返す（`AdminJobRecord`。
-  秘密値を含む`homeWorkerEnv`だけ伏せてある）ので、フロントで推定関数を呼べば足り、
-  APIの契約を増やさずに済むため。
-  積み上げ棒はCSSのflexで描き、チャートライブラリは入れていない（この規模の図に
-  依存を1本増やす価値がない）。系列色は色覚特性・ライト/ダーク双方のコントラストを
-  検証済みのカテゴリカルパレットを固定順で割り当てており（`CostsPage.module.css`
-  冒頭のコメント参照）、**順番の入れ替えや循環をしないこと**。棒の色だけに情報を
-  持たせないよう、凡例に系列名と期間合計の数値を併記し、各行に合計金額を出す。
-  表示が推定値であること・仮定が混ざっている件数（`quality`）は必ず画面に出す。
-- **通貨切り替え**（`adminCurrency.ts` / `costFormat.ts`）: コスト表示をUSDと円で
-  切り替えられる。選択は`AdminLayout`のヘッダーに置き（コスト表示のある画面が複数ある
-  ため）、`CostCurrencyContext`で配下に配り、`localStorage`に保存する（読み書きは
-  トークンと同じく`try`/`catch`で握り潰し、既定のUSDへ縮退する）。換算は
-  `@sattori/shared`の`usdToJpy()`＝固定レートによる概算で、円表示のときだけ
-  「固定レートによる概算」である旨の注記を出す。円は小数を**USD表示より2桁少なく**
-  する（$1≒¥157なので、$0.0360→¥5.65、$0.17→¥27で情報量が釣り合う）。
-- **設定画面**（`SettingsPage.tsx`、`/admin/settings`、Issue #14）: キルスイッチ
-  （`acceptingNewJobs`）と月間コストガードの上限額（`monthlyCostLimitUsd`）を
-  管理する。キルスイッチは新規録画の受付を即座に停止・再開するトグルで、
-  当月の推定コスト（`estimateJobCost()`の月次集計。`CostsPage.tsx`と同じ推定値で
-  請求額そのものではない）を上限額に対するゲージで表示する。どちらもユーザー向けの
-  サービス提供可否に直結する変更のため、`JobActionsPanel`と同じ方針で
-  `window.confirm`による確認を保存前に必須にしている。API側の反映タイミングの
-  非対称性（キルスイッチは次のリクエストから即反映、月間コストガードの閾値は
-  ユーザー向け経路のキャッシュにより最大5分遅れる）は`apps/api/README.md`
-  「キルスイッチ・月間コストガード」参照。
-- **レイアウト**: `AdminLayout.tsx`はユーザー向け`App.tsx`の`Layout`とは共有しない
-  専用シェル（`LanguageSwitcher`が存在しない`/en/admin`へのリンクを出してしまうことと、
-  ユーザー向け`main`幅(50rem)がジョブ一覧テーブルには狭すぎることが理由）。CSS Modules
-  + `global.css`の既存トークン（`--panel`等）を再利用し、`:root`自体は変更しない。
+**利用者向けの本流フローとは完全に独立しているため、詳細は
+[`docs/admin-ui.md`](docs/admin-ui.md) に分けてある**（画面構成・操作パネルの活性条件・
+ワーカー種別による文言の出し分け・コスト表示の約束など）。API側は
+[`apps/api/docs/admin-api.md`](../api/docs/admin-api.md)。
 
-## 開発サーバ
+## 9. 開発サーバ
 
 ```bash
 pnpm --filter @sattori/web dev
@@ -367,7 +222,7 @@ pnpm --filter @sattori/web dev
 `vite.config.ts`: ポート5173、`/api`を`http://localhost:8787`へプロキシ
 （`VITE_API_BASE`が設定されていればプロキシは無効化され、そちらを直接叩く）。
 
-## テスト
+## 10. テスト
 
 コンポーネント単位で`*.test.tsx`（vitest + jsdom、`src/test/setup.ts`）。
 `pnpm --filter @sattori/web test`。

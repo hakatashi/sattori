@@ -2,9 +2,27 @@
 
 Lambda ハンドラ群（AWS API Gateway HTTP API 経由）。S3署名URL発行・リプレイ解析・
 マジックリンク送信・ジョブ起動・状態取得・完了メール送信・Step Functions連携を担う。
-API契約自体は `packages/shared/README.md` を参照。
+API契約自体は `packages/shared/README.md` を参照。**ここには「今どうなっているか」だけを
+書く** —— なぜそうしたかの根拠は [`docs/decisions/`](../../docs/decisions/README.md)、
+管理API（`/admin/*`）の詳細は [`docs/admin-api.md`](docs/admin-api.md) にある。
 
-## ハンドラ一覧（`src/handlers/`）
+## 目次
+
+- [1. ハンドラ一覧（`src/handlers/`）](#1-ハンドラ一覧srchandlers)
+- [2. ジョブ起動〜Step Functionsの流れ](#2-ジョブ起動step-functionsの流れ)
+- [3. 自宅ワーカーへのジョブ割り当て](#3-自宅ワーカーへのジョブ割り当てhomeworkerts--workerroutingts-issue-49)
+- [4. EC2 Fleet インスタンスタイプの分散配置](#4-ec2-fleet-インスタンスタイプの分散配置ec2ts-issue-29)
+- [5. 孤児インスタンスの検知](#5-孤児インスタンスの検知orphaninstancests--handlerssweeporphaninstancests-issue-23)
+- [6. ワーカーコンテナの環境変数（`workerEnv.ts`）](#6-ワーカーコンテナの環境変数workerenvts)
+- [7. ワーカー起動スクリプト（UserData）](#7-ワーカー起動スクリプトuserdata-ec2ts-の-builduserdata)
+- [8. マジックリンク送信・レート制限](#8-マジックリンク送信レート制限requestmagiclinkts-ratelimitts)
+- [9. キルスイッチ・月間コストガード](#9-キルスイッチ月間コストガードsettingsts-costguardts-issue-14)
+- [10. ダウンロードURLとContent-Disposition（`getJob.ts`）](#10-ダウンロードurlとcontent-dispositiongetjobts)
+- [11. 管理API（`/admin/*`、Issue #51）](#11-管理apiadminissue-51)
+- [12. 環境変数（`config.ts`）](#12-環境変数configts)
+- [13. テスト](#13-テスト)
+
+## 1. ハンドラ一覧（`src/handlers/`）
 
 | ファイル | エンドポイント / トリガー | 役割 |
 | --- | --- | --- |
@@ -15,10 +33,10 @@ API契約自体は `packages/shared/README.md` を参照。
 | `getJob.ts` | `GET /jobs/{jobId}` | ジョブ状態取得。完了時はCloudFrontのダウンロードURL・プレビュー再生URLを組み立てる。低速録画（Issue #68）で走るかどうか（`isSlowMotionRecording()`）も返す |
 | `getWorkerAvailability.ts` | `GET /worker-availability` | 常駐ワーカー（自宅ワーカー、Issue #49）の空き状況。ページAが「低速録画」を選べるか判定するためだけの公開エンドポイント。**認証なしで公開されるため`workerId`・台数・負荷は返さない**（開発者の自宅環境の稼働状況を必要以上に外へ出さない） |
 | `sendCompletionEmail.ts` | JobsTableのDynamoDB Streams | ジョブが`done`に遷移した瞬間を検知しSESで完了メール送信 |
-| `sweepOrphanInstances.ts` | EventBridgeのスケジュールルール（10分間隔） | 孤児化した録画EC2インスタンスの定期掃除（Issue #23。後述「孤児インスタンスの検知」） |
+| `sweepOrphanInstances.ts` | EventBridgeのスケジュールルール（10分間隔） | 孤児化した録画EC2インスタンスの定期掃除（Issue #23。§5） |
 | `sfn/launch.ts` | Step Functions `Launch`タスク | EC2 Fleetでワーカーを1台起動（`waitForTaskToken`。成否確定はワーカー自身が行う） |
 | `sfn/handleFailure.ts` | Step Functions `HandleFailure`タスク | 孤児インスタンスをterminateしつつリトライ可否を判定 |
-| `admin/authorizer.ts` | `/admin/*` の Lambda Authorizer | 共有トークンの検証（後述「管理API」） |
+| `admin/authorizer.ts` | `/admin/*` の Lambda Authorizer | 共有トークンの検証（[`docs/admin-api.md`](docs/admin-api.md)） |
 | `admin/listJobs.ts` | `GET /admin/jobs` | ジョブ一覧（新しい順・status絞り込み・カーソルページング） |
 | `admin/getJobDetail.ts` | `GET /admin/jobs/{jobId}` | `JobRecord`全フィールド＋ダウンロード導線 |
 | `admin/getExecution.ts` | `GET /admin/jobs/{jobId}/execution` | Step Functions実行の状態・履歴 |
@@ -29,7 +47,7 @@ API契約自体は `packages/shared/README.md` を参照。
 | `admin/getSettings.ts` | `GET /admin/settings` | キルスイッチ・月間コストガード閾値の現在値と当月推定コストを取得（Issue #14） |
 | `admin/updateSettings.ts` | `POST /admin/settings` | キルスイッチ・月間コストガード閾値の更新（Issue #14） |
 
-## ジョブ起動〜Step Functionsの流れ
+## 2. ジョブ起動〜Step Functionsの流れ
 
 1. `startJob.ts` が `pending`→`queued` への遷移をDynamoDBの条件付き更新で原子的に
    行い（`jobs.ts` の `startPendingJob()`、`ConditionExpression: "#s = :pending"`）、
@@ -38,7 +56,7 @@ API契約自体は `packages/shared/README.md` を参照。
    冪等に返すだけで、Step Functionsは再起動しない。
 2. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト150分・ハートビート
    タイムアウト15分）がワーカーを1台**割り当て**る。割り当て先は自宅ワーカー
-   （Issue #49、後述）かEC2 Fleetのどちらかで、EC2の場合は
+   （Issue #49、§3）かEC2 Fleetのどちらかで、EC2の場合は
    `launchRecordingInstance()`（`ec2.ts`）でSpotインスタンスを1台起動し、ジョブを
    `launching` に更新する（自宅ワーカーの場合は**claimと同じ条件付き更新の中で
    デーモンが**`launching`にする。後から書くと、先に走り出したコンテナの`recording`を
@@ -50,7 +68,7 @@ API契約自体は `packages/shared/README.md` を参照。
    猶予を置く）を挟んで `sfn/handleFailure.ts` が呼ばれる。ジョブが待機中に
    `done` へ遷移していれば何もしない。未完了なら孤児化した可能性のあるインスタンスを
    `terminateInstance()` し（対象は`JobRecord.instanceId`と**タグ`sattori:jobId`から
-   引いたインスタンスの和集合**。後述「孤児インスタンスの検知」）、
+   引いたインスタンスの和集合**。§5）、
    自宅ワーカーへの割り当て・オファーを
    `releaseHomeWorkerAssignment()`（`homeWorker.ts`）で解除したうえで、
    `retryPolicy.ts` の `MAX_ATTEMPTS`（**10回**）未満なら
@@ -60,24 +78,23 @@ API契約自体は `packages/shared/README.md` を参照。
    非終端状態のまま固まらないよう、インフラ側でリトライ＋最終的な`Fail`遷移が
    用意されている（`infra/README.md`参照）。
 
-## 自宅ワーカーへのジョブ割り当て（`homeWorker.ts` / `workerRouting.ts`, Issue #49）
+## 3. 自宅ワーカーへのジョブ割り当て（`homeWorker.ts` / `workerRouting.ts`, Issue #49）
 
 開発者の自宅サーバーがオンラインで余力があるとき、EC2の代わりにそこで録画させる。
 自宅マシンはNAT配下でAWS側から到達できないため**Pull型**にしてある。デーモン本体と
 運用手順は [`home-worker/README.md`](../../home-worker/README.md) を参照。
 
+> **Pull 型にした理由・オファーと claim の競合をどう決着させるかは
+> [`docs/decisions/0018`](../../docs/decisions/0018-home-worker-pull-assignment.md) に
+> 集約してある。この節を変更する前に必ず開くこと**（踏み外すと同じリプレイを2台で
+> 録画する）。
+
 `Launch` が行うこと:
 
 1. `routingPolicyFor(job)`（`workerRouting.ts`）でこのジョブの方針を決める。
-   タイトルごとに「オファーするか」「要求する追加能力」「待機秒数」を変えられる。
-   - **th20（Issue #87）だけオファー待ちを上限（`MAX_OFFER_WINDOW_SECONDS`）まで
-     伸ばしてある**。他タイトルは「自宅が空いていなければEC2で同じ品質の録画ができる」
-     ので待つ価値が薄いが、th20はEC2フォールバック先が`.4xlarge`帯（他タイトルの
-     約4倍の単価）で、かつ低速録画（Issue #68）は自宅ワーカーでしかできない。
-   - **低速録画の要求（`slow-motion-recording`）はタイトルではなくジョブのオプションに
-     紐づく**。`job.options.slowMotion` が立っているときだけ `requiredCapabilities` へ
-     足す。th20でもユーザーが低速録画を外していれば能力を要求しない——EC2を1台
-     起こさずに済むこと自体に価値があるので、不要な条件でオファー先を狭めない。
+   タイトルごとに「オファーするか」「要求する追加能力」「待機秒数」を変えられる
+   （**th20だけ待機を上限まで伸ばす**・**低速録画の能力要求はタイトルではなく
+   `job.options.slowMotion` に紐づく**。理由は `0018`）。
 2. `WorkersTable` のハートビート（`selectHomeWorker()`）を見て、引き受けられる
    ワーカーがいるか判定する。**いなければ何もせず即EC2を起動する**ので、自宅が
    落ちている平常時に録画開始が遅れることはない。
@@ -86,194 +103,105 @@ API契約自体は `packages/shared/README.md` を参照。
    ので、デーモンはそれをそのまま`docker run`へ渡すだけでよい。オファーは
    sparse GSI `HomeWorkerOfferIndex` に載り、デーモンはこれをポーリングして
    条件付き更新で原子的にclaimする（同じ更新で`workerKind: "home"`・
-   `status: "launching"`も確定する）。
-4. `offerWindowSeconds`（既定20秒）待ってclaimされなければ
-   `withdrawHomeWorkerOffer()` で**条件付きに**撤回し、EC2へフォールバックする。
-   撤回が条件チェックで失敗した（＝待機中にclaimされた）場合はEC2を起動しない。
-   **ここを踏み外すと同じリプレイを2台で録画する**ため、期限切れとclaimの競合は
-   必ずDynamoDBの条件付き更新で決着させること。
-
-オファーの書き込み自体が条件チェックで失敗した場合は、**claim済みと決めつけない**
-（`handleOfferConflict()`）。`HandleFailure`の割り当て解除は失敗をログだけにして
-`shouldRetry`を返すため、前の試行の`assignedWorkerId`が残ったまま再入することがある。
-これをclaim済みと誤読すると、今回のtaskTokenを誰も持たないまま15分のタイムアウトを
-待つことになる（リトライ1周が丸ごと無駄になる）。判別は`homeWorkerEnv.TASK_TOKEN`が
-今回のトークンかどうかで行う——**オファーの書き込みがトークンをデーモンへ渡す唯一の
-経路**なので、これが証拠になる。陳腐化していたら割り当てを解除してEC2へ回す（解除は
-走り続けている古いコンテナを止める手段も兼ねる）。
-
-この待機は`Launch` Lambdaの実行時間をそのまま消費するため、`offerWindowSeconds`には
-上限がある（`MAX_OFFER_WINDOW_SECONDS` = `LAUNCH_LAMBDA_TIMEOUT_SECONDS` −
-オファー以外の処理ぶんの余裕20秒）。溢れると、オファーは撤回済みなのにEC2も起動して
-いない状態で15分のハートビートタイムアウトを待つ、丸ごと無駄なリトライが1周発生する。
-Lambdaのタイムアウトは`@sattori/shared`の`LAUNCH_LAMBDA_TIMEOUT_SECONDS`を唯一の
-出典にしてCDKが設定しており、両者の整合はテストで守っている（th20向けに待機を伸ばす
-なら定数も併せて上げること）。
-
-ハートビートの読み取り・オファーの書き込みで想定外の例外が出た場合は握りつぶして
-EC2起動へフォールバックする。自宅ワーカーはコスト削減のためのbest-effortな経路に
-過ぎず、その不調でユーザーの録画そのものを落としてはならない。
+   `status: "launching"`も確定する）。書き込み自体が条件チェックで失敗した場合の
+   扱いは `handleOfferConflict()`（判別根拠は `0018`）。
+4. `offerWindowSeconds`（既定20秒、上限`MAX_OFFER_WINDOW_SECONDS`）待って
+   claimされなければ `withdrawHomeWorkerOffer()` で**条件付きに**撤回し、EC2へ
+   フォールバックする。撤回が条件チェックで失敗した（＝待機中にclaimされた）場合は
+   EC2を起動しない。
 
 `assignedWorkerId` が「誰がこのジョブのtaskTokenを持っているか」の唯一の真実で、
-**AWS側がこの属性を消すことがclaimの取り消し**になる（デーモンは30秒ごとに
-「自分のものか」を条件付き更新で確認し、崩れたらコンテナを停止する）。消す側は
-`sfn/handleFailure.ts` と `admin/stopJob.ts` の2箇所。
+**AWS側がこの属性を消すことがclaimの取り消し**になる。消す側は
+`sfn/handleFailure.ts` と `admin/stopJob.ts` の2箇所で、後者は取り消しが同期的でない
+ことに備えて先に`stopRequestedAt`を立てる（`markJobStopRequested()`。`0018`）。
 
-取り消しは**同期的ではない**（EC2の`TerminateInstances`と違い、デーモンが次の確認で
-気づくまでコンテナは走り続ける）。その間にコンテナが完走すると`done`とdoneAtが書かれ、
-DynamoDB Streams経由で停止したはずのジョブの完了メールがユーザーへ飛ぶため、
-`admin/stopJob.ts` は後始末より**先に**`stopRequestedAt`（`markJobStopRequested()`）を
-立てる。ワーカー（`worker/status.py`）は`attribute_not_exists(stopRequestedAt)`を条件に
-しかstatusを書けないので、この票が立った後の書き込みは一切通らない。
-「取り消しに気づかせる」（デーモン側の努力）と「気づく前に完走されても壊れない」
-（レコード側の拒否票）の二段構えで、どちらが遅れても最悪の結果にならないようにしてある。
-
-## EC2 Fleet インスタンスタイプの分散配置（`ec2.ts`, Issue #29）
+## 4. EC2 Fleet インスタンスタイプの分散配置（`ec2.ts`, Issue #29）
 
 単一インスタンスタイプのみだとそのハードウェアプールが時間帯によって枯渇し
-`InsufficientInstanceCapacity` で起動自体が失敗する事例が発生したため、
-サブネット（=AZ）×候補インスタンスタイプの全組み合わせを `CreateFleet` の
-`Overrides` に渡し、`AllocationStrategy: "price-capacity-optimized"`
-（`SingleInstanceType: false`）で配置する。
+`InsufficientInstanceCapacity` で起動自体が失敗するため、サブネット（=AZ）×候補
+インスタンスタイプの全組み合わせを `CreateFleet` の `Overrides` に渡し、
+`AllocationStrategy: "price-capacity-optimized"`（`SingleInstanceType: false`）で
+配置する。候補はタイトルごとに違う。
 
-> **インスタンスの起動を CDK 側へ移さないこと**（実行時に SDK で起動する理由は
-> [`docs/decisions/0002`](../../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)）。
-> eu-south-2 は us-east-1 よりキャパシティプールが少なく、起動失敗率の監視が要る
-> （[`0001`](../../docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)）。
+| 対象 | 定数（`ec2.ts`） | 候補インスタンスタイプ |
+| --- | --- | --- |
+| th06/07/08 | `DEFAULT_CANDIDATE_INSTANCE_TYPES` | `c7i.xlarge` / `c7a.xlarge` / `c7i-flex.xlarge` / `m7i.xlarge` |
+| th11 | `TH11_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
+| th20 | `TH20_CANDIDATE_INSTANCE_TYPES` | `c7i.4xlarge` のみ |
 
-- **th06/07/08向け**（`DEFAULT_CANDIDATE_INSTANCE_TYPES`）: `c7i.xlarge` /
-  `c7a.xlarge` / `c7i-flex.xlarge` / `m7i.xlarge`。2026-08のeu-south-2移設に伴い、
-  旧us-east-1で使っていた`c6a`/`c6i`/`c5a`系（eu-south-2に存在しない）を削除した。
-  4タイプすべてeu-south-2実機で検証済み（touhou-recorder `reports/42`・`43`、
-  重複フレーム率0.1〜5.0%）。`m7i.xlarge`はこの移設で新たに追加した候補。
-- **th11専用**（`TH11_CANDIDATE_INSTANCE_TYPES`）: `c7i.2xlarge` / `c7a.2xlarge` /
-  `m7i.2xlarge`。th11は`.xlarge`帯(4vCPU)だとステージ後半で深刻な処理落ち
-  （コマ落ちではなくゲームプレイ自体の実時間伸長）が本番で発生し、
-  touhou-recorder `reports/40` の実機検証で原因はvCPU数不足と判明。
-  8vCPU/16GiB以上(`.2xlarge`帯)にすると重複フレーム率が明確に改善する。
-  コスト影響は`.xlarge`比で概ね2倍。3タイプすべてeu-south-2実機で検証済み
-  （`reports/42`・`43`、重複フレーム率0.4〜4.5%、いずれも想定尺どおりの自然終了）。
-
-- **th20専用**（`TH20_CANDIDATE_INSTANCE_TYPES`）: `c7i.4xlarge` のみ。th20は内部描画
-  解像度が960p相当（1280x960）へ上がり、th11をさらに上回る描画負荷になる。
-  touhou-recorder `reports/46` のeu-south-2実機比較で、`.2xlarge`帯では高負荷区間
-  （スペルカード「巌となるさざれ石」）のゲーム内実測fpsが11.7〜32.5fpsまで持続的に
-  落ち込む一方、`.4xlarge`帯（16vCPU/32GiB）は単発の落ち込み1回を除き57.6〜60.0fpsを
-  維持した。総録画時間もローカル基準比で`.2xlarge`が+8.9%、`.4xlarge`が-1.8%と、
-  全指標で明確な差が出ている。
-  **1タイプしかないのは意図的**で、th20の実機検証を通ったのがこれだけだから
-  （他タイプは「同じvCPU数・同じ系統だから」という推測でしか根拠づけられない）。
-  Spotプールの分散が他タイトルより後退している点は Issue #98 で追う。
-  なお**th20は原則として自宅ワーカーでの低速録画へ振り分けられる**ので、この経路は
-  自宅が空いていないときのフォールバック（等倍録画）である。
-
-**インスタンスタイプの変更は録画品質（重複フレーム率）に直結するリスクがあり、
-「同スペック帯・同価格帯だから安全」とは限らない**（`z1d.xlarge`は高クロック特化
-ゆえに悪化した実績がある）。追加候補を投入する際は必ず同様の実機検証を経ること。
+> **候補を足す・変える前に
+> [`docs/decisions/0016`](../../docs/decisions/0016-ec2-fleet-instance-type-diversification.md)
+> を必ず読むこと**（各候補の実機検証の裏付け・th20が1タイプしかない理由・
+> 「同スペック帯だから安全」が繰り返し裏切られている経緯）。インスタンスの起動を
+> CDK側へ移さない理由は [`0002`](../../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)。
 
 `CreateFleet`が実際に確保したインスタンスタイプ・AZは `result.Instances[0]` から
 そのまま取得でき、追加の`DescribeInstances`呼び出しは不要。`JobRecord.instanceType`/
 `.availabilityZone`として記録する（`jobs.ts`の`updateJobInstance()`）。これは録画品質の
 分析・運用調査用の内部データで、ユーザー向けAPI（`GetJobResponse`）には含めない。
 
-**Spot単価だけは`CreateFleet`のレスポンスに含まれない**ため、コスト推定（Issue #60）用に
-`fetchSpotPrice()`が確保できた`instanceType`×`availabilityZone`で
-`DescribeSpotPriceHistory`を1回だけ引いて`JobRecord.spotPricePerHour`へ記録する。
-**この取得の失敗で録画ジョブを落とさない**（例外を握りつぶしてnullを返し、コスト推定側が
-フォールバック単価へ縮退する）——単価は運用把握のための付随情報にすぎず、これを理由に
-起動を失敗させるとリトライ枠（最大10回）を無駄に消費してユーザーの録画そのものを
-落としてしまうため。
+コスト推定（Issue #60）用に、**Spot単価だけは`CreateFleet`のレスポンスに含まれない**ため
+`fetchSpotPrice()`が`DescribeSpotPriceHistory`を1回だけ引いて
+`JobRecord.spotPricePerHour`へ記録し、`sfn/launch.ts`が`markJobLaunched()`で
+`JobRecord.launchedAt`（課金起点）を記録する。**単価の取得に失敗しても録画ジョブは
+落とさない**（nullへ縮退）、**`launchedAt`は既に値があれば書き換えない**（条件付き更新）。
+理由は
+[`docs/decisions/0021`](../../docs/decisions/0021-cost-estimation-side-data-never-fails-the-job.md)。
 
-同時に`sfn/launch.ts`が`markJobLaunched()`で`JobRecord.launchedAt`（コスト推定の
-課金起点）を記録する。**既に値があれば書き換えない**条件付き更新にしているのが要点で、
-Step Functionsのリトライで`Launch`は最大10回走るため、毎回上書きすると
-それ以前の試行で稼働していたEC2の課金時間が推定から丸ごと抜け落ちる
-（＝失敗を繰り返した高コストなジョブほど安く見えるという、監視として最悪の挙動になる）。
-
-## 孤児インスタンスの検知（`orphanInstances.ts` / `handlers/sweepOrphanInstances.ts`, Issue #23）
+## 5. 孤児インスタンスの検知（`orphanInstances.ts` / `handlers/sweepOrphanInstances.ts`, Issue #23）
 
 **孤児 = ジョブのどの状態遷移とも紐づかないまま課金され続けるEC2インスタンス。**
-`sfn/launch.ts` はEC2 Fleetの起動（＝課金開始）と`instanceId`のDynamoDBへの永続化が
-別ステップに分かれているため、その間にLambdaがタイムアウトすると
-`JobRecord.instanceId` が空のまま起動済みのインスタンスだけが残る。同じ結末になる
-経路は他にもある（`HandleFailureCrashed`へ倒れた実行、緊急停止時のterminate失敗など）。
-
-対策は3段構えで、**後段ほど「前段のハンドラ自体が失敗した場合」を拾う**:
+対策は3段構えで、後段ほど「前段のハンドラ自体が失敗した場合」を拾う。
 
 1. **窓を狭める**: `launch.ts` は `CreateFleet` の直後に `updateJobInstance()` を
-   呼ぶ（`updateJobStatus`/`updateJobWorkerKind`より先）。DynamoDB書き込み3回ぶんの
-   窓が1回ぶんに縮む。**窓そのものは原理的に消せない**（起動と記録を1つの原子的操作に
-   することはできない）。
+   呼ぶ（`updateJobStatus`/`updateJobWorkerKind`より先）。
 2. **後始末でタグからも引く**: `sfn/handleFailure.ts`・`admin/stopJob.ts` は
    `JobRecord.instanceId` だけでなく `findJobInstanceIds()`（タグ`sattori:jobId`での
-   `DescribeInstances`）の結果も terminate する。タグはインスタンス作成時に
-   `TagSpecifications` で付くので、DynamoDBへの書き込みを待たずに発見できる。
+   `DescribeInstances`）の結果も terminate する。
 3. **定期掃除**: `handlers/sweepOrphanInstances.ts` がEventBridgeのスケジュール
-   （`ORPHAN_SWEEP_INTERVAL_MINUTES` = 10分間隔）で走る。**走査の起点がジョブ
-   レコードではなくAWS上に実在するインスタンス**（`listTaggedInstances()`）である点が
-   要点で、これによりレコードに痕跡が無い孤児も拾える。
+   （`ORPHAN_SWEEP_INTERVAL_MINUTES` = 10分間隔）で走る。**走査の起点はジョブ
+   レコードではなくAWS上に実在するインスタンス**（`listTaggedInstances()`）。
 
-### 掃除役の判定（`orphanInstances.ts`）
+判定は `orphanInstances.ts` にあり、猶予15分（`ORPHAN_INSTANCE_GRACE_MINUTES`）・
+Step Functions実行の生死（`getExecutionLiveness()`）・実行中ジョブでは最新1台を保護、
+と徹底して安全側に倒してある。最悪の孤児寿命は「猶予15分 + 掃除間隔10分」＝25分。
 
-誤ってterminateすると**ユーザーの録画をその場で殺す**（しかもワーカーは
-`SendTaskFailure`すら送れず、15分のハートビートタイムアウトまで誰も気づかない）ため、
-判定は徹底して安全側に倒してある:
+> **判定を緩める・走査の起点を変える前に
+> [`docs/decisions/0017`](../../docs/decisions/0017-orphan-sweep-from-aws-instances.md)
+> を読むこと**（各条件の根拠と、誤terminateがユーザーの録画をその場で殺す非対称性）。
 
-- 起動から `ORPHAN_INSTANCE_GRACE_MINUTES`（15分）経っていないインスタンスは対象外
-  （上記1の窓と`DescribeInstances`の結果整合を吸収する猶予）。起動時刻が読めない
-  インスタンスも同様に対象外。
-- 判定の主たる根拠は**ジョブのstatusではなくStep Functions実行の生死**
-  （`getExecutionLiveness()`。理由は「管理API」の緊急停止の項と同じ——ワーカーは
-  `SendTaskFailure`より先に`failed`を書くため、statusは実行の生死の代理にならない）。
-  実行が終わっている/存在しないジョブのインスタンスは全て孤児。
-- 実行が生きているジョブでは**最も新しい1台だけは必ず残す**（今まさに録画している
-  可能性がある1台）。それより古い台は、リトライで前の試行のterminateに失敗した残骸。
-- `stopRequestedAt`（緊急停止の要求）があるジョブは実行が生きていても1台も残さない。
-- 実行の生死やジョブレコードが引けなかったジョブは**丸ごと見送る**（判定できないものは
-  terminateしない。次回の掃除で拾えばよい）。
-
-最悪の孤児寿命は「猶予15分 + 掃除間隔10分」＝25分。1ジョブぶんの調査・terminateが
-失敗しても他のジョブの掃除は続けるが、**インスタンスの列挙自体に失敗したときは例外を
-投げる**（何も掃除できていない実行を成功として記録すると、「毎回起動しているのに永久に
-何もしていない」状態が正常に見えてしまうため）。
-
-## ワーカーコンテナの環境変数（`workerEnv.ts`）
+## 6. ワーカーコンテナの環境変数（`workerEnv.ts`）
 
 ワーカーコンテナ（`worker/entrypoint.py`）へ渡す環境変数は `buildWorkerEnv()` が
 一元的に組み立て、**EC2（UserDataの`docker run -e`）と自宅ワーカー（オファーに添えて
 `JobRecord.homeWorkerEnv` に書き、デーモンがそのまま`docker run`へ渡す）で共有する**。
 
 こうしておくとワーカー側は「自分がどこで動いているか」を一切知らずに済み、環境差分は
-すべてこの関数の出力の違いとして表現される。1/2倍速録画（Issue #68。自宅ワーカーでのみ
-行う予定）のような分岐も、ワーカーの`if`ではなく「起動側が録画速度の環境変数を足すか
-どうか」で表現すること。
+すべてこの関数の出力の違いとして表現される。低速録画（Issue #68。自宅ワーカーでのみ
+行う）のような分岐も、ワーカーの`if`ではなく「起動側が録画速度の環境変数を足すか
+どうか」で表現すること（[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
 
 `TASK_TOKEN`（Step Functionsの実行を任意に成功/失敗させられるベアラ）を含むため、
 ログや外部への出力では必ず `redactWorkerEnv()` を通すこと。**この約束は型で強制して
-ある**——`redactWorkerEnv()` の戻り値だけが `RedactedWorkerEnvironment`（ブランド付き）
-になり、管理APIのレスポンス型 `AdminJobRecord.homeWorkerEnv` はそれしか受け付けない
-ので、`JobRecord` をそのまま返そうとするとコンパイルエラーになる
-（`toAdminJobRecord()` が唯一の変換口）。散文の約束だけだった間、実際に
-`GET /admin/jobs/{jobId}` が生きたトークンをそのまま返していた。
+ある**（`RedactedWorkerEnvironment`。変換口は`toAdminJobRecord()`の1箇所だけで、
+`JobRecord`をそのまま返そうとするとコンパイルエラーになる。経緯は
+[`docs/decisions/0020`](../../docs/decisions/0020-worker-env-redaction-enforced-by-type.md)）。
 
-## ワーカー起動スクリプト（UserData, `ec2.ts` の `buildUserData()`）
+## 7. ワーカー起動スクリプト（UserData, `ec2.ts` の `buildUserData()`）
 
 ベースの Launch Template（AMI/IAM/SGはCDK側で固定）に対し、ジョブ固有のUserDataのみを
 持つ新しいバージョンを`CreateLaunchTemplateVersion`で作成してから`CreateFleet`する。
-UserDataスクリプトの要点:
+UserDataスクリプトがやること:
 
-- ECS最適化AMIは常駐ECSエージェントがCPUを消費し、高負荷区間でffmpegのx11grab
-  キャプチャとコンテンションを起こして重複フレーム率を悪化させるため（八雲藍戦で
-  15-26%→4.8%に改善した実測あり）、`systemctl disable --now ecs`で停止しプレーンな
-  dockerホストとして使う。
-- `trap 'shutdown -h now' EXIT` で、ECRログイン・pull・docker実行のどこで失敗しても
-  必ずインスタンスを終了させる（孤児防止、課金停止）。
-- コンテナが一度も起動できないまま(ECRログイン/pull失敗等)shutdownすると、ワーカー
-  内部(`entrypoint.py`)のtaskToken通知が一切実行されずStep Functionsが60分タイムアウト
-  するまでジョブが「起動中」のまま停滞する事故が過去に発生したため、コンテナ起動前
-  段階の失敗はUserData自身が`aws stepfunctions send-task-failure`で即座に通知する。
+- `systemctl disable --now ecs`（ECS最適化AMIをプレーンなdockerホストとして使う）
+- `trap 'shutdown -h now' EXIT`（どこで失敗しても必ずインスタンスを終了させる）
+- ECRログイン → pull → `docker run`（`--log-opt awslogs-stream=${jobId}`）
+- コンテナ起動前段階で失敗したら`aws stepfunctions send-task-failure`で即時通知
 
-## マジックリンク送信・レート制限（`requestMagicLink.ts`, `rateLimit.ts`）
+> **この3点はいずれも事故を経て入れた対策で、消すと再発する**。理由は
+> [`docs/decisions/0019`](../../docs/decisions/0019-userdata-ecs-agent-off-and-bootstrap-failure-notification.md)。
+
+## 8. マジックリンク送信・レート制限（`requestMagicLink.ts`, `rateLimit.ts`）
 
 - 同一メール（`+`エイリアス正規化後、`normalizeEmailForRateLimit()`）は24時間5件まで
   （`RATE_LIMIT_MAX_REQUESTS_PER_DAY`）。判定と記録を`EmailRateLimitTable`への条件付き
@@ -291,7 +219,7 @@ UserDataスクリプトの要点:
 > [`docs/decisions/0007`](../../docs/decisions/0007-no-ip-rate-limit-no-recaptcha.md) を読むこと
 > —— IP 単位のレート制限・reCAPTCHA は実装漏れではなく、意図的に見送っている。
 
-## キルスイッチ・月間コストガード（`settings.ts`, `costGuard.ts`, Issue #14）
+## 9. キルスイッチ・月間コストガード（`settings.ts`, `costGuard.ts`, Issue #14）
 
 `requestMagicLink.ts`は上記のメールレート制限より前に、以下2つのグローバルな
 受付制御を順に行う。どちらも`SettingsTable`（PK固定値1件のシングルトン設定、
@@ -302,16 +230,14 @@ UserDataスクリプトの要点:
   緊急停止する用途を想定している。`getSettings()`はキャッシュせず毎回GetItem
   するため（1件のみの軽量な読み取り）、切替は次のリクエストから反映される。
 - **月間コストガード**（`monthlyCostLimitUsd`、既定`DEFAULT_MONTHLY_COST_LIMIT_USD`
-  ＝50 USD）: 月間の録画**回数**ではなく、既存の推定コスト機能
+  ＝50 USD）: 月間の録画**回数**ではなく、推定コスト機能
   （`@sattori/shared`の`estimateJobCost()`、Issue #60）による**当月の推定コスト合計**
-  が閾値に達したら新規受付を止める。回数ではなく金額で判定するのは、自宅サーバーを
-  追加録画ワーカーとして導入する構想（Issue #49）が実現すると一部ジョブのEC2コストが
-  大幅に下がり、ジョブ単価が一様でなくなる見込みのため。当月コストの算出
+  が閾値に達したら新規受付を止める。当月コストの算出
   （`adminCosts.ts`の`estimateCurrentMonthCostUsd()`）は`JobsTable`の全件Scanを要する
   ため、ユーザー向け経路専用の`costGuard.ts`が5分（`COST_GUARD_CACHE_TTL_MS`）
-  Lambda実行コンテキストにキャッシュする（`adminAuth.ts`のSSMトークンキャッシュと
-  同じ考え方。閾値到達直後の数分は数件超過して受け付ける可能性があるが、この
-  推定値自体が請求額そのものではないため許容している）。
+  Lambda実行コンテキストにキャッシュする（＝閾値到達直後の数分は数件超過して受け付ける）。
+  金額で判定する理由とこの割り切りの根拠は
+  [`docs/decisions/0022`](../../docs/decisions/0022-cost-guard-by-estimated-amount-not-job-count.md)。
 - どちらも該当すれば`POST /magic-links`は503（`service_paused` /
   `monthly_cost_limit_reached`）を返す。エラーメッセージはそのままフロントエンドに
   表示される（`apps/web`はAPIの`ApiError.message`をそのままユーザーに見せる設計）。
@@ -319,7 +245,7 @@ UserDataスクリプトの要点:
   読み取り→マージ→上書きで行う。管理者は1人固定で更新頻度も低いため、
   `rateLimit.ts`のような原子的な条件付き更新は採用していない。
 
-## ダウンロードURLとContent-Disposition（`getJob.ts`）
+## 10. ダウンロードURLとContent-Disposition（`getJob.ts`）
 
 動画ダウンロードはブラウザ標準のダウンロード機構（進捗表示・タブを離れても継続・
 ディスクへの直接ストリーミング）に任せる設計。S3のGetObject APIは
@@ -332,168 +258,19 @@ UserDataスクリプトの要点:
 （含めないと720p/オリジナル解像度など異なるファイル名のリクエスト間でキャッシュが
 混線する。`infra/README.md`参照）。
 
-## 管理API（`/admin/*`、Issue #51）
+## 11. 管理API（`/admin/*`、Issue #51）
 
-運用調査用の管理画面（`apps/web/src/admin/`）向け。ユーザーは管理者1人固定のため、
-Cognito等ではなくSSM Parameter Store(SecureString)に置いた共有トークンを
-Lambda Authorizerで検証する方式にしている
+運用調査用の管理画面（`apps/web/src/admin/`）向けのAPI群。ジョブ一覧・詳細・
+ダウンロード導線・Step Functions実行の閲覧・ワーカーログ・緊急停止・再実行・
+コスト集計・設定更新を提供する。認証はSSM Parameter Storeに置いた共有トークンを
+Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId自体が秘密値）とは別系統
 （[`docs/decisions/0005`](../../docs/decisions/0005-admin-auth-ssm-shared-token.md)）。
-jobId自体を秘密値として使うユーザー向けの認可方式（`startJob.ts`、
-[`0004`](../../docs/decisions/0004-job-id-as-authorization-secret.md)）とは別系統。
+**利用者向けの本流フローとは完全に独立しているため、詳細は
+[`docs/admin-api.md`](docs/admin-api.md) に分けてある**（一覧のページング・停止/再実行の
+順序・ログ取得のフォールバックなど、触るなら必読の前提がそこにある）。フロント側は
+[`apps/web/docs/admin-ui.md`](../web/docs/admin-ui.md)。
 
-- **一覧取得**: `JobsTable`はPK`jobId`のみでGSIが無かったため、`StatusCreatedAtIndex`
-  （PK=`status`, SK=`createdAt`, Projection=ALL）を追加した
-  （`infra/lib/sattori-stack.ts`）。`status`/`createdAt`は`jobs.ts`の`putJob()`が必ず
-  設定し、以降の更新経路（`updateJobStatus`等）もSETのみで消えない既存属性のため、
-  GSI追加だけで既存レコードが自動的にインデックスへ載る（バックフィル不要）。
-  **`JobRecord`を新規作成する経路を今後追加する場合、`status`/`createdAt`はGSIの
-  キー属性なので必ず設定すること**（欠けると無言でインデックスから漏れる）。
-  一覧（`adminJobs.ts`の`listJobs()`）はstatus未指定時、GSIにソートキーが無い
-  （PKがstatus固定）ため`JOB_STATUSES`ぶん並列にQueryしてcreatedAt降順でk-way
-  マージする。status遷移中のジョブが複数ストリームに現れうるためjobIdでdedupeする。
-  status遷移に起因するページを跨いだ重複・欠落は管理画面の性質上許容している。
-  **カーソルはページ境界の1点ではなく、status毎の再開位置**（そのstatusのGSIクエリの
-  `ExclusiveStartKey`）を持つ。単一の(createdAt, jobId)を全ストリーム共通の境界にして
-  `createdAt <= cursor`で絞り込む方式だと、カーソル自身が`Limit`の枠を消費して該当
-  ストリームが上位limit件を返せなくなり、ページ末尾が別ストリームの遥かに古いアイテムで
-  埋まる→カーソルが一気に過去へ飛んで**間のジョブが丸ごと欠落する**（`limit=1`では
-  2ページ目以降が常に空になる）。クエリの`Limit`は`limit + 1`にしている: DynamoDBは
-  `Limit`到達で打ち切ると後続が無くても`LastEvaluatedKey`を返すため、1件多く要求して
-  初めて「続きがある」を正確に判定でき、空ページへ進む「次へ」が出なくなる。
-  カーソルはクライアントに解釈させないよう`base64url(JSON)`の不透明文字列にする。
-- **Lambda Authorizer**（`admin/authorizer.ts`、ロジックは`adminAuth.ts`）:
-  REQUEST型・simple response（`{isAuthorized}`）。`identitySource`は
-  `$request.header.Authorization`のみ（ヘッダー自体が無ければAPI Gatewayが
-  Lambdaを起動せず401を返す）。トークン比較はSHA-256を経由した固定長の
-  `timingSafeEqual`（長さ不一致による`RangeError`回避と定数時間比較を両立）。
-  SSMから取得したトークンは実行コンテキストに5分TTLでキャッシュし、authorizer自体の
-  `resultsCacheTtl`（5分）と合わせて、トークンローテーション後の失効反映は
-  **最大10分遅れる**（許容トレードオフ。ローテーション手順は`deploy-sattori` skill）。
-- **ダウンロード**（`downloads.ts`）: 動画URLの組み立て（`buildVideoDownloadUrl`）は
-  `getJob.ts`から移設して共有。ユーザー向け`GET /jobs/{jobId}`と異なり、statusが
-  `done`でなくても`outputPath`/`outputPath720p`があればURLを返す（`converting`中の
-  生動画チェックポイントを取得したい運用ニーズのため）。**低速録画（Issue #68）の
-  ジョブでは、`converting`中の`outputPath`が指すのは半分の速度の生データである**
-  （等倍へ戻すのは変換工程。`worker/README.md` §5）。ユーザー向けの
-  `GET /jobs/{jobId}`は`done`のときしかURLを返さないのでこれが漏れることはないが、
-  管理画面で変換中の動画を開いたときは意図した挙動として扱うこと。`.rpy`は`UploadBucket`が
-  CloudFront配信されていない`BLOCK_ALL`バケットのため、動画とは別にS3署名付き
-  GET URL（`createPresignedReplayDownloadUrl`、TTL 900秒）を発行する。
-  配信用変換のffmpeg生ログ（`ffmpegLogUrl`、Issue #58フォローアップ）も同様にS3署名付き
-  URL（`createPresignedFfmpegLogDownloadUrl`）で配る。CDN配信しないのは一般ユーザー
-  向け配信物ではないため。S3キー（`worker-logs/{jobId}/ffmpeg-upscale.log`）は
-  `executionArn`と同じ考え方でjobIdから決定的に導出し（`buildFfmpegUpscaleLogKey`）
-  DynamoDBには保存しない。`OutputBucket`に短命（3日）なライフサイクルルールを
-  別途設定している（`infra/lib/sattori-stack.ts`）。
-- **Step Functions実行**（`admin/getExecution.ts`、`stepFunctions.ts`）:
-  `executionArn`はDBに保存していないが、`startJob.ts`が`StartExecutionCommand`の
-  実行名にjobIdをそのまま使っているため`buildExecutionArn()`で決定的に導出できる。
-  実行がまだ存在しない（pendingのまま起動していない）・Standard実行の履歴保持期間
-  （90日）を過ぎている場合は404にせず`execution: null`を返す（ジョブ自体は存在し、
-  実行だけが無い状態を素直に表現するため）。同じ理由で`DescribeExecution`と
-  `GetExecutionHistory`は`allSettled`で切り離し、履歴取得だけが失敗（スロットリング等）
-  した場合は500にせず`events: []`へ縮退させる（調査で最も有用な実行のstatus/error/cause
-  は取れているのに画面が真っ白になるのを避けるため）。ジョブ詳細（`admin/getJobDetail.ts`）とは
-  意図的に別エンドポイントにしている: SFNが不調でも詳細画面はDynamoDB由来の情報だけで
-  描画できるべきで、詳細用Lambdaに`states:*`権限を持たせずに済む（最小権限）。
-- **ワーカーログ**（`admin/getLogs.ts`、Issue #58）: ロググループは固定
-  （`/sattori/worker`、環境変数`WORKER_LOG_GROUP`）、ログストリーム名は`jobId`
-  （`ec2.ts`の`buildUserData()`が`docker run --log-opt awslogs-stream=${job.jobId}`
-  で対応させる）ため、`GetLogEvents`をそのまま呼べる。新しい方から`limit`件取得し、
-  `?cursor=`にレスポンスの`nextBackwardToken`を渡すことで古いイベントへページングする
-  （`nextBackwardToken`が要求時の`cursor`と一致 or 0件なら「これ以上古いイベントは無い」
-  としてnullへ縮退させる）。Step Functionsのリトライ（最大10回）を跨いでも同じ
-  ストリームに追記されるため、複数回の試行ログが混在しうる点はフロント側で注記する。
-  ログストリームが存在しない（`ResourceNotFoundException`）場合、UserData(bootstrap)
-  段階の失敗（ECRログイン/pull失敗等、コンテナが一度も起動できなかった）を疑い、
-  クエリパラメータで渡された`instanceId`を使って`GetConsoleOutput`にフォールバックする。
-  `instanceId`はDynamoDBの情報だが、`getExecution.ts`と同じ最小権限の考え方でこの
-  LambdaにはjobsTable読み取り権限を持たせず、既に`GET /admin/jobs/{jobId}`を叩いている
-  フロントからクエリパラメータで受け取る。インスタンスが終了済みだと出力が取得できず
-  `consoleOutput: null`に縮退することがある（500にはしない）。
-  当初、配信用変換の`worker/convert.py`（当時は`upscale.py`）がffmpegの`-progress`生出力（frame=/fps=/
-  bitrate=等）を全行このログストリームへ流していたが、1ジョブで数千行に達し
-  実機の管理画面で他のログを埋もれさせる問題が判明した。クライアント側フィルタ
-  （後述）だけでは`GetLogEvents`のページ自体がノイズで埋まる問題は解決しないため、
-  最終的にworker側でCloudWatchへ送らずファイル退避＋S3アップロードに変更した
-  （`downloads.ts`の`ffmpegLogUrl`、`worker/README.md`参照）。以前のジョブ・
-  ワーカーイメージ再デプロイ前のログには依然ノイズが残るため、フロント
-  （`LogsPanel.tsx`）側の「`[ffmpeg] `を含む行を既定で非表示にする」フィルタは
-  後方互換のため残している。
-- **`JobRecord.status`は「実行が終わったか」の代理条件にならない**（停止・再実行の
-  両方に効く前提）。ワーカーは内部エラー時に`SendTaskFailure`より先に
-  `status: "failed"`を書き（`worker/entrypoint.py`）、ステートマシンはその後
-  `WaitBeforeCheck`（3分）を挟んで`HandleFailure`へ進み、`attempt < MAX_ATTEMPTS`
-  なら`Launch`をやり直す（`handleFailure.ts`は`status === "done"`のときしか
-  中断しない）。つまり**DynamoDB上は終端状態なのに実行は生きていて、新しいEC2を
-  起動し続ける**窓が毎回ある。停止・再実行の可否は`stepFunctions.ts`の
-  `getExecutionLiveness()`（`DescribeExecution`）で判定する。
-- **緊急停止**（`admin/stopJob.ts`、Issue #59）: 「ジョブが終端状態」**かつ**
-  「実行も生きていない」場合のみ409。逆に言えば`failed`でも実行が`RUNNING`なら
-  停止でき（上記のリトライ暴走を止めるのが本機能の主目的）、非終端のまま固まった
-  ジョブも停止（＝`failed`確定）できる。`DescribeExecution`自体が失敗して判定不能な
-  場合は「止められる余地がある」側に倒して停止処理へ進む。
-  **(1) `StopExecution` → (2) `TerminateInstances` → (3)
-  `updateJobStatus(failed)` の順序が重要**で、先にインスタンスをterminateすると
-  taskToken応答が来なくなった実行がタスクタイムアウト（150分）後に`HandleFailure`
-  経由でリトライへ回り、**止めたはずのジョブが別インスタンスで再起動してしまう**。
-  各段階の失敗はそこで打ち切って502を返し、ジョブ状態は書き換えない（実際には
-  止まっていないのに`failed`と表示されるのが最も危険なため）。`StopExecution`は
-  停止済み実行に対しても成功する冪等なAPIなので、管理者はそのまま再実行できる。
-  実行がまだ存在しない（pendingのまま起動していない）場合は`ExecutionDoesNotExist`
-  を握りつぶして`executionStopped: false`で先へ進む。
-  terminate対象は`JobRecord.instanceId`だけでなく**タグ`sattori:jobId`からも探す**
-  （`ec2.ts`の`findJobInstanceIds()`）。instanceIdはLaunch Lambdaが`CreateFleet`の
-  **後**に書き込むため、起動直後のジョブではDynamoDBを読んだ時点で未記録のことがあり
-  （Step Functionsは実行中のLambda呼び出しをキャンセルしない）、取り逃すと孤児
-  インスタンスが最大150分課金され続ける。最後の`failed`確定は`status`が`done`でない
-  ことを条件にした原子的更新にしている（停止処理中にワーカーが完走し、完了メールまで
-  飛んだのに画面は`failed`という食い違いを避けるため。この場合レスポンスの`status`は
-  `done`になる）。
-- **再実行**（`admin/retryJob.ts`、Issue #59）: **同一jobIdでは再実行しない**。
-  `startPendingJob()`は「statusがpendingであること」を条件にした原子的更新が前提で、
-  Step Functionsの実行名もjobIdそのものを使っている（同名の`StartExecution`は
-  `ExecutionAlreadyExists`になりうる）ため、既存の冪等性前提を壊さないよう
-  **新しいjobIdでジョブレコードを複製して起動する**。複製の内訳は`buildRetryJob()`
-  （入力側＝`replayKey`/`game`/`options`/`email`/`language`等を引き継ぎ、結果側＝
-  出力パス・進捗・インスタンス情報・エラーを初期化。`status`はマジックリンク確認済み
-  のため`pending`を経由せず`queued`から開始）。
-  **二重録画（＝EC2の二重課金）を防ぐガードは3段**: (1) 元ジョブのstatusが終端で
-  あること、(2) 元ジョブのStep Functions実行が動いていないこと（statusが`failed`でも
-  リトライループの最中でありうるため。判定不能な場合は安全側＝502で中止）、
-  (3) まだ再実行していないこと（`claimJobRetryLink()`による原子的な予約。二重クリック
-  やリクエスト再送でクローンが2本走ると、片方は元ジョブから辿れない追跡不能な
-  ジョブになる）。EC2を起動する前に元の`.rpy`が`UploadBucket`に残っているかを
-  `objectExistsStrict()`で確認する（404以外の失敗を「削除済み」と誤報して運用者を
-  誤った原因調査へ誘導しないよう、一時障害は502として区別する）。元ジョブには
-  `retriedToJobId`、新ジョブには`retriedFromJobId`を記録して相互に辿れるようにする
-  （`retriedToJobId`は上記(3)の排他を兼ねるため**ジョブレコードを作る前**に予約し、
-  `StartExecution`に失敗したら`releaseJobRetryLink()`で取り消す。取り消さないと
-  以後の再実行が永久に409で弾かれてしまう）。
-  完了メールは新ジョブが`done`に遷移した時点で引き継いだ`email`宛に届き、本文の
-  リンクも新jobIdのジョブページになる（ユーザーは古いマジックリンクのままでも
-  新しいメールから辿れる）。
-- **コスト集計**（`admin/getCosts.ts`、`adminCosts.ts`、Issue #60）: ジョブ単位の
-  コスト推定（`@sattori/shared`の`estimateJobCost()`。単価・モデルの詳細は
-  `packages/shared/README.md`「コスト推定」）を日次/週次/月次で積み上げて返す。
-  **`JobsTable`の素朴な全件Scan + アプリ側集計**で、集計結果テーブルもAthena等の
-  分析基盤も持たない。想定規模は月1000ジョブでTTLも無いため1年運用しても1万件強に
-  しかならず、「増えたら考える」ほうが総コストが低いという判断（Issue #60の設計メモ）。
-  `StatusCreatedAtIndex`を使わないのは、GSIのPKが`status`固定で全ステータス横断の
-  期間クエリにならず、7本のQueryを束ねても結局全件読むことになるため。件数に比例して
-  実行時間が伸びるので、このLambdaだけタイムアウト60秒・メモリ512MBに広げてある。
-  バケットの基準時刻は`launchedAt ?? createdAt`（＝コストが発生した時刻。`createdAt`は
-  マジックリンク送信要求の時点なので、日付をまたいで起動されたジョブでは1日ずれる）。
-  バケットのキーは**すべてUTC**で作る（AWSの請求自体がUTC日付区切りなので、
-  ローカルタイムゾーンを持ち込まないほうが請求書と突き合わせやすい）。
-  CloudFrontの配信料だけは`granularity`によらず常に月次で返す——無料枠1TB/月が
-  アカウント単位・月単位でしか判定できず、日次・週次バケットへは原理的に配分できない。
-  レスポンスには`quality`（フォールバックを使ったジョブ数）を含める。コスト算出用
-  フィールドはIssue #60で追加したもので**それ以前のジョブは値を持たない**ため、
-  「表示中の数字にどれだけ仮定が混ざっているか」を画面に出せないと、運用者が推定値を
-  実績として読んでしまう。
-
-## 環境変数（`config.ts`）
+## 12. 環境変数（`config.ts`）
 
 すべて `infra/lib/sattori-stack.ts` の `commonEnv`（+ `startJob.ts`/
 `admin/getExecution.ts`/`admin/stopJob.ts`/`admin/retryJob.ts`/
@@ -510,7 +287,7 @@ jobId自体を秘密値として使うユーザー向けの認可方式（`start
 `sweepOrphanInstances.ts`だけが個別の環境変数として受け取る（いずれもステートマシンから
 呼ばれる側ではないため循環しない）。
 
-## テスト
+## 13. テスト
 
 各ハンドラに対応する `*.test.ts` が同ディレクトリにある（vitest、AWS SDKクライアントは
 モック）。`pnpm --filter @sattori/api test` で実行。

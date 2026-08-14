@@ -159,7 +159,8 @@ Issue #49）。これは生きたStep Functionsの`TASK_TOKEN`——実行を任
 `JobRecord.retriedFromJobId`/`.retriedToJobId`で相互に辿れる。
 
 API側の実装詳細（GSI設計・authorizer・ダウンロードURLの発行方法等）は
-`apps/api/README.md`「管理API」、フロント側は`apps/web/README.md`「管理画面」を参照。
+[`apps/api/docs/admin-api.md`](../../apps/api/docs/admin-api.md)、フロント側は
+[`apps/web/docs/admin-ui.md`](../../apps/web/docs/admin-ui.md)を参照。
 
 ## コスト推定（`src/cost.ts`、Issue #60）
 
@@ -220,8 +221,9 @@ API側の実装詳細（GSI設計・authorizer・ダウンロードURLの発行�
   （`currentMonthCostUsd >= monthlyCostLimitUsd`）を含む。
 
 API側の実装詳細（キャッシュ戦略・反映タイミングの非対称性等）は
-`apps/api/README.md`「キルスイッチ・月間コストガード」、フロント側は
-`apps/web/README.md`「管理画面」の設定画面の項を参照。
+`apps/api/README.md`「キルスイッチ・月間コストガード」と
+[`docs/decisions/0022`](../../docs/decisions/0022-cost-guard-by-estimated-amount-not-job-count.md)、
+フロント側は[`apps/web/docs/admin-ui.md`](../../apps/web/docs/admin-ui.md) §9を参照。
 
 ## ダウンロードファイル名・Content-Disposition（`src/download.ts`）
 

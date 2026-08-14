@@ -18,9 +18,9 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
 
 ## 2. アーキテクチャ概観
 
-**リージョンは `eu-south-2`（スペイン）**。**SESだけ`us-east-1`に残している**（eu-south-2に
-SESが無いため。`SES_REGION`、`apps/api/src/ses.ts`）。CloudFront用ACM証明書もus-east-1必須で、
-SESと合わせ`SattoriEdgeStack`にまとめてある（`infra/README.md`）。移設の経緯と受け入れた
+**リージョンは `eu-south-2`（スペイン）**。**SESとCloudFront用ACM証明書だけ`us-east-1`に
+残している**（eu-south-2にSESが無いため。`SES_REGION`、`apps/api/src/ses.ts`。両者は
+`SattoriEdgeStack`にまとめてある、`infra/README.md`）。移設の経緯と受け入れた
 トレードオフは[`0001`](docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)。
 
 ```
@@ -47,8 +47,8 @@ SESと合わせ`SattoriEdgeStack`にまとめてある（`infra/README.md`）。
 ```
 
 これとは別に、**EventBridgeの定期実行（10分間隔）で孤児EC2を掃除する Lambda**（Issue #23）が走る。
-ジョブレコードではなく**AWS上に実在するインスタンス（タグ`sattori:jobId`）を起点に走査する**ため、
-`Launch`が`instanceId`を書く前に死んだケースも拾える。管理画面（`/admin`、Issue #51）も同じ資源を覗く。
+ジョブレコードではなく**AWS上に実在するインスタンス（タグ`sattori:jobId`）を起点に走査する**
+（[`0017`](docs/decisions/0017-orphan-sweep-from-aws-instances.md)）。管理画面（`/admin`、Issue #51）も同じ資源を覗く。
 
 ## 3. 常に踏まえておくべき設計判断
 
@@ -68,7 +68,8 @@ SESと合わせ`SattoriEdgeStack`にまとめてある（`infra/README.md`）。
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。永年無料枠で egress を実質ゼロにできる。
 - **録画ワーカーは EC2 Fleet と自宅サーバーの2種類あり、どちらも同じ ECR イメージ・同じ taskToken
   契約で動く**（Issue #49）。自宅マシンは NAT 配下で到達できないため割り当ては**Pull 型**（AWS が
-  オファーを書き、常駐デーモンが条件付き更新で原子的に claim する）。**ワーカーの中に「自宅かEC2か」
+  オファーを書き、デーモンが条件付き更新で原子的に claim する。
+  [`0018`](docs/decisions/0018-home-worker-pull-assignment.md)）。**ワーカーの中に「自宅かEC2か」
   の分岐を作らないこと** —— 環境差分は起動側が渡す環境変数（`apps/api/src/workerEnv.ts`）で表す。
 - **低速録画（1/2倍速で録画し後処理で等倍へ戻す、Issue #68）は自宅ワーカー限定で、かつ対応タイトル
   （`SLOW_MOTION_SUPPORTED_GAME_IDS`、現状 th20 のみ）でしか選べない**。**この制約もワーカー側の
