@@ -11,7 +11,7 @@ const WEB_DOMAIN_NAME = "sattori.hakatashi.com";
 // 存在しない(2026-08-03時点、SSMのglobal-infrastructureで確認)ため、この2つだけを
 // us-east-1固定の`SattoriEdgeStack`に置く(詳細は同スタックのコメント参照)。
 const EDGE_REGION = "us-east-1";
-// 本体。Spot単価が実測18リージョン中最安(docs/aws-region-cost-analysis.md)で、
+// 本体。Spot単価が実測18リージョン中最安(docs/research/aws-region-cost-analysis.md)で、
 // 録画品質もtouhou-recorder reports/42・43で実機検証済み。CDK CLIはAWSプロファイルの
 // 既定リージョンをCDK_DEFAULT_REGIONへ自動注入するため、`?? "eu-south-2"`のような
 // フォールバックはプロファイルの既定リージョンが別にある場合に機能せず、別リージョンへ

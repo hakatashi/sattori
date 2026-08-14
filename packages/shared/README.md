@@ -104,7 +104,8 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 
 **低速録画は自宅ワーカー限定**（EC2では録画時間＝Spot料金が倍になるため）。この制約は
 ワーカー側の分岐ではなく、起動側が`FPS_LIMIT_TARGET_HZ`を渡すかどうかで表現する
-（`apps/api/src/workerEnv.ts`、AGENTS.md §3）。
+（`apps/api/src/workerEnv.ts`、
+[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
 
 契約の詳細と運用は`apps/api/README.md`「自宅ワーカーへのジョブ割り当て」・
 `home-worker/README.md`を参照。
@@ -169,7 +170,7 @@ API側の実装詳細（GSI設計・authorizer・ダウンロードURLの発行�
 - `estimateJobCost(job, now)`: 1ジョブぶんの内訳（`ec2Spot` / `ebs` / `publicIpv4` /
   `s3Storage` / `misc`）と合計を返す純関数。`now`を引数に取るのは、実行中ジョブの
   推定値をテストで固定できるようにするため。
-- 単価は**eu-south-2・2026-08-03時点**（`docs/aws-region-cost-analysis.md`。`.4xlarge`帯
+- 単価は**eu-south-2・2026-08-03時点**（`docs/research/aws-region-cost-analysis.md`。`.4xlarge`帯
   のみ2026-08-12時点）。リージョンを移す場合はここの定数も入れ替える。
 - **Spot単価のフォールバックはサイズ帯（`.xlarge`/`.2xlarge`/`.4xlarge`）ごとに持つ**。
   `apps/api/src/ec2.ts`の候補インスタンスタイプに新しい帯を足したら、

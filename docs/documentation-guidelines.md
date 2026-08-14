@@ -78,13 +78,18 @@ CLAUDE.md                       # @AGENTS.md の参照のみ
 README.md                       # サービスの紹介（外部向け）
 docs/
   documentation-guidelines.md   # 本ファイル
+  known-limitations.md          # 既知の制約・未実装事項の索引
   decisions/                    # ② 軽量 ADR。1決定1ファイル・連番・原則不変
     README.md                   #    一覧表（番号 / 日付 / 対象 / 状態）
+    TEMPLATE.md                 #    コピーして書き始める雛形
     NNNN-kebab-case-title.md
   reports/                      # ④ 検証記録。1検証1ファイル・不変
+    README.md / TEMPLATE.md
     YYYY-MM-DD-kebab-case-title.md
   runbooks/                     # ③ 手順書
   research/                     # ④ のうち長大な調査レポート
+    README.md
+    aws-region-cost-analysis.md
 <package>/
   README.md                     # ① そのパッケージの参照仕様
   docs/                         # ② のうち、パッケージ内で軸を切った方が自然なもの
@@ -119,7 +124,8 @@ docs/
 ### 5.2 決定記録（`docs/decisions/`）
 
 ファイル名は `NNNN-kebab-case-title.md`（4桁の連番）。番号は既存の最大値+1を採る。
-日付順ではなく作成順なので、番号が飛んでいても詰めない。
+日付順ではなく作成順なので、番号が飛んでいても詰めない。雛形は
+[`decisions/TEMPLATE.md`](decisions/TEMPLATE.md)（下記と同内容）。
 
 ```markdown
 # NNNN. <決定の内容を一文で>
@@ -164,7 +170,8 @@ docs/
 
 ### 5.3 検証記録（`docs/reports/`）
 
-ファイル名は `YYYY-MM-DD-kebab-case-title.md`（検証を実施した日付）。
+ファイル名は `YYYY-MM-DD-kebab-case-title.md`（検証を実施した日付）。雛形は
+[`reports/TEMPLATE.md`](reports/TEMPLATE.md)（下記と同内容）。
 
 ```markdown
 # <検証の対象を一文で>

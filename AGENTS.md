@@ -18,10 +18,10 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
 
 ## 2. アーキテクチャ概観
 
-**リージョンは `eu-south-2`（スペイン）**（2026-08移設、Spot単価が実測最安のため。
-`docs/aws-region-cost-analysis.md`）。**SESだけ`us-east-1`に残している**（eu-south-2にSESが
-無いため。`SES_REGION`、`apps/api/src/ses.ts`）。CloudFront用ACM証明書もus-east-1必須で、
-SESと合わせ`SattoriEdgeStack`にまとめてある（`infra/README.md`）。
+**リージョンは `eu-south-2`（スペイン）**。**SESだけ`us-east-1`に残している**（eu-south-2に
+SESが無いため。`SES_REGION`、`apps/api/src/ses.ts`）。CloudFront用ACM証明書もus-east-1必須で、
+SESと合わせ`SattoriEdgeStack`にまとめてある（`infra/README.md`）。移設の経緯と受け入れた
+トレードオフは[`0001`](docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)。
 
 ```
 [ブラウザ: React/Vite SPA]
@@ -46,24 +46,25 @@ SESと合わせ`SattoriEdgeStack`にまとめてある（`infra/README.md`）。
 [Lambda: sendCompletionEmail] → SES(us-east-1) で完了メール送信
 ```
 
-これとは別に、**EventBridgeの定期実行（10分間隔）で孤児EC2を掃除する Lambda**（Issue #23）が
-走っている。ジョブレコードではなく**AWS上に実在するインスタンス（タグ`sattori:jobId`）を起点に
-走査する**ため、`Launch`が`instanceId`を書く前に死んだケースも拾える。運用調査用の管理画面
-（`/admin`、Issue #51）も同じリソース群を覗く（`apps/api/README.md`）。
+これとは別に、**EventBridgeの定期実行（10分間隔）で孤児EC2を掃除する Lambda**（Issue #23）が走る。
+ジョブレコードではなく**AWS上に実在するインスタンス（タグ`sattori:jobId`）を起点に走査する**ため、
+`Launch`が`instanceId`を書く前に死んだケースも拾える。管理画面（`/admin`、Issue #51）も同じ資源を覗く。
 
 ## 3. 常に踏まえておくべき設計判断
 
 どのパッケージで作業する場合も影響する、確定済みの全体方針。**知らずに作業すると誤った
-変更をしてしまうもの**だけを置く。根拠の詳細は括弧内の参照先にある。
+変更をしてしまうもの**だけを置く。**根拠と採らなかった選択肢は
+[`docs/decisions/`](docs/decisions/README.md) にある —— 変える前に必ず該当の1件を開くこと。**
 
 - **ウェブ基盤は AWS フルサーバーレスに統一**。録画基盤が AWS 固定で、他クラウドを混ぜると
   クロスクラウドの IAM 連携が増えるため。唯一の例外が SES（§2）。
 - **IaC は AWS CDK（TypeScript）だが、EC2 の起動だけは実行時に AWS SDK で行う**（ベースの
   Launch Template のみ CDK が作り、ジョブ毎の UserData は `CreateLaunchTemplateVersion` で
-  上書き）。PoC で `terraform-provider-aws` が Spot キャパシティ不足時に無限ハングしたため
-  （touhou-recorder `reports/16`）。**新しいインフラを足す際もこの分離を崩さないこと**。
+  上書き）。**新しいインフラを足す際もこの分離を崩さないこと**
+  （[`decisions/0002`](docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)）。
 - **録画ジョブは Step Functions（Standard）でオーケストレーションする**（1ジョブ=1実行、
-  `infra/README.md`）。**進捗はポーリング**（WebSocket/SSE は月1000回規模には過剰）。
+  `infra/README.md`）。**進捗はポーリング**
+  （[`decisions/0006`](docs/decisions/0006-progress-polling-not-websocket.md)）。
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。永年無料枠で egress を実質ゼロにできる。
 - **録画ワーカーは EC2 Fleet と自宅サーバーの2種類あり、どちらも同じ ECR イメージ・同じ taskToken
   契約で動く**（Issue #49）。自宅マシンは NAT 配下で到達できないため割り当ては**Pull 型**（AWS が
@@ -72,17 +73,18 @@ SESと合わせ`SattoriEdgeStack`にまとめてある（`infra/README.md`）。
 - **低速録画（1/2倍速で録画し後処理で等倍へ戻す、Issue #68）は自宅ワーカー限定で、かつ対応タイトル
   （`SLOW_MOTION_SUPPORTED_GAME_IDS`、現状 th20 のみ）でしか選べない**。**この制約もワーカー側の
   分岐にはしない** —— 起動側が `FPS_LIMIT_TARGET_HZ` を渡すかで決まり、claim されなければ EC2 での
-  等倍録画へ静かにフォールバックする（`packages/shared/src/slowMotion.ts`）。未対応タイトルで要求
-  すると2倍速の動画ができワーカーは検知できない（`docs/known-limitations.md` §1）。
-- **録画ワーカー（`worker/`）だけ Python**。PoC の numpy/PIL によるフレーム差分・Wine 制御が実証
-  済みのため。**この例外は録画パイプラインに限る** —— 自宅ワーカーの常駐デーモン（`home-worker/`）は
-  コントロールプレーンしか担わないので TypeScript で書いている。
-- **jobId 自体が認可の秘密値**（マジックリンクのトークンではなく jobId をそのまま使う）。メールを
-  確認しないと分からない値であることで bot/濫用対策とメール認証を兼ねている。**管理画面（`/admin`）
-  の認証は別系統**で、SSM の共有トークンを Lambda Authorizer が検証する（`infra/README.md`）。
+  等倍録画へ静かにフォールバックする（[`decisions/0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
+  未対応タイトルで要求すると2倍速の動画ができワーカーは検知できない（`docs/known-limitations.md` §1）。
+- **録画ワーカー（`worker/`）だけ Python**。**この例外は録画パイプラインに限る** —— 自宅ワーカーの
+  常駐デーモン（`home-worker/`）はコントロールプレーンしか担わないので TypeScript で書いている
+  （[`decisions/0003`](docs/decisions/0003-worker-python-home-worker-typescript.md)）。
+- **jobId 自体が認可の秘密値**（メールを確認しないと分からない値であることで bot/濫用対策とメール
+  認証を兼ねる。[`decisions/0004`](docs/decisions/0004-job-id-as-authorization-secret.md)）。
+  **管理画面（`/admin`）の認証は別系統**で、SSM の共有トークンを Lambda Authorizer が検証する
+  （[`decisions/0005`](docs/decisions/0005-admin-auth-ssm-shared-token.md)、`infra/README.md`）。
 - **インスタンスタイプ・録画パイプラインの変更は必ず実機検証を経ること**。「同スペック帯・同価格帯
   だから安全」という推測は繰り返し裏切られている。妥当性は touhou-recorder のレポートか、この
-  リポジトリでの実機/実データスモークテストの記録で必ず裏付けること（`apps/api/README.md`）。
+  リポジトリでの実機検証の記録（[`docs/reports/`](docs/reports/README.md)）で必ず裏付けること。
 - **重複フレーム率の自動チェックは録画開始15〜45秒の30秒スポットしか見ていない**
   （`recording_common.measure_duplicate_rate`、Issue #93）。タイトル間・環境間で比較する際は
   「全編の代表値ではない」ことに注意（`docs/known-limitations.md` §3）。
@@ -115,7 +117,7 @@ pnpm --filter @sattori/web dev                 # フロント開発サーバ(:51
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合成
 ```
 > 注: CDK の NodejsFunction が**リポジトリルートから `esbuild` を exec する**ため、ルートの
-> devDependencies に `esbuild` を置いてある（この環境は asdf の pnpm を使う）。
+> devDependencies に `esbuild` を置いてある。
 
 ## 5. ジョブ状態機械（横断的に使われる）
 
@@ -130,8 +132,8 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 書き換えるファイルには追記せず、追記型の情報は1件1ファイルで増やす:
 
 - **現在の仕様が変わった** → 該当パッケージの `README.md` を**書き換える**（追記しない）
-- **なぜそうしたかの根拠・踏んだ地雷** → `docs/decisions/` に**新規ファイル**（軽量ADR）
-- **実機検証・実測をした** → `docs/reports/` に**新規ファイル**（`YYYY-MM-DD-title.md`、不変）
+- **なぜそうしたかの根拠・踏んだ地雷** → [`docs/decisions/`](docs/decisions/README.md)（軽量ADR。一覧に1行足す）
+- **実機検証・実測をした** → [`docs/reports/`](docs/reports/README.md)（不変。長大な調査は `docs/research/`）
 - **既知の制約・未実装事項** → [`docs/known-limitations.md`](docs/known-limitations.md)
 - **手順が増えた** → `docs/runbooks/` か Skill
 

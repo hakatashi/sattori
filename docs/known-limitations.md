@@ -33,7 +33,8 @@ Sattori の「まだできていないこと」「できているが条件付き
 速度を落とす仕組みはタイトルの MOD 側（Present フック）にあるため、フックを組み込んで実機
 検証を済ませたタイトル以外で要求すると、**ゲームは等倍で動くのに後処理だけが等倍化を行い
 2倍速の動画になる**。ワーカーはこの食い違いを検知できないので、UI（グレーアウト）と
-API（`POST /magic-links` での握り潰し）の両方で入口を塞いでいる（`AGENTS.md` §3）。
+API（`POST /magic-links` での握り潰し）の両方で入口を塞いでいる。**この判定をワーカー側へ
+移さないこと**（[`decisions/0010`](decisions/0010-slow-motion-no-worker-side-branching.md)）。
 
 ## 2. th20 固有の制約
 
@@ -44,8 +45,9 @@ th20（東方錦上京）はタイトル固有の制約が多い。詳細は
 - 1280x960 ウィンドウのため Xvfb の画面サイズが他タイトルと別。
 - AWS 実機でのみフレームペーシングが崩れてリプレイが早回しになる（MOD の Present フックで是正）。
 - **デシンクが頻発する**。有志製パッチ thprac をゲーム起動直後にアタッチすることで
-  大半が解消した（touhou-recorder reports/50、Issue #105。主因が ZUN 側のバグで挙動が
-  非決定的になることにあり、thprac がそれを常時修正している）。
+  大半が解消した（touhou-recorder reports/50、Issue #105、
+  [`decisions/0009`](decisions/0009-thprac-post-attach.md)）。**AWS 実機（EC2 Fleet）で
+  アタッチが成立することはまだ確認できていない**（Issue #110）。
 - EC2 候補インスタンスタイプは実機検証済みの `c7i.4xlarge` 1本のみで、他タイトルより
   Spot プールの分散が後退している（Issue #98）。
 
@@ -54,8 +56,9 @@ th20（東方錦上京）はタイトル固有の制約が多い。詳細は
 ワーカーがやっているのは**「再生側」の対処**であり、記録時に既に壊れたリプレイは
 原理的に直せない（主因の ANM 再利用バグは「プレイ中」に発火するため）。
 ページAの注意書きはこの理由から継続しているので、**ワーカー側が thprac 対応済みで
-あることを根拠に消さないこと**。詳細と根拠は `apps/web/README.md`
-「ワーカーがthpracを適用した後もこの注意書きを残す理由」。
+あることを根拠に消さないこと**。詳細と根拠は
+[`decisions/0009`](decisions/0009-thprac-post-attach.md)「補足: 録画側の thprac では
+直せないずれがある」と `apps/web/README.md`。
 
 ## 3. 録画品質の検証にまつわる制約
 
@@ -80,7 +83,8 @@ th20 だけは MOD が1秒間隔でゲーム内スコアをログへ出してお
 ## 4. 自宅サーバーワーカーの制約
 
 自宅サーバーワーカー（Issue #49）は実装済み。開発マシンでフル尺の実機録画を1並列・
-2並列とも完走することは確認済み（詳細は `home-worker/README.md`「実機検証の記録」）。
+2並列とも完走することは確認済み（詳細は
+[`reports/2026-08-09-home-worker-parallel-recording.md`](reports/2026-08-09-home-worker-parallel-recording.md)）。
 
 ### 未検証の経路
 
@@ -97,8 +101,8 @@ NAT 配下のデーモンには通知が届かないため、取り消しの捕�
 
 ### 録画品質は並列度そのものよりCPU温度とホストの他負荷に依存する
 
-開発マシン（Ryzen 7 5700X、8コア16スレッド）での実測（`home-worker/README.md`
-「実機検証の記録」）:
+開発マシン（Ryzen 7 5700X、8コア16スレッド）での実測
+（[`reports/2026-08-09-home-worker-parallel-recording.md`](reports/2026-08-09-home-worker-parallel-recording.md)）:
 
 - 録画中の CPU 温度は1並列で Tctl 中央 80.8℃、2並列で**中央 91.0℃・最大 93.8℃**
   （Tccd 最大 99.2℃）。5700X の最大動作温度は 90℃ なので、**2並列の録画中は常時
@@ -120,8 +124,8 @@ NAT 配下のデーモンには通知が届かないため、取り消しの捕�
 推測しているが、実運用規模拡大時は要注意。
 
 eu-south-2 移設により EC2 Fleet の Spot キャパシティプール数が us-east-1 運用時より
-後退している（詳細は `AGENTS.md` §3・`apps/api/README.md`）。起動失敗率が有意に
-悪化していないか移設後しばらくは監視すること。
+後退している（詳細は [`decisions/0001`](decisions/0001-region-eu-south-2-ses-us-east-1.md)・
+`apps/api/README.md`）。起動失敗率が有意に悪化していないか移設後しばらくは監視すること。
 
 ## 6. 濫用対策・管理画面の現状
 
@@ -130,7 +134,8 @@ Issue #9）に加え、月間コストガード・キルスイッチ（`apps/api
 `costGuard.ts`、`/admin/settings`）を実装済み。
 
 IP 単位のレート制限・reCAPTCHA 等の追加 bot ゲートは、**メールアドレスによる認証が既に
-強力な濫用抑止として機能しているため見送っている**（過剰と判断）。
+強力な濫用抑止として機能しているため見送っている**（過剰と判断。判断の根拠と採らなかった
+選択肢は [`decisions/0007`](decisions/0007-no-ip-rate-limit-no-recaptcha.md)）。
 
 管理画面（Issue #51）はジョブ一覧・詳細・ダウンロード導線・worker の CloudWatch ログ表示
 （Issue #58）・ジョブの緊急停止/再実行（Issue #59）・コスト推定と日次/週次/月次集計
@@ -139,7 +144,7 @@ IP 単位のレート制限・reCAPTCHA 等の追加 bot ゲートは、**メー
 ## 7. コスト推定の限界
 
 **コスト表示は推定値であって請求額ではない**（`packages/shared/src/cost.ts`、単価は
-`docs/aws-region-cost-analysis.md` の eu-south-2・2026-08-03 時点）。この点は作業中に
+`docs/research/aws-region-cost-analysis.md` の eu-south-2・2026-08-03 時点）。この点は作業中に
 常に効いてくるため `AGENTS.md` §3 にも要約を置いてある。
 
 - リージョンや候補インスタンスタイプを変える場合は**単価定数も併せて見直すこと**。
@@ -150,5 +155,5 @@ IP 単位のレート制限・reCAPTCHA 等の追加 bot ゲートは、**メー
   （`USD_TO_JPY_RATE`、2026-08-03 時点）による概算で、計算・API 応答はすべて USD のまま
   （換算は表示の直前だけ）。
 - CloudFront の無料枠（1TB/月）は月1000録画でほぼ使い切る水準にあり、超えた時点で
-  リージョン差など一瞬で吹き飛ぶ規模の課金が始まる（`docs/aws-region-cost-analysis.md` §6）。
+  リージョン差など一瞬で吹き飛ぶ規模の課金が始まる（`docs/research/aws-region-cost-analysis.md` §6）。
   管理画面のコストページで枠の消化率を監視できるようにしてある。
