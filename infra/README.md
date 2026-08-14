@@ -219,7 +219,7 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの 
 5. タイトル資産（ゲーム本体+WINEPREFIX+MOD）をS3へアップロードする
    （`upload-title-assets` skill。アーカイブ構成は`worker/README.md` §8）
 6. （自宅ワーカーを使う場合のみ）`HomeWorkerRole`をassumeするIAMユーザーを手動で
-   作成し、自宅サーバーの常駐デーモンを設定する（`home-worker/README.md`参照。
+   作成し、自宅サーバーの常駐デーモンを設定する（`docs/runbooks/home-worker-setup.md`参照。
    アクセスキーはCloudFormationで作るべきではないため手動運用）
 
 ## CDK合成のみ行う場合
