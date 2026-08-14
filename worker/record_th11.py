@@ -34,7 +34,7 @@ touhou-recorder での事前検証(reports/35〜39)を踏まえた実装:
   (`recording_common.build_still_mask()`/`mad_masked()`、reports/38)。
 - MS明朝(`msmincho.ttc`)がWINEPREFIXに配置・レジストリ登録されていないと、NPC会話
   シーン等でフォントの誤り(書体・全角/半角括弧)が発生する。`setup_wineprefix.sh`の
-  MS明朝対応オプションで登録すること(reports/38、`worker/README.md`参照)。
+  MS明朝対応オプションで登録すること(reports/38、`worker/docs/titles/th11.md`参照)。
 - 文字輪郭のジャギー(WineのFreeTypeベースAAが実機Windowsより粗い)は原因調査済み
   だが対策なし・許容する既知の制約として残る(reports/39、実装対応不要)。
 - 日本語ロケール必須・fps暴走の検知(th11のMODもFpsMonitorを組み込み済み)・処理落ちの

@@ -160,7 +160,7 @@ THPRAC_ATTACH_CONFIRM_SEC = 3.0
 # 分だけ終了検知も高速化する(reports/34。静止のみ判定の最短16秒+αから、最短
 # END_TEMPLATE_CONSECUTIVE_REQUIRED*POLL_INTERVAL_SEC=4秒へ短縮)。
 # テンプレート画像は`assets/replay_end_templates/{game_id}.png`にゲームごとに1枚用意する
-# (`worker/README.md`参照。ゲーム本体等と同様リポジトリには含めずdocker build前に配置する)。
+# (`worker/README.md` §8参照。ゲーム本体等と同様リポジトリには含めずdocker build前に配置する)。
 # 未整備・未検出のゲームは警告ログを出しつつ従来の画面静止のみ判定にフォールバックする。
 END_TEMPLATE_ROWS = 40  # 160x120にダウンサンプルした座標系での上部の帯(タイトル文言+列見出し
                         # 行を含む。リプレイ内容(一覧の中身・プレイヤー名/日付)には依存しない
