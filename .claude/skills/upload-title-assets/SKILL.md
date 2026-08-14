@@ -7,7 +7,7 @@ description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をま�
 
 ワーカーは録画のたびに S3 の `TitleAssetsBucket` からタイトル資産（ゲーム本体・
 WINEPREFIX・MOD の DLL）を取得して展開する。アーカイブ構成と展開の仕組みは
-`worker/README.md`「タイトル資産のS3アップロード手順」を参照。
+`worker/README.md` §8 を参照。
 
 ## 0. 環境値の解決
 
@@ -42,8 +42,8 @@ Wine のドライブマッピングとして正規に存在する。`-h` はア�
 
 `games/th06` 直下の実行ファイルは元の `東方紅魔郷.exe` のまま使う。th07/th08 のような
 `th06.exe` へのリネームは**しないこと** —— VsyncPatch が実行ファイル名を検証している
-らしく、リネームすると白画面ハングが再発する（経緯は `worker/README.md`
-「th06対応の技術的背景」）。
+らしく、リネームすると白画面ハングが再発する（経緯は
+`worker/docs/titles/th06.md`）。
 
 `vpatch.exe` / `vpatch.ini` / `vpatch_th06.dll`（VsyncPatch 本体）は `games/th06` 直下に
 同梱し、`recording_common.py` の rsync で自動コピーさせる。
@@ -73,7 +73,7 @@ aws s3 cp /tmp/th07-assets.tar.gz \
 ### th08（東方永夜抄）
 
 - `games/th08` には公式アップデータ **ver1.00d 相当**のゲームデータを配置すること
-  （ver1.00a は fps 暴走の既知不具合あり、`worker/README.md` 参照）。
+  （ver1.00a は fps 暴走の既知不具合あり、`worker/docs/titles/th08.md` 参照）。
 - `mods/th08_replay_autoplay/build/th08_hook.dll` は `mods/common/fps_monitor.cpp` を
   含めて再ビルドが必要。
 - `prefixes/th08-wined3d-gl` はシンボリックリンクではなく**実ディレクトリ**として
@@ -95,7 +95,7 @@ aws s3 cp /tmp/th08-assets.tar.gz \
 （`log.txt`（前回プレイのランタイムログ）・`unins000.dat` / `unins000.exe`
 （アンインストーラー）は動作に不要なため除外）。
 
-MS明朝（`msmincho.ttc`、NPC 会話シーン等で必要、`worker/README.md` 参照）を
+MS明朝（`msmincho.ttc`、NPC 会話シーン等で必要、`worker/docs/titles/th11.md` 参照）を
 `worker/games/assets/msmincho.ttc` へ配置しておくこと。
 
 ```bash
@@ -155,8 +155,18 @@ for t in th06 th07 th08 th11 th20; do
 done
 ```
 
+ディレクトリが既に存在すれば `wineboot` 初期化はスキップされ、フォント修正だけが適用される。
+
+**このスクリプトが再現するのは touhou-recorder のレポートで実際に文書化・検証された範囲
+（プレフィックス初期化 + フォント修正）だけ**なので、それ以外に WINEPREFIX へ手作業で加えた
+変更があった場合は再現されない可能性がある。日本語ロケール（`LANG`/`LC_ALL`）はここでは
+扱わない（`recording_common.py` が起動時に毎回設定する。理由は
+`worker/docs/titles/th07.md`）。**WINEPREFIX を作り直したら §2 でタイトル資産アーカイブを
+作り直してアップロードすること。**
+
 ## 関連
 
 - MOD（`*_hook.dll`）のビルド → `build-mods` skill
 - デプロイ全般 → `deploy-sattori` skill
-- アーカイブ構成・ワーカー側の展開処理 → `worker/README.md`
+- アーカイブ構成・ワーカー側の展開処理 → `worker/README.md` §8
+- タイトルごとの同梱物の理由 → `worker/docs/titles/thNN.md`

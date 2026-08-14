@@ -86,7 +86,7 @@ fps 制御・スコア監視）はこのタイミングに依存している。
 ## 影響範囲
 
 - `worker/recording_common.py`（`attach_thprac()`、`THPRAC_ATTACH_*`）
-- `worker/README.md`「th20対応の技術的背景」
+- `worker/docs/titles/th20.md`「thprac によるデシンク対策」
 - **同一 WINEPREFIX で複数の東方ゲームを同時に走らせるとアタッチ先が不定になる**。
   Sattori は1コンテナ=1ジョブで、自宅ワーカーの並列録画もコンテナごとに WINEPREFIX が
   分かれるため現状の構成では競合しない。**この前提を崩す変更を入れるときは要再検討**。

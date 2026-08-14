@@ -4,8 +4,8 @@
 ECRのイメージストレージコストがタイトル数に比例して増大する問題への対応として、
 ワーカーイメージ自体はタイトル非依存の共通部分のみで構成し、タイトル固有の資産
 (games/{game}/, prefixes/{game}-*/, mods/**/build/*)は起動時にS3からアーカイブ
-1本をダウンロード・展開する。アーカイブの作成・アップロード手順は worker/README.md
-「タイトル資産のS3アップロード手順」を参照。
+1本をダウンロード・展開する。アーカイブの構成は worker/README.md §8、作成・アップロード
+手順は upload-title-assets skill を参照。
 """
 import os
 import tarfile

@@ -374,7 +374,7 @@ jobId自体を秘密値として使うユーザー向けの認可方式（`start
   `done`でなくても`outputPath`/`outputPath720p`があればURLを返す（`converting`中の
   生動画チェックポイントを取得したい運用ニーズのため）。**低速録画（Issue #68）の
   ジョブでは、`converting`中の`outputPath`が指すのは半分の速度の生データである**
-  （等倍へ戻すのは変換工程。`worker/README.md`「低速録画」）。ユーザー向けの
+  （等倍へ戻すのは変換工程。`worker/README.md` §5）。ユーザー向けの
   `GET /jobs/{jobId}`は`done`のときしかURLを返さないのでこれが漏れることはないが、
   管理画面で変換中の動画を開いたときは意図した挙動として扱うこと。`.rpy`は`UploadBucket`が
   CloudFront配信されていない`BLOCK_ALL`バケットのため、動画とは別にS3署名付き
