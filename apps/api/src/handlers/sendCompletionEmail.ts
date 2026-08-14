@@ -49,6 +49,7 @@ export const handler: DynamoDBStreamHandler = async (event) => {
         // その場合は既定言語(ja)にフォールバックする。
         language: newJob.language ?? DEFAULT_LANGUAGE,
         doneAt: newJob.doneAt ?? null,
+        replayInfo: newJob.replayInfo ?? null,
       });
     } catch (err) {
       // 完了メールが送れなくても動画自体はジョブページから取得できるため、

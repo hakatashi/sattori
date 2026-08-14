@@ -137,7 +137,7 @@ describe("POST /magic-links", () => {
     expect(jobPut?.args[0].input.Item?.language).toBe("ja");
   });
 
-  it("replayInfoが渡されればジョブレコードにそのまま転記する", async () => {
+  it("replayInfoが渡されればジョブレコードにそのまま転記し、メール本文にも載せる", async () => {
     const { handler } = await import("./requestMagicLink.js");
     const replayInfo = {
       game: "th07" as const,
@@ -165,6 +165,12 @@ describe("POST /magic-links", () => {
     const putCalls = ddbMock.commandCalls(PutCommand);
     const jobPut = putCalls.find((call) => call.args[0].input.Item?.status === "pending");
     expect(jobPut?.args[0].input.Item?.replayInfo).toEqual(replayInfo);
+
+    const sendCalls = sesMock.commandCalls(SendEmailCommand);
+    const emailBody = sendCalls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
+    expect(emailBody).toContain("【作品タイトル】東方妖々夢 ～ Perfect Cherry Blossom.");
+    expect(emailBody).toContain("【プレイヤー名】koyi");
+    expect(emailBody).toContain("【スコア】303,766,040");
   });
 
   it("replayInfoが無ければnullとして保存する", async () => {

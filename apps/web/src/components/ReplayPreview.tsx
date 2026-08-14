@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { GAME_TITLES, type ReplayInfo } from "@sattori/shared";
+import { GAME_TITLES, localizedCharacterName, type ReplayInfo } from "@sattori/shared";
 import styles from "./ReplayPreview.module.css";
 
 type Props =
@@ -31,16 +31,6 @@ function formatCleared(cleared: boolean | null, t: TFunction): string {
     return t("replayPreview.unknown");
   }
   return cleared ? t("replayPreview.cleared") : t("replayPreview.notCleared");
-}
-
-/**
- * 表示言語に応じたローカライズ済みキャラ名（`characterNameJa`/`characterNameEn`、
- * `@sattori/touhou-replay-parser` の `localizeCharacterName` 由来）を優先し、
- * 未知の形式などで取得できない場合は生の `character` にフォールバックする。
- */
-function displayCharacter(info: ReplayInfo, language: string): string | null {
-  const localized = language === "en" ? info.characterNameEn : info.characterNameJa;
-  return localized ?? info.character;
 }
 
 /**
@@ -79,7 +69,7 @@ export function ReplayPreview(props: Props) {
       </div>
       <div className={styles.basicInfo}>
         <div className={styles.character}>
-          {displayCharacter(info, i18n.language) ?? t("replayPreview.unknown")}
+          {localizedCharacterName(info, i18n.language) ?? t("replayPreview.unknown")}
         </div>
         <div className={styles.score}>
           {formatScore(info.score, t, i18n.language)}

@@ -121,6 +121,9 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 - `parseReplayInfo()`: バイト列から `ReplayInfo` を得るエントリポイント。フォーマット
   解析エラーに加え、`SUPPORTED_GAME_IDS`（`games.ts`。現状 th06/07/08/11）に含まれない
   タイトルも `unsupported_game` エラーとして日本語メッセージ付きで返す。
+- `localizedCharacterName()`: 表示言語に応じた自機タイプ名（`characterNameJa`/
+  `characterNameEn`。取得できなければ生の `character`）。ページAの解析プレビュー
+  （`apps/web`）とメール本文（`apps/api/src/ses.ts`）が同じ表記を出すために共有する。
 - `GAME_IDS`/`GAME_TITLES`（`games.ts`）: th06〜th20（th19除く）の識別子と表示用の
   日本語タイトル名。録画対応タイトルは `SUPPORTED_GAME_IDS` で別途絞り込む
   （パーサー対応と録画対応は別軸。詳細は `packages/replay-parser/README.md`）。
