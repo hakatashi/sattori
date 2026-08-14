@@ -11,6 +11,9 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   `crossRegionReferences`経由でこの証明書ARNを受け取り、Lambda側は`SES_REGION`
   環境変数でこのリージョンのSESを明示して呼ぶ（`apps/api/src/ses.ts`）。
 
+> リージョン移設の経緯・SESとACMだけをus-east-1に残す判断・受け入れたトレードオフは
+> [`docs/decisions/0001`](../docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)。
+
 両スタックは`bin/sattori.ts`から起こし、`pnpm run deploy`（＝`cdk deploy --all`）で
 まとめてデプロイする。単体でどちらかだけをデプロイしたい場合は
 `cdk deploy SattoriEdgeStack` / `cdk deploy SattoriStack` のようにスタックIDを指定する。
@@ -70,8 +73,9 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   eu-south-2にはレガシーAZが無いため現在はフィルタリングを行っていない。
 - **EC2 Launch Template**: ワーカー起動の基点（AMI/インスタンスタイプ/IAM/SG固定）。
   ジョブ固有のUserDataは**CDKではなく実行時にAWS SDKで**`CreateLaunchTemplateVersion`
-  により上書きする（`AGENTS.md`の設計判断参照。ここでのUserDataはプレースホルダで
-  実際に使われることはない）。
+  により上書きする（ここでのUserDataはプレースホルダで実際に使われることはない）。
+  **この分離を崩さないこと** ——
+  [`docs/decisions/0002`](../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)。
 - **Step Functions**: `RecordingStateMachine`（Standard）。`Launch`
   （`waitForTaskToken`、150分タイムアウト+**15分のハートビートタイムアウト**）→
   失敗時 `WaitBeforeCheck`（3分）→
@@ -151,7 +155,9 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   `allowHeaders`に`authorization`を追加している（`content-type`のみだった既存設定に
   Bearerトークンを送るための拡張）。
 - **認可トークン**: SSM Parameter Store（`/sattori/admin/token`、SecureString）に
-  手動で置く。**SecureStringはCloudFormation/CDKでは作成できない**ため、CDK側は
+  手動で置く（Cognito等を使わずこの方式にした理由は
+  [`docs/decisions/0005`](../docs/decisions/0005-admin-auth-ssm-shared-token.md)）。
+  **SecureStringはCloudFormation/CDKでは作成できない**ため、CDK側は
   `ssm.StringParameter.fromSecureStringParameterAttributes()`で名前を参照するのみで、
   値には一切触れない（`.stringValue`を参照するとCFnの動的参照
   `{{resolve:ssm-secure:...}}`が生成され値がテンプレートに染み出すため、`grantRead`
