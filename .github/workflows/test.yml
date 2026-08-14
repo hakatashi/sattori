@@ -28,6 +28,11 @@ jobs:
           node-version: "24"
           cache: pnpm
 
+      # ドキュメントのサイズ上限（docs/documentation-guidelines.md §6.1）。依存パッケージを
+      # 使わないので install より前に置き、超過していれば真っ先に落ちるようにしてある。
+      - name: Check documentation size
+        run: pnpm check:docs
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

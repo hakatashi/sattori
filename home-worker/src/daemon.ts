@@ -38,7 +38,7 @@
  * SIGTERM/SIGINT を受けたら新規claimを止め、実行中のジョブは完走を待ってから終了する
  * （走り出した録画を落とすと、節約できるCPU時間よりはるかに大きな無駄になるため）。
  *
- * 起動方法・IAM設定・systemdユニットの例は `home-worker/README.md` を参照。
+ * 起動方法・IAM設定・systemdユニットの例は `docs/runbooks/home-worker-setup.md` を参照。
  */
 import { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";

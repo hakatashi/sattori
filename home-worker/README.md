@@ -101,46 +101,13 @@ claim が解除され、EC2 でリトライされる。
 > 残っていると、全ジョブが15分でタイムアウトする。ワーカーイメージの push を
 > `cdk deploy` より先に行うこと（`infra/README.md`）。
 
-## 4. セットアップ
+## 4. 設定
 
-### 4.1 IAM（長期キーを最小化する二段構え）
+構築・更新の手順（IAM の二段構え・ビルド・systemd ユニット・デプロイ順序）は
+[`docs/runbooks/home-worker-setup.md`](../docs/runbooks/home-worker-setup.md) にある。
+ここには設定項目そのものだけを置く。
 
-自宅マシンにはインスタンスプロファイルが無いため、何らかの長期認証情報を置かざるを
-得ない。そのリスクを抑えるため:
-
-1. CDK が最小権限の **`HomeWorkerRole`** を作る（CfnOutput `HomeWorkerRoleArn`）。
-   権限は「アップロードバケットの読み取り／出力バケットの読み書き／タイトル資産の
-   読み取り／JobsTable の読み書き／WorkersTable への書き込み／ECR pull／
-   CloudWatch Logs への書き込み／`SendTask*`」だけ。
-2. **ロールを assume する権限だけを持つ IAM ユーザー**を手動で作り、そのアクセスキーを
-   自宅マシンに置く（アクセスキーは CloudFormation で作るべきではないため手動運用。
-   管理画面トークンの SSM 投入と同じ方針）。
-3. デーモンは起動後 `sts:AssumeRole` して短命クレデンシャル（既定4時間）を得、
-   自身の API 呼び出しにもワーカーコンテナへ渡す環境変数にも**それだけ**を使う。
-
-万一自宅マシンの鍵が漏れても、直接触れるのは「ロールを assume する」ことだけであり、
-ロールを消せば即座に無効化できる。
-
-IAM ユーザー側に付けるポリシー:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": "sts:AssumeRole",
-      "Resource": "<HomeWorkerRoleArn の値>"
-    }
-  ]
-}
-```
-
-コンテナへ渡す認証情報は**コンテナ起動の直前**に残存時間を確認し、ジョブ1本ぶん
-（100分）に足りなければ assume し直す。コンテナ内には認証情報を再取得する手段が
-無いため、録画の途中で期限切れになるとそのジョブは丸ごと無駄になる。
-
-### 4.2 環境変数
+### 4.1 環境変数
 
 必須（`cdk deploy` の CfnOutput をそのまま使う）:
 
@@ -167,73 +134,13 @@ IAM ユーザー側に付けるポリシー:
 | `HOME_WORKER_DRAIN_TIMEOUT_SEC` | `9000` | 終了シグナル後、実行中ジョブの完走を待つ上限。低速録画（Issue #68）の録画タイムアウト（120分＝等倍60分の2倍）＋変換の余裕（30分）で、Step Functions 側の `taskTimeout`（150分）と揃えてある。**短くすると AWS 側がまだ待っているジョブをデーモンが先に打ち切ることになる** |
 | `WORKER_LOG_GROUP` | `/sattori/worker` | ログ転送先（EC2 ワーカーと同じ） |
 
-### 4.3 起動
-
-Node 24 と pnpm（リポジトリルートの `.tool-versions`）があればよい。デーモンは
-`@sattori/shared` に依存するため、**ビルドはリポジトリルートから**行う
-（`pnpm build` が turbo 経由で `@sattori/shared` → `@sattori/home-worker` の順に
-ビルドする）。
-
-```bash
-pnpm install
-pnpm build          # このデーモンだけなら: pnpm exec turbo run build --filter @sattori/home-worker
-cd home-worker
-JOBS_TABLE=... WORKERS_TABLE=... WORKER_IMAGE=... HOME_WORKER_ROLE_ARN=... \
-  node dist/main.js
-```
-
-必須の環境変数が欠けている場合は起動時に「設定エラー」を出して終了コード2で落ちる
-（systemd の `Restart=always` で無限に再起動し続けないよう、設定ミスは即座に分かる）。
-
-systemd ユニットの例（`/etc/systemd/system/sattori-home-worker.service`）:
-
-```ini
-[Unit]
-Description=Sattori home recording worker
-After=network-online.target docker.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=hakatashi
-WorkingDirectory=/home/hakatashi/sattori/home-worker
-EnvironmentFile=/etc/sattori-home-worker.env
-ExecStart=/home/hakatashi/.asdf/installs/nodejs/24.9.0/bin/node dist/main.js
-Restart=always
-RestartSec=10
-# 実行中の録画を完走させてから終了する（SIGTERM後は新規claimを止めるだけ）。
-# `HOME_WORKER_DRAIN_TIMEOUT_SEC`（既定9000秒＝150分）より必ず長く取ること。
-# 短いとドレインの途中で systemd に SIGKILL され、claim のハートビートとログ転送が
-# 止まったままコンテナだけが dockerd 配下に取り残される。
-KillSignal=SIGTERM
-TimeoutStopSec=9600
-
-[Install]
-WantedBy=multi-user.target
-```
-
-`EnvironmentFile` にはアクセスキーではなく `AWS_PROFILE`（または
-`AWS_SHARED_CREDENTIALS_FILE`）を書き、鍵そのものは `~/.aws/credentials` に置いて
-`chmod 600` にしておくとよい。
-
-`ExecStart` は `dist/` を直接叩く（`pnpm start` を挟むと、SIGTERM が pnpm 止まりで
-Node へ届かず、ドレイン——実行中の録画の完走待ち——が働かなくなる）。デプロイ時は
-**先に `pnpm build` を済ませてから** `systemctl restart` すること。
-
-Node は **asdf の shim（`~/.asdf/shims/node`）ではなく実体のパスを指定する**。shim の
-中身は `exec asdf exec "node" "$@"` で `asdf` 本体（`/usr/local/bin/asdf`）を PATH から
-探すが、systemd の既定 PATH には `/usr/local/bin` が含まれないため、shim 経由では
-起動に失敗する。実体のパスは `asdf which node` で得られる。ただしこのパスには
-バージョンが埋まっているので、**asdf で Node を入れ替えたらユニットの更新が要る**
-（起動しなくなるだけで録画が壊れることはないが、`Restart=always` で再起動を繰り返す）。
-
-### 4.4 モジュール構成
+### 4.2 モジュール構成
 
 | ファイル | 役割 |
 | --- | --- |
 | `src/main.ts` | エントリポイント。設定読み込みとシグナルハンドラの登録だけ |
 | `src/daemon.ts` | メインループ。ハートビート・claim・コンテナ実行・claim監視・ドレイン |
-| `src/config.ts` | 環境変数から設定を組み立てる（§4.2 の表がそのまま対応する） |
+| `src/config.ts` | 環境変数から設定を組み立てる（§4.1 の表がそのまま対応する） |
 | `src/credentials.ts` | `sts:AssumeRole` による短命クレデンシャルの発行と期限管理 |
 | `src/claim.ts` | オファーの探索（GSI Query）と claim/解放の条件付き更新。**AWS 側との契約そのもの** |
 | `src/heartbeat.ts` | `WorkersTable` への自己申告（型は `@sattori/shared` の `WorkerHeartbeat`） |
@@ -283,7 +190,7 @@ th20（東方錦上京、Issue #87）は描画負荷が高く、等倍で録る�
 **「低速録画できる自宅ワーカーが空いていれば自宅で低速録画、いなければ4xlarge級の EC2 で
 等速録画」**という振り分けになっている。
 
-- **能力の宣言**: デーモンは既定で `slow-motion-recording` を宣言する（§4.2 の
+- **能力の宣言**: デーモンは既定で `slow-motion-recording` を宣言する（§4.1 の
   `HOME_WORKER_CAPABILITIES`）。宣言の実体はワーカーコンテナ側にあるので、
   デーモンが何か特別なことをするわけではない。
 - **オファーの条件**: 低速録画を希望するジョブは、この能力を宣言したワーカーにしか
@@ -294,7 +201,7 @@ th20（東方錦上京、Issue #87）は描画負荷が高く、等倍で録る�
   デーモンはそれをそのまま `docker run -e` へ渡す（`apps/api/src/workerEnv.ts`）。
   **EC2 起動時はこの変数を付けない**ので、同じイメージが等倍で走る。
 - **所要時間**: 録画フェーズが実時間で2倍になるため、`HOME_WORKER_DRAIN_TIMEOUT_SEC`
-  の既定と Step Functions の `taskTimeout` を 150 分に揃えてある（§4.2）。
+  の既定と Step Functions の `taskTimeout` を 150 分に揃えてある（§4.1）。
   1本の th20 で自宅マシンを1時間以上占有することになる点に注意。
 
 ワーカーコンテナ側の実装（Present フックによるスローモーション化、DirectSound の

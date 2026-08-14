@@ -5,7 +5,7 @@
  * `HomeWorkerRoleArn` 等）をそのまま流し込めばよい。値の意味と既定値の根拠は
  * 各フィールドのコメントを参照。
  *
- * **環境変数名は公開仕様**（`home-worker/README.md` §4.2 が文書化している）なので、
+ * **環境変数名は公開仕様**（`home-worker/README.md` §4.1 が文書化している）なので、
  * 変えるならREADMEと運用中のsystemdユニットの `EnvironmentFile` も併せて直すこと。
  */
 import { GAME_IDS, SUPPORTED_GAME_IDS, WORKER_CAPABILITIES } from "@sattori/shared";
