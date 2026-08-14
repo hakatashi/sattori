@@ -159,6 +159,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       webBaseUrl: config.webBaseUrl,
       jobId: job.jobId,
       language: job.language,
+      replayInfo: job.replayInfo,
     });
   } catch (err) {
     console.error(
