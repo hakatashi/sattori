@@ -18,11 +18,14 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   if (!body.filename.toLowerCase().endsWith(".rpy")) {
     return error(400, "invalid_file", "リプレイファイル（.rpy）を指定してください");
   }
-  if (body.size <= 0 || body.size > config.maxReplayBytes) {
+  // Number.isInteger も含めて厳密にする: この値はそのまま署名付きPUTの
+  // ContentLength（Issue #128 SEC-2）に使うため、バイト数として妥当な値以外を
+  // 弾いておく。
+  if (!Number.isInteger(body.size) || body.size <= 0 || body.size > config.maxReplayBytes) {
     return error(413, "file_too_large", "リプレイファイルのサイズが上限を超えています");
   }
 
-  const upload = await createPresignedUpload(config.uploadBucket);
+  const upload = await createPresignedUpload(config.uploadBucket, body.size);
   const response: CreateUploadResponse = {
     replayKey: upload.replayKey,
     uploadUrl: upload.uploadUrl,

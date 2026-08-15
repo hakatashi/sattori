@@ -18,6 +18,7 @@ import { deleteJob, PENDING_JOB_TTL_MS, putJob } from "../jobs.js";
 import { checkAndRecordRateLimit } from "../rateLimit.js";
 import { sendMagicLinkEmail } from "../ses.js";
 import { getSettings } from "../settings.js";
+import { REPLAY_KEY_PATTERN } from "../uploads.js";
 
 /**
  * POST /magic-links
@@ -40,6 +41,29 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }
   if (!EMAIL_PATTERN.test(body.email)) {
     return error(400, "invalid_email", "メールアドレスの形式が正しくありません");
+  }
+  // `replayKey` はサーバー採番の形式が固定（`createPresignedUpload()`）なので、
+  // それ以外の値はここで弾く。これは多層防御の1層目に過ぎない——
+  // `buildUserData()`（`ec2.ts`）側でもシェルセーフに扱うことで、この検証を
+  // すり抜けた値やDB内の既存汚染データが来てもコマンドインジェクションに
+  // つながらないようにしている（Issue #127 SEC-1）。
+  if (!REPLAY_KEY_PATTERN.test(body.replayKey)) {
+    return error(400, "invalid_replay_key", "replayKey の形式が正しくありません");
+  }
+  // `estimatedDurationSeconds` も `String()` されてそのままワーカーの環境変数へ乗る
+  // （`workerEnv.ts`）ため、型と値域をここで固定する（Issue #127 SEC-1）。
+  if (
+    body.estimatedDurationSeconds !== undefined &&
+    body.estimatedDurationSeconds !== null &&
+    (typeof body.estimatedDurationSeconds !== "number" ||
+      !Number.isFinite(body.estimatedDurationSeconds) ||
+      body.estimatedDurationSeconds <= 0)
+  ) {
+    return error(
+      400,
+      "invalid_request",
+      "estimatedDurationSeconds の形式が正しくありません",
+    );
   }
 
   // ページAはリプレイ解析結果（ReplayInfo.game）を渡してくるが、念のため

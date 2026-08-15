@@ -1,5 +1,5 @@
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { parseReplayInfo, type ParseReplayRequest, type ParseReplayResponse } from "@sattori/shared";
 import { loadConfig } from "../config.js";
 import { error, json, parseBody } from "../http.js";
@@ -22,6 +22,16 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
 
   let data: Uint8Array;
   try {
+    // `replayKey` は任意のキーを指定できてしまう（`createUpload.ts` が発行した値かの
+    // 検証はしていない）ため、先に `HeadObject` でサイズを確認してから中身を
+    // Lambda メモリへ読み込む。GetObjectをいきなり呼ぶと、巨大オブジェクトの
+    // アップロードと組み合わせて容易にOOMさせられる（Issue #128 SEC-2 関連）。
+    const head = await s3.send(
+      new HeadObjectCommand({ Bucket: config.uploadBucket, Key: body.replayKey }),
+    );
+    if (head.ContentLength !== undefined && head.ContentLength > config.maxReplayBytes) {
+      return error(413, "file_too_large", "リプレイファイルのサイズが上限を超えています");
+    }
     const object = await s3.send(
       new GetObjectCommand({ Bucket: config.uploadBucket, Key: body.replayKey }),
     );

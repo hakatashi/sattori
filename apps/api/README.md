@@ -26,7 +26,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 
 | ファイル | エンドポイント / トリガー | 役割 |
 | --- | --- | --- |
-| `createUpload.ts` | `POST /uploads` | `.rpy` アップロード用の署名付きPUT URLを発行（ファイル本体はLambdaを経由しない） |
+| `createUpload.ts` | `POST /uploads` | `.rpy` アップロード用の署名付きPUT URLを発行（ファイル本体はLambdaを経由しない）。`size`は`MAX_REPLAY_BYTES`以下の整数であることを検証したうえで署名の`ContentLength`に使うため、実際のPUTのバイト数がこの値と一致しないとS3が拒否する（Issue #128 SEC-2） |
 | `parseReplay.ts` | `POST /replays/parse` | アップロード済みリプレイを取得し `@sattori/shared` の `parseReplayInfo()` で解析。同じロジックはブラウザでも直接動くため（`apps/web/README.md`「ページAのフロー」参照）、現在のページAはこのAPIを呼ばず解析をクライアント内で完結させている。将来他のクライアント（管理画面の再解析等）が使う可能性を見込んで残してある |
 | `requestMagicLink.ts` | `POST /magic-links` | レート制限チェック→`status: "pending"`の`JobRecord`作成→SESでマジックリンク送信。メール送信自体が失敗したらジョブを削除してロールバックする。低速録画（Issue #68）の要求は**低速録画に対応したタイトル（`supportsSlowMotion()`、Issue #101）でなければ握り潰す**（等倍で録画できる以上エラーにはしない） |
 | `startJob.ts` | `POST /jobs/{jobId}/start` | `pending`→`queued`への原子遷移＋Step Functions `StartExecution` |
@@ -202,6 +202,11 @@ UserDataスクリプトがやること:
 > **この3点はいずれも事故を経て入れた対策で、消すと再発する**。理由は
 > [`docs/decisions/0019`](../../docs/decisions/0019-userdata-ecs-agent-off-and-bootstrap-failure-notification.md)。
 
+`-e KEY=VALUE`として埋め込む環境変数の値（`taskToken`含む）はすべて`shellEscape()`で
+単一引用符に括ってからスクリプトへ差し込む。`replayKey`等の入口検証（§8）をすり抜けた
+値やDB内の既存汚染データが来ても、コマンドインジェクションへ変換されないための
+多層防御（Issue #127 SEC-1）。
+
 ## 8. マジックリンク送信・レート制限（`requestMagicLink.ts`, `rateLimit.ts`）
 
 - 同一メール（`+`エイリアス正規化後、`normalizeEmailForRateLimit()`）は24時間5件まで
@@ -215,6 +220,10 @@ UserDataスクリプトがやること:
   作成したジョブを削除してロールバックする（誰もアクセスできないジョブを残さない）。
 - `pending`ジョブの受付期限は24時間（`jobs.ts`の`PENDING_JOB_TTL_MS`。bot/濫用対策で、
   アップロード用S3の保持期間とは独立）。
+- `replayKey`はサーバー採番の形式（`uploads.ts`の`REPLAY_KEY_PATTERN`、
+  `replays/<uuid>.rpy`）と一致しない値を400で拒否する。`estimatedDurationSeconds`も
+  有限の正数以外は400（Issue #127 SEC-1。どちらもワーカーEC2の起動スクリプトへ
+  そのまま渡る値のため、入口で形式を固定する）。
 
 > 濫用対策をここから増やす前に
 > [`docs/decisions/0007`](../../docs/decisions/0007-no-ip-rate-limit-no-recaptcha.md) を読むこと

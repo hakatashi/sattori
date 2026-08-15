@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 
@@ -43,6 +43,7 @@ function parseBody(res: APIGatewayProxyStructuredResultV2): unknown {
 }
 
 function mockUploadedReplay(data: Uint8Array) {
+  s3Mock.on(HeadObjectCommand).resolves({ ContentLength: data.byteLength });
   s3Mock.on(GetObjectCommand).resolves({
     Body: { transformToByteArray: async () => data } as never,
   });
@@ -103,10 +104,21 @@ describe("POST /replays/parse", () => {
 
   it("S3にオブジェクトが存在しなければ404を返す", async () => {
     const { handler } = await import("./parseReplay.js");
-    s3Mock.on(GetObjectCommand).rejects(new Error("NoSuchKey"));
+    s3Mock.on(HeadObjectCommand).rejects(new Error("NoSuchKey"));
 
     const res = await handler(makeEvent({ replayKey: "replays/missing.rpy" }), {} as never, () => {});
     const result = res as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(404);
+  });
+
+  it("オブジェクトサイズが上限を超えていればGetObjectを呼ばず413を返す（Issue #128 SEC-2）", async () => {
+    const { handler } = await import("./parseReplay.js");
+    s3Mock.on(HeadObjectCommand).resolves({ ContentLength: 5 * 1024 * 1024 + 1 });
+
+    const res = await handler(makeEvent({ replayKey: "replays/huge.rpy" }), {} as never, () => {});
+    const result = res as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(413);
+    expect(parseBody(result)).toMatchObject({ code: "file_too_large" });
+    expect(s3Mock.commandCalls(GetObjectCommand)).toHaveLength(0);
   });
 });
