@@ -103,6 +103,22 @@ function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
 }
 
 /**
+ * 値をシェルの単一引用符で安全に囲む。値の中に `'` があっても
+ * `'\''`（一旦引用符を閉じ、エスケープしたシングルクォート文字を足し、
+ * また開く）で表現するため、シェルメタ文字（`$(`・`;`・改行等）が混ざっていても
+ * 単なる文字列として展開される。
+ *
+ * `buildUserData()` が UserData スクリプトへ埋め込む値はジョブ固有（`replayKey`
+ * 等）で、入口（`handlers/requestMagicLink.ts`）で形式検証しているとはいえ、
+ * **入口検証だけに頼らない**多層防御としてすべての値をこの関数に通す（Issue #127
+ * SEC-1）。DB内の既存汚染データや検証をすり抜けた値が来ても、ここでコマンド
+ * インジェクションに変換されないようにする最後の防波堤。
+ */
+function shellEscape(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
  * ワーカーインスタンスの UserData（cloud-init）スクリプトを生成する。
  * ECR ログイン → 録画ワーカーコンテナ実行 → 完了後に自動シャットダウン（=Spot終了）。
  * ジョブ固有の値は環境変数でコンテナに渡す。ワーカー本体は S3/DynamoDB を直接更新する。
@@ -123,7 +139,7 @@ export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: stri
   const envFlags = Object.entries(
     buildWorkerEnv(config, job, taskToken, { slowMotion: false }),
   ).map(([key, value]) =>
-    key === "TASK_TOKEN" ? `-e TASK_TOKEN="$TASK_TOKEN"` : `-e ${key}=${value}`,
+    key === "TASK_TOKEN" ? `-e TASK_TOKEN="$TASK_TOKEN"` : `-e ${key}=${shellEscape(value)}`,
   );
 
   // trap EXIT で必ず shutdown する（Spot 終了 = 課金停止）。ECR ログインや
@@ -132,7 +148,7 @@ export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: stri
   const script = `#!/bin/bash
 export AWS_DEFAULT_REGION=${config.ec2.region}
 trap 'shutdown -h now' EXIT
-TASK_TOKEN='${taskToken}'
+TASK_TOKEN=${shellEscape(taskToken)}
 
 # コンテナが一度も起動できないまま(ECR ログイン/pull 失敗等)shutdown すると、
 # ワーカー内部(entrypoint.py)の taskToken 通知が一切実行されず、Step Functions が
