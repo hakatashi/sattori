@@ -126,7 +126,7 @@
     "submitStarting": "Praying⋯",
     "submit": "Next",
     "termsAgreement": "By continuing, you agree to the <0>Terms of Service</0>.",
-    "replayHelpLink": "(?) Where can I find my replay file?"
+    "replayHelpLink": "Where can I find my replay file?"
   },
   "replayHelp": {
     "heading": "Where Touhou Project games save replay files",
@@ -152,7 +152,7 @@
   "replayPreview": {
     "ariaLabel": "Replay analysis result",
     "loadingAriaLabel": "Loading",
-    "emptyPlaceholder": "Select a replay file to see its details here",
+    "emptyPlaceholder": "Please select a replay file first",
     "unknown": "Unknown",
     "cleared": "Cleared",
     "notCleared": "Not cleared",
