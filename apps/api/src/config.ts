@@ -93,3 +93,16 @@ export function loadConfig(): ApiConfig {
     },
   };
 }
+
+/**
+ * `RecordAnalyticsEventFn`（`POST /beacon`）専用の設定。他のハンドラと違い
+ * `commonEnv`を使わない（`apps/api/README.md`「環境変数」参照。管理系Lambdaと
+ * 同じ理由で、このハンドラも計測用テーブルの読み書きしか行わないため）。
+ */
+export interface AnalyticsConfig {
+  analyticsEventsTable: string;
+}
+
+export function loadAnalyticsConfig(): AnalyticsConfig {
+  return { analyticsEventsTable: required("ANALYTICS_EVENTS_TABLE") };
+}

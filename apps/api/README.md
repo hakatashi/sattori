@@ -20,7 +20,8 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 - [10. ダウンロードURLとContent-Disposition（`getJob.ts`）](#10-ダウンロードurlとcontent-dispositiongetjobts)
 - [11. 管理API（`/admin/*`、Issue #51）](#11-管理apiadminissue-51)
 - [12. 環境変数（`config.ts`）](#12-環境変数configts)
-- [13. テスト](#13-テスト)
+- [13. 計測（アナリティクス、`POST /beacon`、Issue #142）](#13-計測アナリティクスpost-beaconissue-142)
+- [14. テスト](#14-テスト)
 
 ## 1. ハンドラ一覧（`src/handlers/`）
 
@@ -46,6 +47,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | `admin/getCosts.ts` | `GET /admin/costs` | コスト推定の日次/週次/月次集計（全件Scan + アプリ側集計） |
 | `admin/getSettings.ts` | `GET /admin/settings` | キルスイッチ・月間コストガード閾値の現在値と当月推定コストを取得（Issue #14） |
 | `admin/updateSettings.ts` | `POST /admin/settings` | キルスイッチ・月間コストガード閾値の更新（Issue #14） |
+| `recordAnalyticsEvent.ts` | `POST /beacon` | Cookie無しの計測ビーコンの受け口。pageview/parse_errorイベントを`AnalyticsEventsTable`へ記録する（Issue #142。§13） |
 
 ## 2. ジョブ起動〜Step Functionsの流れ
 
@@ -313,7 +315,35 @@ Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId�
 `sweepOrphanInstances.ts`だけが個別の環境変数として受け取る（いずれもステートマシンから
 呼ばれる側ではないため循環しない）。
 
-## 13. テスト
+## 13. 計測（アナリティクス、`POST /beacon`、Issue #142）
+
+Cookie/localStorageを一切使わないサーバーサイド計測。フロントエンドから送られる
+`AnalyticsEventInput`（`@sattori/shared`。pageview/parse_errorの2種類）を受け、
+`analytics.ts`の`recordAnalyticsEvent()`が生IP・生User-Agentを含まない形へ正規化
+してから`AnalyticsEventsTable`（DynamoDB、PK=eventDate/SK=eventId、TTL 180日）へ
+書き込む。
+
+- `CloudFront-Viewer-Country`ヘッダーから国を得るが、これはWebCdn(CloudFront)の
+  `/beacon`ビヘイビア経由のリクエストにしか付与されない（他のエンドポイントと違い、
+  このパスだけCloudFrontを前段に置いている。`infra/README.md`参照）。ヘッダーが
+  無い（＝直接HTTP APIを叩かれた）場合も`country: null`で記録するだけで、リクエスト
+  自体は失敗させない。
+- User-Agentは`userAgent.ts`の`classifyUserAgent()`でブラウザ/OSの粗いカテゴリへ
+  正規化する（バージョンは保持しない）。ビューポート幅・`document.referrer`の丸め方
+  はフロントエンド側（`apps/web/README.md`）と合わせて
+  [`docs/decisions/0024`](../../docs/decisions/0024-cookieless-analytics-beacon.md)
+  にまとめてある。
+- **`RecordAnalyticsEventFn`は`commonEnv`を使わない**（`loadAnalyticsConfig()`が
+  `ANALYTICS_EVENTS_TABLE`のみを読む）。管理系Lambdaと同じ理由で、計測用テーブルの
+  読み書きしか行わないため（§12）。
+- 計測の失敗（DynamoDB書き込みエラー等）はユーザー体験に影響させないため、常に
+  202を返す（呼び出し側は`navigator.sendBeacon`でレスポンスを見ない）。
+
+> **収集する情報を増やす・訪問者を横断して繋げる識別子を持たせる等の変更は、
+> 必ず[`docs/decisions/0024`](../../docs/decisions/0024-cookieless-analytics-beacon.md)
+> の「あえて集めないもの」を確認してから行うこと。**
+
+## 14. テスト
 
 各ハンドラに対応する `*.test.ts` が同ディレクトリにある（vitest、AWS SDKクライアントは
 モック）。`pnpm --filter @sattori/api test` で実行。

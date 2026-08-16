@@ -17,8 +17,9 @@
 - [6. 多言語対応（i18n、`src/i18n/`）](#6-多言語対応i18nsrci18n)
 - [7. APIクライアント（`src/api/client.ts`）](#7-apiクライアントsrcapiclientts)
 - [8. 管理画面（`src/admin/`、Issue #51）](#8-管理画面srcadminissue-51)
-- [9. 開発サーバ](#9-開発サーバ)
-- [10. テスト](#10-テスト)
+- [9. 計測（アナリティクス、Issue #142）](#9-計測アナリティクスissue-142)
+- [10. 開発サーバ](#10-開発サーバ)
+- [11. テスト](#11-テスト)
 
 ## 1. ルーティング（`src/App.tsx`）
 
@@ -213,7 +214,29 @@ API Gateway自身の形式で、このAPIの`ApiError`（code/message）形で�
 ワーカー種別による文言の出し分け・コスト表示の約束など）。API側は
 [`apps/api/docs/admin-api.md`](../api/docs/admin-api.md)。
 
-## 9. 開発サーバ
+## 9. 計測（アナリティクス、Issue #142）
+
+Cookie/localStorageを一切使わないサーバーサイド計測。`src/api/analytics.ts`が
+`POST /beacon`へビーコンを送る（`navigator.sendBeacon`、非対応環境は`fetch`
+`keepalive`にフォールバック）。
+
+- `hooks/useAnalyticsPageview.ts`を`App.tsx`の`Layout`から呼び、ルート変更
+  （`react-router-dom`の`useLocation()`）ごとにpageviewイベントを送る。`/admin/*`は
+  `Layout`を経由しない別ツリー（`AdminApp`）なので自然に計測対象から外れる。
+- パス中のUUIDセグメント（`jobId`のような秘密値、[`docs/decisions/0004`](../../docs/decisions/0004-job-id-as-authorization-secret.md)）は
+  送信前に`:id`へ正規化する（`analytics.ts`の`normalizePath()`）。
+- `components/UploadForm.tsx`の`parseLocally()`が`parseReplayInfo()`失敗時に
+  `trackParseError()`を呼ぶ（`unsupported_game`なら検出タイトルも送る）。
+- **`/beacon`は`API_BASE`（`api/client.ts`）を経由しない固定の相対パス**。本番では
+  現在ページと同一オリジン（WebCdnのカスタムドメイン）に解決させることで、
+  CloudFrontの`/beacon`ビヘイビア経由になり`CloudFront-Viewer-Country`ヘッダーが
+  付与される（`infra/README.md`）。開発サーバでは`vite.config.ts`が`/api`と同じく
+  `:8787`へプロキシするだけで、CloudFrontを経由しないため国情報は付かない。
+
+> 収集する情報の一覧・「あえて集めないもの」の判断根拠は
+> [`docs/decisions/0024`](../../docs/decisions/0024-cookieless-analytics-beacon.md)。
+
+## 10. 開発サーバ
 
 ```bash
 pnpm --filter @sattori/web dev
@@ -222,7 +245,7 @@ pnpm --filter @sattori/web dev
 `vite.config.ts`: ポート5173、`/api`を`http://localhost:8787`へプロキシ
 （`VITE_API_BASE`が設定されていればプロキシは無効化され、そちらを直接叩く）。
 
-## 10. テスト
+## 11. テスト
 
 コンポーネント単位で`*.test.tsx`（vitest + jsdom、`src/test/setup.ts`）。
 `pnpm --filter @sattori/web test`。

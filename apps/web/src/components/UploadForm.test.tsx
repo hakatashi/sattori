@@ -3,8 +3,14 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom";
 import type { ReplayInfo } from "@sattori/shared";
 import { UploadForm } from "./UploadForm.tsx";
+import * as analytics from "../api/analytics.ts";
 import * as client from "../api/client.ts";
 import * as shared from "@sattori/shared";
+
+vi.mock("../api/analytics.ts", () => ({
+  trackPageview: vi.fn(),
+  trackParseError: vi.fn(),
+}));
 
 vi.mock("../api/client.ts", () => ({
   SattoriApiError: class extends Error {
@@ -30,6 +36,7 @@ vi.mock("@sattori/shared", async (importOriginal) => {
 
 const mockedClient = vi.mocked(client);
 const mockedShared = vi.mocked(shared);
+const mockedAnalytics = vi.mocked(analytics);
 
 const SAMPLE_REPLAY_INFO: ReplayInfo = {
   game: "th07",
@@ -206,6 +213,7 @@ describe("UploadForm", () => {
       error: {
         code: "unsupported_game",
         message: "東方星蓮船 ～ Undefined Fantastic Object. は現在録画に対応していません",
+        game: "th12",
       },
     });
 
@@ -220,6 +228,8 @@ describe("UploadForm", () => {
     fillEmail("user@example.com");
     expect(nextStepButton().disabled).toBe(true);
     expect(mockedClient.requestMagicLink).not.toHaveBeenCalled();
+    // パースエラーの発生率計測（Issue #142）。検出タイトルも一緒に送る。
+    expect(mockedAnalytics.trackParseError).toHaveBeenCalledWith("unsupported_game", "th12");
   });
 
   it("次のステップ押下でマジックリンク送信要求が行われ onMagicLinkSent が発火する", async () => {

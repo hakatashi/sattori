@@ -250,8 +250,8 @@ describe("SattoriStack", () => {
   });
 
   it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {
-    // Jobs/Workers(Issue #49)/EmailRateLimit/Settings(Issue #14)
-    template.resourceCountIs("AWS::DynamoDB::Table", 4);
+    // Jobs/Workers(Issue #49)/EmailRateLimit/Settings(Issue #14)/AnalyticsEvents(Issue #142)
+    template.resourceCountIs("AWS::DynamoDB::Table", 5);
     template.hasResourceProperties("AWS::DynamoDB::Table", {
       KeySchema: [{ AttributeName: "normalizedEmail", KeyType: "HASH" }],
       TimeToLiveSpecification: { AttributeName: "ttl", Enabled: true },
@@ -339,7 +339,7 @@ describe("SattoriStack", () => {
     });
     // GSI追加はテーブル数を変えない(上のテーブル数アサーションと矛盾しないことの
     // 確認を兼ねる)。
-    template.resourceCountIs("AWS::DynamoDB::Table", 4);
+    template.resourceCountIs("AWS::DynamoDB::Table", 5);
   });
 
   it("JobsTableに自宅ワーカー(Issue #49)のオファー用sparse GSIが存在する", () => {
