@@ -127,8 +127,38 @@ describe("POST /jobs/{jobId}/start", () => {
     expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(0);
   });
 
+  it("キルスイッチが切られていればpendingのまま503を返す", async () => {
+    ddbMock.on(GetCommand, { TableName: "sattori-jobs" }).resolves({ Item: pendingJob });
+    ddbMock
+      .on(GetCommand, { TableName: "sattori-settings" })
+      .resolves({ Item: { acceptingNewJobs: false, monthlyCostLimitUsd: 100 } });
+
+    const { handler } = await import("./startJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const result = res as APIGatewayProxyStructuredResultV2;
+
+    expect(result.statusCode).toBe(503);
+    expect(parseBody(result)).toMatchObject({ code: "service_paused" });
+    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);
+    expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(0);
+  });
+
+  it("キルスイッチが切られていても起動済みジョブは冪等に現在の状態を返す", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...pendingJob, status: "recording" } });
+
+    const { handler } = await import("./startJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const result = res as APIGatewayProxyStructuredResultV2;
+
+    expect(result.statusCode).toBe(200);
+    expect(parseBody(result)).toEqual({ jobId: "job-1", status: "recording" });
+  });
+
   it("並行リクエストで既に起動済みになっていれば、再起動せず最新状態を返す", async () => {
-    ddbMock.on(GetCommand).resolvesOnce({ Item: pendingJob });
+    ddbMock.on(GetCommand, { TableName: "sattori-jobs" }).resolves({ Item: pendingJob });
+    ddbMock
+      .on(GetCommand, { TableName: "sattori-settings" })
+      .resolves({ Item: { acceptingNewJobs: true, monthlyCostLimitUsd: 100 } });
     ddbMock.on(UpdateCommand).rejects(
       new ConditionalCheckFailedException({
         message: "failed",
@@ -144,9 +174,9 @@ describe("POST /jobs/{jobId}/start", () => {
     expect(result.statusCode).toBe(200);
     expect(parseBody(result)).toEqual({ jobId: "job-1", status: "queued" });
     expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(0);
-    // ReturnValuesOnConditionCheckFailureで取得した既存itemを使うため、
-    // 追加のGetItem往復は発生しない(最初の1回のみ)。
-    expect(ddbMock.commandCalls(GetCommand)).toHaveLength(1);
+    // ReturnValuesOnConditionCheckFailureで取得した既存itemを使うため、ジョブ自体への
+    // 追加のGetItem往復は発生しない(job取得1回+キルスイッチ確認用のsettings取得1回)。
+    expect(ddbMock.commandCalls(GetCommand)).toHaveLength(2);
   });
 
   it("StartExecution失敗時はジョブをfailedにし502を返す", async () => {

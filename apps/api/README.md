@@ -247,7 +247,7 @@ UserDataスクリプトがやること:
 - 作品タイトルは `GAME_TITLES`（日本語名。副題に英語名を含む）を両言語で使い、自機タイプは
   言語に応じたローカライズ名（`localizedCharacterName()`）を使う。
 
-## 9. キルスイッチ・月間コストガード（`settings.ts`, `costGuard.ts`, Issue #14）
+## 9. キルスイッチ・月間コストガード（`settings.ts`, `costGuard.ts`, Issue #14／#130）
 
 `requestMagicLink.ts`は上記のメールレート制限より前に、以下2つのグローバルな
 受付制御を順に行う。どちらも`SettingsTable`（PK固定値1件のシングルトン設定、
@@ -269,6 +269,17 @@ UserDataスクリプトがやること:
 - どちらも該当すれば`POST /magic-links`は503（`service_paused` /
   `monthly_cost_limit_reached`）を返す。エラーメッセージはそのままフロントエンドに
   表示される（`apps/web`はAPIの`ApiError.message`をそのままユーザーに見せる設計）。
+- **キルスイッチは`startJob.ts`（`POST /jobs/{jobId}/start`）でも確認する**（Issue #130、
+  `REL-1`）。マジックリンク発行後は`pending`ジョブが最大24時間有効なため、
+  `requestMagicLink.ts`側の受付停止だけでは、既に発行済みのリンクを開かれると
+  録画が始まってしまう。`startJobFn`が`pending`→`queued`の原子遷移
+  （`startPendingJob()`）を行う**前**に`getSettings()`を確認し、停止中なら
+  ジョブを`pending`のまま据え置いて503（`service_paused`）を返す——起動済み
+  （`pending`以外）へのアクセスは冪等応答なのでこのチェックを通らず、受付再開後は
+  同じリンクで起動できるため、ユーザー側の損失はゼロ。**月間コストガードは
+  `startJob.ts`では見ていない**——`getCachedMonthlyCostUsd()`はJobsTableの全件Scanを
+  要し、かつ録画リクエストが一度成功した（メールが届いた）にもかかわらず起動できない
+  というユーザー体験の悪化を避けるため、意図的にキルスイッチのみとしている。
 - 設定の更新（`POST /admin/settings`）は`settings.ts`の`updateSettings()`が単純な
   読み取り→マージ→上書きで行う。管理者は1人固定で更新頻度も低いため、
   `rateLimit.ts`のような原子的な条件付き更新は採用していない。
