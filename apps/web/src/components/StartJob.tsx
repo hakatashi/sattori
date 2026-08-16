@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { startJob, SattoriApiError } from "../api/client.ts";
+import { translateApiErrorMessage } from "../i18n/apiErrors.ts";
 import styles from "./StartJob.module.css";
 
 interface Props {
@@ -34,7 +35,9 @@ export function StartJob({ jobId, onStarted, onReset }: Props) {
           return;
         }
         const message =
-          err instanceof SattoriApiError ? err.message : t("startJob.unexpectedError");
+          err instanceof SattoriApiError
+            ? translateApiErrorMessage(t, err.code, err.message, { status: err.status })
+            : t("startJob.unexpectedError");
         setState({ phase: "error", message });
       });
     return () => {
