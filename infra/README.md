@@ -50,14 +50,19 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   Projection=ALL）を追加済み、Issue #51。詳細は`apps/api/docs/admin-api.md`）、
   `EmailRateLimitTable`（`normalizedEmail`パーティションキーのみ・1メール1item、
   TTL属性で自動削除。`apps/api/README.md`参照）、
-  `SettingsTable`（`settingKey`パーティションキーのみ・固定値1item、キルスイッチ・
-  月間コストガード閾値のシングルトン設定。Issue #14。`apps/api/README.md`
-  「キルスイッチ・月間コストガード」参照）、
+  `SettingsTable`（`settingKey`パーティションキーのみ、汎用の小さな設定テーブル。
+  キルスイッチ・月間コストガード閾値のシングルトン設定item（Issue #14。
+  `apps/api/README.md`「キルスイッチ・月間コストガード」参照）に加え、ハッシュ化
+  訪問者ID用の日次salt item（`settingKey: "analyticsSalt#YYYY-MM-DD"`、TTL 2日、
+  Issue #144）も同居する。`timeToLiveAttribute: "ttl"`はsalt itemだけが使う
+  （キルスイッチ設定itemは`ttl`属性を持たないため無期限）。`apps/api/README.md`
+  「計測」参照）、
   `WorkersTable`（`workerId`パーティションキーのみ・TTLあり。自宅サーバー常駐
   ワーカーのハートビート置き場。Issue #49。`home-worker/README.md`参照）、
   `AnalyticsEventsTable`（PK=`eventDate`（UTC日付）・SK=`eventId`、TTL 180日。
   Cookie無しの計測ビーコン（`POST /beacon`）が書き込む生イベントログ。Issue #142。
-  `apps/api/README.md`「計測」参照）。
+  ユニーク訪問者数算出用にIPを日次saltでハッシュ化した`visitorHash`も持つ
+  （生IPは保存しない、Issue #144）。`apps/api/README.md`「計測」参照）。
   `JobsTable`にはもう1本、自宅ワーカーへのオファー用**sparse GSI**
   `HomeWorkerOfferIndex`（PK=`homeWorkerOfferState`, SK=`homeWorkerOfferExpiresAt`）
   がある。オファー中のジョブだけがこの属性を持つ（claim・撤回時にREMOVEする）ので、

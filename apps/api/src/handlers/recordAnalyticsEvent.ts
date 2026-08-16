@@ -1,6 +1,6 @@
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import type { AnalyticsEventInput, RecordAnalyticsEventResponse } from "@sattori/shared";
-import { recordAnalyticsEvent } from "../analytics.js";
+import { extractClientIp, recordAnalyticsEvent } from "../analytics.js";
 import { loadAnalyticsConfig } from "../config.js";
 import { error, json, parseBody } from "../http.js";
 
@@ -29,11 +29,15 @@ function isValidInput(body: unknown): body is AnalyticsEventInput {
 /**
  * POST /beacon
  *
- * Cookie・訪問者IDを一切使わないサーバーサイド計測（Issue #142）。WebCdn
+ * Cookie・localStorageを一切使わないサーバーサイド計測（Issue #142）。WebCdn
  * （CloudFront）の`/beacon`ビヘイビアからのみ`CloudFront-Viewer-Country`ヘッダーが
  * 付与される前提だが、直接叩かれてヘッダーが無くても`country: null`で記録するだけで
  * 失敗はしない。設計の背景は
  * `docs/decisions/0024-cookieless-analytics-beacon.md`。
+ *
+ * ユニーク訪問者数の算出用に、クライアントIPを日次saltでハッシュ化した仮の
+ * 訪問者IDも記録する（生IPは保存しない、Issue #144。
+ * `docs/decisions/0026-hashed-visitor-id-daily-salt.md`）。
  *
  * 計測のためだけの経路であり、失敗してもユーザー体験に影響させない
  * （呼び出し側は`navigator.sendBeacon`でレスポンスを見ない）。
@@ -44,14 +48,16 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     return error(400, "invalid_analytics_event", "不正なイベントです");
   }
 
-  const { analyticsEventsTable } = loadAnalyticsConfig();
+  const { analyticsEventsTable, settingsTable } = loadAnalyticsConfig();
   const headers = event.headers ?? {};
+  const sourceIp = event.requestContext?.http?.sourceIp ?? null;
 
   try {
-    await recordAnalyticsEvent(analyticsEventsTable, body, {
+    await recordAnalyticsEvent(analyticsEventsTable, settingsTable, body, {
       country: headers["cloudfront-viewer-country"] ?? null,
       acceptLanguage: headers["accept-language"] ?? null,
       userAgent: headers["user-agent"] ?? null,
+      sourceIp: extractClientIp(headers, sourceIp),
     });
   } catch (err) {
     console.error(
