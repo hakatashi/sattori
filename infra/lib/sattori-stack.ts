@@ -1075,9 +1075,8 @@ function handler(event) {
         // Cookie無しの計測ビーコン（`/beacon`、Issue #142）。他のAPIエンドポイントは
         // CloudFrontを経由せず直接HTTP APIを叩く構成（`apps/web/README.md`
         // 「APIクライアント」）だが、このパスだけは例外的にCloudFrontを前段に置く。
-        // `CloudFront-Viewer-Country`ヘッダー（`ALL_VIEWER_AND_CLOUDFRONT_2022`
-        // オリジンリクエストポリシーでのみ付与される）から国を得るには、CloudFront
-        // を経由させる以外に方法が無いため。理由の詳細は
+        // `CloudFront-Viewer-Country`ヘッダーから国を得るには、CloudFrontを経由させる
+        // 以外に方法が無いため。理由の詳細は
         // `docs/decisions/0024-cookieless-analytics-beacon.md`。
         "/beacon": {
           // HttpApiはカスタムドメイン未設定だと`domainName`を直接持たないため、
@@ -1089,7 +1088,13 @@ function handler(event) {
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           // 計測イベントは1件ごとに内容が異なるためキャッシュ不可。
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_AND_CLOUDFRONT_2022,
+          // `ALL_VIEWER_AND_CLOUDFRONT_2022`はviewerのHostヘッダー（カスタムドメイン）
+          // をそのままオリジンへ転送してしまい、API Gatewayがオリジン自身のドメインと
+          // 不一致として403 Forbiddenを返す（Issue #151）。`ALL_VIEWER_EXCEPT_HOST_HEADER`
+          // はHostヘッダーだけを除外しつつ、CloudFront-Viewer-Countryを含む位置情報系
+          // ヘッダーは引き続き転送するため、API Gateway/Lambda Function URLオリジン
+          // 向けにAWSが用意した想定通りの組み合わせになる。
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
       },
       comment: "Sattori Web",
