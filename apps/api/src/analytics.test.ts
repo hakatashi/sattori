@@ -1,10 +1,13 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import {
   classifyDeviceCategory,
+  extractClientIp,
   extractReferrerHost,
+  hashVisitorId,
   primaryLanguageTag,
   recordAnalyticsEvent,
 } from "./analytics.js";
@@ -54,6 +57,38 @@ describe("primaryLanguageTag", () => {
   });
 });
 
+describe("hashVisitorId", () => {
+  it("同じIP・saltなら同じハッシュを返す", () => {
+    expect(hashVisitorId("203.0.113.1", "salt-a")).toBe(hashVisitorId("203.0.113.1", "salt-a"));
+  });
+
+  it("saltが違えば同じIPでも別のハッシュになる（日をまたいだ突き合わせ防止）", () => {
+    expect(hashVisitorId("203.0.113.1", "salt-a")).not.toBe(
+      hashVisitorId("203.0.113.1", "salt-b"),
+    );
+  });
+
+  it("生IPをハッシュに含まない", () => {
+    expect(hashVisitorId("203.0.113.1", "salt-a")).not.toContain("203.0.113.1");
+  });
+});
+
+describe("extractClientIp", () => {
+  it("X-Forwarded-Forの先頭値を優先する（CloudFront経由、Issue #144）", () => {
+    expect(extractClientIp({ "x-forwarded-for": "203.0.113.1, 10.0.0.1" }, "10.0.0.1")).toBe(
+      "203.0.113.1",
+    );
+  });
+
+  it("X-Forwarded-Forが無ければsourceIpにフォールバックする（直接叩かれた場合）", () => {
+    expect(extractClientIp({}, "203.0.113.9")).toBe("203.0.113.9");
+  });
+
+  it("どちらも無ければnull", () => {
+    expect(extractClientIp({}, null)).toBeNull();
+  });
+});
+
 describe("recordAnalyticsEvent", () => {
   const ddbMock = mockClient(DynamoDBDocumentClient);
 
@@ -66,6 +101,7 @@ describe("recordAnalyticsEvent", () => {
 
     await recordAnalyticsEvent(
       "analytics-table",
+      "settings-table",
       {
         type: "pageview",
         path: "/jobs/:id",
@@ -80,6 +116,7 @@ describe("recordAnalyticsEvent", () => {
         acceptLanguage: "ja-JP,en;q=0.9",
         userAgent:
           "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+        sourceIp: null,
       },
     );
 
@@ -96,6 +133,7 @@ describe("recordAnalyticsEvent", () => {
       language: "ja",
       browserFamily: "safari",
       osFamily: "ios",
+      visitorHash: null,
     });
     expect(JSON.stringify(item)).not.toContain("iPhone");
     expect(calls[0]?.args[0].input.TableName).toBe("analytics-table");
@@ -106,8 +144,9 @@ describe("recordAnalyticsEvent", () => {
 
     await recordAnalyticsEvent(
       "analytics-table",
+      "settings-table",
       { type: "parse_error", errorCode: "unsupported_game", game: "th09" },
-      { country: null, acceptLanguage: null, userAgent: null },
+      { country: null, acceptLanguage: null, userAgent: null, sourceIp: null },
     );
 
     const calls = ddbMock.commandCalls(PutCommand);
@@ -120,6 +159,38 @@ describe("recordAnalyticsEvent", () => {
       language: null,
       browserFamily: null,
       osFamily: null,
+      visitorHash: null,
     });
+  });
+
+  it("sourceIpがあれば日次saltを取得・生成してvisitorHashを記録する（Issue #144）", async () => {
+    ddbMock.on(GetCommand).resolvesOnce({}); // その日のsaltはまだ無い
+    ddbMock.on(PutCommand).resolves({});
+
+    await recordAnalyticsEvent(
+      "analytics-table",
+      "settings-table",
+      {
+        type: "pageview",
+        path: "/",
+        referrer: null,
+        utmSource: null,
+        utmMedium: null,
+        utmCampaign: null,
+        viewportWidth: 1280,
+      },
+      { country: null, acceptLanguage: null, userAgent: null, sourceIp: "203.0.113.1" },
+    );
+
+    const putCalls = ddbMock.commandCalls(PutCommand);
+    const saltPut = putCalls.find((c) => c.args[0].input.TableName === "settings-table");
+    const eventPut = putCalls.find((c) => c.args[0].input.TableName === "analytics-table");
+    const salt = (saltPut?.args[0].input.Item as Record<string, unknown> | undefined)?.salt;
+    expect(typeof salt).toBe("string");
+
+    const expectedHash = createHash("sha256").update(`${salt}:203.0.113.1`).digest("hex");
+    expect((eventPut?.args[0].input.Item as Record<string, unknown>).visitorHash).toBe(
+      expectedHash,
+    );
   });
 });
