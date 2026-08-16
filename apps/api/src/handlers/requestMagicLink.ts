@@ -53,32 +53,6 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   if (!REPLAY_KEY_PATTERN.test(body.replayKey)) {
     return error(400, "invalid_replay_key", "replayKey の形式が正しくありません");
   }
-  // `estimatedDurationSeconds` も `String()` されてそのままワーカーの環境変数へ乗る
-  // （`workerEnv.ts`）ため、型と値域をここで固定する（Issue #127 SEC-1）。
-  if (
-    body.estimatedDurationSeconds !== undefined &&
-    body.estimatedDurationSeconds !== null &&
-    (typeof body.estimatedDurationSeconds !== "number" ||
-      !Number.isFinite(body.estimatedDurationSeconds) ||
-      body.estimatedDurationSeconds <= 0)
-  ) {
-    return error(
-      400,
-      "invalid_request",
-      "estimatedDurationSeconds の形式が正しくありません",
-    );
-  }
-
-  // ページAはリプレイ解析結果（ReplayInfo.game）を渡してくるが、念のため
-  // 未指定なら th07 を既定とする。**これは実際の.rpyの中身を検証しないクライアント
-  // 申告値による安価な事前チェックに過ぎない**——下のサーバー側再パースが成功すれば
-  // そちらの値で上書きする（Issue #133 OPS-1 フォローアップ）。ここで明らかに不正な
-  // 値だけ早期に弾いておくことで、キルスイッチ・コストガード・レート制限の消費を
-  // 無駄にしない。
-  const claimedGame: GameId = body.game ?? "th07";
-  if (!isSupportedGame(claimedGame)) {
-    return error(422, "unsupported_game", "現在このタイトルの録画には対応していません");
-  }
 
   // キルスイッチ（Issue #14）。管理者が/adminから手動で全面停止した状態。
   // GetItem1回のみで軽量なためキャッシュせず、切替が即座に反映されるようにする
@@ -162,21 +136,20 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     );
   }
 
-  // `game`/`estimatedDurationSeconds`も`claimedGame`/`body.estimatedDurationSeconds`
-  // というクライアント申告値を鵜呑みにせず、再パースが成功していればそちらの値で
-  // 上書きする（Issue #133 OPS-1 フォローアップ）。`job.game`はEC2インスタンスタイプ
-  // 選定（`ec2.ts`の`getCandidateInstanceTypes()`）とワーカー側の録画スクリプト選択
-  // （`GAME`環境変数、`worker/entrypoint.py`）を直接左右するため、これを検証せず
-  // クライアント値のままにしておくと、実際にアップロードされたリプレイと無関係に
-  // 高コストなインスタンスタイプ（例: th20の`c7i.4xlarge`）を申告させられてしまう。
-  // 再パースが失敗した場合のみ、上のクライアント申告値へフォールバックする
-  // （録画自体は等倍前提で継続でき、実際に不整合があればワーカー側で録画が
-  // 失敗するだけなので、ここでは強く倒さない）。
-  const game = detectedGame ?? claimedGame;
+  // `game`/`estimatedDurationSeconds`はクライアントから受け取らず、`replayKey`から
+  // サーバー側で再パースした結果だけを使う（Issue #133 OPS-1）。`job.game`は
+  // EC2インスタンスタイプ選定（`ec2.ts`の`getCandidateInstanceTypes()`）とワーカー側の
+  // 録画スクリプト選択（`GAME`環境変数、`worker/entrypoint.py`）を直接左右するため、
+  // クライアント申告を信用すると実際のリプレイと無関係な高コストなインスタンス
+  // タイプ（例: th20の`c7i.4xlarge`）を選ばせられてしまう。再パースに失敗した場合
+  // （タイトル自体を検出できない破損ファイル等）のみ th07 を既定として続行する
+  // （録画自体は等倍前提で継続でき、実際に不整合があればワーカー側で録画が失敗する
+  // だけなので、ここでは強く倒さない）。
+  const game: GameId = detectedGame ?? "th07";
   if (!isSupportedGame(game)) {
     return error(422, "unsupported_game", "現在このタイトルの録画には対応していません");
   }
-  const estimatedDurationSeconds = replayInfo?.estimatedDurationSeconds ?? body.estimatedDurationSeconds ?? null;
+  const estimatedDurationSeconds = replayInfo?.estimatedDurationSeconds ?? null;
 
   const now = new Date();
   const jobId = randomUUID();
