@@ -35,6 +35,7 @@
 | [0021](0021-cost-estimation-side-data-never-fails-the-job.md) | 2026-08 | apps/api | コスト推定用の付随データは、取得に失敗してもジョブを落とさず、後から上書きしない | 有効 |
 | [0022](0022-cost-guard-by-estimated-amount-not-job-count.md) | 2026-07 | apps/api | 新規受付の自動停止は録画回数ではなく推定コスト額で判定する | 有効 |
 | [0023](0023-elapsed-time-interpolation-never-rewinds.md) | 2026-08 | apps/web / worker | 経過時間表示はサーバー値を上限とする内挿にし、決して巻き戻さない | 有効 |
+| [0024](0024-cookieless-analytics-beacon.md) | 2026-08-16 | apps/web / apps/api / packages/shared / infra | アナリティクスはCookie無しの自前ビーコンで実装し、国はCloudFront経由で取る | 有効 |
 
 ## 書き方
 

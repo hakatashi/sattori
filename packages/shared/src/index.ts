@@ -1,3 +1,4 @@
+export * from "./analytics.js";
 export * from "./games.js";
 export * from "./language.js";
 export * from "./replay.js";

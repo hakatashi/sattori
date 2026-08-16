@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import {
   CfnOutput,
   Duration,
+  Fn,
   RemovalPolicy,
   Stack,
   type StackProps,
@@ -217,6 +218,21 @@ export class SattoriStack extends Stack {
       partitionKey: { name: "settingKey", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    // Cookie無しのサーバーサイド計測（`POST /beacon`、Issue #142）が書き込む生イベント
+    // ログ。PK=eventDate(UTC日付, YYYY-MM-DD)・SK=eventIdで、日付ごとにパーティションを
+    // 分けておくと将来「直近N日を集計する」処理がQueryで済み、JobsTableのような
+    // 全件Scanを要らないようにできる。TTL(180日、`apps/api/src/analytics.ts`の
+    // ANALYTICS_EVENT_TTL_DAYS)で自動的に古いイベントを削除する——生イベントは
+    // 集計の一次データであり無期限に貯める設計にはしていない。設計の背景は
+    // `docs/decisions/0024-cookieless-analytics-beacon.md`。
+    const analyticsEventsTable = new dynamodb.Table(this, "AnalyticsEventsTable", {
+      partitionKey: { name: "eventDate", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "eventId", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+      timeToLiveAttribute: "ttl",
     });
 
     // --- メール送信(SES, マジックリンク認証 Issue #9) -----------------------
@@ -441,12 +457,21 @@ export class SattoriStack extends Stack {
       "GetWorkerAvailabilityFn",
       "getWorkerAvailability.ts",
     );
+    // Cookie無しのサーバーサイド計測（`POST /beacon`、Issue #142）。計測用テーブルの
+    // 読み書きしか行わないため、他の管理系Lambdaと同様commonEnvを使わず専用の環境変数
+    // だけを持たせる（`apps/api/README.md`「環境変数」参照）。
+    const recordAnalyticsEventFn = makeHandler(
+      "RecordAnalyticsEventFn",
+      "recordAnalyticsEvent.ts",
+      { ANALYTICS_EVENTS_TABLE: analyticsEventsTable.tableName },
+    );
 
     // 権限付与
     uploadBucket.grantPut(createUploadFn); // 署名付き PUT URL 発行のため
     uploadBucket.grantRead(parseReplayFn); // アップロード済み .rpy を取得して解析するため
     jobsTable.grantReadData(getJobFn);
     workersTable.grantReadData(getWorkerAvailabilityFn);
+    analyticsEventsTable.grantWriteData(recordAnalyticsEventFn);
 
     // マジックリンクの送信要求は、status:pending の JobRecord 作成(jobsTable書き込み)、
     // レート制限カウンタの読み書き、SESでの送信権限が必要。
@@ -866,6 +891,15 @@ export class SattoriStack extends Stack {
         getWorkerAvailabilityFn,
       ),
     });
+    // Cookie無しのサーバーサイド計測（Issue #142）。フロントエンドはこのパスを
+    // API_BASE経由ではなく常に相対パス`/beacon`で叩く——CloudFront(WebCdn)の
+    // `/beacon`ビヘイビア（後述）を経由させて`CloudFront-Viewer-Country`ヘッダーを
+    // 得るため（`apps/web/src/api/analytics.ts`）。
+    httpApi.addRoutes({
+      path: "/beacon",
+      methods: [apigw.HttpMethod.POST],
+      integration: new HttpLambdaIntegration("RecordAnalyticsEventInt", recordAnalyticsEventFn),
+    });
     httpApi.addRoutes({
       path: "/jobs/{jobId}/start",
       methods: [apigw.HttpMethod.POST],
@@ -988,6 +1022,27 @@ function handler(event) {
             eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
           },
         ],
+      },
+      additionalBehaviors: {
+        // Cookie無しの計測ビーコン（`/beacon`、Issue #142）。他のAPIエンドポイントは
+        // CloudFrontを経由せず直接HTTP APIを叩く構成（`apps/web/README.md`
+        // 「APIクライアント」）だが、このパスだけは例外的にCloudFrontを前段に置く。
+        // `CloudFront-Viewer-Country`ヘッダー（`ALL_VIEWER_AND_CLOUDFRONT_2022`
+        // オリジンリクエストポリシーでのみ付与される）から国を得るには、CloudFront
+        // を経由させる以外に方法が無いため。理由の詳細は
+        // `docs/decisions/0024-cookieless-analytics-beacon.md`。
+        "/beacon": {
+          // HttpApiはカスタムドメイン未設定だと`domainName`を直接持たないため、
+          // `apiEndpoint`(https://<id>.execute-api.<region>.amazonaws.com)から
+          // ホスト名部分だけを取り出す（CDKでの定番の回避策）。
+          origin: new origins.HttpOrigin(Fn.select(2, Fn.split("/", httpApi.apiEndpoint))),
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          // 既定のビヘイビアはGET/HEADのみ許可のため、POSTを転送するには明示が要る。
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          // 計測イベントは1件ごとに内容が異なるためキャッシュ不可。
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_AND_CLOUDFRONT_2022,
+        },
       },
       comment: "Sattori Web",
     });
