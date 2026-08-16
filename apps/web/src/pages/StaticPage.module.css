@@ -3,10 +3,6 @@
   flex-direction: column;
   gap: 1rem;
   margin-top: 2rem;
-  padding: 2rem;
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
   text-align: left;
   line-height: 1.7;
 }

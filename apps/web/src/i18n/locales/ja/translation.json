@@ -125,7 +125,7 @@
     "submitStarting": "少女祈祷中⋯",
     "submit": "次へ",
     "termsAgreement": "続行すると、<0>利用規約</0>に同意したものとみなされます。",
-    "replayHelpLink": "(?) リプレイファイルはどこにありますか？"
+    "replayHelpLink": "リプレイファイルの保存場所について"
   },
   "replayHelp": {
     "heading": "東方Project作品のリプレイファイルの保存場所",
@@ -141,7 +141,7 @@
       },
       "appData": {
         "heading": "{{first}} 以降",
-        "description1": "「{{title}}」は、ユーザーの %APPDATA% フォルダにユーザーの戦績やリプレイファイルなどのデータを保存します。",
+        "description1": "「{{title}}」では、ユーザーの %APPDATA% フォルダにユーザーの戦績やリプレイファイルなどのデータを保存します。",
         "pathLabel": "既定では以下のフォルダにリプレイファイルが保存されます。"
       }
     },
@@ -151,7 +151,7 @@
   "replayPreview": {
     "ariaLabel": "リプレイ解析結果",
     "loadingAriaLabel": "読み込み中",
-    "emptyPlaceholder": "リプレイファイルを選択すると、ここに内容が表示されます",
+    "emptyPlaceholder": "まずはリプレイファイルを選択してください",
     "unknown": "不明",
     "cleared": "クリア",
     "notCleared": "未クリア",

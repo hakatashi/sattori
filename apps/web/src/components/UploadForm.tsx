@@ -22,6 +22,7 @@ import { toLocalizedPath } from "../i18n/paths.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
+import { helpCircleOutline } from "ionicons/icons";
 
 interface Props {
   onMagicLinkSent: (email: string) => void;
@@ -446,7 +447,10 @@ export function UploadForm({ onMagicLinkSent }: Props) {
       </label>
 
       <p className={styles.replayHelpLink}>
-        <Link to={toLocalizedPath("/replay-help", locale)}>{t("uploadForm.replayHelpLink")}</Link>
+        <Link to={toLocalizedPath("/replay-help", locale)}>
+          <ion-icon icon={helpCircleOutline} className={styles.replayHelpLinkIcon} aria-hidden="true" />
+          {t("uploadForm.replayHelpLink")}
+        </Link>
       </p>
 
       {errorMessage && <p className={styles.error}>{errorMessage}</p>}
