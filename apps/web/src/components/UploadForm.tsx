@@ -128,7 +128,7 @@ const gameTitles = [
     english: "Impossible\nSpell Card",
     shortName: "ISC",
     supported: false,
-    icon: 'th14.png',
+    icon: 'th143.png',
   },
   {
     japanese: "東方紺珠伝",
