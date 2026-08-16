@@ -66,6 +66,9 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     downloadUrl720p,
     downloadExpiresAt: job.status === "done" ? calculateDownloadExpiresAt(job.doneAt) : null,
     error: job.error,
+    // `errorCode`はIssue #138で追加した属性のため、それ以前に失敗した旧ジョブでは
+    // DynamoDB上に属性自体が無く`undefined`になりうる（`replayInfo`と同じ理由）。
+    errorCode: job.errorCode ?? null,
     updatedAt: job.updatedAt,
     progress: job.progress,
     previewVideoUrl,

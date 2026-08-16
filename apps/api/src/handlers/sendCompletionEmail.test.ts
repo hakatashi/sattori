@@ -35,6 +35,7 @@ function baseJob(overrides: Partial<JobRecord>): JobRecord {
     outputPath: null,
     outputPath720p: null,
     error: null,
+    errorCode: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     doneAt: null,

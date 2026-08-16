@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { isTerminalStatus, type GetJobResponse } from "@sattori/shared";
 import { getJob } from "../api/client.ts";
 
@@ -14,6 +15,7 @@ export interface JobPollingState {
  * 月1000回規模では WebSocket/SSE は過剰なため単純ポーリングで十分（設計方針）。
  */
 export function useJobPolling(jobId: string): JobPollingState {
+  const { t } = useTranslation();
   const [job, setJob] = useState<GetJobResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -36,7 +38,7 @@ export function useJobPolling(jobId: string): JobPollingState {
         if (cancelled) {
           return;
         }
-        setLoadError("状態の取得に失敗しました。再試行します…");
+        setLoadError(t("jobProgress.pollError"));
         timer = setTimeout(poll, POLL_INTERVAL_MS);
       }
     }

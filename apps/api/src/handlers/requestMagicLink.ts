@@ -179,6 +179,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     outputBytes: null,
     outputBytes720p: null,
     error: null,
+    errorCode: null,
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
     launchedAt: null,

@@ -18,6 +18,7 @@ import {
   SattoriApiError,
   uploadReplay,
 } from "../api/client.ts";
+import { translateApiErrorMessage, translateUnsupportedGameMessage } from "../i18n/apiErrors.ts";
 import { useLocale } from "../i18n/LocaleContext.ts";
 import { toLocalizedPath } from "../i18n/paths.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
@@ -340,7 +341,11 @@ export function UploadForm({ onMagicLinkSent }: Props) {
       const data = new Uint8Array(await readFileAsArrayBuffer(selected));
       const result = parseReplayInfo(data);
       if (!result.ok) {
-        setErrorMessage(result.error.message);
+        const message =
+          result.error.code === "unsupported_game"
+            ? translateUnsupportedGameMessage(t, result.error.game ?? null, result.error.message)
+            : translateApiErrorMessage(t, result.error.code, result.error.message);
+        setErrorMessage(message);
         trackParseError(result.error.code, result.error.game ?? null);
         return false;
       }
@@ -360,7 +365,9 @@ export function UploadForm({ onMagicLinkSent }: Props) {
       return true;
     } catch (err) {
       const message =
-        err instanceof SattoriApiError ? err.message : t("uploadForm.unexpectedError");
+        err instanceof SattoriApiError
+          ? translateApiErrorMessage(t, err.code, err.message, { status: err.status })
+          : t("uploadForm.unexpectedError");
       setErrorMessage(message);
       return false;
     }
@@ -382,7 +389,11 @@ export function UploadForm({ onMagicLinkSent }: Props) {
       onMagicLinkSent(email);
     } catch (err) {
       const message =
-        err instanceof SattoriApiError ? err.message : t("uploadForm.unexpectedError");
+        err instanceof SattoriApiError
+          ? err.code === "unsupported_game"
+            ? translateUnsupportedGameMessage(t, preview?.game ?? null, err.message)
+            : translateApiErrorMessage(t, err.code, err.message, { status: err.status })
+          : t("uploadForm.unexpectedError");
       setErrorMessage(message);
       setPhase("ready");
     }

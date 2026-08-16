@@ -236,7 +236,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     jobId,
     "failed",
     ADMIN_STOPPED_JOB_ERROR,
-    { unlessDone: true },
+    { unlessDone: true, errorCode: "admin_stopped" },
   );
 
   console.log(

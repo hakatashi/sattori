@@ -22,6 +22,7 @@ const BASE: Omit<
   | "downloadUrl720p"
   | "downloadExpiresAt"
   | "error"
+  | "errorCode"
   | "progress"
   | "previewVideoUrl"
   | "previewImageUrl"
@@ -40,6 +41,7 @@ function buildJob(overrides: Partial<GetJobResponse> & { status: JobStatus }): G
     downloadUrl720p: null,
     downloadExpiresAt: null,
     error: null,
+    errorCode: null,
     progress: null,
     previewVideoUrl: null,
     previewImageUrl: null,
@@ -91,10 +93,18 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
     }),
   },
   {
-    title: "status: failed",
+    title: "status: failed（errorCode無し・旧ジョブ、生文言をそのまま表示）",
     job: buildJob({
       status: "failed",
       error: "Spotインスタンスの中断が続いたため録画に失敗しました。",
+    }),
+  },
+  {
+    title: "status: failed（errorCodeあり、errors.<code>翻訳経由で表示）",
+    job: buildJob({
+      status: "failed",
+      error: "録画に複数回失敗しました。時間をおいて再試行してください",
+      errorCode: "retries_exhausted",
     }),
   },
   {

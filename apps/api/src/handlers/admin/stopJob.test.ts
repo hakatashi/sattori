@@ -44,6 +44,7 @@ const recordingJob: JobRecord = {
   outputPath: null,
   outputPath720p: null,
   error: null,
+  errorCode: null,
   createdAt: "2026-07-18T00:00:00.000Z",
   updatedAt: "2026-07-18T00:00:00.000Z",
   doneAt: null,
@@ -141,6 +142,7 @@ describe("POST /admin/jobs/{jobId}/stop", () => {
     expect(updateCall?.args[0].input.ExpressionAttributeValues?.[":e"]).toBe(
       "管理者により停止されました",
     );
+    expect(updateCall?.args[0].input.ExpressionAttributeValues?.[":ec"]).toBe("admin_stopped");
 
     // 拒否票（`stopRequestedAt`）は**ワーカーの後始末より先に**立てる。後に回すと、
     // 割り当て解除に気づく前に完走した自宅ワーカーのコンテナが`done`を書き、

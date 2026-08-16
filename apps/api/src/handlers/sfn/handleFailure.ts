@@ -181,7 +181,7 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
       event.jobId,
       "failed",
       "録画に複数回失敗しました。時間をおいて再試行してください",
-      { unlessDone: true },
+      { unlessDone: true, errorCode: "retries_exhausted" },
     );
   }
 
