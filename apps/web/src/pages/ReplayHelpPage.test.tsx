@@ -38,7 +38,7 @@ describe("ReplayHelpPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /ダブルスポイラー/ }));
 
-    expect(screen.getByText(/「ダブルスポイラー」は、ユーザーの %APPDATA% フォルダに/)).toBeTruthy();
+    expect(screen.getByText(/「ダブルスポイラー」では、ユーザーの %APPDATA% フォルダに/)).toBeTruthy();
     expect(screen.getByText("%APPDATA%\\ShanghaiAlice\\th125\\replay")).toBeTruthy();
   });
 
