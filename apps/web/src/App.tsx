@@ -11,6 +11,7 @@ import { ReplayHelpPage } from "./pages/ReplayHelpPage.tsx";
 import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
 import { JobProgressPlayground } from "./dev/JobProgressPlayground.tsx";
 import { LanguageSwitcher } from "./components/LanguageSwitcher.tsx";
+import { useAnalyticsPageview } from "./hooks/useAnalyticsPageview.ts";
 import { LocaleContext } from "./i18n/LocaleContext.ts";
 import { toLocalizedPath } from "./i18n/paths.ts";
 import type { SupportedLanguage } from "./i18n/i18n.ts";
@@ -39,6 +40,10 @@ function Layout({ lang }: LayoutProps) {
   useEffect(() => {
     void i18n.changeLanguage(lang);
   }, [lang, i18n]);
+
+  // Cookie無しのpageview計測（Issue #142）。`/admin/*`は別コンポーネントツリー
+  // （`AdminApp`）でこの`Layout`を経由しないため、自然に計測対象から外れる。
+  useAnalyticsPageview();
 
   // ページB（2カラムのリプレイ情報+アクティビティログ）はページAより広い画面幅を活かせるため、
   // ページAの幅(50rem)はそのままにページBのみ最大90remまで広げる。

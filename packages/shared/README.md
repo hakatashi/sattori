@@ -27,6 +27,11 @@
   公開されるため`workerId`・台数・負荷は返さない**（開発者の自宅環境の稼働状況を
   必要以上に外へ出さない）。あくまで「今の」状態で、実際に録画が始まるのはユーザーが
   マジックリンクを開いた後（最大24時間後）なので、可否は一致しない前提 |
+| `POST /beacon` | Cookie無しの計測ビーコン（`src/analytics.ts`、Issue #142）。
+  pageview/parse_errorイベントを送る。`apps/web`は`API_BASE`を経由しない固定の
+  相対パスで叩く（CloudFront経由で`CloudFront-Viewer-Country`を得るため、
+  `infra/README.md`）。収集する情報と「あえて集めないもの」は
+  [`docs/decisions/0024`](../../docs/decisions/0024-cookieless-analytics-beacon.md) |
 
 `EMAIL_PATTERN`（簡易メール形式チェック）はフロントエンドとバックエンドの両方が
 同じ判定基準を使うようここに一本化してある。
@@ -120,7 +125,9 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
   shared → replay-parser の一方向）。
 - `parseReplayInfo()`: バイト列から `ReplayInfo` を得るエントリポイント。フォーマット
   解析エラーに加え、`SUPPORTED_GAME_IDS`（`games.ts`。現状 th06/07/08/11）に含まれない
-  タイトルも `unsupported_game` エラーとして日本語メッセージ付きで返す。
+  タイトルも `unsupported_game` エラーとして日本語メッセージ付きで返す。失敗時の
+  `ReplayParseFailure.game` は `unsupported_game` の場合のみ検出タイトルを持つ
+  （パースエラー計測、Issue #142。`apps/web/src/api/analytics.ts`）。
 - `localizedCharacterName()`: 表示言語に応じた自機タイプ名（`characterNameJa`/
   `characterNameEn`。取得できなければ生の `character`）。ページAの解析プレビュー
   （`apps/web`）とメール本文（`apps/api/src/ses.ts`）が同じ表記を出すために共有する。
