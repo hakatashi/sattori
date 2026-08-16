@@ -61,14 +61,33 @@ export class SattoriEdgeStack extends Stack {
     // AWSへサンドボックス解除を申請する必要がある(コードでは自動化できない)。
     // SESはこのスタックのリージョン(us-east-1)でのみ検証されるため、
     // SattoriStack側のLambdaは`SES_REGION`環境変数でこのリージョンを指定して呼ぶ。
+    // カスタムMAIL FROMドメイン（Issue #139 UX-5）。指定しないとMAIL FROMが
+    // `amazonses.com`のままになり、SPFが`webDomainName`とアラインしない
+    // （DKIMアラインメントだけでは新規ドメインからの一斉送信でGmail/Yahooの
+    // 送信者要件を満たすには不十分になりやすい）。サブドメインは受信用途を持たない
+    // 専用のものにする必要がある（`EmailIdentityProps.mailFromDomain`の制約）。
+    const mailFromDomain = `mail.${props.webDomainName}`;
+
     const sesIdentity = new ses.EmailIdentity(this, "SesIdentity", {
       identity: ses.Identity.domain(props.webDomainName),
+      mailFromDomain,
     });
 
     sesIdentity.dkimRecords.forEach((record, index) => {
       new CfnOutput(this, `SesDkimRecord${index}`, {
         value: `${record.name} CNAME ${record.value}`,
       });
+    });
+
+    // MAIL FROMドメインのMX・SPF(TXT)レコード。`webDomainName`同様Route 53以外で
+    // 管理しているため自動作成できず、値をCfnOutputで確認して外部DNSへ手動追加する
+    // 必要がある（`infra/README.md`「デプロイ手順」）。値はAWS公式ドキュメント固定値
+    // （SESのリージョン＝このスタックのリージョンus-east-1を埋め込む）。
+    new CfnOutput(this, "SesMailFromMxRecord", {
+      value: `${mailFromDomain} MX "10 feedback-smtp.${this.region}.amazonses.com"`,
+    });
+    new CfnOutput(this, "SesMailFromSpfRecord", {
+      value: `${mailFromDomain} TXT "v=spf1 include:amazonses.com ~all"`,
     });
 
     // --- 運用アラート(OPS-1: SESバウンス・苦情監視, OPS-2: AWS Budgets) ------

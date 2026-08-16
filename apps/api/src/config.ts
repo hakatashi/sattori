@@ -36,6 +36,11 @@ export interface ApiConfig {
   /** マジックリンクメールの送信元アドレス（SESで検証済みのドメイン配下）。 */
   sesFromAddress: string;
   /**
+   * マジックリンク・完了メールの`Reply-To`に載せる問い合わせ先アドレス
+   * （Issue #139 UX-5）。`sesFromAddress`は`no-reply@`固定のため、返信先を別途持つ。
+   */
+  sesReplyToAddress: string;
+  /**
    * SES送信時に指定するConfigurationSet名（`SattoriEdgeStack`が作成、Issue #133 OPS-1）。
    * バウンス・苦情・拒否イベントをSNS経由で運用アラートへ流すための紐付けに使う。
    */
@@ -90,6 +95,7 @@ export function loadConfig(): ApiConfig {
     settingsTable: required("SETTINGS_TABLE"),
     workersTable: required("WORKERS_TABLE"),
     sesFromAddress: required("SES_FROM_ADDRESS"),
+    sesReplyToAddress: required("SES_REPLY_TO_ADDRESS"),
     sesConfigurationSetName: required("SES_CONFIGURATION_SET"),
     webBaseUrl: required("WEB_BASE_URL"),
     ec2: {

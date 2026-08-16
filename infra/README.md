@@ -70,17 +70,27 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   `JobsTable`全体をScanせずにポーリングできる。
 - **SES**: `EmailIdentity`（送信元ドメインのDKIM検証、マジックリンク・完了メール
   送信用）は**`SattoriEdgeStack`（us-east-1）側**にある（eu-south-2にはSESが存在
-  しないため）。DKIM用CNAMEは`cdk deploy`後にCfnOutputの値を外部DNSへ手動追加する
-  必要がある。また実際にサンドボックス外へ送信するには別途AWSへ申請が必要
-  （コードでは自動化できない）。`SattoriStack`側のLambda（`RequestMagicLinkFn`・
-  `SendCompletionEmailFn`）は`SES_REGION`環境変数（値は`us-east-1`）で
-  `SESv2Client`のリージョンを明示して呼ぶ（`apps/api/src/ses.ts`）。IAMポリシーの
-  `resources`も`arn:aws:ses:${props.sesRegion}:...`とSESのリージョンに合わせている。
+  しないため）。DKIM用CNAME・MAIL FROMドメイン用MX/TXT（下記、Issue #139 UX-5）は
+  `cdk deploy`後にCfnOutputの値を外部DNSへ手動追加する必要がある。また実際に
+  サンドボックス外へ送信するには別途AWSへ申請が必要（コードでは自動化できない）。
+  `SattoriStack`側のLambda（`RequestMagicLinkFn`・`SendCompletionEmailFn`）は
+  `SES_REGION`環境変数（値は`us-east-1`）で`SESv2Client`のリージョンを明示して呼ぶ
+  （`apps/api/src/ses.ts`）。IAMポリシーの`resources`も
+  `arn:aws:ses:${props.sesRegion}:...`とSESのリージョンに合わせている。
   `SattoriEdgeStack`は加えて`ConfigurationSet`（`reputationMetrics: true`）を持ち、
   バウンス・苦情・拒否イベントを`OpsAlertTopic`（SNS、下記）へ流す。両Lambdaは
   送信時に`ConfigurationSetName`（`SES_CONFIGURATION_SET`環境変数、
   `crossRegionReferences`経由で`SattoriEdgeStack`から受け取る）を指定する
   （Issue #133 OPS-1）。
+  - **到達性（Issue #139 UX-5）**: `EmailIdentity`に`mailFromDomain`
+    （`mail.<webDomainName>`）を設定し、SPFを送信元ドメインとアラインさせている
+    （カスタムMAIL FROMのMX・TXTレコードが必要。`SesMailFromMxRecord`・
+    `SesMailFromSpfRecord`としてCfnOutputに出る）。加えてDMARCレコード
+    （`_dmarc.<webDomainName>`）はCDKでは作れないため**手動でのみ**追加する
+    （下記「デプロイ手順」4）。送信元アドレスは`Sattori <no-reply@<webDomainName>>`
+    という表示名付き形式（`infra/lib/sattori-stack.ts`の`sesFromAddress`）、
+    `Reply-To`には`opsAlertEmail`と同じ問い合わせ先アドレスを載せる
+    （`SES_REPLY_TO_ADDRESS`環境変数）。
 - **運用アラート（OPS-1/OPS-2/OPS-3、Issue #133・#134・#135）**: SNSトピック
   `OpsAlertTopic`を**リージョンごとに1本ずつ**持つ（`SattoriEdgeStack`・
   `SattoriStack`双方）。CloudWatch Alarmは同一リージョンのSNSトピックしか
@@ -254,9 +264,15 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの 
    追加・変更するデプロイでは、この手順を`cdk deploy`より先に行うこと**
    ——ハートビートを送らない古いイメージが残っていると全ジョブが15分で
    タイムアウトする
-4. ACM証明書のDNS検証用CNAME・SESのDKIM用CNAMEを、`cdk deploy`完了後の
+4. ACM証明書のDNS検証用CNAME・SESのDKIM用CNAME・MAIL FROM用MX/TXT
+   （`SesMailFromMxRecord`・`SesMailFromSpfRecord`）を、`cdk deploy`完了後の
    `SattoriEdgeStack`のCfnOutputを確認して外部DNSへ手動追加する
-   （`hakatashi.com`はRoute 53以外で管理しているため自動検証はできない）
+   （`hakatashi.com`はRoute 53以外で管理しているため自動検証はできない）。
+   加えて、CDKでは作成できない**DMARCレコード**（Issue #139 UX-5、初回のみ）を
+   `_dmarc.<webDomainName> TXT "v=DMARC1; p=none; rua=mailto:<opsAlertEmail>"`
+   として手動で追加する。`p=none`は監視のみで拒否・隔離をしない設定（送信量が
+   少ない現状で`p=quarantine`/`p=reject`にすると、正規メールの誤判定を受信者側で
+   気づけないまま失う恐れがあるため）
 5. タイトル資産（ゲーム本体+WINEPREFIX+MOD）をS3へアップロードする
    （`upload-title-assets` skill。アーカイブ構成は`worker/README.md` §8）
 6. （自宅ワーカーを使う場合のみ）`HomeWorkerRole`をassumeするIAMユーザーを手動で

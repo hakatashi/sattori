@@ -171,7 +171,11 @@
   "magicLinkSent": {
     "heading": "Please check your email",
     "sentTo": "We've sent a link to start the recording to <0>{{email}}</0>.",
-    "hint": "Click the link in the email to start recording (it's valid for 24 hours). You can open it as many times as you like to check progress or download the video."
+    "hint": "Click the link in the email to start recording (it's valid for 24 hours). You can open it as many times as you like to check progress or download the video.",
+    "spamHint": "If it hasn't arrived after a few minutes, please also check your spam folder.",
+    "resend": "Resend with the same details",
+    "resending": "Resending…",
+    "back": "Back to upload"
   },
   "jobProgress": {
     "loading": "Loading…",
