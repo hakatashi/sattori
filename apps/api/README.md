@@ -223,25 +223,25 @@ UserDataスクリプトがやること:
 - `pending`ジョブの受付期限は24時間（`jobs.ts`の`PENDING_JOB_TTL_MS`。bot/濫用対策で、
   アップロード用S3の保持期間とは独立）。
 - `replayKey`はサーバー採番の形式（`uploads.ts`の`REPLAY_KEY_PATTERN`、
-  `replays/<uuid>.rpy`）と一致しない値を400で拒否する。`estimatedDurationSeconds`も
-  有限の正数以外は400（Issue #127 SEC-1。どちらもワーカーEC2の起動スクリプトへ
-  そのまま渡る値のため、入口で形式を固定する）。
-- `JobRecord.replayInfo`は**クライアントが送ったJSONをそのまま転記しない**。
-  `replayKey`が指すアップロード済み.rpyを`POST /replays/parse`（`parseReplay.ts`）
-  と共通の`replay.ts`の`fetchReplayBytes()`で再取得し、サーバー側で
-  `parseReplayInfo()`により再パースする（Issue #133 OPS-1）。かつては
-  `body.replayInfo`を転記しており、それが完了メール本文へそのまま載ることを
-  利用して第三者宛にフィッシング文面を仕込める経路になっていた。取得・解析に
-  失敗しても`replayInfo`を`null`として録画自体は継続する（`decisions/0021`と
-  同じ割り切り）。
-- `game`/`estimatedDurationSeconds`も同じ再パース結果で上書きする（クライアント値
-  `body.game`/`body.estimatedDurationSeconds`は、再パースが失敗した場合のみの
-  フォールバック）。`game`はEC2インスタンスタイプ選定（`ec2.ts`の
-  `getCandidateInstanceTypes()`）を直接左右するため、検証せず信用すると実際の
-  リプレイと無関係な高コストなタイトルを申告されうる。`parseReplayInfo()`は
-  「形式不明」と「形式は読めるが録画未対応」をどちらも`ok:false`にまとめるため、
-  後者は`result.error.game`から検出タイトルを別途拾う（でないと非対応タイトルの
-  詐称を素通りさせてしまう）。
+  `replays/<uuid>.rpy`）と一致しない値を400で拒否する（Issue #127 SEC-1。
+  ワーカーEC2の起動スクリプトへそのまま渡る値のため、入口で形式を固定する）。
+- `RequestMagicLinkRequest`に`game`/`estimatedDurationSeconds`/`replayInfo`は
+  **含まない**（Issue #133 OPS-1 フォローアップ）。`JobRecord`のこれら3項目は
+  すべて`replayKey`が指すアップロード済み.rpyをサーバー側で取得・再パースした
+  結果だけから決まる——`replay.ts`の`fetchReplayBytes()`（`POST /replays/parse`
+  （`parseReplay.ts`）と共通処理）で取得し、`parseReplayInfo()`で解析する。
+  クライアントに渡させていた旧実装には2つの問題があった:
+  1. `replayInfo.player`が完了メール本文へそのまま載る（`ses.ts`の
+     `formatReplayInfo()`）ため、第三者宛にフィッシング文面を仕込める経路になる。
+  2. `game`はEC2インスタンスタイプ選定（`ec2.ts`の`getCandidateInstanceTypes()`）
+     を直接左右するため、検証せず信用すると実際のリプレイと無関係な高コストな
+     タイトルを申告されうる。
+  再パースに失敗した場合（形式不明の破損ファイル等）のみ`game`はth07を既定とし、
+  `estimatedDurationSeconds`は`null`（進捗率非表示）として録画自体は継続する
+  （`decisions/0021`と同じ割り切り）。`parseReplayInfo()`は「形式不明」と
+  「形式は読めるが録画未対応」をどちらも`ok:false`にまとめるため、後者は
+  `result.error.game`から検出タイトルを別途拾う（でないと録画未対応タイトルの
+  検出をすり抜けさせてしまう）。
 
 > 濫用対策をここから増やす前に
 > [`docs/decisions/0007`](../../docs/decisions/0007-no-ip-rate-limit-no-recaptcha.md) を読むこと

@@ -24,6 +24,7 @@ const TH07_FIXTURE = path.join(FIXTURES_DIR, "th07/th7_07.rpy");
 // th13はパーサーとしては認識できるが、Sattoriの録画対応タイトルには含まれない
 // (parseReplay.test.tsと同じ用途)。
 const TH13_FIXTURE = path.join(FIXTURES_DIR, "th13/th13_01.rpy");
+const TH20_FIXTURE = path.join(FIXTURES_DIR, "th20/th20_01.rpy");
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -206,6 +207,10 @@ describe("POST /magic-links", () => {
       score: 303766040,
       cleared: true,
     });
+    // game/estimatedDurationSeconds自体もリクエストボディでは受け取らず、
+    // 同じ再パース結果からのみ決まる。
+    expect(jobPut?.args[0].input.Item?.game).toBe("th07");
+    expect(jobPut?.args[0].input.Item?.estimatedDurationSeconds).toBe(847);
 
     const sendCalls = sesMock.commandCalls(SendEmailCommand);
     const emailBody = sendCalls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
@@ -274,60 +279,12 @@ describe("POST /magic-links", () => {
     expect(sesMock.commandCalls(SendEmailCommand)).toHaveLength(0);
   });
 
-  it("estimatedDurationSeconds が数値でない・0以下なら400を返す（Issue #127 SEC-1）", async () => {
-    const { handler } = await import("./requestMagicLink.js");
-    // NaN/Infinity は通常のJSでの値としてはJSON.stringifyがnullへ潰してしまうため
-    // ここでは検証できない(=nullは許容値なので意味のあるケースにならない)。
-    // 巨大指数(1e400)のように「JSON構文としては有効だがパース結果がInfinityになる」
-    // 値はNumber.isFinite側のケースとして別テストで検証する。
-    for (const invalid of [-1, 0, "900"]) {
-      const res = await handler(
-        makeEvent({
-          replayKey: VALID_REPLAY_KEY,
-          options: { watermark: true },
-          email: "user@example.com",
-          estimatedDurationSeconds: invalid,
-        }),
-        {} as never,
-        () => {},
-      );
-      const result = res as APIGatewayProxyStructuredResultV2;
-      expect(result.statusCode).toBe(400);
-    }
-    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
-  });
-
-  it("estimatedDurationSeconds がJSON上は数値でもパース結果がInfinityなら400を返す", async () => {
-    const { handler } = await import("./requestMagicLink.js");
-    const event = {
-      body: `{"replayKey":"${VALID_REPLAY_KEY}","options":{"watermark":true},"email":"user@example.com","estimatedDurationSeconds":1e400}`,
-      isBase64Encoded: false,
-    } as APIGatewayProxyEventV2;
-    const res = await handler(event, {} as never, () => {});
-    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(400);
-  });
-
-  it("estimatedDurationSeconds が未指定・nullなら受け付ける", async () => {
+  it("再パースに失敗した.rpyでも(タイトル自体は不明なため)th07を既定として受け付ける", async () => {
+    // beforeEachの既定(HeadObjectCommandがreject)がそのまま「取得失敗」のケースになる。
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
         replayKey: VALID_REPLAY_KEY,
-        options: { watermark: true },
-        email: "user@example.com",
-        estimatedDurationSeconds: null,
-      }),
-      {} as never,
-      () => {},
-    );
-    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(202);
-  });
-
-  it("非対応タイトルなら422を返す", async () => {
-    const { handler } = await import("./requestMagicLink.js");
-    const res = await handler(
-      makeEvent({
-        replayKey: VALID_REPLAY_KEY,
-        game: "th13",
         options: { watermark: true },
         email: "user@example.com",
       }),
@@ -335,46 +292,22 @@ describe("POST /magic-links", () => {
       () => {},
     );
     const result = res as APIGatewayProxyStructuredResultV2;
-    expect(result.statusCode).toBe(422);
-    expect(parseBody(result)).toMatchObject({ code: "unsupported_game" });
-  });
-
-  it("gameとestimatedDurationSecondsはクライアント申告値ではなく再パース結果で上書きする（Issue #133 OPS-1 フォローアップ）", async () => {
-    // job.gameはEC2インスタンスタイプ選定(ec2.tsのgetCandidateInstanceTypes())を
-    // 直接左右するため、クライアントが虚偽のgame/estimatedDurationSecondsを申告して
-    // 実際のリプレイと無関係な(高コストな)値を選ばせられないことを確認する。
-    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
-    const { handler } = await import("./requestMagicLink.js");
-    const res = await handler(
-      makeEvent({
-        replayKey: VALID_REPLAY_KEY,
-        game: "th20", // 実体はth07なのに高コストなth20を詐称
-        options: { watermark: true },
-        email: "user@example.com",
-        estimatedDurationSeconds: 999999,
-      }),
-      {} as never,
-      () => {},
-    );
-    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(202);
-
+    expect(result.statusCode).toBe(202);
     const jobPut = ddbMock
       .commandCalls(PutCommand)
       .find((call) => call.args[0].input.Item?.status === "pending");
     expect(jobPut?.args[0].input.Item?.game).toBe("th07");
-    expect(jobPut?.args[0].input.Item?.estimatedDurationSeconds).toBe(847);
+    expect(jobPut?.args[0].input.Item?.estimatedDurationSeconds).toBeNull();
   });
 
-  it("再パースが成功し、実体が非対応タイトルなら対応タイトルの詐称を無視して422を返す（Issue #133 OPS-1 フォローアップ）", async () => {
-    // 早期チェック(claimedGame)は th07 で通過するが、実体は録画未対応の th13。
-    // クライアント申告値だけで判定していた旧実装は、ここを素通りしてジョブを
-    // 作成しEC2起動まで進めてしまっていた。
+  it("実体が録画未対応タイトルなら422を返す(game/estimatedDurationSecondsはクライアントから受け取らず.rpyの再パース結果のみで決まる、Issue #133 OPS-1)", async () => {
+    // job.gameはEC2インスタンスタイプ選定(ec2.tsのgetCandidateInstanceTypes())を
+    // 直接左右するため、クライアントに申告させず.rpyの実体から検出する。
     mockUploadedReplay(new Uint8Array(await readFile(TH13_FIXTURE)));
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
         replayKey: VALID_REPLAY_KEY,
-        game: "th07",
         options: { watermark: true },
         email: "user@example.com",
       }),
@@ -387,12 +320,12 @@ describe("POST /magic-links", () => {
     expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
   });
 
-  it("低速録画に対応したタイトル(th20)なら options.slowMotion をそのまま保存する", async () => {
+  it("低速録画に対応したタイトル(th20)の.rpyなら options.slowMotion をそのまま保存する", async () => {
+    mockUploadedReplay(new Uint8Array(await readFile(TH20_FIXTURE)));
     const { handler } = await import("./requestMagicLink.js");
     await handler(
       makeEvent({
         replayKey: VALID_REPLAY_KEY,
-        game: "th20",
         options: { watermark: true, slowMotion: true },
         email: "user@example.com",
       }),
@@ -402,18 +335,19 @@ describe("POST /magic-links", () => {
     const jobPut = ddbMock
       .commandCalls(PutCommand)
       .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.game).toBe("th20");
     expect(jobPut?.args[0].input.Item?.options).toMatchObject({ slowMotion: true });
   });
 
-  it("低速録画に未対応のタイトルなら options.slowMotion を握り潰す(Issue #101)", async () => {
+  it("低速録画に未対応のタイトル(th07)の.rpyなら options.slowMotion を握り潰す(Issue #101)", async () => {
     // 等倍で動くゲームに後処理の等倍化だけが掛かると2倍速の動画が出来上がるため、
     // ページAのグレーアウトをすり抜けた要求はここで落とす(録画自体は等倍で行える
     // のでエラーにはしない)。
+    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
         replayKey: VALID_REPLAY_KEY,
-        game: "th07",
         options: { watermark: true, slowMotion: true },
         email: "user@example.com",
       }),
