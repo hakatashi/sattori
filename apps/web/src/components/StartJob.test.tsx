@@ -43,14 +43,24 @@ describe("StartJob", () => {
 
   it("失敗時はエラーメッセージと再試行導線を表示する", async () => {
     mocked.startJob.mockRejectedValue(
-      new client.SattoriApiError("job_expired", "受付期限が切れています", 410),
+      new client.SattoriApiError(
+        "job_expired",
+        "受付期限が切れています。お手数ですがもう一度リプレイをアップロードしてください",
+        410,
+      ),
     );
     const onStarted = vi.fn();
     const onReset = vi.fn();
 
     render(<StartJob jobId="job-1" onStarted={onStarted} onReset={onReset} />);
 
-    await waitFor(() => expect(screen.getByText("受付期限が切れています")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "受付期限が切れています。お手数ですがもう一度リプレイをアップロードしてください",
+        ),
+      ).toBeTruthy(),
+    );
     expect(onStarted).not.toHaveBeenCalled();
 
     screen.getByText("最初からやり直す").click();

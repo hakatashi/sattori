@@ -428,7 +428,10 @@ def main():
         heartbeat.stop()
         log(f"ERROR: {err}")
         if not _notified.is_set():
-            update_status(JOB_ID, "failed", error="録画処理中にエラーが発生しました")
+            update_status(
+                JOB_ID, "failed",
+                error="録画処理中にエラーが発生しました", error_code="recording_failed",
+            )
         notify_task_result(False, error_message=str(err))
         sys.exit(1)
 

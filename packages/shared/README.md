@@ -57,8 +57,9 @@ pending → queued → launching → recording → converting → done | failed
 再実行で複製された元ジョブ⇄新ジョブの相互リンク、Issue #59）、
 `launchedAt`/`spotPricePerHour`/`outputBytes`/`outputBytes720p`（コスト推定の入力、
 Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほか自宅ワーカー関連
-（Issue #49。後述「ワーカーの種別と自宅ワーカー」）等を持つ。
-フィールドごとの詳細はソースのコメントを参照。
+（Issue #49。後述「ワーカーの種別と自宅ワーカー」）、`errorCode`（`error`と同時に
+書き込む機械可読コード。`apps/web/src/i18n/apiErrors.ts`が`errors.<code>`翻訳の軸に
+使う、Issue #138）等を持つ。フィールドごとの詳細はソースのコメントを参照。
 
 > **`JobRecord`にフィールドを足すときの注意**: `apps/api`の`requestMagicLink.ts`
 > （新規作成）と`admin/retryJob.ts`の`buildRetryJob()`（再実行時の複製）の両方が

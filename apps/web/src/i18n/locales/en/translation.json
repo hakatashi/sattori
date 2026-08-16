@@ -197,6 +197,28 @@
     "download": "Download video",
     "downloadOriginal": "Download video before conversion",
     "downloadExpiresAt": "The video will be available for download until {{date}}",
-    "hint": "Recording and conversion continue even if you close this page. You can come back to this page at any time to check the status."
+    "hint": "Recording and conversion continue even if you close this page. You can come back to this page at any time to check the status.",
+    "pollError": "Failed to fetch the status. Retrying…"
+  },
+  "errors": {
+    "invalid_file": "Please select a replay file (.rpy)",
+    "file_too_large": "The replay file exceeds the maximum size",
+    "rate_limited": "You've reached the limit for send attempts. Please try again later",
+    "service_paused": "New recordings are temporarily paused right now. Please try again later.",
+    "monthly_cost_limit_reached": "This month's estimated usage cost has reached its limit, so new recordings are temporarily paused. Acceptance resumes automatically next month.",
+    "job_expired": "This link has expired. Please upload your replay file again",
+    "not_found": "Job not found",
+    "unsupported_game": "{{title}} is not currently supported for recording",
+    "email_send_failed": "Failed to send the email. Please try again later",
+    "upload_failed": "Failed to upload the replay file",
+    "launch_failed": "Failed to start the recording worker. Please try again later",
+    "internal_error": "Something went wrong. Please try again later",
+    "too_short": "The replay file is corrupted",
+    "unknown_magic": "Unsupported file format. Please select a Touhou Project replay file (.rpy)",
+    "corrupt": "The replay file is corrupted (the data may be damaged)",
+    "http_error": "The request failed ({{status}})",
+    "retries_exhausted": "Recording failed multiple times. Please try again later",
+    "recording_failed": "An error occurred while recording",
+    "admin_stopped": "Stopped by an administrator"
   }
 }

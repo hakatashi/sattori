@@ -164,8 +164,14 @@ fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
 - `GAME_TITLES`（`@sattori/shared`、公式タイトル名+英語副題）自体は言語を問わず共通表示。
   `UploadForm`の対応タイトル一覧のみ、各タイトルが持つ`japanese`/`english`表記を
   `i18n.language`で出し分けている。
-- API（Lambda）が返すエラーメッセージ（`SattoriApiError.message`）は日本語固定
-  （バックエンド側は未対応）。フロント側の文言のみが対象。
+- API（Lambda）・ワーカーが返すエラーメッセージ本体（`SattoriApiError.message`・
+  `GetJobResponse.error`）は常に日本語固定（バックエンド側は日英出し分けを持たない）。
+  代わりに機械可読な`code`（`SattoriApiError.code`・`ReplayParseFailure.code`・
+  `GetJobResponse.errorCode`）を軸に、`i18n/apiErrors.ts`の`translateApiErrorMessage()`が
+  `errors.<code>`キー（両ロケール）へ翻訳し、キーが無い（追加漏れ・想定外のコード）場合は
+  バックエンドの日本語メッセージへフォールバックする（Issue #138）。`errorCode`が無い
+  旧ジョブの`GetJobResponse.error`もこの経路が無いため日本語のまま表示される
+  （`JobProgress.tsx`）。
 
 ### 6.1 エントリHTML・OGPの言語出し分け
 

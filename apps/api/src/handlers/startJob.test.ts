@@ -38,6 +38,7 @@ const pendingJob: JobRecord = {
   outputPath: null,
   outputPath720p: null,
   error: null,
+  errorCode: null,
   createdAt: "2026-07-18T00:00:00.000Z",
   updatedAt: "2026-07-18T00:00:00.000Z",
   doneAt: null,
@@ -194,5 +195,6 @@ describe("POST /jobs/{jobId}/start", () => {
       .commandCalls(UpdateCommand)
       .find((call) => call.args[0].input.ExpressionAttributeValues?.[":s"] === "failed");
     expect(failedUpdate).toBeTruthy();
+    expect(failedUpdate?.args[0].input.ExpressionAttributeValues?.[":ec"]).toBe("launch_failed");
   });
 });

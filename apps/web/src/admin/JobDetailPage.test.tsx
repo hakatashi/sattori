@@ -31,6 +31,7 @@ const job: AdminJobRecord = {
   outputPath: "videos/job-1.mp4",
   outputPath720p: null,
   error: null,
+  errorCode: null,
   createdAt: "2026-07-30T00:00:00.000Z",
   updatedAt: "2026-07-30T00:00:00.000Z",
   doneAt: null,

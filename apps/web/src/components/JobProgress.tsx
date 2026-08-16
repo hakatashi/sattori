@@ -4,6 +4,7 @@ import type { GetJobResponse, JobStatus } from "@sattori/shared";
 import { useEstimatedProgress } from "../hooks/useEstimatedProgress.ts";
 import { useJobPolling } from "../hooks/useJobPolling.ts";
 import { useOverallProgress } from "../hooks/useOverallProgress.ts";
+import { translateApiErrorMessage } from "../i18n/apiErrors.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./JobProgress.module.css";
 
@@ -183,7 +184,11 @@ export function JobProgressView({ job, loadError }: ViewProps) {
 
           {failed && (
             <p className={styles.error}>
-              {job.error ?? t("jobProgress.genericError")}
+              {job.error
+                ? job.errorCode
+                  ? translateApiErrorMessage(t, job.errorCode, job.error)
+                  : job.error
+                : t("jobProgress.genericError")}
             </p>
           )}
 
