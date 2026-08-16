@@ -40,6 +40,7 @@ const failedJob: JobRecord = {
   outputPath: "videos/job-1.mp4",
   outputPath720p: null,
   error: "録画に複数回失敗しました",
+  errorCode: "retries_exhausted",
   createdAt: "2026-07-18T00:00:00.000Z",
   updatedAt: "2026-07-18T01:00:00.000Z",
   doneAt: null,
@@ -94,6 +95,7 @@ describe("buildRetryJob", () => {
     expect(retried.previewImagePath).toBeNull();
     expect(retried.progress).toBeNull();
     expect(retried.error).toBeNull();
+    expect(retried.errorCode).toBeNull();
     expect(retried.instanceId).toBeNull();
     expect(retried.instanceType).toBeNull();
     expect(retried.availabilityZone).toBeNull();
@@ -258,6 +260,7 @@ describe("POST /admin/jobs/{jobId}/retry", () => {
     // 1件目は予約、2件目が新ジョブのfailed化、3件目が予約の取り消し。
     expect(updateCalls[1]?.args[0].input.Key).toEqual({ jobId: newJobId });
     expect(updateCalls[1]?.args[0].input.ExpressionAttributeValues?.[":s"]).toBe("failed");
+    expect(updateCalls[1]?.args[0].input.ExpressionAttributeValues?.[":ec"]).toBe("launch_failed");
     // 起動できなかった予約を残すと以後の再実行が永久に弾かれるため、必ず戻す。
     expect(updateCalls[2]?.args[0].input.Key).toEqual({ jobId: "job-1" });
     expect(updateCalls[2]?.args[0].input.ExpressionAttributeValues?.[":null"]).toBeNull();

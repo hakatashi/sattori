@@ -17,6 +17,7 @@ function makeJob(overrides: Partial<JobRecord> = {}): JobRecord {
     outputBytes: 700 * 1024 * 1024,
     outputBytes720p: 1024 * 1024 * 1024,
     error: null,
+    errorCode: null,
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-01T00:36:00.000Z",
     launchedAt: "2026-08-01T00:00:00.000Z",

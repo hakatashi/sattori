@@ -40,6 +40,7 @@ const baseJob: JobRecord = {
   outputPath: null,
   outputPath720p: null,
   error: null,
+  errorCode: null,
   createdAt: "2026-07-17T00:00:00.000Z",
   updatedAt: "2026-07-17T00:00:00.000Z",
   doneAt: null,
@@ -119,6 +120,7 @@ describe("sfn/handleFailure handler", () => {
     expect(result).toEqual({ shouldRetry: false });
     expect(statusUpdates(ddbMock)[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
       ":s": "failed",
+      ":ec": "retries_exhausted",
     });
   });
 

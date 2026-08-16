@@ -100,6 +100,8 @@ export interface GetJobResponse {
    */
   downloadExpiresAt: string | null;
   error: string | null;
+  /** `JobRecord.errorCode`をそのまま転記する。`errors.<code>`翻訳の軸（Issue #138）。 */
+  errorCode: string | null;
   updatedAt: string;
   /**
    * 現在のフェーズ（recording/converting）内で実際に処理が完了した時間（秒）。

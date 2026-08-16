@@ -1,5 +1,5 @@
 import type { TFunction } from "i18next";
-import { ADMIN_STOPPED_JOB_ERROR, GAME_TITLES, type GameId } from "@sattori/shared";
+import { GAME_TITLES, type GameId } from "@sattori/shared";
 
 /**
  * `SattoriApiError.code` / `ReplayParseFailure.code`（バックエンドAPIのエラー、
@@ -33,23 +33,4 @@ export function translateUnsupportedGameMessage(
     return fallbackMessage;
   }
   return t("errors.unsupported_game", { title: GAME_TITLES[game].fullName });
-}
-
-/**
- * `JobRecord.error`（`GetJobResponse.error`）はコード化されておらず、バックエンド・
- * ワーカーが直接書き込む日本語の定型文（`startJob.ts`・`sfn/handleFailure.ts`・
- * `worker/entrypoint.py`・`admin/stopJob.ts`）。バックエンド無改修で英語版に対応するため、
- * 既知の定型文を完全一致で`jobErrors.*`キーへマッピングし、未知の文言（今後増えた場合）は
- * 原文のままフォールバックする（Issue #138）。
- */
-const JOB_ERROR_KEYS: Record<string, string> = {
-  "録画ワーカーの起動に失敗しました": "jobErrors.launchFailed",
-  "録画に複数回失敗しました。時間をおいて再試行してください": "jobErrors.retriesExhausted",
-  "録画処理中にエラーが発生しました": "jobErrors.recordingFailed",
-  [ADMIN_STOPPED_JOB_ERROR]: "jobErrors.adminStopped",
-};
-
-export function translateJobError(t: TFunction, rawError: string): string {
-  const key = JOB_ERROR_KEYS[rawError];
-  return key ? t(key) : rawError;
 }

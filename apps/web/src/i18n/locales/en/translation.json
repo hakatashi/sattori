@@ -216,12 +216,9 @@
     "too_short": "The replay file is corrupted",
     "unknown_magic": "Unsupported file format. Please select a Touhou Project replay file (.rpy)",
     "corrupt": "The replay file is corrupted (the data may be damaged)",
-    "http_error": "The request failed ({{status}})"
-  },
-  "jobErrors": {
-    "launchFailed": "Failed to start the recording worker",
-    "retriesExhausted": "Recording failed multiple times. Please try again later",
-    "recordingFailed": "An error occurred while recording",
-    "adminStopped": "Stopped by an administrator"
+    "http_error": "The request failed ({{status}})",
+    "retries_exhausted": "Recording failed multiple times. Please try again later",
+    "recording_failed": "An error occurred while recording",
+    "admin_stopped": "Stopped by an administrator"
   }
 }

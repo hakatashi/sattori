@@ -64,6 +64,7 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
     previewImagePath: null,
     progress: null,
     error: null,
+    errorCode: null,
     launchedAt: null,
     doneAt: null,
     workerKind: null,
@@ -256,6 +257,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       newJobId,
       "failed",
       "録画ワーカーの起動に失敗しました",
+      { errorCode: "launch_failed" },
     );
     await rollbackClaim();
     return error(

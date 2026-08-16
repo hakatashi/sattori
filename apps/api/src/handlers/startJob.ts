@@ -96,7 +96,9 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         message: err instanceof Error ? err.message : String(err),
       }),
     );
-    await updateJobStatus(config.jobsTable, jobId, "failed", "録画ワーカーの起動に失敗しました");
+    await updateJobStatus(config.jobsTable, jobId, "failed", "録画ワーカーの起動に失敗しました", {
+      errorCode: "launch_failed",
+    });
     return error(
       502,
       "launch_failed",
