@@ -2,6 +2,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import { ViteMinifyPlugin } from "vite-plugin-minify";
 
 const fromHere = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
@@ -33,7 +34,11 @@ function enLocaleSpaFallback(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), enLocaleSpaFallback()],
+  // 素のViteはHTMLを素通しする（JS/CSSしかminifyしない）ため、`index.html`/
+  // `en/index.html`のソースコメント（内部設計事情。jobIdが秘密値であること等）が
+  // そのまま配信物に乗ってしまう。ビルド時のみ動作するViteMinifyPlugin(html-minifier-next
+  // ラッパー)でコメント除去・空白圧縮を行う。
+  plugins: [react(), enLocaleSpaFallback(), ViteMinifyPlugin()],
   build: {
     // 言語ごとに実体のHTMLを配る（クローラーはJSを実行しないため、OGP・titleの
     // 言語出し分けはビルド時に別ファイルとして吐くしかない）。
