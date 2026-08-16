@@ -35,6 +35,11 @@ export interface ApiConfig {
   workersTable: string;
   /** マジックリンクメールの送信元アドレス（SESで検証済みのドメイン配下）。 */
   sesFromAddress: string;
+  /**
+   * SES送信時に指定するConfigurationSet名（`SattoriEdgeStack`が作成、Issue #133 OPS-1）。
+   * バウンス・苦情・拒否イベントをSNS経由で運用アラートへ流すための紐付けに使う。
+   */
+  sesConfigurationSetName: string;
   /** マジックリンクURLを組み立てる際のWebフロントエンドのベースURL（末尾スラッシュなし）。 */
   webBaseUrl: string;
 }
@@ -85,6 +90,7 @@ export function loadConfig(): ApiConfig {
     settingsTable: required("SETTINGS_TABLE"),
     workersTable: required("WORKERS_TABLE"),
     sesFromAddress: required("SES_FROM_ADDRESS"),
+    sesConfigurationSetName: required("SES_CONFIGURATION_SET"),
     webBaseUrl: required("WEB_BASE_URL"),
     ec2: {
       subnetIds: required("WORKER_SUBNET_IDS").split(","),

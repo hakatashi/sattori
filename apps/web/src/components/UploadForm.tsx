@@ -378,7 +378,6 @@ export function UploadForm({ onMagicLinkSent }: Props) {
         { watermark, slowMotion: slowMotionChecked },
         email,
         locale,
-        preview,
       );
       onMagicLinkSent(email);
     } catch (err) {

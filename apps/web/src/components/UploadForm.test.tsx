@@ -254,7 +254,6 @@ describe("UploadForm", () => {
       { watermark: true, slowMotion: false },
       "user@example.com",
       "ja",
-      SAMPLE_REPLAY_INFO,
     );
   });
 });
@@ -341,7 +340,6 @@ describe("UploadForm の低速録画オプション", () => {
       { watermark: true, slowMotion: false },
       "koishi@example.com",
       "ja",
-      SAMPLE_REPLAY_INFO,
     );
   });
 

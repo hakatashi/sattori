@@ -223,9 +223,25 @@ UserDataスクリプトがやること:
 - `pending`ジョブの受付期限は24時間（`jobs.ts`の`PENDING_JOB_TTL_MS`。bot/濫用対策で、
   アップロード用S3の保持期間とは独立）。
 - `replayKey`はサーバー採番の形式（`uploads.ts`の`REPLAY_KEY_PATTERN`、
-  `replays/<uuid>.rpy`）と一致しない値を400で拒否する。`estimatedDurationSeconds`も
-  有限の正数以外は400（Issue #127 SEC-1。どちらもワーカーEC2の起動スクリプトへ
-  そのまま渡る値のため、入口で形式を固定する）。
+  `replays/<uuid>.rpy`）と一致しない値を400で拒否する（Issue #127 SEC-1。
+  ワーカーEC2の起動スクリプトへそのまま渡る値のため、入口で形式を固定する）。
+- `RequestMagicLinkRequest`に`game`/`estimatedDurationSeconds`/`replayInfo`は
+  **含まない**（Issue #133 OPS-1 フォローアップ）。`JobRecord`のこれら3項目は
+  すべて`replayKey`が指すアップロード済み.rpyをサーバー側で取得・再パースした
+  結果だけから決まる——`replay.ts`の`fetchReplayBytes()`（`POST /replays/parse`
+  （`parseReplay.ts`）と共通処理）で取得し、`parseReplayInfo()`で解析する。
+  クライアントに渡させていた旧実装には2つの問題があった:
+  1. `replayInfo.player`が完了メール本文へそのまま載る（`ses.ts`の
+     `formatReplayInfo()`）ため、第三者宛にフィッシング文面を仕込める経路になる。
+  2. `game`はEC2インスタンスタイプ選定（`ec2.ts`の`getCandidateInstanceTypes()`）
+     を直接左右するため、検証せず信用すると実際のリプレイと無関係な高コストな
+     タイトルを申告されうる。
+  再パースに失敗した場合（形式不明の破損ファイル等）のみ`game`はth07を既定とし、
+  `estimatedDurationSeconds`は`null`（進捗率非表示）として録画自体は継続する
+  （`decisions/0021`と同じ割り切り）。`parseReplayInfo()`は「形式不明」と
+  「形式は読めるが録画未対応」をどちらも`ok:false`にまとめるため、後者は
+  `result.error.game`から検出タイトルを別途拾う（でないと録画未対応タイトルの
+  検出をすり抜けさせてしまう）。
 
 > 濫用対策をここから増やす前に
 > [`docs/decisions/0007`](../../docs/decisions/0007-no-ip-rate-limit-no-recaptcha.md) を読むこと
@@ -246,6 +262,11 @@ UserDataスクリプトがやること:
   タイムゾーン名まで必ず併記する）。
 - 作品タイトルは `GAME_TITLES`（日本語名。副題に英語名を含む）を両言語で使い、自機タイプは
   言語に応じたローカライズ名（`localizedCharacterName()`）を使う。
+- `player`/`character`/`difficulty`は`sanitizeReplayInfoField()`で改行・制御文字を
+  除去し32文字に打ち切ってから埋め込む（Issue #133 OPS-1）。`@sattori/touhou-replay-parser`
+  はth08・th11・th20でこれらをCRLF終端の可変長文字列として読むため、`requestMagicLink.ts`
+  でのサーバー側再パース（上記）だけでは「CRLFを含まない任意バイト列を偽装した.rpy」
+  による長文注入を防げない——ここが実質的な防御層になる。
 
 ## 9. キルスイッチ・月間コストガード（`settings.ts`, `costGuard.ts`, Issue #14／#130）
 
@@ -318,6 +339,11 @@ Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId�
 `sweepOrphanInstances.ts`専用の`JOBS_TABLE`単独指定）
 から注入される。`loadConfig()`が必須環境変数の存在を
 検証する（管理API用Lambdaは`commonEnv`を使わず個別の環境変数のみを持つ）。
+
+`SES_CONFIGURATION_SET`は`SattoriEdgeStack`が作った`ses.ConfigurationSet`名
+（`crossRegionReferences`経由）。`ses.ts`が`SendEmailCommand`へ指定し、
+バウンス・苦情・拒否イベントを運用アラート用SNSへ流す（Issue #133 OPS-1、
+[`docs/decisions/0025`](../../docs/decisions/0025-ops-alerts-per-region-sns-topics.md)）。
 
 `STATE_MACHINE_ARN`が`commonEnv`に含まれない理由: ステートマシンは`launchFn`/
 `handleFailureFn`（Lambda ARN）を呼び出すため、これらのLambdaの環境変数がステート

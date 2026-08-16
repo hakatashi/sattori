@@ -5,9 +5,11 @@ import {
   EMAIL_PATTERN,
   isSupportedGame,
   isSupportedLanguage,
+  parseReplayInfo,
   supportsSlowMotion,
   type GameId,
   type JobRecord,
+  type ReplayInfo,
   type RequestMagicLinkRequest,
   type RequestMagicLinkResponse,
 } from "@sattori/shared";
@@ -16,6 +18,7 @@ import { getCachedMonthlyCostUsd } from "../costGuard.js";
 import { error, json, parseBody } from "../http.js";
 import { deleteJob, PENDING_JOB_TTL_MS, putJob } from "../jobs.js";
 import { checkAndRecordRateLimit } from "../rateLimit.js";
+import { fetchReplayBytes } from "../replay.js";
 import { sendMagicLinkEmail } from "../ses.js";
 import { getSettings } from "../settings.js";
 import { REPLAY_KEY_PATTERN } from "../uploads.js";
@@ -49,28 +52,6 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   // つながらないようにしている（Issue #127 SEC-1）。
   if (!REPLAY_KEY_PATTERN.test(body.replayKey)) {
     return error(400, "invalid_replay_key", "replayKey の形式が正しくありません");
-  }
-  // `estimatedDurationSeconds` も `String()` されてそのままワーカーの環境変数へ乗る
-  // （`workerEnv.ts`）ため、型と値域をここで固定する（Issue #127 SEC-1）。
-  if (
-    body.estimatedDurationSeconds !== undefined &&
-    body.estimatedDurationSeconds !== null &&
-    (typeof body.estimatedDurationSeconds !== "number" ||
-      !Number.isFinite(body.estimatedDurationSeconds) ||
-      body.estimatedDurationSeconds <= 0)
-  ) {
-    return error(
-      400,
-      "invalid_request",
-      "estimatedDurationSeconds の形式が正しくありません",
-    );
-  }
-
-  // ページAはリプレイ解析結果（ReplayInfo.game）を渡してくるが、念のため
-  // 未指定なら th07 を既定とする。
-  const game: GameId = body.game ?? "th07";
-  if (!isSupportedGame(game)) {
-    return error(422, "unsupported_game", "現在このタイトルの録画には対応していません");
   }
 
   // キルスイッチ（Issue #14）。管理者が/adminから手動で全面停止した状態。
@@ -113,6 +94,63 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
 
   const language = isSupportedLanguage(body.language) ? body.language : DEFAULT_LANGUAGE;
 
+  // `replayInfo` はクライアントが送った任意のJSONをそのまま信用せず、`replayKey`から
+  // アップロード済み.rpyを再取得してサーバー側で再パースする（Issue #133 OPS-1）。
+  // かつては`body.replayInfo`をそのまま`JobRecord`へ転記していたが、
+  // `replayInfo.player`は完了メール本文にそのまま載る（`ses.ts`の`formatReplayInfo()`）
+  // ため、第三者のメールアドレスを宛先に指定しつつ`player`へ任意の文面を仕込めば、
+  // DKIM署名済み・SPF通過の自ドメインから攻撃者の文面が届く経路になっていた。
+  // **これだけでは経路は塞ぎ切れない**——`@sattori/touhou-replay-parser`はタイトルに
+  // よって`player`/`character`/`difficulty`をCRLF終端・NUL終端の可変長文字列として
+  // 読む実装があり（th08・th11・th20の3タイトル、詳細は`replay-parser`のソース）、
+  // 「クライアントの任意JSON」ではなく「CRLFを含まない任意バイト列を偽装した.rpy」
+  // を使えば依然として長文を注入できる。そのため`ses.ts`側の`formatReplayInfo()`で
+  // 改行・制御文字の除去と長さの打ち切りを追加で行っている（再パース単体はth07以外
+  // では不十分な多層防御の1層目に過ぎない）。取得・解析に失敗しても録画自体は継続
+  // できるプレビュー用の付随データに過ぎないため、ジョブ作成は落とさず
+  // replayInfoをnullとして続行する。
+  let replayInfo: ReplayInfo | null = null;
+  // `parseReplayInfo()`は「フォーマットとして壊れている」と「フォーマットは読めるが
+  // 録画未対応のタイトル」をどちらも`ok:false`にまとめる（プレビューAPI向けに、
+  // どちらもユーザーには同じ422として見せればよいため）。後者の場合は検出できた
+  // タイトルが`error.game`に残るため、下の`game`判定で"パース失敗（形式不明）"と
+  // 混同しないよう別に拾っておく。
+  let detectedGame: GameId | null = null;
+  try {
+    const data = await fetchReplayBytes(config.uploadBucket, body.replayKey, config.maxReplayBytes);
+    const result = parseReplayInfo(data);
+    if (result.ok) {
+      replayInfo = result.info;
+      detectedGame = result.info.game;
+    } else if (result.error.code === "unsupported_game" && result.error.game) {
+      detectedGame = result.error.game;
+    }
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "replay_info_reparse_failed",
+        replayKey: body.replayKey,
+        name: err instanceof Error ? err.name : undefined,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+
+  // `game`/`estimatedDurationSeconds`はクライアントから受け取らず、`replayKey`から
+  // サーバー側で再パースした結果だけを使う（Issue #133 OPS-1）。`job.game`は
+  // EC2インスタンスタイプ選定（`ec2.ts`の`getCandidateInstanceTypes()`）とワーカー側の
+  // 録画スクリプト選択（`GAME`環境変数、`worker/entrypoint.py`）を直接左右するため、
+  // クライアント申告を信用すると実際のリプレイと無関係な高コストなインスタンス
+  // タイプ（例: th20の`c7i.4xlarge`）を選ばせられてしまう。再パースに失敗した場合
+  // （タイトル自体を検出できない破損ファイル等）のみ th07 を既定として続行する
+  // （録画自体は等倍前提で継続でき、実際に不整合があればワーカー側で録画が失敗する
+  // だけなので、ここでは強く倒さない）。
+  const game: GameId = detectedGame ?? "th07";
+  if (!isSupportedGame(game)) {
+    return error(422, "unsupported_game", "現在このタイトルの録画には対応していません");
+  }
+  const estimatedDurationSeconds = replayInfo?.estimatedDurationSeconds ?? null;
+
   const now = new Date();
   const jobId = randomUUID();
   const job: JobRecord = {
@@ -152,10 +190,10 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     instanceType: null,
     availabilityZone: null,
     spotPricePerHour: null,
-    estimatedDurationSeconds: body.estimatedDurationSeconds ?? null,
+    estimatedDurationSeconds,
     progress: null,
     previewImagePath: null,
-    replayInfo: body.replayInfo ?? null,
+    replayInfo,
     pendingExpiresAt: new Date(now.getTime() + PENDING_JOB_TTL_MS).toISOString(),
     retriedToJobId: null,
     retriedFromJobId: null,
@@ -184,6 +222,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       jobId: job.jobId,
       language: job.language,
       replayInfo: job.replayInfo,
+      configurationSetName: config.sesConfigurationSetName,
     });
   } catch (err) {
     console.error(

@@ -5,7 +5,6 @@ import type {
   GetJobResponse,
   GetWorkerAvailabilityResponse,
   RecordingOptions,
-  ReplayInfo,
   RequestMagicLinkRequest,
   RequestMagicLinkResponse,
   StartJobResponse,
@@ -71,23 +70,22 @@ export async function uploadReplay(uploadUrl: string, file: File): Promise<void>
   }
 }
 
-/** マジックリンクメールの送信を要求する（ページAの「次のステップ」）。 */
+/**
+ * マジックリンクメールの送信を要求する（ページAの「次のステップ」）。
+ * `replayInfo`はリクエストボディに含めない——`JobRecord.replayInfo`（`game`・
+ * `estimatedDurationSeconds`含む）はすべてサーバー側が`replayKey`から.rpyを
+ * 再取得・再パースして生成する（Issue #133 OPS-1。クライアントの値をそのまま
+ * 信用すると、第三者宛のメール本文へ文面を仕込んだり、実際のリプレイと無関係な
+ * 高コストなタイトルを申告してEC2インスタンスタイプを操作したりできる経路になる
+ * ため）。ページAのプレビュー表示にのみ使う`ReplayInfo`はここでは扱わない。
+ */
 export function requestMagicLink(
   replayKey: string,
   options: RecordingOptions,
   email: string,
   language: SupportedLanguage,
-  replayInfo?: ReplayInfo | null,
 ): Promise<RequestMagicLinkResponse> {
-  const req: RequestMagicLinkRequest = {
-    replayKey,
-    options,
-    email,
-    game: replayInfo?.game,
-    estimatedDurationSeconds: replayInfo?.estimatedDurationSeconds,
-    replayInfo,
-    language,
-  };
+  const req: RequestMagicLinkRequest = { replayKey, options, email, language };
   return request<RequestMagicLinkResponse>("/magic-links", {
     method: "POST",
     body: JSON.stringify(req),
