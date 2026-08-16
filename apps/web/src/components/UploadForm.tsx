@@ -10,6 +10,7 @@ import {
   supportsSlowMotion,
   type ReplayInfo,
 } from "@sattori/shared";
+import { trackParseError } from "../api/analytics.ts";
 import {
   createUpload,
   getWorkerAvailability,
@@ -340,6 +341,7 @@ export function UploadForm({ onMagicLinkSent }: Props) {
       const result = parseReplayInfo(data);
       if (!result.ok) {
         setErrorMessage(result.error.message);
+        trackParseError(result.error.code, result.error.game ?? null);
         return false;
       }
       setPreview(result.info);

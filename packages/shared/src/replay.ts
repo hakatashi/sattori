@@ -88,6 +88,12 @@ export type ReplayParseFailureCode = ReplayParseErrorCode | "unsupported_game";
 export interface ReplayParseFailure {
   code: ReplayParseFailureCode;
   message: string;
+  /**
+   * `code`が`unsupported_game`の場合のみ判明する検出タイトル。パースエラー計測
+   * （`apps/web/src/api/analytics.ts`、Issue #142）がタイトル別の非対応率を
+   * 出すために使う。
+   */
+  game?: GameId;
 }
 
 export type ParseReplayInfoResult =
@@ -118,6 +124,7 @@ export function parseReplayInfo(data: Uint8Array): ParseReplayInfoResult {
       error: {
         code: "unsupported_game",
         message: `${GAME_TITLES[result.replay.game].fullName} は現在録画に対応していません`,
+        game: result.replay.game,
       },
     };
   }

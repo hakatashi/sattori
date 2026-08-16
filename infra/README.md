@@ -37,6 +37,13 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   キーにも含める専用の`CachePolicy`（`mediaCachePolicy`）を使う（含めないと720p/
   オリジナル解像度など異なるファイル名のリクエスト間でdispositionヘッダーの
   キャッシュが混線する。`apps/api/README.md`参照）。
+  `WebCdn`には計測ビーコン（`POST /beacon`、Issue #142）用の追加ビヘイビアが1つ
+  あり（`additionalBehaviors["/beacon"]`）、HTTP API（`httpApi`）へ転送する。
+  他のAPIエンドポイントと違いこのパスだけCloudFrontを前段に置くのは、オリジン
+  リクエストポリシー`ALL_VIEWER_AND_CLOUDFRONT_2022`経由でしか得られない
+  `CloudFront-Viewer-Country`ヘッダーが必要なため。キャッシュは
+  `CACHING_DISABLED`（計測イベントは1件ごとに内容が違うため）。理由の詳細は
+  [`docs/decisions/0024`](../docs/decisions/0024-cookieless-analytics-beacon.md)。
 - **DynamoDB**: `JobsTable`（`jobId`パーティションキー、オンデマンド課金。
   DynamoDB Streams `NEW_AND_OLD_IMAGES`を有効化し完了メール送信のトリガーに使う。
   管理画面のジョブ一覧取得用GSI`StatusCreatedAtIndex`（PK=`status`, SK=`createdAt`,
@@ -47,7 +54,10 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   月間コストガード閾値のシングルトン設定。Issue #14。`apps/api/README.md`
   「キルスイッチ・月間コストガード」参照）、
   `WorkersTable`（`workerId`パーティションキーのみ・TTLあり。自宅サーバー常駐
-  ワーカーのハートビート置き場。Issue #49。`home-worker/README.md`参照）。
+  ワーカーのハートビート置き場。Issue #49。`home-worker/README.md`参照）、
+  `AnalyticsEventsTable`（PK=`eventDate`（UTC日付）・SK=`eventId`、TTL 180日。
+  Cookie無しの計測ビーコン（`POST /beacon`）が書き込む生イベントログ。Issue #142。
+  `apps/api/README.md`「計測」参照）。
   `JobsTable`にはもう1本、自宅ワーカーへのオファー用**sparse GSI**
   `HomeWorkerOfferIndex`（PK=`homeWorkerOfferState`, SK=`homeWorkerOfferExpiresAt`）
   がある。オファー中のジョブだけがこの属性を持つ（claim・撤回時にREMOVEする）ので、
@@ -128,17 +138,18 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   （dockerデーモンにAWS認証情報を持たせないため）、いずれも`{jobId}`という同じ
   ストリーム名で書き込む。重複フレーム診断のため失敗時も残す。
 - **Lambda**（`NodejsFunction`、CJS出力。ESM出力だとAWS SDK内部の動的
-  `require("node:https")`がLambda(ESM)で失敗するため）× 20: createUpload /
+  `require("node:https")`がLambda(ESM)で失敗するため）× 21: createUpload /
   parseReplay / requestMagicLink / startJob / getJob / getWorkerAvailability /
-  sendCompletionEmail / sfn.launch / sfn.handleFailure / sweepOrphanInstances /
-  admin.authorizer / admin.listJobs / admin.getJobDetail / admin.getExecution /
-  admin.getLogs / admin.stopJob / admin.retryJob / admin.getCosts /
-  admin.getSettings / admin.updateSettings。HTTP APIをトリガーとしないものが2本あり、
-  `sendCompletionEmail`は`JobsTable`のDynamoDB Streams（`eventName: MODIFY`・
-  `NewImage.status: "done"`にフィルタ）、`sweepOrphanInstances`はEventBridgeの
-  スケジュールルール（上記、Issue #23）をイベントソースとする。管理系（`admin.*`）と
-  `sweepOrphanInstances`は`commonEnv`を使わず、用途ごとの環境変数のみを個別付与する
-  （下記「管理画面」参照）。
+  recordAnalyticsEvent / sendCompletionEmail / sfn.launch / sfn.handleFailure /
+  sweepOrphanInstances / admin.authorizer / admin.listJobs / admin.getJobDetail /
+  admin.getExecution / admin.getLogs / admin.stopJob / admin.retryJob /
+  admin.getCosts / admin.getSettings / admin.updateSettings。HTTP APIをトリガー
+  としないものが2本あり、`sendCompletionEmail`は`JobsTable`のDynamoDB Streams
+  （`eventName: MODIFY`・`NewImage.status: "done"`にフィルタ）、
+  `sweepOrphanInstances`はEventBridgeのスケジュールルール（上記、Issue #23）を
+  イベントソースとする。管理系（`admin.*`）と`sweepOrphanInstances`・
+  `recordAnalyticsEvent`は`commonEnv`を使わず、用途ごとの環境変数のみを個別付与する
+  （下記「管理画面」・`apps/api/README.md`「計測」参照）。
 - ワーカーAMIはSSMの ECS 最適化 AL2023（Docker同梱）を参照。
 
 ## 管理画面（`/admin`、Issue #51）

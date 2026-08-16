@@ -53,9 +53,12 @@ export default defineConfig({
   server: {
     port: 5173,
     // 開発時は API をバックエンドにプロキシ（VITE_API_BASE で上書き可能）。
+    // `/beacon`（Issue #142）は`API_BASE`を経由しない相対パス固定のため別エントリが要る
+    // （本番ではCloudFrontの`/beacon`ビヘイビア経由、`infra/lib/sattori-stack.ts`参照。
+    // 開発サーバではCloudFrontを挟まないため`CloudFront-Viewer-Country`は付かない）。
     proxy: process.env.VITE_API_BASE
       ? undefined
-      : { "/api": "http://localhost:8787" },
+      : { "/api": "http://localhost:8787", "/beacon": "http://localhost:8787" },
   },
   test: {
     environment: "jsdom",
