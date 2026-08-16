@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type { AnalyticsEventInput } from "@sattori/shared";
+import { getOrCreateDailySalt } from "./analyticsSalt.js";
 import { classifyUserAgent } from "./userAgent.js";
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -45,28 +46,62 @@ export function primaryLanguageTag(acceptLanguage: string | null): string | null
   return first.split("-")[0]?.toLowerCase() || null;
 }
 
+/**
+ * IPを日次saltでハッシュ化した仮の訪問者ID（Issue #144）。saltは日ごとに
+ * ローテーションするため、この値だけでは日をまたいだ訪問者の突き合わせは
+ * できない（`docs/decisions/0026-hashed-visitor-id-daily-salt.md`）。
+ */
+export function hashVisitorId(ip: string, salt: string): string {
+  return createHash("sha256").update(`${salt}:${ip}`).digest("hex");
+}
+
+/**
+ * リクエストのクライアントIPを推定する。`/beacon`はWebCdn(CloudFront)を前段に
+ * 置いているため（`docs/decisions/0024`）、CloudFrontが自動付与する
+ * `X-Forwarded-For`の先頭値（元のクライアント）を優先し、直接HTTP APIを叩かれた
+ * 場合（開発時等）はAPI Gatewayの`sourceIp`にフォールバックする。ハッシュ化した
+ * 訪問者IDの算出だけに使い、この値自体は保存しない。
+ */
+export function extractClientIp(
+  headers: Record<string, string | undefined>,
+  sourceIp: string | null,
+): string | null {
+  const forwardedFor = headers["x-forwarded-for"];
+  const first = forwardedFor?.split(",")[0]?.trim();
+  return first || sourceIp;
+}
+
 /** ヘッダーから得られる、イベントに共通する文脈情報。 */
 export interface AnalyticsEventContext {
   /** `CloudFront-Viewer-Country`ヘッダー。CloudFrontを経由しないリクエストではnull。 */
   country: string | null;
   acceptLanguage: string | null;
   userAgent: string | null;
+  /** `extractClientIp()`で推定したクライアントIP。ハッシュ化にのみ使い保存しない。 */
+  sourceIp: string | null;
 }
 
 /**
  * `AnalyticsEventInput`と`AnalyticsEventContext`から、生IP・生User-Agentを含まない
- * DynamoDBアイテムを組み立てて`AnalyticsEventsTable`へ書き込む。
+ * DynamoDBアイテムを組み立てて`AnalyticsEventsTable`へ書き込む。`settingsTable`は
+ * ハッシュ化訪問者IDの日次salt（`analyticsSalt.ts`）の保管に使う。
  */
 export async function recordAnalyticsEvent(
   table: string,
+  settingsTable: string,
   input: AnalyticsEventInput,
   context: AnalyticsEventContext,
 ): Promise<void> {
   const now = new Date();
+  const eventDate = now.toISOString().slice(0, 10);
   const { browserFamily, osFamily } = classifyUserAgent(context.userAgent);
 
+  const visitorHash = context.sourceIp
+    ? hashVisitorId(context.sourceIp, await getOrCreateDailySalt(settingsTable, eventDate))
+    : null;
+
   const common = {
-    eventDate: now.toISOString().slice(0, 10),
+    eventDate,
     eventId: randomUUID(),
     createdAt: now.toISOString(),
     ttl: Math.floor(now.getTime() / 1000) + ANALYTICS_EVENT_TTL_DAYS * 24 * 60 * 60,
@@ -74,6 +109,7 @@ export async function recordAnalyticsEvent(
     language: primaryLanguageTag(context.acceptLanguage),
     browserFamily,
     osFamily,
+    visitorHash,
   };
 
   const item =

@@ -37,6 +37,7 @@
 | [0023](0023-elapsed-time-interpolation-never-rewinds.md) | 2026-08 | apps/web / worker | 経過時間表示はサーバー値を上限とする内挿にし、決して巻き戻さない | 有効 |
 | [0024](0024-cookieless-analytics-beacon.md) | 2026-08-16 | apps/web / apps/api / packages/shared / infra | アナリティクスはCookie無しの自前ビーコンで実装し、国はCloudFront経由で取る | 有効 |
 | [0025](0025-ops-alerts-per-region-sns-topics.md) | 2026-08-16 | infra / apps/api | 運用アラート通知は1本の宛先に統一しつつ、SNSトピック自体はリージョンごとに分ける | 有効 |
+| [0026](0026-hashed-visitor-id-daily-salt.md) | 2026-08-16 | apps/api / infra | ユニーク訪問者数はIPを日次saltでハッシュ化した仮の訪問者IDで数える | 有効 |
 
 ## 書き方
 
