@@ -37,8 +37,13 @@ Sattoriは「Cookie等を一切使わない」という状態を維持したま�
   計測の失敗はユーザー体験に影響させないため、書き込み失敗時も200系を返す。
 - **`/beacon`だけWebCdn(CloudFront)を前段に置く**（`infra/lib/sattori-stack.ts`の
   `webDistribution.additionalBehaviors["/beacon"]`）。オリジンリクエストポリシー
-  `ALL_VIEWER_AND_CLOUDFRONT_2022`で`CloudFront-Viewer-Country`を含むCloudFront
-  固有ヘッダーをオリジン（HTTP API）へ転送する。キャッシュは`CACHING_DISABLED`
+  `ALL_VIEWER_EXCEPT_HOST_HEADER`で`CloudFront-Viewer-Country`を含むCloudFront
+  固有ヘッダーをオリジン（HTTP API）へ転送する。**`ALL_VIEWER_AND_CLOUDFRONT_2022`は
+  使わない** —— viewerのHostヘッダー（カスタムドメイン）をそのままオリジンへ転送して
+  しまい、API Gatewayがオリジン自身のドメインと不一致として403 Forbiddenを返す
+  （Issue #151で発覚）。`ALL_VIEWER_EXCEPT_HOST_HEADER`はHostヘッダーだけを除外しつつ
+  CloudFront-Viewer-Countryは引き続き転送するため、API Gateway/Lambda Function URL
+  オリジン向けにAWSが用意した組み合わせになる。キャッシュは`CACHING_DISABLED`
   （計測イベントは1件ごとに内容が違うため）。フロントエンド
   （`apps/web/src/api/analytics.ts`）は`API_BASE`を経由せず常に相対パス`/beacon`
   で叩く——本番では現在ページと同一オリジン（WebCdnのカスタムドメイン）に解決される
