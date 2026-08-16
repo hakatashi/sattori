@@ -23,6 +23,10 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
+import * as cwActions from "aws-cdk-lib/aws-cloudwatch-actions";
+import * as sns from "aws-cdk-lib/aws-sns";
+import * as subscriptions from "aws-cdk-lib/aws-sns-subscriptions";
 import { NodejsFunction, type NodejsFunctionProps } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
@@ -58,6 +62,17 @@ export interface SattoriStackProps extends StackProps {
    * `SESv2Client`にリージョンを明示する。
    */
   sesRegion: string;
+  /**
+   * SES送信時に指定するConfigurationSet名。`SattoriEdgeStack.sesConfigurationSetName`
+   * をそのまま渡す(Issue #133 OPS-1)。
+   */
+  sesConfigurationSetName: string;
+  /**
+   * 運用アラート(Step Functions失敗・Lambdaエラー等、Issue #135 OPS-3)の通知先
+   * メールアドレス。`SattoriEdgeStack`側の運用アラート(Issue #133/#134)と同じ値を
+   * 渡すが、SNSトピック自体はリージョンごとに分ける(`docs/decisions/0025`)。
+   */
+  opsAlertEmail: string;
 }
 
 /**
@@ -418,8 +433,15 @@ export class SattoriStack extends Stack {
       // eu-south-2にはSESが存在しないため、Lambda側(apps/api/src/ses.ts)は
       // このリージョンを明示して`SESv2Client`を生成する。
       SES_REGION: props.sesRegion,
+      // `SattoriEdgeStack`(us-east-1)が作ったConfigurationSet名。バウンス・苦情・
+      // 拒否イベントをSNS経由で運用アラートへ流すための紐付け(Issue #133 OPS-1)。
+      SES_CONFIGURATION_SET: props.sesConfigurationSetName,
       WEB_BASE_URL: `https://${webDomainName}`,
     };
+
+    // すべての`NodejsFunction`を集めておき、Lambdaのエラー・スロットルアラーム
+    // (OPS-3, Issue #135)をハンドラ追加ごとに個別配線せずまとめて張れるようにする。
+    const allHandlerFns: NodejsFunction[] = [];
 
     // `environment`省略時は`commonEnv`を使う。管理画面のauthorizer(Issue #51)のように
     // `commonEnv`とは無関係な環境変数だけを持たせたいLambdaのために上書きできるようにする。
@@ -430,8 +452,8 @@ export class SattoriStack extends Stack {
       // メモリ・タイムアウトだけ既定と変えたいハンドラ向けの上書き（全件Scanで
       // 集計する`admin/getCosts.ts`など）。既定値で足りるハンドラは渡さないこと。
       overrides: Pick<NodejsFunctionProps, "memorySize" | "timeout"> = {},
-    ) =>
-      new NodejsFunction(this, name, {
+    ) => {
+      const fn = new NodejsFunction(this, name, {
         entry: join(API_HANDLERS, entry),
         handler: "handler",
         runtime: lambda.Runtime.NODEJS_22_X,
@@ -445,6 +467,9 @@ export class SattoriStack extends Stack {
           externalModules: [],
         },
       });
+      allHandlerFns.push(fn);
+      return fn;
+    };
 
     const createUploadFn = makeHandler("CreateUploadFn", "createUpload.ts");
     const parseReplayFn = makeHandler("ParseReplayFn", "parseReplay.ts");
@@ -479,6 +504,9 @@ export class SattoriStack extends Stack {
     emailRateLimitTable.grantReadWriteData(requestMagicLinkFn);
     // キルスイッチ・月間コストガード判定（Issue #14）の読み取り専用。
     settingsTable.grantReadData(requestMagicLinkFn);
+    // `replayInfo`をクライアントのJSONではなく`replayKey`から再取得・再パースして
+    // 生成するため（Issue #133 OPS-1、`replay.ts`の`fetchReplayBytes()`）。
+    uploadBucket.grantRead(requestMagicLinkFn);
     // SESアカウントがサンドボックス中は、送信元IDだけでなく送信先(受信者)の
     // メールアドレスも「検証済みID」としてIAMの権限チェック対象になる
     // (受信者ごとに個別の identity ARN が動的に検査される)。宛先はユーザー入力の
@@ -1065,6 +1093,80 @@ function handler(event) {
         distributionPaths: ["/*"],
       });
     }
+
+    // --- 運用アラート(OPS-3, Issue #135) -------------------------------------
+    // 「録画が全部コケている」ことに気づく手段が無かった問題への対応。1名運用のため
+    // 通知先は1本のSNSトピックへ束ねる(分散させると全部無視するようになる)。
+    // us-east-1側(SESバウンス・苦情、AWS Budgets、Issue #133/#134)は
+    // `SattoriEdgeStack`が別途持つ——CloudWatchアラームのSNSアクションは同一
+    // リージョンのトピックしか指定できないため(`docs/decisions/0025`)。
+    const opsAlertTopic = new sns.Topic(this, "OpsAlertTopic", {
+      displayName: "Sattori Ops Alerts (eu-south-2: Step Functions/Lambda)",
+    });
+    opsAlertTopic.addSubscription(new subscriptions.EmailSubscription(props.opsAlertEmail));
+    const opsAlertAction = new cwActions.SnsAction(opsAlertTopic);
+
+    // 1. RecordingStateMachineの実行失敗(Issue #135で提案された閾値をそのまま採用:
+    //    1時間で3件以上)。単発の失敗はStep Functions自身がリトライするため許容し、
+    //    まとまった失敗だけを拾う。
+    new cloudwatch.Alarm(this, "RecordingStateMachineFailedAlarm", {
+      alarmDescription:
+        "RecordingStateMachineの実行失敗が1時間で3件以上。docs/runbooks/ops-alerts.md参照",
+      metric: stateMachine.metricFailed({ period: Duration.hours(1), statistic: "Sum" }),
+      threshold: 3,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(opsAlertAction);
+
+    // 2・3. Lambdaのエラー・スロットル(Issue #135で提案された閾値をそのまま採用:
+    //    5分で1件以上)。`makeHandler`経由で作った全Lambda(21本)にまとめて張る——
+    //    個別に選ぶと足し引き漏れが起きるため、監視対象の選定自体を無くす。
+    for (const fn of allHandlerFns) {
+      new cloudwatch.Alarm(this, `${fn.node.id}ErrorsAlarm`, {
+        alarmDescription: `${fn.node.id}のエラーが5分で1件以上。docs/runbooks/ops-alerts.md参照`,
+        metric: fn.metricErrors({ period: Duration.minutes(5), statistic: "Sum" }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(opsAlertAction);
+      new cloudwatch.Alarm(this, `${fn.node.id}ThrottlesAlarm`, {
+        alarmDescription: `${fn.node.id}のスロットルが5分で1件以上。docs/runbooks/ops-alerts.md参照`,
+        metric: fn.metricThrottles({ period: Duration.minutes(5), statistic: "Sum" }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(opsAlertAction);
+    }
+
+    // 4. 完了メール送信の失敗(Issue #135で提案された閾値をそのまま採用: 1件以上)。
+    //    `sendCompletionEmail.ts`はDynamoDB Streamsのリトライを避けるため例外を
+    //    握り潰して`console.error`するだけ(`retryAttempts: 3`は発動し得ない設定に
+    //    なっている)。ログのメトリクスフィルタで拾う以外に気づく手段が無い。
+    const sendCompletionEmailFailedMetric = new logs.MetricFilter(
+      this,
+      "SendCompletionEmailFailedMetricFilter",
+      {
+        logGroup: logs.LogGroup.fromLogGroupName(
+          this,
+          "SendCompletionEmailLogGroup",
+          `/aws/lambda/${sendCompletionEmailFn.functionName}`,
+        ),
+        filterPattern: logs.FilterPattern.stringValue("$.event", "=", "send_completion_email_failed"),
+        metricNamespace: "Sattori",
+        metricName: "SendCompletionEmailFailed",
+      },
+    ).metric({ period: Duration.minutes(5), statistic: "Sum" });
+    new cloudwatch.Alarm(this, "SendCompletionEmailFailedAlarm", {
+      alarmDescription: "完了メールの送信に1件以上失敗した。docs/runbooks/ops-alerts.md参照",
+      metric: sendCompletionEmailFailedMetric,
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(opsAlertAction);
 
     // --- 出力 --------------------------------------------------------------
 

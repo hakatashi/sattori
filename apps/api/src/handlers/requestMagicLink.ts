@@ -5,9 +5,11 @@ import {
   EMAIL_PATTERN,
   isSupportedGame,
   isSupportedLanguage,
+  parseReplayInfo,
   supportsSlowMotion,
   type GameId,
   type JobRecord,
+  type ReplayInfo,
   type RequestMagicLinkRequest,
   type RequestMagicLinkResponse,
 } from "@sattori/shared";
@@ -16,6 +18,7 @@ import { getCachedMonthlyCostUsd } from "../costGuard.js";
 import { error, json, parseBody } from "../http.js";
 import { deleteJob, PENDING_JOB_TTL_MS, putJob } from "../jobs.js";
 import { checkAndRecordRateLimit } from "../rateLimit.js";
+import { fetchReplayBytes } from "../replay.js";
 import { sendMagicLinkEmail } from "../ses.js";
 import { getSettings } from "../settings.js";
 import { REPLAY_KEY_PATTERN } from "../uploads.js";
@@ -113,6 +116,34 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
 
   const language = isSupportedLanguage(body.language) ? body.language : DEFAULT_LANGUAGE;
 
+  // `replayInfo` はクライアントが送った任意のJSONをそのまま信用せず、`replayKey`から
+  // アップロード済み.rpyを再取得してサーバー側で再パースする（Issue #133 OPS-1）。
+  // かつては`body.replayInfo`をそのまま`JobRecord`へ転記していたが、
+  // `replayInfo.player`は完了メール本文にそのまま載る（`ses.ts`の`formatReplayInfo()`）
+  // ため、第三者のメールアドレスを宛先に指定しつつ`player`へ任意の文面を仕込めば、
+  // DKIM署名済み・SPF通過の自ドメインから攻撃者の文面が届く経路になっていた。
+  // 再パースにより注入できる文字列は実際のリプレイファイル形式（プレイヤー名は
+  // 固定長フィールド）の制約を受けるため、この経路を実質的に塞げる。取得・解析に
+  // 失敗しても録画自体は継続できるプレビュー用の付随データに過ぎないため、ジョブ作成は
+  // 落とさずreplayInfoをnullとして続行する。
+  let replayInfo: ReplayInfo | null = null;
+  try {
+    const data = await fetchReplayBytes(config.uploadBucket, body.replayKey, config.maxReplayBytes);
+    const result = parseReplayInfo(data);
+    if (result.ok) {
+      replayInfo = result.info;
+    }
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "replay_info_reparse_failed",
+        replayKey: body.replayKey,
+        name: err instanceof Error ? err.name : undefined,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+
   const now = new Date();
   const jobId = randomUUID();
   const job: JobRecord = {
@@ -155,7 +186,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     estimatedDurationSeconds: body.estimatedDurationSeconds ?? null,
     progress: null,
     previewImagePath: null,
-    replayInfo: body.replayInfo ?? null,
+    replayInfo,
     pendingExpiresAt: new Date(now.getTime() + PENDING_JOB_TTL_MS).toISOString(),
     retriedToJobId: null,
     retriedFromJobId: null,
@@ -184,6 +215,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       jobId: job.jobId,
       language: job.language,
       replayInfo: job.replayInfo,
+      configurationSetName: config.sesConfigurationSetName,
     });
   } catch (err) {
     console.error(

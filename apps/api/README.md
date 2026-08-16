@@ -226,6 +226,14 @@ UserDataスクリプトがやること:
   `replays/<uuid>.rpy`）と一致しない値を400で拒否する。`estimatedDurationSeconds`も
   有限の正数以外は400（Issue #127 SEC-1。どちらもワーカーEC2の起動スクリプトへ
   そのまま渡る値のため、入口で形式を固定する）。
+- `JobRecord.replayInfo`は**クライアントが送ったJSONをそのまま転記しない**。
+  `replayKey`が指すアップロード済み.rpyを`POST /replays/parse`（`parseReplay.ts`）
+  と共通の`replay.ts`の`fetchReplayBytes()`で再取得し、サーバー側で
+  `parseReplayInfo()`により再パースする（Issue #133 OPS-1）。かつては
+  `body.replayInfo`を転記しており、それが完了メール本文へそのまま載ることを
+  利用して第三者宛にフィッシング文面を仕込める経路になっていた。取得・解析に
+  失敗しても`replayInfo`を`null`として録画自体は継続する（`decisions/0021`と
+  同じ割り切り）。
 
 > 濫用対策をここから増やす前に
 > [`docs/decisions/0007`](../../docs/decisions/0007-no-ip-rate-limit-no-recaptcha.md) を読むこと
@@ -318,6 +326,11 @@ Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId�
 `sweepOrphanInstances.ts`専用の`JOBS_TABLE`単独指定）
 から注入される。`loadConfig()`が必須環境変数の存在を
 検証する（管理API用Lambdaは`commonEnv`を使わず個別の環境変数のみを持つ）。
+
+`SES_CONFIGURATION_SET`は`SattoriEdgeStack`が作った`ses.ConfigurationSet`名
+（`crossRegionReferences`経由）。`ses.ts`が`SendEmailCommand`へ指定し、
+バウンス・苦情・拒否イベントを運用アラート用SNSへ流す（Issue #133 OPS-1、
+[`docs/decisions/0025`](../../docs/decisions/0025-ops-alerts-per-region-sns-topics.md)）。
 
 `STATE_MACHINE_ARN`が`commonEnv`に含まれない理由: ステートマシンは`launchFn`/
 `handleFailureFn`（Lambda ARN）を呼び出すため、これらのLambdaの環境変数がステート

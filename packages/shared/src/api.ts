@@ -66,12 +66,6 @@ export interface RequestMagicLinkRequest {
   /** マジックリンクの送信先。同一メール（`+`エイリアス正規化後）は24時間5件までのレート制限対象。 */
   email: string;
   /**
-   * `POST /replays/parse` の結果をそのまま渡す。ページBでページAのSTEP2と同じ
-   * リプレイ内容プレビューを表示するために `JobRecord` へ転記して保持する
-   * （省略・null なら表示しない）。
-   */
-  replayInfo?: ReplayInfo | null;
-  /**
    * 「次のステップ」押下時点でユーザーが選択していた表示言語。マジックリンク
    * メール・完了メールの文面、およびメール本文に載せるジョブページリンクの
    * 言語（`/` = ja, `/en` = en）を出し分けるために `JobRecord` へ転記して保持する。

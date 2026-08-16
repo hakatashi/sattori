@@ -11,6 +11,8 @@ function synth(): Template {
     webDomainName: "sattori.hakatashi.com",
     webCertificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/dummy",
     sesRegion: "us-east-1",
+    sesConfigurationSetName: "test-config-set",
+    opsAlertEmail: "ops@example.com",
   });
   return Template.fromStack(stack);
 }
@@ -500,6 +502,62 @@ describe("SattoriStack", () => {
           }),
         ]),
       },
+    });
+  });
+
+  it("運用アラート用SNSトピックにメール購読が1件ある(Issue #135 OPS-3)", () => {
+    template.hasResourceProperties("AWS::SNS::Subscription", {
+      Protocol: "email",
+      Endpoint: "ops@example.com",
+    });
+  });
+
+  it("RecordingStateMachineの実行失敗アラームがOPS-3で提案された閾値(1時間で3件)を持つ", () => {
+    template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      Namespace: "AWS/States",
+      MetricName: "ExecutionsFailed",
+      Period: 3600,
+      Threshold: 3,
+    });
+  });
+
+  it("makeHandler経由のLambda全21本にErrors/Throttlesアラームが張られている(Issue #135 OPS-3)", () => {
+    // infra/README.md「Lambda」に列挙された21本(commonEnv/個別環境変数どちらも含む、
+    // makeHandler経由のもの全部)。BucketDeployment等CDKが内部で作るLambda
+    // (autoDeleteObjectsのカスタムリソース等)はmakeHandlerを通らないため対象外。
+    const alarms = template.findResources("AWS::CloudWatch::Alarm");
+    const errorAlarms = Object.values(alarms).filter(
+      (alarm) => alarm.Properties?.MetricName === "Errors" && alarm.Properties?.Namespace === "AWS/Lambda",
+    );
+    const throttleAlarms = Object.values(alarms).filter(
+      (alarm) =>
+        alarm.Properties?.MetricName === "Throttles" && alarm.Properties?.Namespace === "AWS/Lambda",
+    );
+    expect(errorAlarms).toHaveLength(21);
+    expect(throttleAlarms).toHaveLength(21);
+  });
+
+  it("マジックリンク送信LambdaにErrorsアラームが個別に張られている", () => {
+    template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      Namespace: "AWS/Lambda",
+      MetricName: "Errors",
+      Dimensions: Match.arrayWith([
+        Match.objectLike({ Name: "FunctionName", Value: { Ref: Match.stringLikeRegexp("^RequestMagicLinkFn") } }),
+      ]),
+    });
+  });
+
+  it("完了メール送信失敗のメトリクスフィルタとアラームが存在する(Issue #135 OPS-3)", () => {
+    template.hasResourceProperties("AWS::Logs::MetricFilter", {
+      FilterPattern: '{ $.event = "send_completion_email_failed" }',
+      MetricTransformations: Match.arrayWith([
+        Match.objectLike({ MetricNamespace: "Sattori", MetricName: "SendCompletionEmailFailed" }),
+      ]),
+    });
+    template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      Namespace: "Sattori",
+      MetricName: "SendCompletionEmailFailed",
+      Threshold: 1,
     });
   });
 });
