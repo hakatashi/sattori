@@ -96,6 +96,35 @@ def test_update_status_includes_optional_fields(monkeypatch):
     assert "#e = :e" in kwargs["UpdateExpression"]
 
 
+def test_update_status_includes_error_code(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status(
+        "job-1",
+        "failed",
+        error="録画処理中にエラーが発生しました",
+        error_code="recording_failed",
+    )
+
+    _, kwargs = mock_table.update_item.call_args
+    assert kwargs["ExpressionAttributeValues"][":ec"] == "recording_failed"
+    assert "errorCode = :ec" in kwargs["UpdateExpression"]
+
+
+def test_update_status_omits_error_code_by_default(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "failed", error="録画処理中にエラーが発生しました")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert ":ec" not in kwargs["ExpressionAttributeValues"]
+    assert "errorCode" not in kwargs["UpdateExpression"]
+
+
 def test_update_status_refuses_stopped_jobs(monkeypatch):
     # 管理画面からの緊急停止(Issue #59)はワーカーより長生きする拒否票として働く。
     # これが無いと、自宅ワーカー(Issue #49)が claim の取り消しに気づく前に完走した

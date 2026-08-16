@@ -48,6 +48,7 @@ const doneJob: JobRecord = {
   outputPath: "output/job-1/video.mp4",
   outputPath720p: "output/job-1/video-720p.mp4",
   error: null,
+  errorCode: null,
   createdAt: "2026-07-18T00:00:00.000Z",
   updatedAt: "2026-07-18T00:00:00.000Z",
   doneAt: "2026-07-18T00:00:00.000Z",
@@ -200,6 +201,37 @@ describe("GET /jobs/{jobId}", () => {
 
     expect(body.previewImageUrl).toBeNull();
     expect(body.previewVideoUrl).toBeNull();
+  });
+
+  it("失敗したジョブは error と errorCode をそのまま返す", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: {
+        ...doneJob,
+        status: "failed",
+        error: "録画に複数回失敗しました。時間をおいて再試行してください",
+        errorCode: "retries_exhausted",
+      },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.error).toBe("録画に複数回失敗しました。時間をおいて再試行してください");
+    expect(body.errorCode).toBe("retries_exhausted");
+  });
+
+  it("errorCode未設定の旧ジョブ（DynamoDB上に属性自体が無い）ではnullを返す", async () => {
+    const { errorCode: _omit, ...legacyItem } = doneJob;
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...legacyItem, status: "failed", error: "録画処理中にエラーが発生しました" },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.errorCode).toBeNull();
   });
 
   it("ジョブが存在しなければ404を返す", async () => {

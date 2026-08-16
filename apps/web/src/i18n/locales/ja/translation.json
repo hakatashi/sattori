@@ -215,12 +215,9 @@
     "too_short": "リプレイファイルが破損しています",
     "unknown_magic": "対応していないファイル形式です。東方Projectのリプレイファイル（.rpy）を指定してください",
     "corrupt": "リプレイファイルが破損しています（データが壊れている可能性があります）",
-    "http_error": "リクエストに失敗しました ({{status}})"
-  },
-  "jobErrors": {
-    "launchFailed": "録画ワーカーの起動に失敗しました",
-    "retriesExhausted": "録画に複数回失敗しました。時間をおいて再試行してください",
-    "recordingFailed": "録画処理中にエラーが発生しました",
-    "adminStopped": "管理者により停止されました"
+    "http_error": "リクエストに失敗しました ({{status}})",
+    "retries_exhausted": "録画に複数回失敗しました。時間をおいて再試行してください",
+    "recording_failed": "録画処理中にエラーが発生しました",
+    "admin_stopped": "管理者により停止されました"
   }
 }

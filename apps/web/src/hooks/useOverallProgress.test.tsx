@@ -32,6 +32,7 @@ function buildJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     downloadUrl720p: null,
     downloadExpiresAt: null,
     error: null,
+    errorCode: null,
     updatedAt: new Date().toISOString(),
     progress: 100,
     previewVideoUrl: null,

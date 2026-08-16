@@ -49,6 +49,8 @@ export async function getJob(table: string, jobId: string): Promise<JobRecord | 
  * ジョブの状態を更新する（ワーカーからも同じテーブルを更新するが、
  * API 側では主に起動直後の launching への遷移で使う）。
  * error を渡すと JobRecord.error（ユーザー表示用の簡潔な文言）も併せて更新する。
+ * `options.errorCode` は `error` に対応する機械可読コード（`errors.<code>`翻訳の軸、
+ * Issue #138）——`error` を渡す呼び出しでは可能な限り併せて指定すること。
  *
  * `options.unlessDone` を指定すると「status が done でないこと」を条件にした
  * 原子的更新になり、条件を満たさなかった場合は書き込まずに false を返す
@@ -60,7 +62,7 @@ export async function updateJobStatus(
   jobId: string,
   status: JobStatus,
   error?: string,
-  options?: { unlessDone?: boolean },
+  options?: { unlessDone?: boolean; errorCode?: string },
 ): Promise<boolean> {
   let updateExpression = "SET #s = :s, updatedAt = :u";
   const expressionAttributeNames: Record<string, string> = { "#s": "status" };
@@ -72,6 +74,10 @@ export async function updateJobStatus(
     updateExpression += ", #e = :e";
     expressionAttributeNames["#e"] = "error";
     expressionAttributeValues[":e"] = error;
+  }
+  if (options?.errorCode !== undefined) {
+    updateExpression += ", errorCode = :ec";
+    expressionAttributeValues[":ec"] = options.errorCode;
   }
   let conditionExpression: string | undefined;
   if (options?.unlessDone) {

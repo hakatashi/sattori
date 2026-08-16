@@ -39,6 +39,7 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     downloadUrl720p: "https://media.example/720p.mp4?response-content-disposition=attachment%3B...",
     downloadExpiresAt: "2026-07-25T00:00:00.000Z",
     error: null,
+    errorCode: null,
     updatedAt: new Date().toISOString(),
     progress: null,
     previewVideoUrl: null,
@@ -155,6 +156,7 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     downloadUrl720p: null,
     downloadExpiresAt: null,
     error: null,
+    errorCode: null,
     updatedAt: new Date().toISOString(),
     progress: 100,
     previewVideoUrl: null,
@@ -200,5 +202,46 @@ describe("JobProgressView の全体進捗バー", () => {
     const bar = screen.getByRole("progressbar", { name: "全体の進捗" });
     expect(bar.getAttribute("aria-valuenow")).toBe("100");
     expect(screen.getByText("100%")).toBeTruthy();
+  });
+});
+
+describe("JobProgressView のエラー表示", () => {
+  it("errorCodeがあれば翻訳キー（errors.<code>）経由の文言を表示する", () => {
+    render(
+      <JobProgressView
+        job={buildRecordingJob({
+          status: "failed",
+          error: "録画に複数回失敗しました。時間をおいて再試行してください",
+          errorCode: "retries_exhausted",
+        })}
+        loadError={null}
+      />,
+    );
+
+    expect(
+      screen.getByText("録画に複数回失敗しました。時間をおいて再試行してください"),
+    ).toBeTruthy();
+  });
+
+  it("errorCodeが無い旧ジョブでは error の生文言をそのまま表示する", () => {
+    render(
+      <JobProgressView
+        job={buildRecordingJob({ status: "failed", error: "失敗しました", errorCode: null })}
+        loadError={null}
+      />,
+    );
+
+    expect(screen.getByText("失敗しました")).toBeTruthy();
+  });
+
+  it("errorもerrorCodeも無ければ汎用エラー文言を表示する", () => {
+    render(
+      <JobProgressView
+        job={buildRecordingJob({ status: "failed", error: null, errorCode: null })}
+        loadError={null}
+      />,
+    );
+
+    expect(screen.getByText("録画中に問題が発生しました。もう一度お試しください。")).toBeTruthy();
   });
 });

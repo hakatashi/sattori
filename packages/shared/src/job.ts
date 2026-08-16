@@ -99,8 +99,19 @@ export interface JobRecord {
   outputBytes: number | null;
   /** `outputPath720p`の動画のバイト数（未アップロード・旧ジョブなら null）。 */
   outputBytes720p: number | null;
-  /** 失敗時のエラー概要（ユーザー表示用の簡潔な文言）。 */
+  /** 失敗時のエラー概要（ユーザー表示用の簡潔な文言、常に日本語固定）。 */
   error: string | null;
+  /**
+   * `error`に対応する機械可読コード（`ApiError.code`と同じ語彙。例:
+   * `"launch_failed"`）。バックエンド・ワーカーが`error`と同時に書き込む
+   * （`apps/api/src/jobs.ts`の`updateJobStatus()`・`worker/status.py`の
+   * `update_status()`）。フロントエンドはこれを軸に`errors.<code>`へ翻訳する
+   * （`apps/web/src/i18n/apiErrors.ts`、Issue #138）ため、`error`だけを書き換えて
+   * `errorCode`を付け忘れると、そのメッセージは英語版で翻訳されず日本語のまま
+   * 表示される。既存の日本語文言に対応するコードが無い場合は null（`error`の
+   * 生文言をそのまま表示する）。
+   */
+  errorCode: string | null;
   /** ISO 8601。 */
   createdAt: string;
   updatedAt: string;
