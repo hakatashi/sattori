@@ -234,6 +234,14 @@ UserDataスクリプトがやること:
   利用して第三者宛にフィッシング文面を仕込める経路になっていた。取得・解析に
   失敗しても`replayInfo`を`null`として録画自体は継続する（`decisions/0021`と
   同じ割り切り）。
+- `game`/`estimatedDurationSeconds`も同じ再パース結果で上書きする（クライアント値
+  `body.game`/`body.estimatedDurationSeconds`は、再パースが失敗した場合のみの
+  フォールバック）。`game`はEC2インスタンスタイプ選定（`ec2.ts`の
+  `getCandidateInstanceTypes()`）を直接左右するため、検証せず信用すると実際の
+  リプレイと無関係な高コストなタイトルを申告されうる。`parseReplayInfo()`は
+  「形式不明」と「形式は読めるが録画未対応」をどちらも`ok:false`にまとめるため、
+  後者は`result.error.game`から検出タイトルを別途拾う（でないと非対応タイトルの
+  詐称を素通りさせてしまう）。
 
 > 濫用対策をここから増やす前に
 > [`docs/decisions/0007`](../../docs/decisions/0007-no-ip-rate-limit-no-recaptcha.md) を読むこと

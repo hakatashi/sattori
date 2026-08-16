@@ -21,6 +21,9 @@ const FIXTURES_DIR = path.resolve(
   "../../../../packages/replay-parser/test-fixtures",
 );
 const TH07_FIXTURE = path.join(FIXTURES_DIR, "th07/th7_07.rpy");
+// th13はパーサーとしては認識できるが、Sattoriの録画対応タイトルには含まれない
+// (parseReplay.test.tsと同じ用途)。
+const TH13_FIXTURE = path.join(FIXTURES_DIR, "th13/th13_01.rpy");
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -54,6 +57,13 @@ function makeEvent(body: unknown): APIGatewayProxyEventV2 {
 
 function parseBody(res: APIGatewayProxyStructuredResultV2): unknown {
   return JSON.parse(res.body ?? "{}");
+}
+
+function mockUploadedReplay(data: Uint8Array) {
+  s3Mock.on(HeadObjectCommand).resolves({ ContentLength: data.byteLength });
+  s3Mock.on(GetObjectCommand).resolves({
+    Body: { transformToByteArray: async () => data } as never,
+  });
 }
 
 describe("POST /magic-links", () => {
@@ -158,12 +168,7 @@ describe("POST /magic-links", () => {
   });
 
   it("replayKeyの.rpyをサーバー側で再パースしてジョブレコード・メール本文に反映し、クライアントが送ったreplayInfoは無視する（Issue #133 OPS-1）", async () => {
-    s3Mock.on(HeadObjectCommand).resolves({ ContentLength: 1 });
-    s3Mock.on(GetObjectCommand).resolves({
-      Body: {
-        transformToByteArray: async () => new Uint8Array(await readFile(TH07_FIXTURE)),
-      } as never,
-    });
+    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
     const { handler } = await import("./requestMagicLink.js");
     // 第三者への嫌がらせ・フィッシング文面の注入を試みる悪意あるクライアント値。
     // 再パース方式ではこの値は一切使われない。
@@ -332,6 +337,54 @@ describe("POST /magic-links", () => {
     const result = res as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(422);
     expect(parseBody(result)).toMatchObject({ code: "unsupported_game" });
+  });
+
+  it("gameとestimatedDurationSecondsはクライアント申告値ではなく再パース結果で上書きする（Issue #133 OPS-1 フォローアップ）", async () => {
+    // job.gameはEC2インスタンスタイプ選定(ec2.tsのgetCandidateInstanceTypes())を
+    // 直接左右するため、クライアントが虚偽のgame/estimatedDurationSecondsを申告して
+    // 実際のリプレイと無関係な(高コストな)値を選ばせられないことを確認する。
+    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        game: "th20", // 実体はth07なのに高コストなth20を詐称
+        options: { watermark: true },
+        email: "user@example.com",
+        estimatedDurationSeconds: 999999,
+      }),
+      {} as never,
+      () => {},
+    );
+    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(202);
+
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.game).toBe("th07");
+    expect(jobPut?.args[0].input.Item?.estimatedDurationSeconds).toBe(847);
+  });
+
+  it("再パースが成功し、実体が非対応タイトルなら対応タイトルの詐称を無視して422を返す（Issue #133 OPS-1 フォローアップ）", async () => {
+    // 早期チェック(claimedGame)は th07 で通過するが、実体は録画未対応の th13。
+    // クライアント申告値だけで判定していた旧実装は、ここを素通りしてジョブを
+    // 作成しEC2起動まで進めてしまっていた。
+    mockUploadedReplay(new Uint8Array(await readFile(TH13_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        game: "th07",
+        options: { watermark: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const result = res as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(422);
+    expect(parseBody(result)).toMatchObject({ code: "unsupported_game" });
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
   });
 
   it("低速録画に対応したタイトル(th20)なら options.slowMotion をそのまま保存する", async () => {
