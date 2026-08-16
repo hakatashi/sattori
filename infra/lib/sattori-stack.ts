@@ -624,6 +624,12 @@ export class SattoriStack extends Stack {
       payload: sfn.TaskInput.fromObject({
         jobId: sfn.JsonPath.stringAt("$.jobId"),
         attempt: sfn.JsonPath.numberAt("$.attempt"),
+        // Launch の Catch（`$.error`、下記）で捕捉した失敗種別を渡す。handleFailure側は
+        // これを見て「再試行しても解決しない決定的な失敗」を早期に打ち切る（Issue #131）。
+        error: {
+          Error: sfn.JsonPath.stringAt("$.error.Error"),
+          Cause: sfn.JsonPath.stringAt("$.error.Cause"),
+        },
       }),
       payloadResponseOnly: true,
       resultPath: "$.handleFailureResult",
