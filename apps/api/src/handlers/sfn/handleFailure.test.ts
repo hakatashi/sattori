@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   DescribeInstancesCommand,
   EC2Client,
@@ -7,7 +8,7 @@ import {
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import type { JobRecord } from "@sattori/shared";
-import { MAX_ATTEMPTS } from "../../retryPolicy.js";
+import { MAX_ATTEMPTS, MAX_ATTEMPTS_DETERMINISTIC } from "../../retryPolicy.js";
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -215,5 +216,144 @@ describe("sfn/handleFailure handler", () => {
 
     expect(result).toEqual({ shouldRetry: true });
     expect(terminatedIds()).toEqual(["i-abc123"]);
+  });
+
+  // Issue #129: 後始末（terminate・割り当て解除）の間にワーカーが完走して`done`を
+  // 書いた場合、スナップショット時点の`job.status`だけでは検知できない。最終的な
+  // `failed`書き込みは`unlessDone`の原子的更新にし、書き込み時点の競合で防ぐ。
+  it("最終failed書き込みはunlessDoneの条件付き更新で行う", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: baseJob });
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const { handler } = await import("./handleFailure.js");
+    await handler({ jobId: "job-1", attempt: MAX_ATTEMPTS });
+
+    const failedUpdate = statusUpdates(ddbMock)[0];
+    expect(failedUpdate?.args[0].input.ExpressionAttributeValues).toMatchObject({
+      ":s": "failed",
+      ":done": "done",
+    });
+    expect(failedUpdate?.args[0].input.ConditionExpression).toBe("#s <> :done");
+  });
+
+  it("後始末の間にdoneへ確定していた場合、条件付き更新が弾かれても例外にしない", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: baseJob });
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ddbMock
+      .on(UpdateCommand)
+      .resolvesOnce({}) // 自宅ワーカー割り当て解除
+      .rejects(new ConditionalCheckFailedException({ message: "conditional", $metadata: {} }));
+
+    const { handler } = await import("./handleFailure.js");
+    await expect(
+      handler({ jobId: "job-1", attempt: MAX_ATTEMPTS }),
+    ).resolves.toEqual({ shouldRetry: false });
+  });
+
+  // 最終`failed`書き込みの例外はもう握りつぶさない。ジョブレコードを非終端のまま
+  // 放置するより、ステートマシン側のLambda呼び出しリトライ(`handleFailureTask.addRetry`)
+  // に委ねたほうが安全なため（Issue #129）。
+  it("最終failed書き込みが(条件チェック以外の理由で)失敗したら例外を投げる", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: baseJob });
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ddbMock
+      .on(UpdateCommand)
+      .resolvesOnce({}) // 自宅ワーカー割り当て解除
+      .rejects(new Error("ddb throttled"));
+
+    const { handler } = await import("./handleFailure.js");
+    await expect(handler({ jobId: "job-1", attempt: MAX_ATTEMPTS })).rejects.toThrow(
+      "ddb throttled",
+    );
+  });
+
+  // Issue #131: デシンク等が原因の失敗は同一リプレイなら毎回同じ箇所で再現するため、
+  // `WorkerFailed`（Spot中断を除く）・`WorkerBootstrapFailure`は短い上限で打ち切る。
+  describe("失敗種別によるリトライ上限の分岐(Issue #131)", () => {
+    it("WorkerFailedはMAX_ATTEMPTS_DETERMINISTICで打ち切る", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: baseJob });
+      ec2Mock.on(TerminateInstancesCommand).resolves({});
+      ddbMock.on(UpdateCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({
+        jobId: "job-1",
+        attempt: MAX_ATTEMPTS_DETERMINISTIC,
+        error: { Error: "WorkerFailed", Cause: "th20: 検出タイムアウト" },
+      });
+
+      expect(result).toEqual({ shouldRetry: false });
+      expect(statusUpdates(ddbMock)[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
+        ":s": "failed",
+      });
+    });
+
+    it("WorkerFailedでもattemptがMAX_ATTEMPTS_DETERMINISTIC未満ならリトライする", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: baseJob });
+      ec2Mock.on(TerminateInstancesCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({
+        jobId: "job-1",
+        attempt: MAX_ATTEMPTS_DETERMINISTIC - 1,
+        error: { Error: "WorkerFailed", Cause: "th20: 検出タイムアウト" },
+      });
+
+      expect(result).toEqual({ shouldRetry: true });
+    });
+
+    it("WorkerBootstrapFailureはMAX_ATTEMPTS_DETERMINISTICで打ち切る", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: baseJob });
+      ec2Mock.on(TerminateInstancesCommand).resolves({});
+      ddbMock.on(UpdateCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({
+        jobId: "job-1",
+        attempt: MAX_ATTEMPTS_DETERMINISTIC,
+        error: { Error: "WorkerBootstrapFailure", Cause: "ECR login failed after 3 attempts" },
+      });
+
+      expect(result).toEqual({ shouldRetry: false });
+    });
+
+    it("Spot中断由来のWorkerFailed(CauseがSpotInterrupted:接頭辞)は通常のMAX_ATTEMPTSまでリトライする", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: baseJob });
+      ec2Mock.on(TerminateInstancesCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({
+        jobId: "job-1",
+        attempt: MAX_ATTEMPTS_DETERMINISTIC,
+        error: { Error: "WorkerFailed", Cause: "SpotInterrupted: spot_interruption terminate" },
+      });
+
+      expect(result).toEqual({ shouldRetry: true });
+    });
+
+    it("States.Timeout等それ以外の失敗種別は通常のMAX_ATTEMPTSまでリトライする", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: baseJob });
+      ec2Mock.on(TerminateInstancesCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({
+        jobId: "job-1",
+        attempt: MAX_ATTEMPTS_DETERMINISTIC,
+        error: { Error: "States.Timeout", Cause: "State's Task did not complete" },
+      });
+
+      expect(result).toEqual({ shouldRetry: true });
+    });
+
+    it("errorが渡されない場合(後方互換)は通常のMAX_ATTEMPTSまでリトライする", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: baseJob });
+      ec2Mock.on(TerminateInstancesCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({ jobId: "job-1", attempt: MAX_ATTEMPTS_DETERMINISTIC });
+
+      expect(result).toEqual({ shouldRetry: true });
+    });
   });
 });
