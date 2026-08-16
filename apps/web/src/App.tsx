@@ -7,6 +7,7 @@ import { JobPage } from "./pages/JobPage.tsx";
 import { AboutPage } from "./pages/AboutPage.tsx";
 import { GameInfoPage } from "./pages/GameInfoPage.tsx";
 import { TermsPage } from "./pages/TermsPage.tsx";
+import { ReplayHelpPage } from "./pages/ReplayHelpPage.tsx";
 import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
 import { JobProgressPlayground } from "./dev/JobProgressPlayground.tsx";
 import { LanguageSwitcher } from "./components/LanguageSwitcher.tsx";
@@ -42,6 +43,10 @@ function Layout({ lang }: LayoutProps) {
   // ページB（2カラムのリプレイ情報+アクティビティログ）はページAより広い画面幅を活かせるため、
   // ページAの幅(50rem)はそのままにページBのみ最大90remまで広げる。
   const isJobPage = useMatch(lang === "en" ? "/en/jobs/:jobId" : "/jobs/:jobId");
+  // ランディングページ(`/`, `/en`)は検索流入の主戦場だが、タグライン以外に見出しが
+  // 無く<h1>が1つも存在しなかった(Issue #55)。他ページは各々<h1>を持つため、ここでは
+  // ランディングページのときだけタグラインを<h1>にする(二重<h1>を避けるため)。
+  const isHomePage = useMatch(lang === "en" ? "/en" : "/");
 
   return (
     <LocaleContext.Provider value={lang}>
@@ -50,7 +55,11 @@ function Layout({ lang }: LayoutProps) {
 
         <header className={styles.header}>
           <Link className={styles.headerLink} to={toLocalizedPath("/", lang)}>
-            <p className={styles.tagline}>{t("app.tagline")}</p>
+            {isHomePage ? (
+              <h1 className={styles.tagline}>{t("app.tagline")}</h1>
+            ) : (
+              <p className={styles.tagline}>{t("app.tagline")}</p>
+            )}
             <p>
               <img className={styles.icon} src="/icon-transparent.png" alt={t("app.logoAlt")} />
               <img
@@ -121,6 +130,7 @@ export function App() {
           <Route path="about" element={<AboutPage />} />
           <Route path="info" element={<GameInfoPage />} />
           <Route path="terms" element={<TermsPage />} />
+          <Route path="replay-help" element={<ReplayHelpPage />} />
           {/* 未定義のパスは"/"へ戻す。 */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
@@ -131,6 +141,7 @@ export function App() {
           <Route path="about" element={<AboutPage />} />
           <Route path="info" element={<GameInfoPage />} />
           <Route path="terms" element={<TermsPage />} />
+          <Route path="replay-help" element={<ReplayHelpPage />} />
           <Route path="*" element={<Navigate to="/en" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

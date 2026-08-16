@@ -125,12 +125,34 @@
     "th20NoticeNormalSpeed": " Enabling \"Prioritize quality with slow-motion recording\" in the advanced settings should improve this to some extent.",
     "submitStarting": "Praying⋯",
     "submit": "Next",
-    "termsAgreement": "By continuing, you agree to the <0>Terms of Service</0>."
+    "termsAgreement": "By continuing, you agree to the <0>Terms of Service</0>.",
+    "replayHelpLink": "Where can I find my replay file?"
+  },
+  "replayHelp": {
+    "heading": "Where Touhou Project games save replay files",
+    "intro": "Where your replay file is saved depends on which title you played. Choose your title below.",
+    "titleSeparator": ", ",
+    "groups": {
+      "installFolder": {
+        "heading": "{{first}} – {{last}}",
+        "description1": "A \"replay\" folder is created automatically right inside the folder where you installed {{title}}, and your replay files are saved there after you play.",
+        "defaultLabel": "If you used the default install location, it's saved here by default.",
+        "virtualStoreLabel": "However, on Windows 11 and many current systems, UAC virtualization is enabled by default, so it may actually be saved in this folder instead.",
+        "steamLabel": "If you bought it on Steam, it's saved here by default (you can also open it from your Steam library: right-click the game → Manage → Browse local files)."
+      },
+      "appData": {
+        "heading": "{{first}} onward",
+        "description1": "{{title}} stores data such as your scores and replay files in your %APPDATA% folder.",
+        "pathLabel": "By default, your replay files are saved here."
+      }
+    },
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "replayPreview": {
     "ariaLabel": "Replay analysis result",
     "loadingAriaLabel": "Loading",
-    "emptyPlaceholder": "Select a replay file to see its details here",
+    "emptyPlaceholder": "Please select a replay file first",
     "unknown": "Unknown",
     "cleared": "Cleared",
     "notCleared": "Not cleared",

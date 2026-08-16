@@ -101,10 +101,10 @@ function formatReplayInfo(replayInfo: ReplayInfo | null, language: SupportedLang
   }
   const labels = REPLAY_INFO_LABELS[language];
   const locale = language === "en" ? "en-US" : "ja-JP";
-  // タイトルは日本語名（副題に英語名を含む）しか持たないため、英語の文面でも
-  // `GAME_TITLES` をそのまま使う（ページAの解析プレビューと同じ扱い）。
+  // 英語の文面でも`fullName`（日本語名＋副題の英語名）をそのまま使う
+  // （ページAの解析プレビューと同じ扱い）。
   const rows: [string, string | null][] = [
-    [labels.game, GAME_TITLES[replayInfo.game]],
+    [labels.game, GAME_TITLES[replayInfo.game].fullName],
     [labels.player, replayInfo.player || null],
     [labels.difficulty, replayInfo.difficulty],
     [labels.character, localizedCharacterName(replayInfo, language)],

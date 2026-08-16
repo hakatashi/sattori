@@ -33,7 +33,7 @@ export function GameInfoPage() {
         <div key={id}>
           <div className={styles.game}>
             <img className={styles.icon} src={`/icons/${id}.png`} alt="" />
-            <h2>{GAME_TITLES[id]}</h2>
+            <h2>{GAME_TITLES[id].fullName}</h2>
           </div>
           <ul className={styles.versions}>
             <li>{version}</li>

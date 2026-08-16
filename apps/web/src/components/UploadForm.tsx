@@ -22,6 +22,7 @@ import { toLocalizedPath } from "../i18n/paths.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
+import { helpCircleOutline } from "ionicons/icons";
 
 interface Props {
   onMagicLinkSent: (email: string) => void;
@@ -128,7 +129,7 @@ const gameTitles = [
     english: "Impossible\nSpell Card",
     shortName: "ISC",
     supported: false,
-    icon: 'th14.png',
+    icon: 'th143.png',
   },
   {
     japanese: "東方紺珠伝",
@@ -444,6 +445,13 @@ export function UploadForm({ onMagicLinkSent }: Props) {
           </>}
         </span>
       </label>
+
+      <p className={styles.replayHelpLink}>
+        <Link to={toLocalizedPath("/replay-help", locale)}>
+          <ion-icon icon={helpCircleOutline} className={styles.replayHelpLinkIcon} aria-hidden="true" />
+          {t("uploadForm.replayHelpLink")}
+        </Link>
+      </p>
 
       {errorMessage && <p className={styles.error}>{errorMessage}</p>}
 
