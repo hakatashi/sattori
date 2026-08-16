@@ -71,6 +71,31 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   `SendCompletionEmailFn`）は`SES_REGION`環境変数（値は`us-east-1`）で
   `SESv2Client`のリージョンを明示して呼ぶ（`apps/api/src/ses.ts`）。IAMポリシーの
   `resources`も`arn:aws:ses:${props.sesRegion}:...`とSESのリージョンに合わせている。
+  `SattoriEdgeStack`は加えて`ConfigurationSet`（`reputationMetrics: true`）を持ち、
+  バウンス・苦情・拒否イベントを`OpsAlertTopic`（SNS、下記）へ流す。両Lambdaは
+  送信時に`ConfigurationSetName`（`SES_CONFIGURATION_SET`環境変数、
+  `crossRegionReferences`経由で`SattoriEdgeStack`から受け取る）を指定する
+  （Issue #133 OPS-1）。
+- **運用アラート（OPS-1/OPS-2/OPS-3、Issue #133・#134・#135）**: SNSトピック
+  `OpsAlertTopic`を**リージョンごとに1本ずつ**持つ（`SattoriEdgeStack`・
+  `SattoriStack`双方）。CloudWatch Alarmは同一リージョンのSNSトピックしか
+  `AlarmActions`に指定できないための分割で、どちらも同じメールアドレス
+  （`bin/sattori.ts`の`OPS_ALERT_EMAIL`定数）を購読する（理由の詳細は
+  [`docs/decisions/0025`](../docs/decisions/0025-ops-alerts-per-region-sns-topics.md)）。
+  - `SattoriEdgeStack`（us-east-1）: SESアカウント全体のバウンス率・苦情率
+    アラーム（`AWS/SES`名前空間の`Reputation.BounceRate`≧2%・
+    `Reputation.ComplaintRate`≧0.05%、AWSの送信停止ラインより十分手前）、
+    月次コストのAWS Budgets（`MonthlyCostBudget`、80 USD予算に対し実績
+    50%/80%/100%＋予測120%の4通知。Budgets自体はメールへ直接通知するため
+    `OpsAlertTopic`は経由しない）。
+  - `SattoriStack`（eu-south-2）: `RecordingStateMachine`の実行失敗
+    （`ExecutionsFailed`、1時間で3件以上）、`makeHandler`経由の全Lambda
+    （21本）それぞれの`Errors`/`Throttles`（5分で1件以上）、
+    `SendCompletionEmailFn`のログに対するメトリクスフィルタ
+    （`send_completion_email_failed`、1件以上。同Lambdaは後続のDynamoDB
+    Streamsレコード処理を止めないよう例外を握り潰す設計のため、これが
+    唯一の気づく手段）。
+  - アラーム受信時の初動は[`docs/runbooks/ops-alerts.md`](../docs/runbooks/ops-alerts.md)。
 - **ECR**: `sattori-worker`（`maxImageCount: 2`でストレージコストを抑制。
   ワーカーイメージはタイトル数に依存しない共通部分のみで構成するため、Issue #22で
   タイトル固有アセットをS3側へ分離済み）。

@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
@@ -8,9 +11,16 @@ import {
   ScanCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
+import { GetObjectCommand, HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
+
+const FIXTURES_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../../packages/replay-parser/test-fixtures",
+);
+const TH07_FIXTURE = path.join(FIXTURES_DIR, "th07/th7_07.rpy");
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -26,11 +36,13 @@ const REQUIRED_ENV: Record<string, string> = {
   SETTINGS_TABLE: "sattori-settings",
   WORKERS_TABLE: "sattori-workers",
   SES_FROM_ADDRESS: "no-reply@sattori.hakatashi.com",
+  SES_CONFIGURATION_SET: "sattori-config-set",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
 };
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
 const sesMock = mockClient(SESv2Client);
+const s3Mock = mockClient(S3Client);
 
 // createPresignedUpload()（`uploads.ts`）が払い出す形式(`REPLAY_KEY_PATTERN`)に
 // 合わせたテスト用のキー。SEC-1対応後は入口検証を通らないと202まで到達しない。
@@ -49,6 +61,7 @@ describe("POST /magic-links", () => {
     vi.resetModules();
     ddbMock.reset();
     sesMock.reset();
+    s3Mock.reset();
     for (const [key, value] of Object.entries(REQUIRED_ENV)) {
       vi.stubEnv(key, value);
     }
@@ -60,6 +73,9 @@ describe("POST /magic-links", () => {
     // 月間コストガードの当月コスト算出(adminCosts.tsの全件Scan)は既定でジョブ0件=$0。
     ddbMock.on(ScanCommand).resolves({ Items: [] });
     sesMock.on(SendEmailCommand).resolves({});
+    // replayInfoの再パース(Issue #133 OPS-1)用のS3取得。個別のケースで上書きしない限り
+    // 「対応するオブジェクトが無い」を既定にし、replayInfoはnullとして扱われる。
+    s3Mock.on(HeadObjectCommand).rejects(new Error("NoSuchKey"));
   });
 
   it("有効な要求ならstatus:pendingのジョブを作成しメールを送信して202を返す", async () => {
@@ -141,25 +157,33 @@ describe("POST /magic-links", () => {
     expect(jobPut?.args[0].input.Item?.language).toBe("ja");
   });
 
-  it("replayInfoが渡されればジョブレコードにそのまま転記し、メール本文にも載せる", async () => {
+  it("replayKeyの.rpyをサーバー側で再パースしてジョブレコード・メール本文に反映し、クライアントが送ったreplayInfoは無視する（Issue #133 OPS-1）", async () => {
+    s3Mock.on(HeadObjectCommand).resolves({ ContentLength: 1 });
+    s3Mock.on(GetObjectCommand).resolves({
+      Body: {
+        transformToByteArray: async () => new Uint8Array(await readFile(TH07_FIXTURE)),
+      } as never,
+    });
     const { handler } = await import("./requestMagicLink.js");
-    const replayInfo = {
+    // 第三者への嫌がらせ・フィッシング文面の注入を試みる悪意あるクライアント値。
+    // 再パース方式ではこの値は一切使われない。
+    const spoofedReplayInfo = {
       game: "th07" as const,
-      player: "koyi",
-      date: "01/18",
-      character: "MarisaA",
-      difficulty: "Extra",
+      player: "click http://evil.example now",
+      date: null,
+      character: null,
+      difficulty: null,
       stage: null,
-      score: 303766040,
-      cleared: true,
-      estimatedDurationSeconds: 847,
+      score: null,
+      cleared: null,
+      estimatedDurationSeconds: null,
     };
     const res = await handler(
       makeEvent({
         replayKey: VALID_REPLAY_KEY,
         options: { watermark: true },
         email: "user@example.com",
-        replayInfo,
+        replayInfo: spoofedReplayInfo,
       }),
       {} as never,
       () => {},
@@ -168,16 +192,25 @@ describe("POST /magic-links", () => {
 
     const putCalls = ddbMock.commandCalls(PutCommand);
     const jobPut = putCalls.find((call) => call.args[0].input.Item?.status === "pending");
-    expect(jobPut?.args[0].input.Item?.replayInfo).toEqual(replayInfo);
+    // th7_07.rpy の実データ(parseReplay.test.tsと同じ検証値)。クライアントが送った
+    // spoofedReplayInfoではなく、.rpyから再パースした値が入っていること。
+    expect(jobPut?.args[0].input.Item?.replayInfo).toMatchObject({
+      game: "th07",
+      character: "MarisaA",
+      difficulty: "Extra",
+      score: 303766040,
+      cleared: true,
+    });
 
     const sendCalls = sesMock.commandCalls(SendEmailCommand);
     const emailBody = sendCalls[0]?.args[0].input.Content?.Simple?.Body?.Text?.Data ?? "";
     expect(emailBody).toContain("【作品タイトル】東方妖々夢 ～ Perfect Cherry Blossom.");
-    expect(emailBody).toContain("【プレイヤー名】koyi");
-    expect(emailBody).toContain("【スコア】303,766,040");
+    expect(emailBody).not.toContain("evil.example");
+    expect(sendCalls[0]?.args[0].input.ConfigurationSetName).toBe("sattori-config-set");
   });
 
-  it("replayInfoが無ければnullとして保存する", async () => {
+  it("リプレイの取得・解析に失敗してもreplayInfoをnullとしてジョブ作成・メール送信を継続する", async () => {
+    // beforeEachの既定(HeadObjectCommandがreject)がそのまま「取得失敗」のケースになる。
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
@@ -193,6 +226,7 @@ describe("POST /magic-links", () => {
     const putCalls = ddbMock.commandCalls(PutCommand);
     const jobPut = putCalls.find((call) => call.args[0].input.Item?.status === "pending");
     expect(jobPut?.args[0].input.Item?.replayInfo).toBeNull();
+    expect(sesMock.commandCalls(SendEmailCommand)).toHaveLength(1);
   });
 
   it("email の形式が不正なら400を返しメールを送らない", async () => {

@@ -55,6 +55,7 @@ describe("sendCompletionEmail", () => {
     await sendCompletionEmail({
       from: "no-reply@sattori.hakatashi.com",
       to: "user@example.com",
+      configurationSetName: "sattori-config-set",
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "ja",
@@ -72,6 +73,7 @@ describe("sendCompletionEmail", () => {
     await sendCompletionEmail({
       from: "no-reply@sattori.hakatashi.com",
       to: "user@example.com",
+      configurationSetName: "sattori-config-set",
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "en",
@@ -89,6 +91,7 @@ describe("sendCompletionEmail", () => {
     await sendCompletionEmail({
       from: "no-reply@sattori.hakatashi.com",
       to: "user@example.com",
+      configurationSetName: "sattori-config-set",
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "ja",
@@ -104,6 +107,7 @@ describe("sendCompletionEmail", () => {
     await sendCompletionEmail({
       from: "no-reply@sattori.hakatashi.com",
       to: "user@example.com",
+      configurationSetName: "sattori-config-set",
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "en",
@@ -118,6 +122,7 @@ describe("sendCompletionEmail", () => {
     await sendCompletionEmail({
       from: "no-reply@sattori.hakatashi.com",
       to: "user@example.com",
+      configurationSetName: "sattori-config-set",
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "ja",
@@ -132,6 +137,7 @@ describe("sendCompletionEmail", () => {
     await sendCompletionEmail({
       from: "no-reply@sattori.hakatashi.com",
       to: "user@example.com",
+      configurationSetName: "sattori-config-set",
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "ja",
@@ -159,6 +165,7 @@ describe("sendMagicLinkEmail", () => {
     await sendMagicLinkEmail({
       from: "no-reply@sattori.hakatashi.com",
       to: "user@example.com",
+      configurationSetName: "sattori-config-set",
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "ja",
@@ -185,6 +192,7 @@ describe("sendMagicLinkEmail", () => {
     await sendMagicLinkEmail({
       from: "no-reply@sattori.hakatashi.com",
       to: "user@example.com",
+      configurationSetName: "sattori-config-set",
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "en",
@@ -204,6 +212,7 @@ describe("sendMagicLinkEmail", () => {
     await sendMagicLinkEmail({
       from: "no-reply@sattori.hakatashi.com",
       to: "user@example.com",
+      configurationSetName: "sattori-config-set",
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "ja",
@@ -224,6 +233,7 @@ describe("sendMagicLinkEmail", () => {
     await sendMagicLinkEmail({
       from: "no-reply@sattori.hakatashi.com",
       to: "user@example.com",
+      configurationSetName: "sattori-config-set",
       webBaseUrl: "https://sattori.hakatashi.com",
       jobId: "job-1",
       language: "ja",

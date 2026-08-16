@@ -164,6 +164,11 @@ export async function sendMagicLinkEmail(params: {
   language: SupportedLanguage;
   /** 本文冒頭に載せるリプレイの解析情報（`JobRecord.replayInfo`）。無ければ省く。 */
   replayInfo: ReplayInfo | null;
+  /**
+   * SES `ConfigurationSet` 名（`ApiConfig.sesConfigurationSetName`）。バウンス・苦情・
+   * 拒否イベントをSNS経由で運用アラートへ流すための紐付け（Issue #133 OPS-1）。
+   */
+  configurationSetName: string;
 }): Promise<void> {
   const link = buildJobPageUrl(params.webBaseUrl, params.jobId, params.language);
   const replayInfoText = formatReplayInfo(params.replayInfo, params.language);
@@ -171,6 +176,7 @@ export async function sendMagicLinkEmail(params: {
     new SendEmailCommand({
       FromEmailAddress: params.from,
       Destination: { ToAddresses: [params.to] },
+      ConfigurationSetName: params.configurationSetName,
       Content: {
         Simple: {
           Subject: { Data: MAGIC_LINK_EMAIL_SUBJECT[params.language] },
@@ -198,6 +204,11 @@ export async function sendCompletionEmail(params: {
   doneAt: string | null;
   /** 本文冒頭に載せるリプレイの解析情報（`JobRecord.replayInfo`）。無ければ省く。 */
   replayInfo: ReplayInfo | null;
+  /**
+   * SES `ConfigurationSet` 名（`ApiConfig.sesConfigurationSetName`）。バウンス・苦情・
+   * 拒否イベントをSNS経由で運用アラートへ流すための紐付け（Issue #133 OPS-1）。
+   */
+  configurationSetName: string;
 }): Promise<void> {
   const link = buildJobPageUrl(params.webBaseUrl, params.jobId, params.language);
   const replayInfoText = formatReplayInfo(params.replayInfo, params.language);
@@ -207,6 +218,7 @@ export async function sendCompletionEmail(params: {
     new SendEmailCommand({
       FromEmailAddress: params.from,
       Destination: { ToAddresses: [params.to] },
+      ConfigurationSetName: params.configurationSetName,
       Content: {
         Simple: {
           Subject: { Data: COMPLETION_EMAIL_SUBJECT[params.language] },

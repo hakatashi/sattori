@@ -71,7 +71,14 @@ export async function uploadReplay(uploadUrl: string, file: File): Promise<void>
   }
 }
 
-/** マジックリンクメールの送信を要求する（ページAの「次のステップ」）。 */
+/**
+ * マジックリンクメールの送信を要求する（ページAの「次のステップ」）。
+ * `replayInfo`自体はリクエストボディに含めない——`JobRecord.replayInfo`はサーバー側が
+ * `replayKey`から.rpyを再取得・再パースして生成する（Issue #133 OPS-1。クライアントの
+ * 任意のJSONをそのまま転記すると、第三者宛のメール本文へ文面を仕込める経路になるため）。
+ * ここでは事前検証（対応タイトル判定・進捗表示の分母）に使う`game`/
+ * `estimatedDurationSeconds`だけを抜き出して渡す。
+ */
 export function requestMagicLink(
   replayKey: string,
   options: RecordingOptions,
@@ -85,7 +92,6 @@ export function requestMagicLink(
     email,
     game: replayInfo?.game,
     estimatedDurationSeconds: replayInfo?.estimatedDurationSeconds,
-    replayInfo,
     language,
   };
   return request<RequestMagicLinkResponse>("/magic-links", {
