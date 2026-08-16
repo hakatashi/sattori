@@ -125,6 +125,12 @@ li.supportedTitle.supported {
   text-decoration: underline;
 }
 
+.replayHelpLink {
+  margin: 0.5rem 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
 .details {
   padding-top: 0.75rem;
   margin: 1rem 0;

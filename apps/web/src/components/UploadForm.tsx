@@ -445,6 +445,10 @@ export function UploadForm({ onMagicLinkSent }: Props) {
         </span>
       </label>
 
+      <p className={styles.replayHelpLink}>
+        <Link to={toLocalizedPath("/replay-help", locale)}>{t("uploadForm.replayHelpLink")}</Link>
+      </p>
+
       {errorMessage && <p className={styles.error}>{errorMessage}</p>}
 
       <p className={clsx(styles.stepLabel, styles.stepLabelSecondary)}>

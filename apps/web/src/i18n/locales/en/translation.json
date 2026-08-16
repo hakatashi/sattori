@@ -125,7 +125,27 @@
     "th20NoticeNormalSpeed": " Enabling \"Prioritize quality with slow-motion recording\" in the advanced settings should improve this to some extent.",
     "submitStarting": "Praying⋯",
     "submit": "Next",
-    "termsAgreement": "By continuing, you agree to the <0>Terms of Service</0>."
+    "termsAgreement": "By continuing, you agree to the <0>Terms of Service</0>.",
+    "replayHelpLink": "(?) Where can I find my replay file?"
+  },
+  "replayHelp": {
+    "heading": "Where to find your replay file",
+    "intro": "Where the .rpy file is saved depends on which title you played. Choose your title below.",
+    "groups": {
+      "installFolder": {
+        "heading": "Embodiment of Scarlet Devil – Subterranean Animism",
+        "description1": "A \"replay\" folder is created automatically right inside the folder where you installed {{title}}, and your replay files are saved there after you play.",
+        "steamLabel": "If you bought it on Steam, it's saved here by default (you can also open it from your Steam library: right-click the game → Manage → Browse local files).",
+        "virtualStoreLabel": "If you can't find it there, Windows' UAC security feature may have redirected it to this folder instead."
+      },
+      "appData": {
+        "heading": "Fossilized Wonders",
+        "description1": "{{title}} stores its replay files in your %APPDATA% folder, alongside its settings file.",
+        "pathLabel": "By default, it's saved here."
+      }
+    },
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "replayPreview": {
     "ariaLabel": "Replay analysis result",
