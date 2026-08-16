@@ -34,7 +34,7 @@ describe("ReplayPreview", () => {
 
   it("status=empty ではファイル未選択のプレースホルダーを表示する", () => {
     render(<ReplayPreview status="empty" />);
-    expect(screen.getByText("リプレイファイルを選択すると、ここに内容が表示されます")).toBeTruthy();
+    expect(screen.getByText("まずはリプレイファイルを選択してください")).toBeTruthy();
   });
 
   it("status=loading ではスピナーとラベルを表示する", () => {
