@@ -131,15 +131,18 @@
   "replayHelp": {
     "heading": "Where to find your replay file",
     "intro": "Where the .rpy file is saved depends on which title you played. Choose your title below.",
+    "supportedNote": "This service can currently only record {{titles}} ({{count}} titles). For other titles, this page still shows where to find the replay file.",
+    "titleSeparator": ", ",
     "groups": {
       "installFolder": {
-        "heading": "Embodiment of Scarlet Devil – Subterranean Animism",
+        "heading": "{{first}} – {{last}}",
         "description1": "A \"replay\" folder is created automatically right inside the folder where you installed {{title}}, and your replay files are saved there after you play.",
-        "steamLabel": "If you bought it on Steam, it's saved here by default (you can also open it from your Steam library: right-click the game → Manage → Browse local files).",
-        "virtualStoreLabel": "If you can't find it there, Windows' UAC security feature may have redirected it to this folder instead."
+        "defaultLabel": "If you used the default install location, it's saved here by default.",
+        "virtualStoreLabel": "On Windows 11 and many current systems, UAC virtualization is enabled by default, so it may actually be saved in this folder instead.",
+        "steamLabel": "If you bought it on Steam, it's saved here by default (you can also open it from your Steam library: right-click the game → Manage → Browse local files)."
       },
       "appData": {
-        "heading": "Fossilized Wonders",
+        "heading": "{{first}} onward",
         "description1": "{{title}} stores its replay files in your %APPDATA% folder, alongside its settings file.",
         "pathLabel": "By default, it's saved here."
       }
