@@ -70,9 +70,13 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }
 
   // ページAはリプレイ解析結果（ReplayInfo.game）を渡してくるが、念のため
-  // 未指定なら th07 を既定とする。
-  const game: GameId = body.game ?? "th07";
-  if (!isSupportedGame(game)) {
+  // 未指定なら th07 を既定とする。**これは実際の.rpyの中身を検証しないクライアント
+  // 申告値による安価な事前チェックに過ぎない**——下のサーバー側再パースが成功すれば
+  // そちらの値で上書きする（Issue #133 OPS-1 フォローアップ）。ここで明らかに不正な
+  // 値だけ早期に弾いておくことで、キルスイッチ・コストガード・レート制限の消費を
+  // 無駄にしない。
+  const claimedGame: GameId = body.game ?? "th07";
+  if (!isSupportedGame(claimedGame)) {
     return error(422, "unsupported_game", "現在このタイトルの録画には対応していません");
   }
 
@@ -132,11 +136,20 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   // できるプレビュー用の付随データに過ぎないため、ジョブ作成は落とさず
   // replayInfoをnullとして続行する。
   let replayInfo: ReplayInfo | null = null;
+  // `parseReplayInfo()`は「フォーマットとして壊れている」と「フォーマットは読めるが
+  // 録画未対応のタイトル」をどちらも`ok:false`にまとめる（プレビューAPI向けに、
+  // どちらもユーザーには同じ422として見せればよいため）。後者の場合は検出できた
+  // タイトルが`error.game`に残るため、下の`game`判定で"パース失敗（形式不明）"と
+  // 混同しないよう別に拾っておく。
+  let detectedGame: GameId | null = null;
   try {
     const data = await fetchReplayBytes(config.uploadBucket, body.replayKey, config.maxReplayBytes);
     const result = parseReplayInfo(data);
     if (result.ok) {
       replayInfo = result.info;
+      detectedGame = result.info.game;
+    } else if (result.error.code === "unsupported_game" && result.error.game) {
+      detectedGame = result.error.game;
     }
   } catch (err) {
     console.error(
@@ -148,6 +161,22 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       }),
     );
   }
+
+  // `game`/`estimatedDurationSeconds`も`claimedGame`/`body.estimatedDurationSeconds`
+  // というクライアント申告値を鵜呑みにせず、再パースが成功していればそちらの値で
+  // 上書きする（Issue #133 OPS-1 フォローアップ）。`job.game`はEC2インスタンスタイプ
+  // 選定（`ec2.ts`の`getCandidateInstanceTypes()`）とワーカー側の録画スクリプト選択
+  // （`GAME`環境変数、`worker/entrypoint.py`）を直接左右するため、これを検証せず
+  // クライアント値のままにしておくと、実際にアップロードされたリプレイと無関係に
+  // 高コストなインスタンスタイプ（例: th20の`c7i.4xlarge`）を申告させられてしまう。
+  // 再パースが失敗した場合のみ、上のクライアント申告値へフォールバックする
+  // （録画自体は等倍前提で継続でき、実際に不整合があればワーカー側で録画が
+  // 失敗するだけなので、ここでは強く倒さない）。
+  const game = detectedGame ?? claimedGame;
+  if (!isSupportedGame(game)) {
+    return error(422, "unsupported_game", "現在このタイトルの録画には対応していません");
+  }
+  const estimatedDurationSeconds = replayInfo?.estimatedDurationSeconds ?? body.estimatedDurationSeconds ?? null;
 
   const now = new Date();
   const jobId = randomUUID();
@@ -188,7 +217,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     instanceType: null,
     availabilityZone: null,
     spotPricePerHour: null,
-    estimatedDurationSeconds: body.estimatedDurationSeconds ?? null,
+    estimatedDurationSeconds,
     progress: null,
     previewImagePath: null,
     replayInfo,
