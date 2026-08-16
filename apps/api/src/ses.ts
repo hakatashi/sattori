@@ -87,6 +87,35 @@ const REPLAY_INFO_LABELS: Record<SupportedLanguage, Record<ReplayInfoField, stri
 };
 
 /**
+ * `ReplayInfo`の自由記述フィールド（player/character/difficulty）を完了メール本文へ
+ * 埋め込む前にサニタイズする（Issue #133 OPS-1）。これらのフィールドは
+ * `@sattori/touhou-replay-parser`側の実装がタイトルによってCRLF終端・NUL終端の
+ * 可変長文字列として読む（`readAnsiString()`/`readNullTerminatedAnsi()`）ため、
+ * th08・th11・th20（および th06 の player/date）では**実質無制限の長さ**を
+ * 埋め込める（th07のみ固定8バイト・インデックス参照で元から安全）。サーバー側で
+ * `replayKey`から再パースするだけでは「クライアントの任意JSON」という経路は塞げても
+ * 「CRLFを含まない任意バイト列を偽装した.rpy」という経路は塞げないため、ここで
+ * 改行・制御文字の除去と長さの打ち切りを行う。
+ */
+const MAX_REPLAY_INFO_FIELD_LENGTH = 32;
+function sanitizeReplayInfoField(value: string): string | null {
+  // 制御文字(改行含む)を意図的に除去する。
+  const stripped = Array.from(value)
+    .filter((char) => {
+      const codePoint = char.codePointAt(0) ?? 0;
+      return !(codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f));
+    })
+    .join("")
+    .trim();
+  if (stripped.length === 0) {
+    return null;
+  }
+  return stripped.length > MAX_REPLAY_INFO_FIELD_LENGTH
+    ? `${stripped.slice(0, MAX_REPLAY_INFO_FIELD_LENGTH)}…`
+    : stripped;
+}
+
+/**
  * どのリプレイについてのメールなのかを本文冒頭に示すブロックを組み立てる（Issue #95）。
  * メールは録画リクエストから最大24時間後・完了までさらに数十分後に届くため、複数の
  * リプレイを投げたユーザーが受信箱の側でどれのメールか判別できる必要がある。
@@ -101,13 +130,14 @@ function formatReplayInfo(replayInfo: ReplayInfo | null, language: SupportedLang
   }
   const labels = REPLAY_INFO_LABELS[language];
   const locale = language === "en" ? "en-US" : "ja-JP";
+  const characterName = localizedCharacterName(replayInfo, language);
   // 英語の文面でも`fullName`（日本語名＋副題の英語名）をそのまま使う
   // （ページAの解析プレビューと同じ扱い）。
   const rows: [string, string | null][] = [
     [labels.game, GAME_TITLES[replayInfo.game].fullName],
-    [labels.player, replayInfo.player || null],
-    [labels.difficulty, replayInfo.difficulty],
-    [labels.character, localizedCharacterName(replayInfo, language)],
+    [labels.player, replayInfo.player ? sanitizeReplayInfoField(replayInfo.player) : null],
+    [labels.difficulty, replayInfo.difficulty ? sanitizeReplayInfoField(replayInfo.difficulty) : null],
+    [labels.character, characterName ? sanitizeReplayInfoField(characterName) : null],
     [labels.score, replayInfo.score === null ? null : replayInfo.score.toLocaleString(locale)],
   ];
   const lines = rows

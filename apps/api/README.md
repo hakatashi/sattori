@@ -254,6 +254,11 @@ UserDataスクリプトがやること:
   タイムゾーン名まで必ず併記する）。
 - 作品タイトルは `GAME_TITLES`（日本語名。副題に英語名を含む）を両言語で使い、自機タイプは
   言語に応じたローカライズ名（`localizedCharacterName()`）を使う。
+- `player`/`character`/`difficulty`は`sanitizeReplayInfoField()`で改行・制御文字を
+  除去し32文字に打ち切ってから埋め込む（Issue #133 OPS-1）。`@sattori/touhou-replay-parser`
+  はth08・th11・th20でこれらをCRLF終端の可変長文字列として読むため、`requestMagicLink.ts`
+  でのサーバー側再パース（上記）だけでは「CRLFを含まない任意バイト列を偽装した.rpy」
+  による長文注入を防げない——ここが実質的な防御層になる。
 
 ## 9. キルスイッチ・月間コストガード（`settings.ts`, `costGuard.ts`, Issue #14／#130）
 

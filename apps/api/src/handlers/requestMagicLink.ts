@@ -122,10 +122,15 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   // `replayInfo.player`は完了メール本文にそのまま載る（`ses.ts`の`formatReplayInfo()`）
   // ため、第三者のメールアドレスを宛先に指定しつつ`player`へ任意の文面を仕込めば、
   // DKIM署名済み・SPF通過の自ドメインから攻撃者の文面が届く経路になっていた。
-  // 再パースにより注入できる文字列は実際のリプレイファイル形式（プレイヤー名は
-  // 固定長フィールド）の制約を受けるため、この経路を実質的に塞げる。取得・解析に
-  // 失敗しても録画自体は継続できるプレビュー用の付随データに過ぎないため、ジョブ作成は
-  // 落とさずreplayInfoをnullとして続行する。
+  // **これだけでは経路は塞ぎ切れない**——`@sattori/touhou-replay-parser`はタイトルに
+  // よって`player`/`character`/`difficulty`をCRLF終端・NUL終端の可変長文字列として
+  // 読む実装があり（th08・th11・th20の3タイトル、詳細は`replay-parser`のソース）、
+  // 「クライアントの任意JSON」ではなく「CRLFを含まない任意バイト列を偽装した.rpy」
+  // を使えば依然として長文を注入できる。そのため`ses.ts`側の`formatReplayInfo()`で
+  // 改行・制御文字の除去と長さの打ち切りを追加で行っている（再パース単体はth07以外
+  // では不十分な多層防御の1層目に過ぎない）。取得・解析に失敗しても録画自体は継続
+  // できるプレビュー用の付随データに過ぎないため、ジョブ作成は落とさず
+  // replayInfoをnullとして続行する。
   let replayInfo: ReplayInfo | null = null;
   try {
     const data = await fetchReplayBytes(config.uploadBucket, body.replayKey, config.maxReplayBytes);
