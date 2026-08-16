@@ -682,6 +682,9 @@ export class SattoriStack extends Stack {
     const startJobFn = makeHandler("StartJobFn", "startJob.ts");
     jobsTable.grantReadWriteData(startJobFn);
     stateMachine.grantStartExecution(startJobFn);
+    // キルスイッチ判定用（Issue #130）。GetItem 1回のみでキャッシュしない
+    // （`settings.ts`参照）。
+    settingsTable.grantReadData(startJobFn);
     // STATE_MACHINE_ARN は startJobFn だけに付与する(commonEnv には含めない)。
     // ステートマシンは launchFn/handleFailureFn を呼び出す(Lambda ARN に依存)ため、
     // それらの環境変数がステートマシンARNを参照すると CloudFormation の循環依存になる。
