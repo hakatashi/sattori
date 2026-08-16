@@ -1,11 +1,23 @@
-import { CfnOutput, Stack, type StackProps } from "aws-cdk-lib";
+import { CfnOutput, Duration, Stack, type StackProps } from "aws-cdk-lib";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as budgets from "aws-cdk-lib/aws-budgets";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
+import * as cwActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as ses from "aws-cdk-lib/aws-ses";
+import * as sns from "aws-cdk-lib/aws-sns";
+import * as subscriptions from "aws-cdk-lib/aws-sns-subscriptions";
 import type { Construct } from "constructs";
 
 export interface SattoriEdgeStackProps extends StackProps {
   /** Web/メールで共通して使うカスタムドメイン(SattoriStackと同じ値を渡すこと)。 */
   webDomainName: string;
+  /**
+   * 運用アラート(SESバウンス・苦情率、AWS Budgets)の通知先メールアドレス
+   * (Issue #133 OPS-1・#134 OPS-2)。`SattoriStack`側の運用アラート
+   * (Step Functions失敗・Lambdaエラー等、Issue #135 OPS-3)にも同じ値を渡すが、
+   * SNSトピック自体はリージョンごとに分ける(理由は`docs/decisions/0025`)。
+   */
+  opsAlertEmail: string;
 }
 
 /**
@@ -21,6 +33,12 @@ export class SattoriEdgeStack extends Stack {
    * によるリソース参照はトークン解決の依存が複雑になりやすく、単純な文字列プロパティの
    * 受け渡し + `fromCertificateArn` の方が挙動を追いやすいため。 */
   public readonly certificateArn: string;
+  /**
+   * SES送信時に指定するConfigurationSet名。`SattoriStack`(eu-south-2)側の
+   * Lambda(`requestMagicLink.ts`/`sendCompletionEmail.ts`)へ`SES_CONFIGURATION_SET`
+   * 環境変数として渡す(Issue #133 OPS-1)。
+   */
+  public readonly sesConfigurationSetName: string;
 
   constructor(scope: Construct, id: string, props: SattoriEdgeStackProps) {
     super(scope, id, props);
@@ -51,6 +69,100 @@ export class SattoriEdgeStack extends Stack {
       new CfnOutput(this, `SesDkimRecord${index}`, {
         value: `${record.name} CNAME ${record.value}`,
       });
+    });
+
+    // --- 運用アラート(OPS-1: SESバウンス・苦情監視, OPS-2: AWS Budgets) ------
+    // Issue #133・#134。CloudWatchアラームのSNSアクションは同一リージョンの
+    // トピックしか指定できないため、us-east-1に常駐するこのリソース(SES・Budgets)
+    // 専用のトピックをここに置く。eu-south-2側(Step Functions・Lambda監視、Issue #135)は
+    // `SattoriStack`が別途持つ(`docs/decisions/0025`)。
+    const opsAlertTopic = new sns.Topic(this, "OpsAlertTopic", {
+      displayName: "Sattori Ops Alerts (us-east-1: SES bounce/complaint, Budgets)",
+    });
+    opsAlertTopic.addSubscription(new subscriptions.EmailSubscription(props.opsAlertEmail));
+
+    // マジックリンク・完了メールの送信時にConfigurationSetNameとして指定する
+    // (`apps/api/src/ses.ts`)。バウンス・苦情・拒否イベントをSNSへ流す
+    // (`addEventDestination`)のに加え、`reputationMetrics`でこのConfiguration Set
+    // 経由の送信を評判ダッシュボードの集計対象にする。
+    const configurationSet = new ses.ConfigurationSet(this, "SesConfigurationSet", {
+      reputationMetrics: true,
+    });
+    this.sesConfigurationSetName = configurationSet.configurationSetName;
+
+    configurationSet.addEventDestination("OpsAlertDestination", {
+      destination: ses.EventDestination.snsTopic(opsAlertTopic),
+      events: [ses.EmailSendingEvent.BOUNCE, ses.EmailSendingEvent.COMPLAINT, ses.EmailSendingEvent.REJECT],
+    });
+
+    // アカウント全体のバウンス率・苦情率(`AWS/SES`名前空間の`Reputation.*`、SESが
+    // ConfigurationSetの有無によらず自動的に公開する)を監視する。AWSの送信停止ライン
+    // (バウンス10%・苦情0.5%)より十分手前の閾値(Issue #133で提案された値をそのまま
+    // 採用: バウンス2%・苦情0.05%)で検知し、気づいてから止める時間を確保する。
+    // これらのメトリクスは高頻度には更新されないため、Periodを6時間に広げ
+    // Maximumで直近の値を拾う(`treatMissingData`はデータが無い期間を異常扱いしない)。
+    const reputationAlarmDefaults = {
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    };
+    new cloudwatch.Alarm(this, "SesBounceRateAlarm", {
+      ...reputationAlarmDefaults,
+      alarmDescription:
+        "SESアカウントのバウンス率が2%を超えた(AWSの送信停止ラインは10%)。docs/runbooks/ops-alerts.md参照",
+      metric: new cloudwatch.Metric({
+        namespace: "AWS/SES",
+        metricName: "Reputation.BounceRate",
+        statistic: "Maximum",
+        period: Duration.hours(6),
+      }),
+      threshold: 0.02,
+    }).addAlarmAction(new cwActions.SnsAction(opsAlertTopic));
+    new cloudwatch.Alarm(this, "SesComplaintRateAlarm", {
+      ...reputationAlarmDefaults,
+      alarmDescription:
+        "SESアカウントの苦情率が0.05%を超えた(AWSの送信停止ラインは0.5%)。docs/runbooks/ops-alerts.md参照",
+      metric: new cloudwatch.Metric({
+        namespace: "AWS/SES",
+        metricName: "Reputation.ComplaintRate",
+        statistic: "Maximum",
+        period: Duration.hours(6),
+      }),
+      threshold: 0.0005,
+    }).addAlarmAction(new cwActions.SnsAction(opsAlertTopic));
+
+    // --- AWS Budgets(OPS-2, Issue #134) --------------------------------------
+    // Budgetsのメール通知はSNSを経由せず直接送れる(`SubscriptionType: EMAIL`)ため、
+    // ここではopsAlertTopicを使わず`props.opsAlertEmail`へ直接紐付ける。
+    const budgetNotification = (
+      notification: budgets.CfnBudget.NotificationProperty,
+    ): budgets.CfnBudget.NotificationWithSubscribersProperty => ({
+      notification,
+      subscribers: [{ subscriptionType: "EMAIL", address: props.opsAlertEmail }],
+    });
+    new budgets.CfnBudget(this, "MonthlyCostBudget", {
+      budget: {
+        budgetType: "COST",
+        timeUnit: "MONTHLY",
+        budgetLimit: { amount: 80, unit: "USD" },
+      },
+      notificationsWithSubscribers: [50, 80, 100]
+        .map((threshold) =>
+          budgetNotification({
+            notificationType: "ACTUAL",
+            comparisonOperator: "GREATER_THAN",
+            threshold,
+            thresholdType: "PERCENTAGE",
+          }),
+        )
+        .concat(
+          budgetNotification({
+            notificationType: "FORECASTED",
+            comparisonOperator: "GREATER_THAN",
+            threshold: 120,
+            thresholdType: "PERCENTAGE",
+          }),
+        ),
     });
   }
 }

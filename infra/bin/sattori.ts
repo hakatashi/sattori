@@ -19,12 +19,18 @@ const EDGE_REGION = "us-east-1";
 // 環境変数に依存せず固定する。
 const MAIN_REGION = "eu-south-2";
 
+// 運用アラート(SESバウンス・苦情、AWS Budgets、Step Functions/Lambda監視、
+// Issue #133・#134・#135)の通知先。1名運用のため1本のアドレスへ束ねる
+// (`docs/runbooks/ops-alerts.md`)。
+const OPS_ALERT_EMAIL = "hakatasiloving@gmail.com";
+
 const account = process.env.CDK_DEFAULT_ACCOUNT;
 
 const edgeStack = new SattoriEdgeStack(app, "SattoriEdgeStack", {
   env: { account, region: EDGE_REGION },
   crossRegionReferences: true,
   webDomainName: WEB_DOMAIN_NAME,
+  opsAlertEmail: OPS_ALERT_EMAIL,
   description: "Sattori 東方リプレイ録画サービス - ACM証明書・SES(us-east-1固定)",
 });
 
@@ -34,6 +40,8 @@ const mainStack = new SattoriStack(app, "SattoriStack", {
   webDomainName: WEB_DOMAIN_NAME,
   webCertificateArn: edgeStack.certificateArn,
   sesRegion: EDGE_REGION,
+  sesConfigurationSetName: edgeStack.sesConfigurationSetName,
+  opsAlertEmail: OPS_ALERT_EMAIL,
   description: "Sattori 東方リプレイ録画サービス (フェーズ1)",
 });
 mainStack.addDependency(edgeStack);

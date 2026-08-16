@@ -55,22 +55,9 @@ export type ParseReplayResponse = ReplayInfo;
 export interface RequestMagicLinkRequest {
   /** CreateUploadResponse.replayKey をそのまま渡す。 */
   replayKey: string;
-  /** フェーズ1では省略可（クライアント判定 or 既定 th07）。フェーズ2でパーサー結果を渡す。 */
-  game?: GameId;
   options: RecordingOptions;
-  /**
-   * `POST /replays/parse` の `ReplayInfo.estimatedDurationSeconds` をそのまま渡す。
-   * ワーカーの録画進捗率表示にのみ使う参考値（省略・null なら進捗率は算出されない）。
-   */
-  estimatedDurationSeconds?: number | null;
   /** マジックリンクの送信先。同一メール（`+`エイリアス正規化後）は24時間5件までのレート制限対象。 */
   email: string;
-  /**
-   * `POST /replays/parse` の結果をそのまま渡す。ページBでページAのSTEP2と同じ
-   * リプレイ内容プレビューを表示するために `JobRecord` へ転記して保持する
-   * （省略・null なら表示しない）。
-   */
-  replayInfo?: ReplayInfo | null;
   /**
    * 「次のステップ」押下時点でユーザーが選択していた表示言語。マジックリンク
    * メール・完了メールの文面、およびメール本文に載せるジョブページリンクの
