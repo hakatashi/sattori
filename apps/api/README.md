@@ -352,7 +352,7 @@ Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId�
 `sweepOrphanInstances.ts`だけが個別の環境変数として受け取る（いずれもステートマシンから
 呼ばれる側ではないため循環しない）。
 
-## 13. 計測（アナリティクス、`POST /beacon`、Issue #142）
+## 13. 計測（アナリティクス、`POST /beacon`、Issue #142・#144）
 
 Cookie/localStorageを一切使わないサーバーサイド計測。フロントエンドから送られる
 `AnalyticsEventInput`（`@sattori/shared`。pageview/parse_errorの2種類）を受け、
@@ -370,15 +370,25 @@ Cookie/localStorageを一切使わないサーバーサイド計測。フロン�
   はフロントエンド側（`apps/web/README.md`）と合わせて
   [`docs/decisions/0024`](../../docs/decisions/0024-cookieless-analytics-beacon.md)
   にまとめてある。
+- **ユニーク訪問者数算出用に`visitorHash`を記録する**（Issue #144）。
+  `analytics.ts`の`extractClientIp()`がクライアントIPを推定し（CloudFront経由
+  なら`X-Forwarded-For`の先頭値、直接叩かれた場合はAPI Gatewayの`sourceIp`）、
+  `analyticsSalt.ts`の`getOrCreateDailySalt()`が`SettingsTable`から取得・生成
+  した日次saltで`hashVisitorId()`がハッシュ化する。**生IPは保存せず、saltは
+  日ごとにローテーションするため日をまたいだ訪問者の突き合わせはできない**。
+  設計の詳細は
+  [`docs/decisions/0026`](../../docs/decisions/0026-hashed-visitor-id-daily-salt.md)。
 - **`RecordAnalyticsEventFn`は`commonEnv`を使わない**（`loadAnalyticsConfig()`が
-  `ANALYTICS_EVENTS_TABLE`のみを読む）。管理系Lambdaと同じ理由で、計測用テーブルの
-  読み書きしか行わないため（§12）。
+  `ANALYTICS_EVENTS_TABLE`・`SETTINGS_TABLE`のみを読む）。管理系Lambdaと同じ理由で、
+  計測用テーブル・salt保管用の`SettingsTable`の読み書きしか行わないため（§12）。
 - 計測の失敗（DynamoDB書き込みエラー等）はユーザー体験に影響させないため、常に
   202を返す（呼び出し側は`navigator.sendBeacon`でレスポンスを見ない）。
 
 > **収集する情報を増やす・訪問者を横断して繋げる識別子を持たせる等の変更は、
 > 必ず[`docs/decisions/0024`](../../docs/decisions/0024-cookieless-analytics-beacon.md)
-> の「あえて集めないもの」を確認してから行うこと。**
+> の「あえて集めないもの」と
+> [`docs/decisions/0026`](../../docs/decisions/0026-hashed-visitor-id-daily-salt.md)
+> を確認してから行うこと。**
 
 ## 14. テスト
 

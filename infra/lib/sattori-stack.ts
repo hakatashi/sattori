@@ -229,10 +229,15 @@ export class SattoriStack extends Stack {
     // SSM Parameter Store（管理画面トークンで採用）ではなく専用テーブルにしたのは、
     // こちらは管理画面から頻繁に更新する運用データであり、`cdk deploy`前の手動投入が
     // 必要なSecureStringの運用（CLAUDE.local.md参照）と性質が異なるため。
+    // timeToLiveAttribute はキルスイッチ設定itemには使わず(無期限)、ハッシュ化
+    // 訪問者ID用の日次salt(`analyticsSalt#YYYY-MM-DD`、Issue #144、
+    // `apps/api/src/analyticsSalt.ts`)だけがttl属性を持つ。同じテーブルの他item
+    // には影響しない。
     const settingsTable = new dynamodb.Table(this, "SettingsTable", {
       partitionKey: { name: "settingKey", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
+      timeToLiveAttribute: "ttl",
     });
 
     // Cookie無しのサーバーサイド計測（`POST /beacon`、Issue #142）が書き込む生イベント
@@ -484,11 +489,15 @@ export class SattoriStack extends Stack {
     );
     // Cookie無しのサーバーサイド計測（`POST /beacon`、Issue #142）。計測用テーブルの
     // 読み書きしか行わないため、他の管理系Lambdaと同様commonEnvを使わず専用の環境変数
-    // だけを持たせる（`apps/api/README.md`「環境変数」参照）。
+    // だけを持たせる（`apps/api/README.md`「環境変数」参照）。SETTINGS_TABLE は
+    // ハッシュ化訪問者ID用の日次salt保管に使う（Issue #144、`apps/api/src/analyticsSalt.ts`）。
     const recordAnalyticsEventFn = makeHandler(
       "RecordAnalyticsEventFn",
       "recordAnalyticsEvent.ts",
-      { ANALYTICS_EVENTS_TABLE: analyticsEventsTable.tableName },
+      {
+        ANALYTICS_EVENTS_TABLE: analyticsEventsTable.tableName,
+        SETTINGS_TABLE: settingsTable.tableName,
+      },
     );
 
     // 権限付与
@@ -497,6 +506,8 @@ export class SattoriStack extends Stack {
     jobsTable.grantReadData(getJobFn);
     workersTable.grantReadData(getWorkerAvailabilityFn);
     analyticsEventsTable.grantWriteData(recordAnalyticsEventFn);
+    // 日次saltの読み取り・初回生成時の書き込みの両方が必要（Issue #144）。
+    settingsTable.grantReadWriteData(recordAnalyticsEventFn);
 
     // マジックリンクの送信要求は、status:pending の JobRecord 作成(jobsTable書き込み)、
     // レート制限カウンタの読み書き、SESでの送信権限が必要。
