@@ -5,6 +5,7 @@ import { loadConfig, required } from "../config.js";
 import { error, json } from "../http.js";
 import { getJob, JobAlreadyStartedError, startPendingJob, updateJobStatus } from "../jobs.js";
 import { INITIAL_ATTEMPT } from "../retryPolicy.js";
+import { getSettings } from "../settings.js";
 import type { LaunchTaskEvent } from "./sfn/launch.js";
 
 const sfn = new SFNClient({});
@@ -40,6 +41,21 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       410,
       "job_expired",
       "受付期限が切れています。お手数ですがもう一度リプレイをアップロードしてください",
+    );
+  }
+
+  // キルスイッチ（Issue #14／#130）。`POST /magic-links`側にしか無かったため、既に
+  // 発行済みのpendingジョブ（最大24時間有効）は受付停止中でも起動できてしまっていた
+  // （REL-1）。ここではジョブをpendingのまま据え置き、startPendingJob()を呼ばずに
+  // 503を返す——受付再開後に同じリンクを開けば起動できるため、ユーザーの損失はゼロ。
+  // 月間コストガードは全件Scanを要しユーザー体験とのトレードオフが生じるため、
+  // ここでは見ない（キルスイッチのみ）。
+  const settings = await getSettings(config.settingsTable);
+  if (!settings.acceptingNewJobs) {
+    return error(
+      503,
+      "service_paused",
+      "現在、新規録画の受付を一時的に停止しています。しばらくしてから再度お試しください。",
     );
   }
 
