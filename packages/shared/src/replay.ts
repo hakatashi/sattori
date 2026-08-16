@@ -117,7 +117,7 @@ export function parseReplayInfo(data: Uint8Array): ParseReplayInfoResult {
       ok: false,
       error: {
         code: "unsupported_game",
-        message: `${GAME_TITLES[result.replay.game]} は現在録画に対応していません`,
+        message: `${GAME_TITLES[result.replay.game].fullName} は現在録画に対応していません`,
       },
     };
   }

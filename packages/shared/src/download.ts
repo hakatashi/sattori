@@ -20,7 +20,7 @@ function sanitizeFilename(value: string): string {
 
 /** `GAME_TITLES` の副題("～ ...")部分を除いた短いタイトル(例: "東方地霊殿")を取り出す。 */
 function shortGameTitle(replayInfo: ReplayInfo): string {
-  return GAME_TITLES[replayInfo.game].split(" ～ ")[0] ?? GAME_TITLES[replayInfo.game];
+  return GAME_TITLES[replayInfo.game].japaneseName;
 }
 
 /**

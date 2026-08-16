@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
-import { GAME_IDS, GAME_TITLES, SUPPORTED_GAME_IDS, type GameId } from "@sattori/shared";
+import { GAME_IDS, GAME_TITLES, type GameId } from "@sattori/shared";
 import staticStyles from "./StaticPage.module.css";
 import styles from "./ReplayHelpPage.module.css";
 
@@ -28,28 +28,35 @@ const APP_DATA_HEADING_FIRST: GameId = "th125";
  */
 const NO_STEAM_RELEASE_GAME_IDS: readonly GameId[] = ["th06", "th07", "th08"];
 
-/** アイコンファイル名が`{id}.png`と一致しないタイトル（`UploadForm.tsx`の慣習に合わせる）。 */
-const ICON_OVERRIDES: Partial<Record<GameId, string>> = {
-  th143: "th14.png", // 弾幕アマノジャクは東方輝針城のアイコンを流用
-};
+/**
+ * th10以降は既定インストール先が`Program Files (x86)`直下ではなく
+ * `上海アリス幻樂団`フォルダの下になる（例: `Program Files (x86)\上海アリス幻樂団\東方風神録`）。
+ */
+const SHANGHAI_ALICE_FOLDER_START_GAME_ID: GameId = "th10";
 
-function iconSrc(id: GameId): string {
-  return `/icons/${ICON_OVERRIDES[id] ?? `${id}.png`}`;
+function installFolderPathPrefix(id: GameId): string {
+  const startIndex = INSTALL_FOLDER_GAME_IDS.indexOf(SHANGHAI_ALICE_FOLDER_START_GAME_ID);
+  return INSTALL_FOLDER_GAME_IDS.indexOf(id) >= startIndex ? "上海アリス幻樂団\\" : "";
 }
 
-/** `GAME_TITLES`の副題("～ ...")部分を除いた短いタイトル名を取り出す。 */
-function shortTitle(id: GameId): string {
-  return GAME_TITLES[id].split(" ～ ")[0] ?? GAME_TITLES[id];
+function iconSrc(id: GameId): string {
+  return `/icons/${id}.png`;
+}
+
+/** `GAME_TITLES`の副題("～ ...")部分を除いた短いタイトル名を、選択中のロケールに応じて取り出す。 */
+function shortTitle(id: GameId, isEnglish: boolean): string {
+  return isEnglish ? GAME_TITLES[id].englishName : GAME_TITLES[id].japaneseName;
 }
 
 interface TitlePickerProps {
   titleIds: readonly GameId[];
   selected: GameId;
   onSelect: (id: GameId) => void;
+  isEnglish: boolean;
 }
 
 /** グループ内の作品を切り替えるボタン列。 */
-function TitlePicker({ titleIds, selected, onSelect }: TitlePickerProps) {
+function TitlePicker({ titleIds, selected, onSelect, isEnglish }: TitlePickerProps) {
   return (
     <div className={styles.picker} role="group">
       {titleIds.map((id) => (
@@ -61,7 +68,7 @@ function TitlePicker({ titleIds, selected, onSelect }: TitlePickerProps) {
           onClick={() => onSelect(id)}
         >
           <img src={iconSrc(id)} alt="" className={styles.pickerIcon} />
-          {shortTitle(id)}
+          {shortTitle(id, isEnglish)}
         </button>
       ))}
     </div>
@@ -107,40 +114,41 @@ function CopyablePath({ path }: CopyablePathProps) {
 
 /** リプレイファイルの場所を案内するヘルプページ（`/replay-help`、Issue #55）。 */
 export function ReplayHelpPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [installFolderSelected, setInstallFolderSelected] = useState<GameId>(INSTALL_FOLDER_HEADING_FIRST);
   const [appDataSelected, setAppDataSelected] = useState<GameId>("th20");
 
-  const installFolderTitle = shortTitle(installFolderSelected);
-  const appDataTitle = shortTitle(appDataSelected);
+  const isEnglish = i18n.language.startsWith("en");
+  const installFolderTitle = shortTitle(installFolderSelected, false);
+  const appDataTitle = shortTitle(appDataSelected, isEnglish);
   const showSteamPath = !NO_STEAM_RELEASE_GAME_IDS.includes(installFolderSelected);
-
-  const supportedTitles = SUPPORTED_GAME_IDS.map(shortTitle).join(t("replayHelp.titleSeparator"));
 
   return (
     <section className={staticStyles.card}>
       <h1 className={staticStyles.heading}>{t("replayHelp.heading")}</h1>
       <p>{t("replayHelp.intro")}</p>
-      <p className={staticStyles.disclaimer}>
-        {t("replayHelp.supportedNote", { titles: supportedTitles, count: SUPPORTED_GAME_IDS.length })}
-      </p>
 
       <h2>
         {t("replayHelp.groups.installFolder.heading", {
-          first: shortTitle(INSTALL_FOLDER_HEADING_FIRST),
-          last: shortTitle(INSTALL_FOLDER_HEADING_LAST),
+          first: shortTitle(INSTALL_FOLDER_HEADING_FIRST, isEnglish),
+          last: shortTitle(INSTALL_FOLDER_HEADING_LAST, isEnglish),
         })}
       </h2>
       <TitlePicker
         titleIds={INSTALL_FOLDER_GAME_IDS}
         selected={installFolderSelected}
         onSelect={setInstallFolderSelected}
+        isEnglish={isEnglish}
       />
-      <p>{t("replayHelp.groups.installFolder.description1", { title: installFolderTitle })}</p>
+      <p>{t("replayHelp.groups.installFolder.description1", { title: shortTitle(installFolderSelected, isEnglish) })}</p>
       <p>{t("replayHelp.groups.installFolder.defaultLabel")}</p>
-      <CopyablePath path={`C:\\Program Files (x86)\\${installFolderTitle}\\replay`} />
+      <CopyablePath
+        path={`C:\\Program Files (x86)\\${installFolderPathPrefix(installFolderSelected)}${installFolderTitle}\\replay`}
+      />
       <p>{t("replayHelp.groups.installFolder.virtualStoreLabel")}</p>
-      <CopyablePath path={`%LOCALAPPDATA%\\VirtualStore\\Program Files (x86)\\${installFolderTitle}\\replay`} />
+      <CopyablePath
+        path={`%LOCALAPPDATA%\\VirtualStore\\Program Files (x86)\\${installFolderPathPrefix(installFolderSelected)}${installFolderTitle}\\replay`}
+      />
       {showSteamPath && (
         <>
           <p>{t("replayHelp.groups.installFolder.steamLabel")}</p>
@@ -150,8 +158,13 @@ export function ReplayHelpPage() {
         </>
       )}
 
-      <h2>{t("replayHelp.groups.appData.heading", { first: shortTitle(APP_DATA_HEADING_FIRST) })}</h2>
-      <TitlePicker titleIds={APP_DATA_GAME_IDS} selected={appDataSelected} onSelect={setAppDataSelected} />
+      <h2>{t("replayHelp.groups.appData.heading", { first: shortTitle(APP_DATA_HEADING_FIRST, isEnglish) })}</h2>
+      <TitlePicker
+        titleIds={APP_DATA_GAME_IDS}
+        selected={appDataSelected}
+        onSelect={setAppDataSelected}
+        isEnglish={isEnglish}
+      />
       <p>{t("replayHelp.groups.appData.description1", { title: appDataTitle })}</p>
       <p>{t("replayHelp.groups.appData.pathLabel")}</p>
       <CopyablePath path={`%APPDATA%\\ShanghaiAlice\\${appDataSelected}\\replay`} />

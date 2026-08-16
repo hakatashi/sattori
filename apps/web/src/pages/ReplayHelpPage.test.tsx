@@ -13,7 +13,7 @@ describe("ReplayHelpPage", () => {
   it("既定では東方紅魔郷とth20の場所を表示する（th06はSteam版が無いのでSteamのパスは出さない）", () => {
     render(<ReplayHelpPage />);
 
-    expect(screen.getByRole("heading", { name: "リプレイファイルの場所" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "東方Project作品のリプレイファイルの保存場所" })).toBeTruthy();
     expect(screen.getByText(/「東方紅魔郷」をインストールしたフォルダ/)).toBeTruthy();
     expect(screen.getByText("C:\\Program Files (x86)\\東方紅魔郷\\replay")).toBeTruthy();
     expect(screen.getByText("%LOCALAPPDATA%\\VirtualStore\\Program Files (x86)\\東方紅魔郷\\replay")).toBeTruthy();
@@ -29,7 +29,7 @@ describe("ReplayHelpPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /東方風神録/ }));
 
     expect(screen.getByText(/「東方風神録」をインストールしたフォルダ/)).toBeTruthy();
-    expect(screen.getByText("C:\\Program Files (x86)\\東方風神録\\replay")).toBeTruthy();
+    expect(screen.getByText("C:\\Program Files (x86)\\上海アリス幻樂団\\東方風神録\\replay")).toBeTruthy();
     expect(screen.getByText("C:\\Program Files (x86)\\Steam\\steamapps\\common\\th10\\replay")).toBeTruthy();
   });
 
@@ -38,7 +38,7 @@ describe("ReplayHelpPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /ダブルスポイラー/ }));
 
-    expect(screen.getByText(/「ダブルスポイラー」は設定ファイルと同じく/)).toBeTruthy();
+    expect(screen.getByText(/「ダブルスポイラー」は、ユーザーの %APPDATA% フォルダに/)).toBeTruthy();
     expect(screen.getByText("%APPDATA%\\ShanghaiAlice\\th125\\replay")).toBeTruthy();
   });
 
@@ -48,7 +48,7 @@ describe("ReplayHelpPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /東方地霊殿/ }));
 
     expect(screen.getByText(/「東方地霊殿」をインストールしたフォルダ/)).toBeTruthy();
-    expect(screen.getByText("C:\\Program Files (x86)\\東方地霊殿\\replay")).toBeTruthy();
+    expect(screen.getByText("C:\\Program Files (x86)\\上海アリス幻樂団\\東方地霊殿\\replay")).toBeTruthy();
     expect(screen.getByText("C:\\Program Files (x86)\\Steam\\steamapps\\common\\th11\\replay")).toBeTruthy();
   });
 
