@@ -124,12 +124,34 @@
     "th20NoticeNormalSpeed": "詳細設定の「低速録画で品質を優先する」を利用することで、ある程度の改善が見込めます。",
     "submitStarting": "少女祈祷中⋯",
     "submit": "次へ",
-    "termsAgreement": "続行すると、<0>利用規約</0>に同意したものとみなされます。"
+    "termsAgreement": "続行すると、<0>利用規約</0>に同意したものとみなされます。",
+    "replayHelpLink": "リプレイファイルの保存場所について"
+  },
+  "replayHelp": {
+    "heading": "東方Project作品のリプレイファイルの保存場所",
+    "intro": "リプレイファイルの保存場所は、プレイしたタイトルによって異なります。下から作品を選んでください。",
+    "titleSeparator": "・",
+    "groups": {
+      "installFolder": {
+        "heading": "{{first}} ～ {{last}}",
+        "description1": "「{{title}}」をインストールしたフォルダの直下に replay フォルダが自動的に作られ、プレイ後のリプレイファイルはそこに保存されます。",
+        "defaultLabel": "デフォルトのインストール先を使用した場合、既定では以下のフォルダに保存されます。",
+        "virtualStoreLabel": "ただし、Windows 11など現在の多くの環境ではUAC仮想化が既定で有効になっているため、実際には以下のフォルダに保存されている場合があります。",
+        "steamLabel": "Steamでこの作品を購入した場合は、既定では以下のフォルダに保存されます（Steamライブラリでこの作品を右クリック→「管理」→「ローカルファイルを閲覧」からも開けます）。"
+      },
+      "appData": {
+        "heading": "{{first}} 以降",
+        "description1": "「{{title}}」では、ユーザーの %APPDATA% フォルダにユーザーの戦績やリプレイファイルなどのデータを保存します。",
+        "pathLabel": "既定では以下のフォルダにリプレイファイルが保存されます。"
+      }
+    },
+    "copy": "コピー",
+    "copied": "コピーしました"
   },
   "replayPreview": {
     "ariaLabel": "リプレイ解析結果",
     "loadingAriaLabel": "読み込み中",
-    "emptyPlaceholder": "リプレイファイルを選択すると、ここに内容が表示されます",
+    "emptyPlaceholder": "まずはリプレイファイルを選択してください",
     "unknown": "不明",
     "cleared": "クリア",
     "notCleared": "未クリア",

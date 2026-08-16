@@ -62,7 +62,7 @@ export function ReplayPreview(props: Props) {
     <section className={styles.preview} aria-label={t("replayPreview.ariaLabel")}>
       <div className={styles.headline}>
         <img className={styles.icon} src={`/icons/${info.game}.png`} alt="" />
-        <p className={styles.title}>{GAME_TITLES[info.game]}</p>
+        <p className={styles.title}>{GAME_TITLES[info.game].fullName}</p>
         <div className={clsx(styles.difficultyBadge, info.difficulty ? styles[info.difficulty.toLowerCase()] : undefined)}>
           {info.difficulty ?? t("replayPreview.unknown")}
         </div>

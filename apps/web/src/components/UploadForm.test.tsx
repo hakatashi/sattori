@@ -104,7 +104,7 @@ describe("UploadForm", () => {
   it("ファイル未選択でもSTEP2のプレースホルダーが表示される", () => {
     renderUploadForm(vi.fn());
     expect(screen.getByText("内容を確認")).toBeTruthy();
-    expect(screen.getByText("リプレイファイルを選択すると、ここに内容が表示されます")).toBeTruthy();
+    expect(screen.getByText("まずはリプレイファイルを選択してください")).toBeTruthy();
   });
 
   it("ファイル選択欄にファイル名とサイズが表示される", () => {
