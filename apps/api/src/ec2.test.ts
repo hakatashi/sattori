@@ -35,6 +35,7 @@ const config: ApiConfig = {
   settingsTable: "sattori-settings",
   workersTable: "sattori-workers",
   sesFromAddress: "no-reply@sattori.hakatashi.com",
+  sesReplyToAddress: "hakatasiloving@gmail.com",
   sesConfigurationSetName: "sattori-config-set",
   webBaseUrl: "https://sattori.hakatashi.com",
   ec2: {

@@ -189,6 +189,13 @@ export function buildJobPageUrl(
 export async function sendMagicLinkEmail(params: {
   from: string;
   to: string;
+  /**
+   * 問い合わせ先として `Reply-To` に載せるアドレス（Issue #139 UX-5）。`from` は
+   * `no-reply@`固定のため、返信されても気づけない・迷惑メール判定時の信頼性低下にも
+   * つながる。`AboutPage`に既に公開している連絡先（`infra/bin/sattori.ts`の
+   * `OPS_ALERT_EMAIL`）をそのまま流用する。
+   */
+  replyTo: string;
   webBaseUrl: string;
   jobId: string;
   language: SupportedLanguage;
@@ -205,6 +212,7 @@ export async function sendMagicLinkEmail(params: {
   await sesClient().send(
     new SendEmailCommand({
       FromEmailAddress: params.from,
+      ReplyToAddresses: [params.replyTo],
       Destination: { ToAddresses: [params.to] },
       ConfigurationSetName: params.configurationSetName,
       Content: {
@@ -227,6 +235,8 @@ export async function sendMagicLinkEmail(params: {
 export async function sendCompletionEmail(params: {
   from: string;
   to: string;
+  /** 問い合わせ先として `Reply-To` に載せるアドレス（`sendMagicLinkEmail`参照）。 */
+  replyTo: string;
   webBaseUrl: string;
   jobId: string;
   language: SupportedLanguage;
@@ -247,6 +257,7 @@ export async function sendCompletionEmail(params: {
   await sesClient().send(
     new SendEmailCommand({
       FromEmailAddress: params.from,
+      ReplyToAddresses: [params.replyTo],
       Destination: { ToAddresses: [params.to] },
       ConfigurationSetName: params.configurationSetName,
       Content: {

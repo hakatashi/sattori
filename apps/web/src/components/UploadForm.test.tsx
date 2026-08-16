@@ -52,10 +52,10 @@ const SAMPLE_REPLAY_INFO: ReplayInfo = {
   estimatedDurationSeconds: 847,
 };
 
-function renderUploadForm(onMagicLinkSent: (email: string) => void) {
+function renderUploadForm() {
   return render(
     <MemoryRouter>
-      <UploadForm onMagicLinkSent={onMagicLinkSent} />
+      <UploadForm />
     </MemoryRouter>,
   );
 }
@@ -104,18 +104,18 @@ beforeEach(() => {
 describe("UploadForm", () => {
 
   it("ファイル未選択では次のステップボタンが無効", () => {
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     expect(nextStepButton().disabled).toBe(true);
   });
 
   it("ファイル未選択でもSTEP2のプレースホルダーが表示される", () => {
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     expect(screen.getByText("内容を確認")).toBeTruthy();
     expect(screen.getByText("まずはリプレイファイルを選択してください")).toBeTruthy();
   });
 
   it("ファイル選択欄にファイル名とサイズが表示される", () => {
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("th7_02.rpy", 83866);
     expect(screen.getByText("th7_02.rpy (81.90KB)")).toBeTruthy();
   });
@@ -125,7 +125,7 @@ describe("UploadForm", () => {
     mockedClient.uploadReplay.mockResolvedValue(undefined);
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
 
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("th7_07.rpy");
 
     // setPhase("processing") はブラウザ内解析・アップロードの最初のawaitより前に同期的に走るため、
@@ -144,7 +144,7 @@ describe("UploadForm", () => {
     mockedClient.uploadReplay.mockResolvedValue(undefined);
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
 
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("th7_07.rpy");
 
     // ブラウザ内解析（アップロードとは独立）が先に終わり、プレビューが表示される
@@ -160,7 +160,7 @@ describe("UploadForm", () => {
   });
 
   it(".rpy 以外を選ぶとエラー表示され、アップロードは行われない", () => {
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("bad.txt");
     expect(screen.getByText("リプレイファイル (.rpy) を選択してください")).toBeTruthy();
     expect(mockedClient.createUpload).not.toHaveBeenCalled();
@@ -172,7 +172,7 @@ describe("UploadForm", () => {
     mockedClient.uploadReplay.mockResolvedValue(undefined);
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
 
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("th7_07.rpy");
 
     await waitFor(() => expect(mockedShared.parseReplayInfo).toHaveBeenCalledWith(expect.any(Uint8Array)));
@@ -193,7 +193,7 @@ describe("UploadForm", () => {
     mockedClient.uploadReplay.mockResolvedValue(undefined);
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
 
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("th7_07.rpy");
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
     await waitFor(() => expect(mockedClient.uploadReplay).toHaveBeenCalled());
@@ -217,7 +217,7 @@ describe("UploadForm", () => {
       },
     });
 
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("th12.rpy");
 
     await waitFor(() =>
@@ -232,14 +232,13 @@ describe("UploadForm", () => {
     expect(mockedAnalytics.trackParseError).toHaveBeenCalledWith("unsupported_game", "th12");
   });
 
-  it("次のステップ押下でマジックリンク送信要求が行われ onMagicLinkSent が発火する", async () => {
+  it("次のステップ押下でマジックリンク送信要求が行われ、送信完了画面に遷移する", async () => {
     mockedClient.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
     mockedClient.uploadReplay.mockResolvedValue(undefined);
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
     mockedClient.requestMagicLink.mockResolvedValue({});
-    const onMagicLinkSent = vi.fn();
 
-    renderUploadForm(onMagicLinkSent);
+    renderUploadForm();
     selectFile("th7_07.rpy");
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
     await waitFor(() => expect(mockedClient.uploadReplay).toHaveBeenCalled());
@@ -248,13 +247,66 @@ describe("UploadForm", () => {
 
     fireEvent.click(nextStepButton());
 
-    await waitFor(() => expect(onMagicLinkSent).toHaveBeenCalledWith("user@example.com"));
+    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
       { watermark: true, slowMotion: false },
       "user@example.com",
       "ja",
     );
+  });
+
+  it("送信完了画面の「同じ内容で再送する」は同じreplayKeyで再度マジックリンクを要求する（Issue #139 UX-5）", async () => {
+    mockedClient.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
+    mockedClient.uploadReplay.mockResolvedValue(undefined);
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+    mockedClient.requestMagicLink.mockResolvedValue({});
+
+    renderUploadForm();
+    selectFile("th7_07.rpy");
+    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    await waitFor(() => expect(mockedClient.uploadReplay).toHaveBeenCalled());
+    fillEmail("user@example.com");
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    fireEvent.click(nextStepButton());
+    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "同じ内容で再送する" }));
+
+    await waitFor(() => expect(mockedClient.requestMagicLink).toHaveBeenCalledTimes(2));
+    expect(mockedClient.requestMagicLink).toHaveBeenLastCalledWith(
+      "replays/x.rpy",
+      { watermark: true, slowMotion: false },
+      "user@example.com",
+      "ja",
+    );
+    // 再送成功後も送信完了画面のまま(アップロードのやり直しにはならない)
+    expect(screen.getByText("メールを確認してください")).toBeTruthy();
+  });
+
+  it("送信完了画面の「アップロード画面に戻る」でファイル・replayKeyを保持したまま入力フォームへ戻る", async () => {
+    mockedClient.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
+    mockedClient.uploadReplay.mockResolvedValue(undefined);
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+    mockedClient.requestMagicLink.mockResolvedValue({});
+
+    renderUploadForm();
+    selectFile("th7_07.rpy");
+    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    await waitFor(() => expect(mockedClient.uploadReplay).toHaveBeenCalled());
+    fillEmail("user@example.com");
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    fireEvent.click(nextStepButton());
+    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "アップロード画面に戻る" }));
+
+    expect(screen.getByText("th7_07.rpy (0.00KB)")).toBeTruthy();
+    expect(mockedClient.createUpload).toHaveBeenCalledTimes(1); // 再アップロードしていない
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+
+    fireEvent.click(nextStepButton());
+    await waitFor(() => expect(mockedClient.requestMagicLink).toHaveBeenCalledTimes(2));
   });
 });
 
@@ -275,7 +327,7 @@ describe("UploadForm の低速録画オプション", () => {
   it("自宅ワーカーが使えなければグレーアウトし、チェックできない", async () => {
     mockedClient.getWorkerAvailability.mockResolvedValue({ available: false, capabilities: [] });
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("th20_ud0000.rpy");
 
     await waitFor(() => expect(slowMotionCheckbox()).toBeTruthy());
@@ -289,7 +341,7 @@ describe("UploadForm の低速録画オプション", () => {
       capabilities: ["slow-motion-recording"],
     });
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("th20_ud0000.rpy");
 
     await waitFor(() => expect(slowMotionCheckbox()?.checked).toBe(true));
@@ -302,7 +354,7 @@ describe("UploadForm の低速録画オプション", () => {
       capabilities: ["slow-motion-recording"],
     });
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("th7_07.rpy");
 
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
@@ -317,8 +369,7 @@ describe("UploadForm の低速録画オプション", () => {
       capabilities: ["slow-motion-recording"],
     });
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
-    const onSent = vi.fn();
-    renderUploadForm(onSent);
+    renderUploadForm();
     selectFile("th20_ud0000.rpy");
     await waitFor(() => expect(slowMotionCheckbox().checked).toBe(true));
 
@@ -334,7 +385,7 @@ describe("UploadForm の低速録画オプション", () => {
     await act(async () => {
       fireEvent.click(nextStepButton());
     });
-    await waitFor(() => expect(onSent).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
       { watermark: true, slowMotion: false },
@@ -346,7 +397,7 @@ describe("UploadForm の低速録画オプション", () => {
   it("th20のリプレイではデシンクの注意書きを録画前に表示する", async () => {
     mockedClient.getWorkerAvailability.mockResolvedValue({ available: false, capabilities: [] });
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("th20_ud0000.rpy");
 
     await waitFor(() => expect(screen.getByText(/リプレイずれ/)).toBeTruthy());
@@ -361,7 +412,7 @@ describe("UploadForm の低速録画オプション", () => {
       capabilities: ["slow-motion-recording"],
     });
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
-    renderUploadForm(vi.fn());
+    renderUploadForm();
     selectFile("th20_ud0000.rpy");
 
     // 注意書き自体はリプレイの解析直後（＝自宅ワーカーの空き状況を引く前）に出るので、

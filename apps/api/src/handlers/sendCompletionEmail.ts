@@ -42,6 +42,7 @@ export const handler: DynamoDBStreamHandler = async (event) => {
     try {
       await sendCompletionEmail({
         from: config.sesFromAddress,
+        replyTo: config.sesReplyToAddress,
         to: newJob.email,
         webBaseUrl: config.webBaseUrl,
         jobId: newJob.jobId,

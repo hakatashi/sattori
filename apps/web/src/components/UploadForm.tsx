@@ -21,14 +21,11 @@ import {
 import { translateApiErrorMessage, translateUnsupportedGameMessage } from "../i18n/apiErrors.ts";
 import { useLocale } from "../i18n/LocaleContext.ts";
 import { toLocalizedPath } from "../i18n/paths.ts";
+import { MagicLinkSent } from "./MagicLinkSent.tsx";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
 import { helpCircleOutline } from "ionicons/icons";
-
-interface Props {
-  onMagicLinkSent: (email: string) => void;
-}
 
 /**
  * idle: 未選択、または直前の選択がエラーで終わった状態。
@@ -38,8 +35,11 @@ interface Props {
  *   先に埋まりうる（`renderPreview`参照）。
  * ready: 解析・アップロードともに完了。プレビュー表示中で「次のステップ」が押せる。
  * starting: 「次のステップ」押下後、録画ジョブを起動中。
+ * sent: マジックリンクの送信要求が成功し、`MagicLinkSent`を表示中。ファイル選択・
+ *   解析結果・`replayKey`はすべて保持したままなので、「戻る」で`ready`に戻れば
+ *   アップロードのやり直し無しに設定を変えて再送できる（Issue #139 UX-5）。
  */
-type Phase = "idle" | "processing" | "ready" | "starting";
+type Phase = "idle" | "processing" | "ready" | "starting" | "sent";
 
 const gameTitles = [
   {
@@ -194,7 +194,7 @@ function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
   });
 }
 
-export function UploadForm({ onMagicLinkSent }: Props) {
+export function UploadForm() {
   const { t, i18n } = useTranslation();
   const locale = useLocale();
   const [file, setFile] = useState<File | null>(null);
@@ -205,6 +205,10 @@ export function UploadForm({ onMagicLinkSent }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  /** 「sent」画面での再送リクエスト中フラグ。二重送信防止とボタン表示の切り替えに使う。 */
+  const [resending, setResending] = useState(false);
+  /** 再送リクエストが失敗した場合の翻訳済みエラーメッセージ。 */
+  const [resendError, setResendError] = useState<string | null>(null);
   /**
    * 低速録画（Issue #68）が今選べるか。自宅ワーカー（Issue #49）が
    * `slow-motion-recording` を宣言して空いているときだけ true になる。
@@ -373,20 +377,24 @@ export function UploadForm({ onMagicLinkSent }: Props) {
     }
   }
 
-  async function handleSubmit() {
-    if (!replayKey || phase !== "ready" || !emailValid) {
-      return;
+  /**
+   * `replayKey`が既に手元にある前提でマジックリンク送信要求を投げる。初回送信
+   * （`handleSubmit`）と、送信済み画面からの再送（`handleResend`）で共有する
+   * （Issue #139 UX-5。再送はアップロード・解析をやり直さないので`replayKey`は
+   * 常にその時点のものを使い回す）。
+   */
+  async function submitMagicLink(): Promise<{ ok: true } | { ok: false; message: string }> {
+    if (!replayKey) {
+      return { ok: false, message: t("uploadForm.unexpectedError") };
     }
-    setErrorMessage(null);
     try {
-      setPhase("starting");
       await requestMagicLink(
         replayKey,
         { watermark, slowMotion: slowMotionChecked },
         email,
         locale,
       );
-      onMagicLinkSent(email);
+      return { ok: true };
     } catch (err) {
       const message =
         err instanceof SattoriApiError
@@ -394,9 +402,44 @@ export function UploadForm({ onMagicLinkSent }: Props) {
             ? translateUnsupportedGameMessage(t, preview?.game ?? null, err.message)
             : translateApiErrorMessage(t, err.code, err.message, { status: err.status })
           : t("uploadForm.unexpectedError");
-      setErrorMessage(message);
+      return { ok: false, message };
+    }
+  }
+
+  async function handleSubmit() {
+    if (!replayKey || phase !== "ready" || !emailValid) {
+      return;
+    }
+    setErrorMessage(null);
+    setPhase("starting");
+    const result = await submitMagicLink();
+    if (result.ok) {
+      setResendError(null);
+      setPhase("sent");
+    } else {
+      setErrorMessage(result.message);
       setPhase("ready");
     }
+  }
+
+  /** 「sent」画面の「同じ内容で再送する」。`replayKey`をそのまま使うのでレート制限を1枠しか消費しない（Issue #139 UX-5）。 */
+  async function handleResend() {
+    if (phase !== "sent" || resending) {
+      return;
+    }
+    setResendError(null);
+    setResending(true);
+    const result = await submitMagicLink();
+    setResending(false);
+    if (!result.ok) {
+      setResendError(result.message);
+    }
+  }
+
+  /** 「sent」画面の「アップロード画面に戻る」。ファイル・解析結果・`replayKey`は保持したまま入力フォームへ戻す。 */
+  function handleBack() {
+    setResendError(null);
+    setPhase("ready");
   }
 
   function renderPreview() {
@@ -410,6 +453,18 @@ export function UploadForm({ onMagicLinkSent }: Props) {
   }
 
   const isEnglish = i18n.language.startsWith("en");
+
+  if (phase === "sent") {
+    return (
+      <MagicLinkSent
+        email={email}
+        onResend={() => void handleResend()}
+        onBack={handleBack}
+        resending={resending}
+        resendError={resendError}
+      />
+    );
+  }
 
   return (
     <section className={styles.card}>
