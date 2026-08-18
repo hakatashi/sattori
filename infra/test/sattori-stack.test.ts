@@ -521,10 +521,11 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("makeHandler経由のLambda全21本にErrors/Throttlesアラームが張られている(Issue #135 OPS-3)", () => {
-    // infra/README.md「Lambda」に列挙された21本(commonEnv/個別環境変数どちらも含む、
-    // makeHandler経由のもの全部)。BucketDeployment等CDKが内部で作るLambda
-    // (autoDeleteObjectsのカスタムリソース等)はmakeHandlerを通らないため対象外。
+  it("Lambdaのエラー・スロットルはFunctionNameディメンション無しのアカウント全体集計に1本ずつ張られている(Issue #154)", () => {
+    // 個別関数ごとに張るとCloudWatch AlarmのFree Tier(10個/月)を大幅に超過するため
+    // (Issue #154, docs/decisions/0027)、`AWS/Lambda`が自動公開するディメンション無し
+    // の集計メトリクスに1本ずつ張る設計にした。特定の関数を指すDimensionsが付いて
+    // いないことを確認する。
     const alarms = template.findResources("AWS::CloudWatch::Alarm");
     const errorAlarms = Object.values(alarms).filter(
       (alarm) => alarm.Properties?.MetricName === "Errors" && alarm.Properties?.Namespace === "AWS/Lambda",
@@ -533,18 +534,10 @@ describe("SattoriStack", () => {
       (alarm) =>
         alarm.Properties?.MetricName === "Throttles" && alarm.Properties?.Namespace === "AWS/Lambda",
     );
-    expect(errorAlarms).toHaveLength(21);
-    expect(throttleAlarms).toHaveLength(21);
-  });
-
-  it("マジックリンク送信LambdaにErrorsアラームが個別に張られている", () => {
-    template.hasResourceProperties("AWS::CloudWatch::Alarm", {
-      Namespace: "AWS/Lambda",
-      MetricName: "Errors",
-      Dimensions: Match.arrayWith([
-        Match.objectLike({ Name: "FunctionName", Value: { Ref: Match.stringLikeRegexp("^RequestMagicLinkFn") } }),
-      ]),
-    });
+    expect(errorAlarms).toHaveLength(1);
+    expect(throttleAlarms).toHaveLength(1);
+    expect(errorAlarms[0]?.Properties?.Dimensions).toBeUndefined();
+    expect(throttleAlarms[0]?.Properties?.Dimensions).toBeUndefined();
   });
 
   it("完了メール送信失敗のメトリクスフィルタとアラームが存在する(Issue #135 OPS-3)", () => {
