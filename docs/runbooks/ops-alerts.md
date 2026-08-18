@@ -2,7 +2,9 @@
 
 `hakatasiloving@gmail.com`宛に届く運用アラート（Issue #133 OPS-1・#134 OPS-2・
 #135 OPS-3）が来たときに何を見て何を止めるかをまとめる。アラームの実装・SNS
-トピック構成は[`decisions/0025`](../decisions/0025-ops-alerts-per-region-sns-topics.md)。
+トピック構成は[`decisions/0025`](../decisions/0025-ops-alerts-per-region-sns-topics.md)、
+LambdaアラームをFree Tierに収めるための集計方式は
+[`decisions/0027`](../decisions/0027-lambda-alarms-account-wide-not-per-function.md)。
 
 ## SESバウンス率・苦情率アラーム（`SesBounceRateAlarm`・`SesComplaintRateAlarm`）
 
@@ -57,15 +59,25 @@
    （[`decisions/0016`](../decisions/0016-ec2-fleet-instance-type-diversification.md)）
    を見直す。
 
-## Lambdaエラー・スロットルアラーム（`<関数名>ErrorsAlarm`・`<関数名>ThrottlesAlarm`）
+## Lambdaエラー・スロットルアラーム（`AnyHandlerErrorsAlarm`・`AnyHandlerThrottlesAlarm`）
 
-**5分でエラーまたはスロットルが1件以上**で発報する（`makeHandler`経由の全21本
-それぞれに個別に張ってある）。メールの件名/CloudWatchのアラーム名から発報元の
-関数名が分かるので、対応する`/aws/lambda/<関数名>`のCloudWatch Logsを確認する。
+**5分でエラーまたはスロットルが1件以上**で発報する。CloudWatch AlarmのFree Tier
+（10個/月）を超えないよう、関数ごとの個別アラームではなく`AWS/Lambda`が
+FunctionNameディメンション無しで自動公開する**アカウント全体集計**の
+Errors/Throttlesに1本ずつ張ってある（Issue #154、`docs/decisions/0027`）。
+**メールの件名/アラーム名からは発報元の関数が分からない**ので、次のいずれかで
+特定すること。
+
+1. AWSコンソール → CloudWatch（eu-south-2）→「Lambda」の関数別ダッシュボードで、
+   直近5分にErrors/Throttlesが立っている関数を探す。
+2. Lambdaコンソールの各関数の「モニタリング」タブを、疑わしい関数（直近デプロイ
+   したもの、`/admin`のジョブ失敗と時間が近いもの）から順に確認する。
 
 - 頻発するエラーは実装のバグの可能性が高い。直近のデプロイと突き合わせる。
 - スロットルは同時実行数上限に達している可能性がある。月間最大1000回規模の
   トラフィックでは通常起きないはずなので、想定外の連投（濫用）を疑う。
+- CDKのBucketDeployment等の内部Lambda（`makeHandler`を通らないもの）のエラーも
+  この集計に含まれる。デプロイ直後の発報はまずそちらを疑ってよい。
 
 ## 完了メール送信失敗アラーム（`SendCompletionEmailFailedAlarm`）
 
