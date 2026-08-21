@@ -520,10 +520,19 @@ export class SattoriStack extends Stack {
     // SES identity 全体(送信元ドメイン・任意の受信者アドレスの両方を含む)に絞る。
     // サンドボックス解除後は受信者側のチェックは行われなくなるが、Resourceを
     // 変更する必要はない。
+    // `ConfigurationSetName`を指定してSendEmailを呼ぶ場合、SESv2はidentityに加えて
+    // configuration-setリソースに対するIAM権限も別途チェックする。Issue #133で
+    // ConfigurationSetを追加した際にこちらへの権限付与が漏れており、`AccessDeniedException`
+    // (`... is not authorized to perform 'ses:SendEmail' on resource '...configuration-set/...'`)
+    // で全てのメール送信が失敗する事故が発生した(2026-08-22)。
+    const sesSendEmailResources = [
+      `arn:aws:ses:${props.sesRegion}:${this.account}:identity/*`,
+      `arn:aws:ses:${props.sesRegion}:${this.account}:configuration-set/${props.sesConfigurationSetName}`,
+    ];
     requestMagicLinkFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ses:SendEmail"],
-        resources: [`arn:aws:ses:${props.sesRegion}:${this.account}:identity/*`],
+        resources: sesSendEmailResources,
       }),
     );
 
@@ -537,7 +546,7 @@ export class SattoriStack extends Stack {
     sendCompletionEmailFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ses:SendEmail"],
-        resources: [`arn:aws:ses:${props.sesRegion}:${this.account}:identity/*`],
+        resources: sesSendEmailResources,
       }),
     );
     sendCompletionEmailFn.addEventSource(
