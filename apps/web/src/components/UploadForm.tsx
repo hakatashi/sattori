@@ -24,7 +24,7 @@ import { toLocalizedPath } from "../i18n/paths.ts";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
-import { helpCircleOutline } from "ionicons/icons";
+import { helpCircleOutline, warningOutline } from "ionicons/icons";
 
 interface Props {
   onMagicLinkSent: (email: string) => void;
@@ -454,6 +454,10 @@ export function UploadForm({ onMagicLinkSent }: Props) {
             {t("uploadForm.dropzoneRest")}
             <br/>
             {t("uploadForm.dropzoneOr")}
+            <span className={styles.dropzoneNotice}>
+              <ion-icon icon={warningOutline} className={styles.dropzoneNoticeIcon} aria-hidden="true" />
+              {t("uploadForm.dropzoneOwnPlayNotice")}
+            </span>
           </>}
         </span>
       </label>
