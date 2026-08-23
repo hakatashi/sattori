@@ -29,6 +29,23 @@ LambdaアラームをFree Tierに収めるための集計方式は
 （[`decisions/0004`](../decisions/0004-job-id-as-authorization-secret.md)）上、
 **代替の認証導線が無くサービスが完全停止する**。
 
+### バウンス・苦情イベントの個別通知（上記アラームとは別物）
+
+ConfigurationSetがBOUNCE・COMPLAINT・REJECTを同じSNSトピックへ流している
+（`infra/lib/sattori-edge-stack.ts`の`addEventDestination`）ため、**1件バウンスする
+たびにイベントのJSONがそのまま届く**。これはアラームではなく生のイベントであり、
+上記の初動（キルスイッチ）に進む前に**まず率を見ること**。
+
+```bash
+AWS_REGION=us-east-1 aws cloudwatch get-metric-statistics --namespace AWS/SES \
+  --metric-name Bounce --start-time <当日00:00Z> --end-time <現在> --period 86400 --statistics Sum
+```
+
+`Send`・`Delivery`・`Complaint`も同様に取れる。**打ち間違いによる無効アドレス1件の
+ハードバウンスは日常的に起きる**（ユーザー自身が正しいアドレスで入れ直して完了している
+ことが多いので、同じ人物からの後続ジョブが`done`になっていないかも見る）。率が閾値から
+離れていて、同一アドレスやドメインへの連投でもなければ静観でよい。
+
 ## AWS Budgets（`MonthlyCostBudget`）
 
 月次コスト予算80 USDに対し、実績50%/80%/100%・予測120%の4段階でメール通知が来る
@@ -48,13 +65,34 @@ LambdaアラームをFree Tierに収めるための集計方式は
 **1時間で3件以上の実行失敗**で発報する（単発の失敗はStep Functions自身の
 リトライ機構で吸収されるため、まとまった失敗だけを拾う設定）。
 
-1. 管理画面のジョブ一覧を`status: failed`で絞り込み、直近の失敗ジョブの詳細
-   （`/admin/jobs/{jobId}`→実行詳細）を確認する。
-2. 同一の失敗パターンが連続していないか確認する。特に**ハートビートを送らない
-   古いワーカーイメージがECRに残っている**場合、全ジョブが15分でタイムアウトする
-   （`infra/README.md`「Step Functions」、`deploy-sattori` skillの警告）。直近で
-   ワーカーイメージのデプロイを行っていないか確認すること。
-3. EC2側の起動失敗（Spotキャパシティ枯渇等）が疑われる場合は、`docs/research/`の
+1. **失敗した実行の`cause`を読む**。管理画面のジョブ一覧（`status: failed`で絞り込み、
+   `/admin/jobs/{jobId}`→実行詳細）でも見られるが、`awscli`用IAMユーザーは
+   Step Functionsの参照系API（`ListExecutions`・`DescribeExecution`・
+   `GetExecutionHistory`）を叩けるのでCLIの方が速い。
+
+   ```bash
+   export AWS_REGION=eu-south-2
+   SM=$(aws stepfunctions list-state-machines --query 'stateMachines[0].stateMachineArn' --output text)
+   aws stepfunctions list-executions --state-machine-arn "$SM" --status-filter FAILED --max-items 10
+   aws stepfunctions get-execution-history --execution-arn <失敗した実行のARN> --reverse-order \
+     --query 'events[?contains(type,`Fail`)==`true`]'
+   ```
+
+2. **`cause`が`録画に失敗しました (exit_code=1)`だった場合**、ワーカーは起動しており、
+   録画の品質チェックで全試行が破棄されている。`/sattori/worker`ロググループの
+   **ログストリーム名＝jobId**（Step Functionsのリトライ分もすべて同じストリームに入る）で
+   `試行 n/3`の破棄理由を読む。**これは多くの場合インフラ障害ではなく、そのリプレイが
+   こちらのゲームバイナリで正常再生されないケース**である（#158）。
+   - **同時間帯に同じタイトルの成功ジョブがあるか**を管理画面かジョブテーブルで確認する。
+     あればリプレイ固有と切り分けてよく、サービス側の対応は不要。
+   - 出力バケットの`progress/{jobId}/*.jpg`に録画中のスクリーンショットが残っており、
+     **画面が何を映して止まったのかを直接確認できる**（ポーズメニューが出ていればデシンク）。
+     ただし録画が25秒程度で打ち切られた場合は1枚も残らない（#159）。
+3. 同一の失敗パターンが**タイトルを問わず**連続している場合はインフラ側を疑う。特に
+   **ハートビートを送らない古いワーカーイメージがECRに残っている**場合、全ジョブが15分で
+   タイムアウトする（`infra/README.md`「Step Functions」、`deploy-sattori` skillの警告）。
+   直近でワーカーイメージのデプロイを行っていないか確認すること。
+4. EC2側の起動失敗（Spotキャパシティ枯渇等）が疑われる場合は、`docs/research/`の
    リージョン別Spot状況やEC2 Fleetの候補インスタンスタイプ分散
    （[`decisions/0016`](../decisions/0016-ec2-fleet-instance-type-diversification.md)）
    を見直す。
