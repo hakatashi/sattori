@@ -103,6 +103,7 @@
     "dropzoneClick": "ここをクリック",
     "dropzoneRest": "してリプレイファイル (.rpy) をアップロード",
     "dropzoneOr": "もしくはドラッグ&ドロップ",
+    "dropzoneOwnPlayNotice": "ご自身のプレイを記録したファイルを選択してください。",
     "invalidFileExtension": "リプレイファイル (.rpy) を選択してください",
     "unexpectedError": "予期しないエラーが発生しました",
     "uploading": "アップロード中…",

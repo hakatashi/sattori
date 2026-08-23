@@ -104,6 +104,7 @@
     "dropzoneClick": "Click here",
     "dropzoneRest": "to upload a replay file (.rpy)",
     "dropzoneOr": "or drag and drop it",
+    "dropzoneOwnPlayNotice": "Please select a file that recorded your own play.",
     "invalidFileExtension": "Please select a replay file (.rpy)",
     "unexpectedError": "An unexpected error occurred",
     "uploading": "Uploading…",
