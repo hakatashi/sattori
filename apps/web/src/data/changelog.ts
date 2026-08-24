@@ -15,8 +15,8 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-25",
-    ja: "確認メールが届かない場合に備え、同じ内容での再送とアップロード画面へ戻る導線を追加",
-    en: "Added a way to resend the confirmation email or go back to the upload screen if it doesn't arrive",
+    ja: "確認メールが届かない場合に備え、アップロード画面へ戻ってやり直せる導線を追加",
+    en: "Added a way to go back to the upload screen if the confirmation email doesn't arrive",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/153",
   },
   {

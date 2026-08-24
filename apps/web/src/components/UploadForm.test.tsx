@@ -256,34 +256,6 @@ describe("UploadForm", () => {
     );
   });
 
-  it("送信完了画面の「同じ内容で再送する」は同じreplayKeyで再度マジックリンクを要求する（Issue #139 UX-5）", async () => {
-    mockedClient.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
-    mockedClient.uploadReplay.mockResolvedValue(undefined);
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
-    mockedClient.requestMagicLink.mockResolvedValue({});
-
-    renderUploadForm();
-    selectFile("th7_07.rpy");
-    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
-    await waitFor(() => expect(mockedClient.uploadReplay).toHaveBeenCalled());
-    fillEmail("user@example.com");
-    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
-    fireEvent.click(nextStepButton());
-    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
-
-    fireEvent.click(screen.getByRole("button", { name: "同じ内容で再送する" }));
-
-    await waitFor(() => expect(mockedClient.requestMagicLink).toHaveBeenCalledTimes(2));
-    expect(mockedClient.requestMagicLink).toHaveBeenLastCalledWith(
-      "replays/x.rpy",
-      { watermark: true, slowMotion: false },
-      "user@example.com",
-      "ja",
-    );
-    // 再送成功後も送信完了画面のまま(アップロードのやり直しにはならない)
-    expect(screen.getByText("メールを確認してください")).toBeTruthy();
-  });
-
   it("送信完了画面の「アップロード画面に戻る」でファイル・replayKeyを保持したまま入力フォームへ戻る", async () => {
     mockedClient.createUpload.mockResolvedValue({ replayKey: "replays/x.rpy", uploadUrl: "https://s3/put" });
     mockedClient.uploadReplay.mockResolvedValue(undefined);
