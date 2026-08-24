@@ -43,6 +43,16 @@ jobs:
           return text.rstrip("\n").encode("utf-8") + b"\n"
           '
 
+      - name: Check history for forbidden paths
+        run: |
+          FORBIDDEN_REGEX='(^worker/games/|^worker/prefixes/|^worker/assets/|\.(wav|mp3|ogg|mp4|exe|dll|dat|zip|pem)$)'
+          MATCHES=$(git log --all --diff-filter=A --name-only --pretty=format: | grep -v '^$' | grep -iE "$FORBIDDEN_REGEX" | sort -u || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::公開してはいけないパスが履歴に含まれているため push を中止しました:"
+            echo "$MATCHES"
+            exit 1
+          fi
+
       - name: Push filtered history to public mirror
         env:
           MIRROR_TOKEN: ${{ secrets.PUBLIC_MIRROR_TOKEN }}
