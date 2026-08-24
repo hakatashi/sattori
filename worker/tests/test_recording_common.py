@@ -635,6 +635,110 @@ def test_scan_fps_runaway_detects_two_consecutive_spikes(tmp_path):
     assert rc.scan_fps_runaway(str(log_path)) == pytest.approx(900.0)
 
 
+def test_read_final_verified_score_returns_none_when_log_missing(tmp_path):
+    assert rc.read_final_verified_score(str(tmp_path / "missing.log"), "th20") is None
+
+
+def test_read_final_verified_score_returns_none_when_no_samples(tmp_path):
+    log_path = tmp_path / "th08_autoplay.log"
+    log_path.write_text("ScoreMonitor: started (module_base=0x00400000 ...)\n")
+
+    assert rc.read_final_verified_score(str(log_path), "th08") is None
+
+
+def test_read_final_verified_score_applies_game_multiplier(tmp_path):
+    log_path = tmp_path / "th20_autoplay.log"
+    log_path.write_text(
+        "ScoreMonitor: score=0 stage=0 lives=0 graze=0 epoch_ms=1\n"
+        "ScoreMonitor: score=48123740 stage=7 lives=2 graze=12345 epoch_ms=2\n"
+    )
+
+    # th20は内部値が画面表示値の1/10(GAME_SCORE_MULTIPLIERS)。
+    assert rc.read_final_verified_score(str(log_path), "th20") == 481237400
+
+
+def test_read_final_verified_score_th06_is_unscaled(tmp_path):
+    log_path = tmp_path / "th06_autoplay.log"
+    log_path.write_text("ScoreMonitor: score=925680 stage=1 lives=4 graze=0 epoch_ms=1\n")
+
+    assert rc.read_final_verified_score(str(log_path), "th06") == 925680
+
+
+def test_read_final_verified_score_drops_garbage_graze_samples(tmp_path):
+    # th07/th08はポインタ間接参照方式のため、状態構造体の解放直後に別用途で
+    # 再利用されたメモリを読んでしまう「ゴミ値」が末尾に1回だけ記録されることがある
+    # (touhou-recorder reports/53)。グレイズが現実的な上限を超えるサンプルは除外し、
+    # その手前の正常な最終値を採用する。
+    log_path = tmp_path / "th07_autoplay.log"
+    log_path.write_text(
+        "ScoreMonitor: score=30376604 stage=0 lives=1 graze=2650 epoch_ms=1\n"
+        "ScoreMonitor: score=38732440 stage=0 lives=0 graze=39322200 epoch_ms=2\n"
+    )
+
+    assert rc.read_final_verified_score(str(log_path), "th07") == 303766040
+
+
+def test_check_replay_desync_skips_when_expected_score_missing(tmp_path):
+    config = make_config(instance_dir=str(tmp_path))
+
+    assert rc.check_replay_desync(config, None, log=lambda msg: None) is None
+
+
+def test_check_replay_desync_skips_when_log_unreadable(tmp_path):
+    config = make_config(instance_dir=str(tmp_path))
+
+    assert rc.check_replay_desync(config, 481237400, log=lambda msg: None) is None
+
+
+def test_check_replay_desync_returns_false_on_match(tmp_path):
+    config = make_config(instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write("ScoreMonitor: score=48123740 stage=7 lives=2 graze=100 epoch_ms=1\n")
+
+    assert rc.check_replay_desync(config, 481237400, log=lambda msg: None) is False
+
+
+def test_check_replay_desync_returns_true_on_mismatch(tmp_path):
+    config = make_config(instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write("ScoreMonitor: score=40000000 stage=6 lives=0 graze=100 epoch_ms=1\n")
+
+    assert rc.check_replay_desync(config, 481237400, log=lambda msg: None) is True
+
+
+def test_write_desync_result_writes_json(tmp_path):
+    path = str(tmp_path / "desync_result.json")
+
+    rc.write_desync_result(path, True)
+
+    with open(path) as f:
+        assert json.load(f) == {"desyncDetected": True}
+
+
+def test_write_desync_result_skips_without_path():
+    # 例外を出さずに何もしないこと(--desync-result-path未指定のローカル実行向け)。
+    rc.write_desync_result(None, True)
+
+
+def test_record_with_retry_writes_desync_result_on_success(monkeypatch, tmp_path):
+    config = make_config()
+    monkeypatch.setattr(rc, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0,
+    })
+    monkeypatch.setattr(rc, "measure_duplicate_rate", lambda *a, **k: 1.0)
+    monkeypatch.setattr(rc, "check_replay_desync", lambda *a, **k: True)
+    result_path = str(tmp_path / "desync_result.json")
+
+    success = rc.record_with_retry(
+        config, "/replay.rpy", "/out.mp4", max_attempts=1,
+        expected_score=481237400, desync_result_path=result_path, log=lambda msg: None,
+    )
+
+    assert success is True
+    with open(result_path) as f:
+        assert json.load(f) == {"desyncDetected": True}
+
+
 def test_record_with_retry_gives_up_after_max_attempts(monkeypatch):
     config = make_config()
     monkeypatch.setattr(rc, "attempt_recording", lambda *a, **k: {

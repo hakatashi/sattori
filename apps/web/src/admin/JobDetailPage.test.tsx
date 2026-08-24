@@ -52,6 +52,7 @@ const job: AdminJobRecord = {
   retriedToJobId: null,
   retriedFromJobId: null,
   language: "ja",
+  desyncDetected: null,
 };
 
 const detailResponse: AdminJobDetailResponse = {

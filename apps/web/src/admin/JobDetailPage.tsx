@@ -137,6 +137,11 @@ export function JobDetailPage() {
                 <dd>{data.job.progress ?? "-"}</dd>
                 <dt>estimatedDurationSeconds</dt>
                 <dd>{data.job.estimatedDurationSeconds ?? "-"}</dd>
+                {/* リプレイずれ（デシンク）の事後検証結果（Issue #103）。null=未検証。 */}
+                <dt>desyncDetected</dt>
+                <dd className={data.job.desyncDetected ? styles.error : undefined}>
+                  {data.job.desyncDetected === null ? "-" : data.job.desyncDetected ? "true" : "false"}
+                </dd>
                 {data.job.error && (
                   <>
                     <dt>error</dt>

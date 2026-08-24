@@ -46,8 +46,15 @@ def update_status(
     output_path=None, output_path_720p=None,
     output_bytes=None, output_bytes_720p=None,
     error=None, error_code=None, reset_progress=False,
+    desync_detected=None,
 ):
     """ジョブの status(と任意で outputPath / outputPath720p / 出力サイズ / error)を更新する。
+
+    desync_detected は録画終了時のスコアがリプレイの記録スコアと一致しなかった疑い
+    (Issue #103、`recording_common.check_replay_desync()`)。True/False を渡した場合のみ
+    書き込む(他の引数と同じくNoneは「このフィールドには触れない」を表す——
+    検証できなかった場合は他の引数同様この引数自体を渡さないこと。JobRecord側の
+    デフォルトが null=未検証なので、書かなくても意味は保たれる)。
 
     error_code は error（常に日本語固定の文言）に対応する機械可読コードで、
     フロントエンド（apps/web/src/i18n/apiErrors.ts）が `errors.<code>` へ翻訳する
@@ -109,6 +116,9 @@ def update_status(
     if reset_progress:
         expr += ", progress = :zero"
         values[":zero"] = 0
+    if desync_detected is not None:
+        expr += ", desyncDetected = :dd"
+        values[":dd"] = desync_detected
     if status == "done":
         # ダウンロード期限表示(ジョブ画面・完了メール)の起点。"done"への遷移は
         # ジョブの生涯で一度しか起こらないため、無条件にセットしてよい。

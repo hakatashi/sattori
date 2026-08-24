@@ -72,14 +72,24 @@ th20（東方錦上京）はタイトル固有の制約が多い。詳細は
 この値をタイトル間・環境間で比較する際は「全編の代表値ではない」ことに注意すること
 （Issue #93）。この点は作業中に常に効いてくるため `AGENTS.md` §3 にも要約を置いてある。
 
-### デシンクの自動検知は未実装
+### デシンクの自動検知は録画後のスコア突き合わせのみ、かつ th07 は非対応
 
-録画がリプレイと一致しているかの自動検知は未実装で、現状は目視のみ（Issue #103）。
+Issue #103 で、MOD が1秒間隔で出すゲーム内スコア（`mods/common/score_monitor.*`）と
+リプレイファイルの記録スコア（`replayInfo.score`）を録画成功直後に突き合わせる検証を
+実装した（`worker/recording_common.check_replay_desync()`）。不一致を検知しても
+**自動リトライ・失敗扱いはせず**、`JobRecord.desyncDetected` に記録してユーザーへ
+注意書きを出すだけに留める（判定の信頼性が高くないため。MOD が RVA 直指定で読む
+ゲーム内部の生値に基づく判定で、ゲームデータのバージョンが変われば無意味な値になりうる）。
 
-th20 だけは MOD が1秒間隔でゲーム内スコアをログへ出しており
-（`mods/common/score_monitor.*`、touhou-recorder reports/50）、リプレイ末尾の平文 USER
-セクションにある記録時スコアと突き合わせれば事後に機械判定できるが、パイプライン側では
-使っていない。
+**th07 だけはこの検証が効かない**。Sattori が配布している th07.exe（`ver 1.00b`）が、
+touhou-recorder 側で実機検証済みの th07.exe（`ver 1.00`、公式パッチ未適用）とバイナリ
+レベルで異なり、検証済みの RVA では `GAME_MANAGER->globals` が常に 0 のままでスコアが
+一切取得できないことが実機で判明したため（2026-08-25、
+[`reports/2026-08-25-score-monitor-desync-verification.md`](reports/2026-08-25-score-monitor-desync-verification.md)）。
+th07 の MOD（`worker/mods/th07_replay_autoplay/dllmain.cpp`）ではスコア監視自体を
+無効化してあり、th07 のジョブは `desyncDetected` が常に `null`（未検証）のままになる
+——失敗するわけではなく、単に警告が出ないだけ。正しい RVA の再特定（差分メモリ
+スキャンによる調査）は Issue #168 で追跡する。
 
 ## 4. 自宅サーバーワーカーの制約
 

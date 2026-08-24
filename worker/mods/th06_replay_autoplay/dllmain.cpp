@@ -26,6 +26,7 @@
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
 #include "../common/logging.h"
+#include "../common/score_monitor.h"
 
 using namespace autoplay;
 
@@ -83,6 +84,29 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         LogInit(hinst, "th06_autoplay.log");
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
+        // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
+        // (thprac_th06.cpp)の`GAME_MANAGER = (GameManager*)0x69bca0`(絶対VA、
+        // ImageBase=0x400000前提、RVA=0x29bca0)由来。GameManager構造体はポインタ
+        // 間接参照不要で直接この位置にある。score(uint32, +0x04)は画面表示値と
+        // 等倍(th07/th11/th20と異なりth06は10倍換算不要)。livesRemaining(int8,
+        // +0x181a)は1バイトのみである点に注意。フル尺録画でリプレイ記録スコアとの
+        // 完全一致を実機確認済み(touhou-recorder
+        // reports/53_phase53_score_monitor_all_titles.md)。
+        {
+            ScoreMonitorConfig sm;
+            sm.baseRva = 0x29bca0;
+            sm.baseIsPointer = false;
+            sm.scoreOffset = 0x04;
+            sm.scoreWidth = 4;
+            sm.stageOffset = 0x1a34;
+            sm.stageWidth = 4;
+            sm.livesOffset = 0x181a;
+            sm.livesWidth = 1;
+            sm.grazeOffset = 0x18; // grazeInTotal(累積グレイズ)
+            sm.grazeWidth = 4;
+            sm.intervalMs = 1000;
+            StartScoreMonitorThread(sm);
+        }
         CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
     }
     return TRUE;
