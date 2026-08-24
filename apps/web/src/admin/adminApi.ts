@@ -1,4 +1,5 @@
 import type {
+  AdminAnalyticsSummaryResponse,
   AdminCostSummaryResponse,
   AdminExecutionResponse,
   AdminJobDetailResponse,
@@ -145,6 +146,21 @@ export function retryAdminJob(token: string, jobId: string): Promise<AdminRetryJ
     `/admin/jobs/${encodeURIComponent(jobId)}/retry`,
     { method: "POST" },
   );
+}
+
+/**
+ * 訪問者アナリティクス集計（Issue #149）を取得する。`days`省略時はAPI側の既定日数
+ * （30日）。ユニーク訪問者数は日次saltのローテーションにより日をまたいだ重複排除が
+ * できないため、`totals.uniqueVisitorDays`は「日別ユニーク数の単純合計」であり
+ * 期間全体の実訪問者数ではない（`@sattori/shared`の`AdminAnalyticsSummaryResponse`
+ * のJSDoc、`docs/decisions/0026-hashed-visitor-id-daily-salt.md`参照）。
+ */
+export function fetchAdminAnalytics(
+  token: string,
+  days?: number,
+): Promise<AdminAnalyticsSummaryResponse> {
+  const query = days ? `?days=${days}` : "";
+  return adminRequest<AdminAnalyticsSummaryResponse>(token, `/admin/analytics${query}`);
 }
 
 /** キルスイッチ・月間コストガード閾値の現在値と、当月の推定コストを取得する（Issue #14）。 */
