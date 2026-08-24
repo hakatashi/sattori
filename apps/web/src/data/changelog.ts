@@ -15,8 +15,8 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-25",
-    ja: "自宅サーバーの通信障害を検知し、録画処理を自動でAWS側へ切り替える仕組みを追加",
-    en: "Added detection of home-server network issues that automatically falls back recording to AWS",
+    ja: "追加ワーカーの通信障害を検知し、録画処理を自動でAWS側へ切り替える仕組みを追加",
+    en: "Added detection of additional-worker network issues that automatically falls back recording to AWS",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/165",
   },
   {
