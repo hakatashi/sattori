@@ -8,6 +8,7 @@ export interface ChangelogEntry {
   date: string;
   ja: string;
   en: string;
+  /** 対応するIssue/PRのURL。管理目的の記録のみで、ページ上には表示しない。 */
   issueUrl?: string;
 }
 

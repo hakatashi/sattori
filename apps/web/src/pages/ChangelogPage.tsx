@@ -47,14 +47,6 @@ export function ChangelogPage() {
               {group.entries.map((entry) => (
                 <li key={entry.ja} className={styles.description}>
                   {entry[lang]}
-                  {entry.issueUrl && (
-                    <>
-                      {" "}
-                      <a href={entry.issueUrl} target="_blank" rel="noopener noreferrer">
-                        ({t("changelog.detailsLink")})
-                      </a>
-                    </>
-                  )}
                 </li>
               ))}
             </ul>
