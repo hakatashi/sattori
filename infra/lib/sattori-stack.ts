@@ -259,8 +259,14 @@ export class SattoriStack extends Stack {
     // webDomainName配下から送信する(no-reply@<webDomainName>)。ドメイン検証・DKIM・
     // EmailIdentity自体は`SattoriEdgeStack`(us-east-1、eu-south-2にはSESが存在しない
     // ため)が持つ。ここでは送信元アドレスの文字列と、SESクライアントを向けるリージョン
-    // (`props.sesRegion`)だけを扱う。
-    const sesFromAddress = `no-reply@${webDomainName}`;
+    // (`props.sesRegion`)だけを扱う。表示名を付けるのはIssue #139
+    // UX-5（表示名なしの裸アドレスだと受信箱に「no-reply」としか出ず、迷惑メール
+    // 判定・開封率の両面で不利なため）。SESv2の`FromEmailAddress`はRFC 5322形式
+    // (`"表示名 <email>"`)をそのまま受け付ける。
+    const sesFromAddress = `Sattori <no-reply@${webDomainName}>`;
+    // 返信されても気づける問い合わせ先を`Reply-To`に載せる(Issue #139 UX-5)。
+    // `AboutPage`に既に公開している連絡先と同じアドレス(`opsAlertEmail`)を流用する。
+    const sesReplyToAddress = props.opsAlertEmail;
 
     // --- 録画ワーカー(ECR / VPC / IAM) -------------------------------------
 
@@ -435,6 +441,7 @@ export class SattoriStack extends Stack {
       SETTINGS_TABLE: settingsTable.tableName,
       WORKERS_TABLE: workersTable.tableName,
       SES_FROM_ADDRESS: sesFromAddress,
+      SES_REPLY_TO_ADDRESS: sesReplyToAddress,
       // eu-south-2にはSESが存在しないため、Lambda側(apps/api/src/ses.ts)は
       // このリージョンを明示して`SESv2Client`を生成する。
       SES_REGION: props.sesRegion,

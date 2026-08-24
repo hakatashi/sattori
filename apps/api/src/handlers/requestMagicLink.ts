@@ -218,6 +218,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   try {
     await sendMagicLinkEmail({
       from: config.sesFromAddress,
+      replyTo: config.sesReplyToAddress,
       to: job.email as string,
       webBaseUrl: config.webBaseUrl,
       jobId: job.jobId,
