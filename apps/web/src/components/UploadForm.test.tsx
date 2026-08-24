@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom";
 import type { ReplayInfo } from "@sattori/shared";
 import { UploadForm } from "./UploadForm.tsx";
+import { UploadFormStateContext, useUploadFormPersistedState } from "./UploadFormStateContext.ts";
 import * as analytics from "../api/analytics.ts";
 import * as client from "../api/client.ts";
 import * as shared from "@sattori/shared";
@@ -52,10 +53,20 @@ const SAMPLE_REPLAY_INFO: ReplayInfo = {
   estimatedDurationSeconds: 847,
 };
 
+/** 本番では`App.tsx`の`Layout`が持つ`UploadFormStateContext`を、テストではここで肩代わりする。 */
+function UploadFormWithState() {
+  const state = useUploadFormPersistedState();
+  return (
+    <UploadFormStateContext.Provider value={state}>
+      <UploadForm />
+    </UploadFormStateContext.Provider>
+  );
+}
+
 function renderUploadForm() {
   return render(
     <MemoryRouter>
-      <UploadForm />
+      <UploadFormWithState />
     </MemoryRouter>,
   );
 }

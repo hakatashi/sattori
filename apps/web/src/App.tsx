@@ -13,6 +13,7 @@ import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
 import { JobProgressPlayground } from "./dev/JobProgressPlayground.tsx";
 import { MagicLinkSentPlayground } from "./dev/MagicLinkSentPlayground.tsx";
 import { LanguageSwitcher } from "./components/LanguageSwitcher.tsx";
+import { UploadFormStateContext, useUploadFormPersistedState } from "./components/UploadFormStateContext.ts";
 import { useAnalyticsPageview } from "./hooks/useAnalyticsPageview.ts";
 import { LocaleContext } from "./i18n/LocaleContext.ts";
 import { toLocalizedPath } from "./i18n/paths.ts";
@@ -55,6 +56,11 @@ function Layout({ lang }: LayoutProps) {
   // ランディングページのときだけタグラインを<h1>にする(二重<h1>を避けるため)。
   const isHomePage = useMatch(lang === "en" ? "/en" : "/");
 
+  // UploadForm（`HomePage`）の入力をここで保持する。react-router-domの遷移では
+  // `Layout`自体はアンマウントされないため、`/replay-help`等へ移動してブラウザの
+  // 「戻る」で戻ってきても入力が消えない（`UploadFormStateContext.ts`）。
+  const uploadFormState = useUploadFormPersistedState();
+
   return (
     <LocaleContext.Provider value={lang}>
       <div className={styles.page}>
@@ -84,7 +90,9 @@ function Layout({ lang }: LayoutProps) {
         </header>
 
         <main className={clsx(styles.main, isJobPage && styles.mainWide)}>
-          <Outlet />
+          <UploadFormStateContext.Provider value={uploadFormState}>
+            <Outlet />
+          </UploadFormStateContext.Provider>
         </main>
 
         <footer className={styles.footer}>

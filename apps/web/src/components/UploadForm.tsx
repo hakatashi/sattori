@@ -2,13 +2,11 @@ import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import {
-  DEFAULT_RECORDING_OPTIONS,
   defaultSlowMotionFor,
   EMAIL_PATTERN,
   parseReplayInfo,
   SLOW_MOTION_CAPABILITY,
   supportsSlowMotion,
-  type ReplayInfo,
 } from "@sattori/shared";
 import { trackParseError } from "../api/analytics.ts";
 import {
@@ -23,23 +21,10 @@ import { useLocale } from "../i18n/LocaleContext.ts";
 import { toLocalizedPath } from "../i18n/paths.ts";
 import { MagicLinkSent } from "./MagicLinkSent.tsx";
 import { ReplayPreview } from "./ReplayPreview.tsx";
+import { useUploadFormState } from "./UploadFormStateContext.ts";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
 import { helpCircleOutline, warningOutline } from "ionicons/icons";
-
-/**
- * idle: 未選択、または直前の選択がエラーで終わった状態。
- * processing: ファイル選択直後に自動で走る、ブラウザ内解析（`@sattori/touhou-replay-parser`
- *   を`@sattori/shared`経由で直接呼ぶ）とS3アップロード（署名URL取得→PUT）を並行実行中。
- *   解析はアップロード完了を待たずに終わるため、`preview`はこのフェーズの途中で
- *   先に埋まりうる（`renderPreview`参照）。
- * ready: 解析・アップロードともに完了。プレビュー表示中で「次のステップ」が押せる。
- * starting: 「次のステップ」押下後、録画ジョブを起動中。
- * sent: マジックリンクの送信要求が成功し、`MagicLinkSent`を表示中。ファイル選択・
- *   解析結果・`replayKey`はすべて保持したままなので、「戻る」で`ready`に戻れば
- *   アップロードのやり直し無しに設定を変えて再送できる。
- */
-type Phase = "idle" | "processing" | "ready" | "starting" | "sent";
 
 const gameTitles = [
   {
@@ -197,12 +182,31 @@ function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
 export function UploadForm() {
   const { t, i18n } = useTranslation();
   const locale = useLocale();
-  const [file, setFile] = useState<File | null>(null);
-  const [replayKey, setReplayKey] = useState<string | null>(null);
-  const [preview, setPreview] = useState<ReplayInfo | null>(null);
-  const [watermark, setWatermark] = useState(DEFAULT_RECORDING_OPTIONS.watermark);
-  const [email, setEmail] = useState("");
-  const [phase, setPhase] = useState<Phase>("idle");
+  /**
+   * STEP1〜3の入力・解析結果は`Layout`直下（`App.tsx`）で保持する。`/replay-help`や
+   * `/terms`へのリンクで離脱してブラウザの「戻る」で戻ってきても消えないようにする
+   * ため（`UploadFormStateContext.ts`）。`dragging`・`errorMessage`・
+   * `slowMotionAvailable`は一時的なUI状態／マウントの度に取り直す情報なのでここでは
+   * 対象外——ローカルの`useState`のままにする。
+   */
+  const {
+    file,
+    setFile,
+    replayKey,
+    setReplayKey,
+    preview,
+    setPreview,
+    watermark,
+    setWatermark,
+    email,
+    setEmail,
+    phase,
+    setPhase,
+    slowMotionTouched,
+    setSlowMotionTouched,
+    slowMotion,
+    setSlowMotion,
+  } = useUploadFormState();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   /**
@@ -212,12 +216,6 @@ export function UploadForm() {
    * 録画される、という食い違いを避け、安全側（グレーアウト）に倒す。
    */
   const [slowMotionAvailable, setSlowMotionAvailable] = useState(false);
-  /**
-   * ユーザーが低速録画のチェックを手で動かしたか。動かしていない間は
-   * タイトルごとの既定（th20のみオン）に追従させ、一度でも触ったらその意思を尊重する。
-   */
-  const [slowMotionTouched, setSlowMotionTouched] = useState(false);
-  const [slowMotion, setSlowMotion] = useState(false);
 
   const busy = phase !== "idle" && phase !== "ready";
   const emailValid = EMAIL_PATTERN.test(email);
