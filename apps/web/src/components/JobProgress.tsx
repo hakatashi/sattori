@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { warningOutline } from "ionicons/icons";
 import { useTranslation } from "react-i18next";
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
 import { useEstimatedProgress } from "../hooks/useEstimatedProgress.ts";
@@ -94,7 +95,13 @@ export function JobProgressView({ job, loadError }: ViewProps) {
         recording中は常にnullで表示されない。
       */}
       {job.desyncDetected === true && (
-        <p className={styles.desyncWarning}>{t("jobProgress.desyncWarning")}</p>
+        <div className={styles.desyncWarning} role="note">
+          <p className={styles.desyncWarningTitle}>
+            <ion-icon icon={warningOutline} className={styles.desyncWarningIcon} aria-hidden="true" />
+            {t("jobProgress.desyncWarning")}
+          </p>
+          <p className={styles.desyncWarningDetail}>{t("jobProgress.desyncWarningDetail")}</p>
+        </div>
       )}
 
       {!failed && (

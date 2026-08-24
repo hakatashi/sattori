@@ -107,6 +107,22 @@ describe("JobProgressView のリプレイずれ注意書き（Issue #103）", ()
     ).toBeTruthy();
   });
 
+  it("2行目にリプレイずれの説明文を表示する", () => {
+    render(<JobProgressView job={buildDoneJob({ desyncDetected: true })} loadError={null} />);
+
+    expect(
+      screen.getByText(/録画をやり直しても同じ結果になります/),
+    ).toBeTruthy();
+  });
+
+  it("警告マークのアイコンを表示する", () => {
+    const { container } = render(
+      <JobProgressView job={buildDoneJob({ desyncDetected: true })} loadError={null} />,
+    );
+
+    expect(container.querySelector("ion-icon")).toBeTruthy();
+  });
+
   it("desyncDetected:false（一致）では注意書きを表示しない", () => {
     render(<JobProgressView job={buildDoneJob({ desyncDetected: false })} loadError={null} />);
 
