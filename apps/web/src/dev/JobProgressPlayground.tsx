@@ -94,6 +94,18 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
     }),
   },
   {
+    title: "status: done（リプレイずれの疑いあり、Issue #103）",
+    job: buildJob({
+      status: "done",
+      downloadUrl: "https://example.com/sample.mp4",
+      downloadUrl720p: "https://example.com/sample-720p.mp4",
+      downloadExpiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+      previewVideoUrl: "https://example.com/sample-720p.mp4",
+      previewImageUrl: "https://placehold.co/640x480/222/fff?text=Preview",
+      desyncDetected: true,
+    }),
+  },
+  {
     title: "status: failed（errorCode無し・旧ジョブ、生文言をそのまま表示）",
     job: buildJob({
       status: "failed",
