@@ -15,6 +15,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-25",
+    ja: "アップロード画面から他ページへ移動後、ブラウザで戻っても入力内容が消えないよう修正",
+    en: "Fixed input on the upload screen being lost after navigating away and back with the browser",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/139",
+  },
+  {
+    date: "2026-08-25",
     ja: "確認メールが届かない場合に備え、アップロード画面へ戻ってやり直せる導線を追加",
     en: "Added a way to go back to the upload screen if the confirmation email doesn't arrive",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/153",
