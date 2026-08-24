@@ -222,9 +222,28 @@
   margin: 0;
   padding: 0.85rem 1rem;
   color: var(--warning-text);
-  font-size: 0.85rem;
   background: var(--warning);
   border-radius: var(--radius);
+}
+
+.desyncWarningTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.desyncWarningIcon {
+  flex-shrink: 0;
+  font-size: 1.2em;
+}
+
+.desyncWarningDetail {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
 }
 
 .preview {
