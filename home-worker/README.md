@@ -55,6 +55,12 @@ Step Functions の `Launch` ステート（`waitForTaskToken`）が「taskToken 
 EC2 Fleet を起動する。撤回が条件チェックで失敗した（＝待機中に claim された）場合は
 EC2 を起動しない。ここを踏み外すと同じリプレイを2台で録画してしまう。
 
+自宅デーモンは④の前に、`networkCheckIntervalSec`（既定60秒）ごとに実際に
+コンテナを起動してAWSへの疎通を確認する。疎通が無ければ①のハートビートへ
+`accepting: false` を書いて④以降へ進まない——ホストは正常でもコンテナだけ
+通信不能という障害はホスト発のハートビートだけでは検知できないため
+（[`decisions/0028`](../docs/decisions/0028-home-worker-container-network-check.md)）。
+
 ## 3. claim の取り消し（＝孤児 claim の後始末）
 
 `assignedWorkerId` が「誰がこのジョブの taskToken を持っているか」の唯一の真実である。
@@ -133,6 +139,7 @@ claim が解除され、EC2 でリトライされる。
 | `HOME_WORKER_DOCKER_ARGS` | (なし) | `docker run` への追加引数（シェルと同じ空白区切り） |
 | `HOME_WORKER_DRAIN_TIMEOUT_SEC` | `9000` | 終了シグナル後、実行中ジョブの完走を待つ上限。低速録画（Issue #68）の録画タイムアウト（120分＝等倍60分の2倍）＋変換の余裕（30分）で、Step Functions 側の `taskTimeout`（150分）と揃えてある。**短くすると AWS 側がまだ待っているジョブをデーモンが先に打ち切ることになる** |
 | `WORKER_LOG_GROUP` | `/sattori/worker` | ログ転送先（EC2 ワーカーと同じ） |
+| `HOME_WORKER_NETWORK_CHECK_INTERVAL_SEC` | `60` | 新規claim前に、コンテナのネットワーク名前空間からAWSへ実際に到達できるかを確認する間隔。ホストは正常でもコンテナだけ通信不能という障害（[`decisions/0028`](../docs/decisions/0028-home-worker-container-network-check.md)）はホスト発のハートビートだけでは検知できないため、`docker run`で軽量イメージを実際に起動して確かめる |
 
 ### 4.2 モジュール構成
 
@@ -145,6 +152,7 @@ claim が解除され、EC2 でリトライされる。
 | `src/claim.ts` | オファーの探索（GSI Query）と claim/解放の条件付き更新。**AWS 側との契約そのもの** |
 | `src/heartbeat.ts` | `WorkersTable` への自己申告（型は `@sattori/shared` の `WorkerHeartbeat`） |
 | `src/capacity.ts` | 余力判定（同時実行上限・ロードアベレージ）。新規 claim を止めるだけ |
+| `src/network.ts` | コンテナのネットワーク名前空間からAWSへの疎通確認（[`decisions/0028`](../docs/decisions/0028-home-worker-container-network-check.md)）。新規 claim を止めるだけ |
 | `src/runner.ts` | `docker login` / `docker pull` / `docker run` / `docker kill` |
 | `src/logShipper.ts` | コンテナ出力を CloudWatch Logs へ転送（件数とバイト数でバッチを切り、失敗しても転送は諦めない） |
 | `src/signal.ts` | 中断できる待機（Python 版の `threading.Event` に相当） |

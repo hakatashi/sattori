@@ -277,6 +277,93 @@ describe("claimAndStartOffers", () => {
   });
 });
 
+describe("tick: コンテナのネットワーク疎通確認(Issue #160)", () => {
+  /** ネットワーク疎通確認のdocker run呼び出しだけを取り出す(ジョブのコンテナ起動と見分ける)。 */
+  function networkCheckCalls(commands: string[][]): string[][] {
+    return commands.filter((command) => command[1] === "run" && command[2] === "--rm" && command[3] !== "--name");
+  }
+
+  it("疎通が無ければclaimせず、acceptingをfalseで報告する", async () => {
+    respondWithOffers([{ jobId: "job-1", game: "th07" }]);
+    const dockerCommands: string[][] = [];
+    const daemon = makeDaemon(makeConfig({ networkCheckIntervalSec: 60 }), {
+      runCommand: async (command) => {
+        dockerCommands.push(command);
+        // ネットワーク疎通確認だけ失敗させる(コンテナのネットワーク名前空間が壊れている)。
+        if (networkCheckCalls([command]).length > 0) {
+          return { code: 28, stdout: "", stderr: "timed out" };
+        }
+        return OK;
+      },
+    });
+
+    await daemon.tick();
+
+    expect(networkCheckCalls(dockerCommands)).toHaveLength(1);
+    expect(claimedJobIds()).toEqual([]);
+    const heartbeats = ddbMock.commandCalls(PutCommand).map((call) => call.args[0].input.Item);
+    expect(heartbeats).toHaveLength(1);
+    expect(heartbeats[0]).toMatchObject({ accepting: false });
+  });
+
+  it("疎通があればclaimへ進む", async () => {
+    respondWithOffers([{ jobId: "job-1", game: "th07" }]);
+    const container = hangingContainer();
+    const daemon = makeDaemon(makeConfig({ maxConcurrency: 1 }), {
+      spawnContainer: container.spawnContainer,
+    });
+
+    await daemon.tick();
+    await container.started;
+
+    expect(claimedJobIds()).toEqual(["job-1"]);
+
+    container.exit(0);
+    await vi.waitFor(() => expect(daemon.activeJobs()).toBe(0));
+  });
+
+  it("確認の間隔内は再確認せず前回の判定を使い回す", async () => {
+    respondWithOffers([]);
+    let checks = 0;
+    const daemon = makeDaemon(makeConfig({ networkCheckIntervalSec: 3600 }), {
+      runCommand: async (command) => {
+        if (networkCheckCalls([command]).length > 0) {
+          checks += 1;
+        }
+        return OK;
+      },
+    });
+
+    await daemon.tick();
+    await daemon.tick();
+
+    expect(checks).toBe(1);
+  });
+
+  it("確認自体がエラーになっても前回の判定(健全)を維持して落ちない", async () => {
+    respondWithOffers([{ jobId: "job-1", game: "th07" }]);
+    const container = hangingContainer();
+    const daemon = makeDaemon(makeConfig({ maxConcurrency: 1 }), {
+      runCommand: async (command) => {
+        if (networkCheckCalls([command]).length > 0) {
+          throw new Error("docker: command not found");
+        }
+        return OK;
+      },
+      spawnContainer: container.spawnContainer,
+    });
+
+    await daemon.tick();
+    await container.started;
+
+    // 起動時点の既定(健全)を維持するので、確認がエラーになってもclaimは止まらない。
+    expect(claimedJobIds()).toEqual(["job-1"]);
+
+    container.exit(0);
+    await vi.waitFor(() => expect(daemon.activeJobs()).toBe(0));
+  });
+});
+
 describe("publishHeartbeat", () => {
   it("ハートビートは間隔を空けて書く", async () => {
     ddbMock.on(PutCommand).resolves({});

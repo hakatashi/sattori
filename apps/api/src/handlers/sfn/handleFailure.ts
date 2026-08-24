@@ -57,6 +57,12 @@ const SPOT_INTERRUPTED_CAUSE_PREFIX = "SpotInterrupted:";
  * - `WorkerFailed` のうち、Spot中断由来ではないもの（ワーカーが内部で失敗を検知して
  *   `SendTaskFailure` を呼んだ場合。Spot中断も同じ `Error` 値で報告されるため
  *   `Cause` の接頭辞で除外する）
+ * - `HomeWorkerContainerFailed`（自宅ワーカーがコンテナ起動直後の異常終了を検知した
+ *   場合、Issue #160）。デシンクとは原因が異なる（自宅環境固有の要因で落ちている）が、
+ *   「同じ環境へ即座に再試行しても結果は変わらない」という性質は共通しており、
+ *   `WorkerBootstrapFailure` に近い。この失敗は本来 §160 の疎通確認
+ *   （`home-worker/src/daemon.ts#checkNetworkIfDue`）で未然に防ぐべきものだが、
+ *   それを取りこぼした場合の保険としてここでも早期に打ち切る。
  *
  * それ以外（Spot中断・`States.Timeout`・`States.HeartbeatTimeout`・EC2起動時の
  * キャパシティ不足等）は再試行に意味がありうるため、決定的とは扱わない。
@@ -65,7 +71,7 @@ function isDeterministicFailure(error: HandleFailureEvent["error"]): boolean {
   if (!error?.Error) {
     return false;
   }
-  if (error.Error === "WorkerBootstrapFailure") {
+  if (error.Error === "WorkerBootstrapFailure" || error.Error === "HomeWorkerContainerFailed") {
     return true;
   }
   if (error.Error === "WorkerFailed") {
