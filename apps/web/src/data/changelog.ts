@@ -17,6 +17,7 @@ export const changelogEntries: ChangelogEntry[] = [
     date: "2026-08-24",
     ja: "更新履歴ページ (/changelog) を追加",
     en: "Added the changelog page (/changelog)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/164",
   },
   {
     date: "2026-08-23",
