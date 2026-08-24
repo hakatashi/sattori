@@ -11,6 +11,7 @@ import { ChangelogPage } from "./pages/ChangelogPage.tsx";
 import { ReplayHelpPage } from "./pages/ReplayHelpPage.tsx";
 import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
 import { JobProgressPlayground } from "./dev/JobProgressPlayground.tsx";
+import { MagicLinkSentPlayground } from "./dev/MagicLinkSentPlayground.tsx";
 import { LanguageSwitcher } from "./components/LanguageSwitcher.tsx";
 import { useAnalyticsPageview } from "./hooks/useAnalyticsPageview.ts";
 import { LocaleContext } from "./i18n/LocaleContext.ts";
@@ -104,14 +105,17 @@ function Layout({ lang }: LayoutProps) {
 
 export function App() {
   // デザイン調整用: `pnpm dev` で `?preview=replay`（ReplayPreview）/`?preview=job`
-  // （JobProgress）を付けて開くと各状態を実データ無しで確認できる
-  // （import.meta.env.DEVガードにより本番ビルドには含まれない）。
+  // （JobProgress）/`?preview=magicLinkSent`（MagicLinkSent）を付けて開くと各状態を
+  // 実データ無しで確認できる（import.meta.env.DEVガードにより本番ビルドには含まれない）。
   const previewParam = import.meta.env.DEV ? new URLSearchParams(window.location.search).get("preview") : null;
   if (previewParam === "replay") {
     return <ReplayPreviewPlayground />;
   }
   if (previewParam === "job") {
     return <JobProgressPlayground />;
+  }
+  if (previewParam === "magicLinkSent") {
+    return <MagicLinkSentPlayground />;
   }
 
   return (
