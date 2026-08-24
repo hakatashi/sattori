@@ -338,11 +338,8 @@ Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId�
 `sweepOrphanInstances.ts`専用の`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
 `ADMIN_TOKEN_PARAMETER_NAME`、`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定、
 `sweepOrphanInstances.ts`専用の`JOBS_TABLE`単独指定）
-から注入される。`loadConfig()`が必須環境変数の存在を検証する。管理API用Lambda
-（`admin/*`）の大半は他のハンドラと同じ`commonEnv`を使う——認可がAPI Gateway側の
-Lambda Authorizerで完結するため、環境変数を絞る動機が無い。`commonEnv`を使わず
-専用の環境変数のみを持つのは`admin/authorizer.ts`と`admin/getLogs.ts`（下記）、
-および`RecordAnalyticsEventFn`（`POST /beacon`、§13）だけ。
+から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
+`admin/getLogs.ts`・`RecordAnalyticsEventFn`以外の管理API用Lambdaは`commonEnv`を使う）。
 
 `SES_CONFIGURATION_SET`は`SattoriEdgeStack`が作った`ses.ConfigurationSet`名
 （`crossRegionReferences`経由）。`ses.ts`が`SendEmailCommand`へ指定し、
@@ -383,8 +380,9 @@ Cookie/localStorageを一切使わないサーバーサイド計測。フロン�
   設計の詳細は
   [`docs/decisions/0026`](../../docs/decisions/0026-hashed-visitor-id-daily-salt.md)。
 - **`RecordAnalyticsEventFn`は`commonEnv`を使わない**（`loadAnalyticsConfig()`が
-  `ANALYTICS_EVENTS_TABLE`・`SETTINGS_TABLE`のみを読む）。管理系Lambdaと同じ理由で、
-  計測用テーブル・salt保管用の`SettingsTable`の読み書きしか行わないため（§12）。
+  `ANALYTICS_EVENTS_TABLE`・`SETTINGS_TABLE`のみを読む）。`admin/authorizer.ts`・
+  `admin/getLogs.ts`と同じく、計測用テーブルとsalt保管用の`SettingsTable`の
+  読み書きしか行わないため（§12）。
 - 計測の失敗（DynamoDB書き込みエラー等）はユーザー体験に影響させないため、常に
   202を返す（呼び出し側は`navigator.sendBeacon`でレスポンスを見ない）。
 
@@ -392,30 +390,9 @@ Cookie/localStorageを一切使わないサーバーサイド計測。フロン�
 > 必ず[`docs/decisions/0024`](../../docs/decisions/0024-cookieless-analytics-beacon.md)
 > の「あえて集めないもの」と
 > [`docs/decisions/0026`](../../docs/decisions/0026-hashed-visitor-id-daily-salt.md)
-> を確認してから行うこと。**
-
-### 13.1 集計・可視化（`GET /admin/analytics`、Issue #149）
-
-管理画面向けの集計エンドポイント。`adminAnalytics.ts`の`summarizeAnalytics()`が
-`AnalyticsEventsTable`から直近`days`日ぶん（既定30日・上限90日、
-`ADMIN_ANALYTICS_DEFAULT_DAYS`/`ADMIN_ANALYTICS_MAX_DAYS`）のイベントを読み、
-アプリ側で集計する。
-
-- **`adminCosts.ts`（`JobsTable`の全件Scan）とは違い、日付ごとにQueryを発行する**。
-  `AnalyticsEventsTable`はPK=eventDateなので、パーティション単位で絞り込める
-  （Scanより効率が良い）。日付間に依存関係が無いため`Promise.all`で並行に投げる。
-- 集計する指標はページビュー数・ユニーク訪問者数・パースエラー件数の日別推移と、
-  属性別の内訳（ページパス・参照元ホスト・国・言語・デバイスカテゴリ・
-  ブラウザ/OS系統・`utm_source`・パース失敗コード・検出タイトル）。内訳は件数の
-  多い順に上位`ADMIN_ANALYTICS_BREAKDOWN_LIMIT`（10）件のみ返す。
-- **ユニーク訪問者数（`daily[].uniqueVisitors`）は日毎にしか意味を持たない**。
-  `visitorHash`のsaltが日次ローテーションのため（§13、`docs/decisions/0026`）、
-  異なる日の`visitorHash`同士は同一訪問者かどうか判定できない。複数日を集計した
-  ときの`totals.uniqueVisitorDays`は「日別ユニーク数の単純合計」であり、期間内の
-  実訪問者数（日をまたいだ重複を除いた数）ではない——フィールド名をあえて
-  `uniqueVisitors`にせず`uniqueVisitorDays`にしているのはこの誤解を避けるため
-  （`packages/shared/src/admin.ts`のJSDoc、管理画面側の表示は
-  `apps/web/docs/admin-ui.md`）。
+> を確認してから行うこと。** 集計（`GET /admin/analytics`、Issue #149）は
+> `adminAnalytics.ts`が日付ごとにQueryして行う（Scanの`adminCosts.ts`とは違う）。
+> 詳細は[`docs/decisions/0029`](../../docs/decisions/0029-analytics-aggregation-daily-only-uniques.md)。
 
 ## 14. テスト
 
