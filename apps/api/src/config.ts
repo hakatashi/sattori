@@ -47,6 +47,12 @@ export interface ApiConfig {
   sesConfigurationSetName: string;
   /** マジックリンクURLを組み立てる際のWebフロントエンドのベースURL（末尾スラッシュなし）。 */
   webBaseUrl: string;
+  /**
+   * 訪問者アナリティクスのイベントを保持するDynamoDBテーブル名（Issue #142）。
+   * `admin/getAnalytics.ts`（Issue #149）が集計に使う。`RecordAnalyticsEventFn`
+   * (`POST /beacon`)は別途`loadAnalyticsConfig()`経由でこの値を読む（下記）。
+   */
+  analyticsEventsTable: string;
 }
 
 export interface Ec2LaunchConfig {
@@ -98,6 +104,7 @@ export function loadConfig(): ApiConfig {
     sesReplyToAddress: required("SES_REPLY_TO_ADDRESS"),
     sesConfigurationSetName: required("SES_CONFIGURATION_SET"),
     webBaseUrl: required("WEB_BASE_URL"),
+    analyticsEventsTable: required("ANALYTICS_EVENTS_TABLE"),
     ec2: {
       subnetIds: required("WORKER_SUBNET_IDS").split(","),
       region: process.env.AWS_REGION ?? "eu-south-2",

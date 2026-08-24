@@ -180,18 +180,21 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   （dockerデーモンにAWS認証情報を持たせないため）、いずれも`{jobId}`という同じ
   ストリーム名で書き込む。重複フレーム診断のため失敗時も残す。
 - **Lambda**（`NodejsFunction`、CJS出力。ESM出力だとAWS SDK内部の動的
-  `require("node:https")`がLambda(ESM)で失敗するため）× 21: createUpload /
+  `require("node:https")`がLambda(ESM)で失敗するため）× 22: createUpload /
   parseReplay / requestMagicLink / startJob / getJob / getWorkerAvailability /
   recordAnalyticsEvent / sendCompletionEmail / sfn.launch / sfn.handleFailure /
   sweepOrphanInstances / admin.authorizer / admin.listJobs / admin.getJobDetail /
   admin.getExecution / admin.getLogs / admin.stopJob / admin.retryJob /
-  admin.getCosts / admin.getSettings / admin.updateSettings。HTTP APIをトリガー
+  admin.getCosts / admin.getAnalytics（Issue #149）/ admin.getSettings /
+  admin.updateSettings。HTTP APIをトリガー
   としないものが2本あり、`sendCompletionEmail`は`JobsTable`のDynamoDB Streams
   （`eventName: MODIFY`・`NewImage.status: "done"`にフィルタ）、
   `sweepOrphanInstances`はEventBridgeのスケジュールルール（上記、Issue #23）を
-  イベントソースとする。管理系（`admin.*`）と`sweepOrphanInstances`・
-  `recordAnalyticsEvent`は`commonEnv`を使わず、用途ごとの環境変数のみを個別付与する
-  （下記「管理画面」・`apps/api/README.md`「計測」参照）。
+  イベントソースとする。管理系（`admin.*`）の大半は他のLambdaと同じ`commonEnv`を
+  使う（認可はAPI Gateway側のLambda Authorizerで完結するため環境変数を絞る動機が
+  無い）。`commonEnv`を使わず用途ごとの環境変数のみを個別付与するのは
+  `admin.authorizer`・`admin.getLogs`・`sweepOrphanInstances`・`recordAnalyticsEvent`
+  だけ（下記「管理画面」・`apps/api/README.md`「環境変数」「計測」参照）。
 - ワーカーAMIはSSMの ECS 最適化 AL2023（Docker同梱）を参照。
 
 ## 管理画面（`/admin`、Issue #51）

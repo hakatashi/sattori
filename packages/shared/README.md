@@ -162,6 +162,7 @@ Issue #49）。これは生きたStep Functionsの`TASK_TOKEN`——実行を任
 | `POST /admin/jobs/{jobId}/stop` | ジョブの緊急停止（Issue #59） |
 | `POST /admin/jobs/{jobId}/retry` | ジョブの再実行（Issue #59。**新しいjobIdのジョブとして複製・起動**するため、レスポンスの`jobId`はパスのそれとは別物） |
 | `GET /admin/costs` | コスト推定の日次/週次/月次集計（Issue #60。後述「コスト推定」） |
+| `GET /admin/analytics` | 訪問者アナリティクスの日別集計（ユニーク訪問者数・ページビュー数・パースエラー件数・属性別内訳、Issue #149。`src/admin.ts`の`AdminAnalyticsSummaryResponse`） |
 | `GET /admin/settings` | キルスイッチ・月間コストガード閾値の現在値と当月推定コスト（Issue #14。後述「運用設定」） |
 | `POST /admin/settings` | キルスイッチ・月間コストガード閾値の更新（Issue #14） |
 
