@@ -1,8 +1,27 @@
 import { useTranslation } from "react-i18next";
-import { changelogEntries } from "../data/changelog.ts";
+import { type ChangelogEntry, changelogEntries } from "../data/changelog.ts";
 import { useLocale } from "../i18n/LocaleContext.ts";
 import staticStyles from "./StaticPage.module.css";
 import styles from "./ChangelogPage.module.css";
+
+interface ChangelogGroup {
+  date: string;
+  entries: ChangelogEntry[];
+}
+
+/** 日付が変わるごとに区切ったグループへまとめる（同日の複数エントリを1つの日付見出し下に表示するため）。 */
+export function groupByDate(entries: ChangelogEntry[]): ChangelogGroup[] {
+  const groups: ChangelogGroup[] = [];
+  for (const entry of entries) {
+    const lastGroup = groups.at(-1);
+    if (lastGroup?.date === entry.date) {
+      lastGroup.entries.push(entry);
+    } else {
+      groups.push({ date: entry.date, entries: [entry] });
+    }
+  }
+  return groups;
+}
 
 /** 更新履歴ページ（`/changelog`）。フッターからナビゲーションする。 */
 export function ChangelogPage() {
@@ -19,22 +38,26 @@ export function ChangelogPage() {
       <h1 className={staticStyles.heading}>{t("changelog.heading")}</h1>
       <p>{t("changelog.description")}</p>
       <ul className={styles.list}>
-        {changelogEntries.map((entry) => (
-          <li key={`${entry.date}-${entry.ja}`} className={styles.entry}>
+        {groupByDate(changelogEntries).map((group) => (
+          <li key={group.date} className={styles.entry}>
             <p className={styles.date}>
-              <time dateTime={entry.date}>{dateFormat.format(new Date(entry.date))}</time>
+              <time dateTime={group.date}>{dateFormat.format(new Date(group.date))}</time>
             </p>
-            <p className={styles.description}>
-              {entry[lang]}
-              {entry.issueUrl && (
-                <>
-                  {" "}
-                  <a href={entry.issueUrl} target="_blank" rel="noopener noreferrer">
-                    ({t("changelog.detailsLink")})
-                  </a>
-                </>
-              )}
-            </p>
+            <ul className={styles.descriptionList}>
+              {group.entries.map((entry) => (
+                <li key={entry.ja} className={styles.description}>
+                  {entry[lang]}
+                  {entry.issueUrl && (
+                    <>
+                      {" "}
+                      <a href={entry.issueUrl} target="_blank" rel="noopener noreferrer">
+                        ({t("changelog.detailsLink")})
+                      </a>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
           </li>
         ))}
       </ul>

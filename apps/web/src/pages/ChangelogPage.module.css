@@ -23,6 +23,14 @@
   font-size: 0.9rem;
 }
 
+.descriptionList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
 .description {
   margin: 0;
 }
