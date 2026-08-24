@@ -21,7 +21,7 @@ const REQUIRED_ENV: Record<string, string> = {
   SETTINGS_TABLE: "sattori-settings",
   WORKERS_TABLE: "sattori-workers",
   SES_FROM_ADDRESS: "no-reply@sattori.hakatashi.com",
-  SES_REPLY_TO_ADDRESS: "hakatasiloving@gmail.com",
+  SES_REPLY_TO_ADDRESS: "reply@example.com",
   SES_CONFIGURATION_SET: "sattori-config-set",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
   STATE_MACHINE_ARN: "arn:aws:states:us-east-1:123456789012:stateMachine:RecordingStateMachine",
