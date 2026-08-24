@@ -22,6 +22,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     dockerExtraArgs: [],
     drainTimeoutSec: 150 * 60,
     credentialDurationSec: 4 * 60 * 60,
+    networkCheckIntervalSec: 60,
     ...overrides,
   };
 }

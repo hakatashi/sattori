@@ -51,6 +51,13 @@ describe("loadConfig", () => {
     expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th99" }))).toThrow(ConfigError);
   });
 
+  it("ネットワーク疎通確認の間隔は既定60秒、環境変数で上書きできる(Issue #160)", () => {
+    expect(loadConfig(env()).networkCheckIntervalSec).toBe(60);
+    expect(
+      loadConfig(env({ HOME_WORKER_NETWORK_CHECK_INTERVAL_SEC: "30" })).networkCheckIntervalSec,
+    ).toBe(30);
+  });
+
   it("docker追加引数はシェルと同じ規則で分割する", () => {
     expect(loadConfig(env({ HOME_WORKER_DOCKER_ARGS: "--shm-size=1g --memory 8g" })).dockerExtraArgs)
       .toEqual(["--shm-size=1g", "--memory", "8g"]);
