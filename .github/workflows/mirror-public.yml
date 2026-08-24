@@ -53,6 +53,19 @@ jobs:
             exit 1
           fi
 
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.21.2"
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 755 gitleaks /usr/local/bin/gitleaks
+          rm gitleaks gitleaks.tar.gz
+          gitleaks version
+
+      - name: Scan history for leaked secrets
+        run: gitleaks detect --source . --config .gitleaks.toml --no-banner --redact
+
       - name: Push filtered history to public mirror
         env:
           MIRROR_TOKEN: ${{ secrets.PUBLIC_MIRROR_TOKEN }}
