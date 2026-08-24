@@ -451,10 +451,6 @@ export class SattoriStack extends Stack {
       WEB_BASE_URL: `https://${webDomainName}`,
     };
 
-    // すべての`NodejsFunction`を集めておき、Lambdaのエラー・スロットルアラーム
-    // (OPS-3, Issue #135)をハンドラ追加ごとに個別配線せずまとめて張れるようにする。
-    const allHandlerFns: NodejsFunction[] = [];
-
     // `environment`省略時は`commonEnv`を使う。管理画面のauthorizer(Issue #51)のように
     // `commonEnv`とは無関係な環境変数だけを持たせたいLambdaのために上書きできるようにする。
     const makeHandler = (
@@ -479,7 +475,6 @@ export class SattoriStack extends Stack {
           externalModules: [],
         },
       });
-      allHandlerFns.push(fn);
       return fn;
     };
 
@@ -532,10 +527,19 @@ export class SattoriStack extends Stack {
     // SES identity 全体(送信元ドメイン・任意の受信者アドレスの両方を含む)に絞る。
     // サンドボックス解除後は受信者側のチェックは行われなくなるが、Resourceを
     // 変更する必要はない。
+    // `ConfigurationSetName`を指定してSendEmailを呼ぶ場合、SESv2はidentityに加えて
+    // configuration-setリソースに対するIAM権限も別途チェックする。Issue #133で
+    // ConfigurationSetを追加した際にこちらへの権限付与が漏れており、`AccessDeniedException`
+    // (`... is not authorized to perform 'ses:SendEmail' on resource '...configuration-set/...'`)
+    // で全てのメール送信が失敗する事故が発生した(2026-08-22)。
+    const sesSendEmailResources = [
+      `arn:aws:ses:${props.sesRegion}:${this.account}:identity/*`,
+      `arn:aws:ses:${props.sesRegion}:${this.account}:configuration-set/${props.sesConfigurationSetName}`,
+    ];
     requestMagicLinkFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ses:SendEmail"],
-        resources: [`arn:aws:ses:${props.sesRegion}:${this.account}:identity/*`],
+        resources: sesSendEmailResources,
       }),
     );
 
@@ -549,7 +553,7 @@ export class SattoriStack extends Stack {
     sendCompletionEmailFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ses:SendEmail"],
-        resources: [`arn:aws:ses:${props.sesRegion}:${this.account}:identity/*`],
+        resources: sesSendEmailResources,
       }),
     );
     sendCompletionEmailFn.addEventSource(
@@ -1143,26 +1147,38 @@ function handler(event) {
     }).addAlarmAction(opsAlertAction);
 
     // 2・3. Lambdaのエラー・スロットル(Issue #135で提案された閾値をそのまま採用:
-    //    5分で1件以上)。`makeHandler`経由で作った全Lambda(21本)にまとめて張る——
-    //    個別に選ぶと足し引き漏れが起きるため、監視対象の選定自体を無くす。
-    for (const fn of allHandlerFns) {
-      new cloudwatch.Alarm(this, `${fn.node.id}ErrorsAlarm`, {
-        alarmDescription: `${fn.node.id}のエラーが5分で1件以上。docs/runbooks/ops-alerts.md参照`,
-        metric: fn.metricErrors({ period: Duration.minutes(5), statistic: "Sum" }),
-        threshold: 1,
-        evaluationPeriods: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-      }).addAlarmAction(opsAlertAction);
-      new cloudwatch.Alarm(this, `${fn.node.id}ThrottlesAlarm`, {
-        alarmDescription: `${fn.node.id}のスロットルが5分で1件以上。docs/runbooks/ops-alerts.md参照`,
-        metric: fn.metricThrottles({ period: Duration.minutes(5), statistic: "Sum" }),
-        threshold: 1,
-        evaluationPeriods: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-      }).addAlarmAction(opsAlertAction);
-    }
+    //    5分で1件以上)。当初`makeHandler`経由の全Lambda(21本)に個別配線していたが、
+    //    それだけで42個のアラームを消費しCloudWatch AlarmのFree Tier(10個/月)を
+    //    大幅に超過した(Issue #154)。`AWS/Lambda`名前空間がFunctionNameディメン
+    //    ションなしで自動公開するアカウント全体集計のErrors/Throttlesに1本ずつ張る
+    //    ことで2個に減らす(`docs/decisions/0027`)。新しいLambdaを足しても配線不要で
+    //    自動的に対象へ入るが、発報時にどの関数が原因かはアラーム名からは分からない
+    //    (`docs/runbooks/ops-alerts.md`)。
+    const accountWideLambdaMetric = (metricName: "Errors" | "Throttles") =>
+      new cloudwatch.Metric({
+        namespace: "AWS/Lambda",
+        metricName,
+        statistic: "Sum",
+        period: Duration.minutes(5),
+      });
+    new cloudwatch.Alarm(this, "AnyHandlerErrorsAlarm", {
+      alarmDescription:
+        "いずれかのLambda関数でエラーが5分で1件以上。docs/runbooks/ops-alerts.md参照",
+      metric: accountWideLambdaMetric("Errors"),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(opsAlertAction);
+    new cloudwatch.Alarm(this, "AnyHandlerThrottlesAlarm", {
+      alarmDescription:
+        "いずれかのLambda関数でスロットルが5分で1件以上。docs/runbooks/ops-alerts.md参照",
+      metric: accountWideLambdaMetric("Throttles"),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(opsAlertAction);
 
     // 4. 完了メール送信の失敗(Issue #135で提案された閾値をそのまま採用: 1件以上)。
     //    `sendCompletionEmail.ts`はDynamoDB Streamsのリトライを避けるため例外を

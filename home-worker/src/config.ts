@@ -82,6 +82,14 @@ export interface Config {
    * （CDK側で4時間）以下にすること。
    */
   credentialDurationSec: number;
+  /**
+   * コンテナのネットワーク名前空間からAWSへ実際に到達できるかを確認する間隔
+   * （秒）。ホストは正常なのにコンテナだけ通信不能という障害（Issue #160）は
+   * ホスト発のハートビートだけでは検知できないため、`docker run`で軽量イメージを
+   * 実際に起動して確かめる。失敗している間は新規claimを止める
+   * （`daemon.ts#checkNetworkIfDue`）。
+   */
+  networkCheckIntervalSec: number;
 }
 
 /** 環境変数の読み取り元。テストでは擬似的な辞書を渡す。 */
@@ -228,5 +236,6 @@ export function loadConfig(env: Environment = process.env): Config {
     dockerExtraArgs: dockerArgs === null ? [] : splitShellArgs(dockerArgs),
     drainTimeoutSec: number_(env, "HOME_WORKER_DRAIN_TIMEOUT_SEC", 150 * 60),
     credentialDurationSec: number_(env, "HOME_WORKER_CREDENTIAL_DURATION_SEC", 4 * 60 * 60),
+    networkCheckIntervalSec: number_(env, "HOME_WORKER_NETWORK_CHECK_INTERVAL_SEC", 60),
   };
 }

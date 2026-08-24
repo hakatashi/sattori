@@ -7,6 +7,7 @@ import { JobPage } from "./pages/JobPage.tsx";
 import { AboutPage } from "./pages/AboutPage.tsx";
 import { GameInfoPage } from "./pages/GameInfoPage.tsx";
 import { TermsPage } from "./pages/TermsPage.tsx";
+import { ChangelogPage } from "./pages/ChangelogPage.tsx";
 import { ReplayHelpPage } from "./pages/ReplayHelpPage.tsx";
 import { ReplayPreviewPlayground } from "./dev/ReplayPreviewPlayground.tsx";
 import { JobProgressPlayground } from "./dev/JobProgressPlayground.tsx";
@@ -90,6 +91,7 @@ function Layout({ lang }: LayoutProps) {
             <Link to={toLocalizedPath("/about", lang)}>{t("app.footerNav.about")}</Link>
             <Link to={toLocalizedPath("/info", lang)}>{t("app.footerNav.gameInfo")}</Link>
             <Link to={toLocalizedPath("/terms", lang)}>{t("app.footerNav.terms")}</Link>
+            <Link to={toLocalizedPath("/changelog", lang)}>{t("app.footerNav.changelog")}</Link>
           </nav>
           <small>{t("app.footer")}</small>
         </footer>
@@ -135,6 +137,7 @@ export function App() {
           <Route path="about" element={<AboutPage />} />
           <Route path="info" element={<GameInfoPage />} />
           <Route path="terms" element={<TermsPage />} />
+          <Route path="changelog" element={<ChangelogPage />} />
           <Route path="replay-help" element={<ReplayHelpPage />} />
           {/* 未定義のパスは"/"へ戻す。 */}
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -146,6 +149,7 @@ export function App() {
           <Route path="about" element={<AboutPage />} />
           <Route path="info" element={<GameInfoPage />} />
           <Route path="terms" element={<TermsPage />} />
+          <Route path="changelog" element={<ChangelogPage />} />
           <Route path="replay-help" element={<ReplayHelpPage />} />
           <Route path="*" element={<Navigate to="/en" replace />} />
         </Route>

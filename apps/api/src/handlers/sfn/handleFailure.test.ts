@@ -350,6 +350,39 @@ describe("sfn/handleFailure handler", () => {
       expect(result).toEqual({ shouldRetry: true });
     });
 
+    // Issue #160: ホストは正常なのにコンテナだけ通信不能という障害を自宅ワーカー側の
+    // 疎通確認(home-worker/src/daemon.ts)で未然に防げなかった場合の保険。同じ自宅
+    // ワーカーへ即座に再試行しても結果は変わらないため、WorkerBootstrapFailureと
+    // 同様に早期打ち切りの対象にする。
+    it("HomeWorkerContainerFailed(Issue #160)はMAX_ATTEMPTS_DETERMINISTICで打ち切る", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: baseJob });
+      ec2Mock.on(TerminateInstancesCommand).resolves({});
+      ddbMock.on(UpdateCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({
+        jobId: "job-1",
+        attempt: MAX_ATTEMPTS_DETERMINISTIC,
+        error: { Error: "HomeWorkerContainerFailed", Cause: "container exited with 1" },
+      });
+
+      expect(result).toEqual({ shouldRetry: false });
+    });
+
+    it("HomeWorkerContainerFailedでもattemptがMAX_ATTEMPTS_DETERMINISTIC未満ならリトライする", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: baseJob });
+      ec2Mock.on(TerminateInstancesCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({
+        jobId: "job-1",
+        attempt: MAX_ATTEMPTS_DETERMINISTIC - 1,
+        error: { Error: "HomeWorkerContainerFailed", Cause: "container exited with 1" },
+      });
+
+      expect(result).toEqual({ shouldRetry: true });
+    });
+
     it("errorが渡されない場合(後方互換)は通常のMAX_ATTEMPTSまでリトライする", async () => {
       ddbMock.on(GetCommand).resolves({ Item: baseJob });
       ec2Mock.on(TerminateInstancesCommand).resolves({});
