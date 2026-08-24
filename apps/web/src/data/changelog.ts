@@ -14,12 +14,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-23",
-    ja: "アップロード画面のドロップゾーンに、ご自身のプレイを記録したリプレイファイルであることの注意書きを追加しました。",
-    en: "Added a notice to the upload screen's drop zone reminding users to upload a replay file recorded from their own play.",
+    ja: "アップロード画面のドロップゾーンに注意書きを追加",
+    en: "Added a notice to the upload screen's drop zone",
   },
   {
     date: "2026-08-22",
-    ja: "Sattoriを正式公開しました。",
-    en: "Sattori is now publicly available.",
+    ja: "TouhouSattori 正式公開",
+    en: "TouhouSattori public launch",
   },
 ];
