@@ -1,0 +1,28 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  border-top: 1px solid var(--divider);
+  padding-top: 1.25rem;
+}
+
+.entry:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.date {
+  margin: 0 0 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.description {
+  margin: 0;
+}
