@@ -15,6 +15,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-25",
+    ja: "確認メールが届かない場合に備え、同じ内容での再送とアップロード画面へ戻る導線を追加",
+    en: "Added a way to resend the confirmation email or go back to the upload screen if it doesn't arrive",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/153",
+  },
+  {
+    date: "2026-08-25",
     ja: "追加ワーカーの通信障害を検知し、録画処理を自動でAWS側へ切り替える仕組みを追加",
     en: "Added detection of additional-worker network issues that automatically falls back recording to AWS",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/165",
