@@ -635,18 +635,18 @@ def test_scan_fps_runaway_detects_two_consecutive_spikes(tmp_path):
     assert rc.scan_fps_runaway(str(log_path)) == pytest.approx(900.0)
 
 
-def test_read_final_verified_score_returns_none_when_log_missing(tmp_path):
-    assert rc.read_final_verified_score(str(tmp_path / "missing.log"), "th20") is None
+def test_read_verified_scores_returns_empty_list_when_log_missing(tmp_path):
+    assert rc.read_verified_scores(str(tmp_path / "missing.log"), "th20") == []
 
 
-def test_read_final_verified_score_returns_none_when_no_samples(tmp_path):
+def test_read_verified_scores_returns_empty_list_when_no_samples(tmp_path):
     log_path = tmp_path / "th08_autoplay.log"
     log_path.write_text("ScoreMonitor: started (module_base=0x00400000 ...)\n")
 
-    assert rc.read_final_verified_score(str(log_path), "th08") is None
+    assert rc.read_verified_scores(str(log_path), "th08") == []
 
 
-def test_read_final_verified_score_applies_game_multiplier(tmp_path):
+def test_read_verified_scores_applies_game_multiplier(tmp_path):
     log_path = tmp_path / "th20_autoplay.log"
     log_path.write_text(
         "ScoreMonitor: score=0 stage=0 lives=0 graze=0 epoch_ms=1\n"
@@ -654,28 +654,27 @@ def test_read_final_verified_score_applies_game_multiplier(tmp_path):
     )
 
     # th20は内部値が画面表示値の1/10(GAME_SCORE_MULTIPLIERS)。
-    assert rc.read_final_verified_score(str(log_path), "th20") == 481237400
+    assert rc.read_verified_scores(str(log_path), "th20") == [0, 481237400]
 
 
-def test_read_final_verified_score_th06_is_unscaled(tmp_path):
+def test_read_verified_scores_th06_is_unscaled(tmp_path):
     log_path = tmp_path / "th06_autoplay.log"
     log_path.write_text("ScoreMonitor: score=925680 stage=1 lives=4 graze=0 epoch_ms=1\n")
 
-    assert rc.read_final_verified_score(str(log_path), "th06") == 925680
+    assert rc.read_verified_scores(str(log_path), "th06") == [925680]
 
 
-def test_read_final_verified_score_drops_garbage_graze_samples(tmp_path):
+def test_read_verified_scores_drops_garbage_graze_samples(tmp_path):
     # th07/th08はポインタ間接参照方式のため、状態構造体の解放直後に別用途で
     # 再利用されたメモリを読んでしまう「ゴミ値」が末尾に1回だけ記録されることがある
-    # (touhou-recorder reports/53)。グレイズが現実的な上限を超えるサンプルは除外し、
-    # その手前の正常な最終値を採用する。
+    # (touhou-recorder reports/53)。グレイズが現実的な上限を超えるサンプルは除外する。
     log_path = tmp_path / "th07_autoplay.log"
     log_path.write_text(
         "ScoreMonitor: score=30376604 stage=0 lives=1 graze=2650 epoch_ms=1\n"
         "ScoreMonitor: score=38732440 stage=0 lives=0 graze=39322200 epoch_ms=2\n"
     )
 
-    assert rc.read_final_verified_score(str(log_path), "th07") == 303766040
+    assert rc.read_verified_scores(str(log_path), "th07") == [303766040]
 
 
 def test_check_replay_desync_skips_when_expected_score_missing(tmp_path):
@@ -704,6 +703,22 @@ def test_check_replay_desync_returns_true_on_mismatch(tmp_path):
         f.write("ScoreMonitor: score=40000000 stage=6 lives=0 graze=100 epoch_ms=1\n")
 
     assert rc.check_replay_desync(config, 481237400, log=lambda msg: None) is True
+
+
+def test_check_replay_desync_matches_even_if_a_later_sample_is_garbage(tmp_path):
+    # touhou-recorder reports/54(th07 ver1.00b)で判明した新パターンのゴミ値:
+    # リプレイ終了直後、グレイズは直前と同一のままスコアだけ壊れることがある
+    # (グレイズが正常範囲内のため GRAZE_GARBAGE_MAX では弾けない)。「最後の
+    # サンプル」だけを見ると誤って不一致と判定するが、記録全体から記録スコアと
+    # 完全一致するサンプルを探す方式なら正しく一致と判定できる。
+    config = make_config(instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write(
+            "ScoreMonitor: score=30376604 stage=0 lives=1 graze=2650 epoch_ms=1\n"
+            "ScoreMonitor: score=38797976 stage=0 lives=1 graze=2650 epoch_ms=2\n"
+        )
+
+    assert rc.check_replay_desync(config, 303766040, log=lambda msg: None) is False
 
 
 def test_write_desync_result_writes_json(tmp_path):
