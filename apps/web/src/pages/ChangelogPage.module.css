@@ -12,7 +12,6 @@
 }
 
 .entry:first-child {
-  border-top: none;
   padding-top: 0;
 }
 
