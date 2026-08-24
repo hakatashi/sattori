@@ -13,8 +13,14 @@
     "footerNav": {
       "about": "このサービスについて",
       "gameInfo": "対応タイトルの情報",
-      "terms": "利用規約"
+      "terms": "利用規約",
+      "changelog": "更新履歴"
     }
+  },
+  "changelog": {
+    "heading": "更新履歴",
+    "description": "Sattoriに加えた変更を新しい順に掲載しています。",
+    "detailsLink": "詳細"
   },
   "about": {
     "heading": "Sattoriについて",

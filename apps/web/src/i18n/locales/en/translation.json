@@ -13,8 +13,14 @@
     "footerNav": {
       "about": "About",
       "gameInfo": "Supported title info",
-      "terms": "Terms of Service"
+      "terms": "Terms of Service",
+      "changelog": "Changelog"
     }
+  },
+  "changelog": {
+    "heading": "Changelog",
+    "description": "Changes made to Sattori, listed newest first.",
+    "detailsLink": "details"
   },
   "about": {
     "heading": "About Sattori",
