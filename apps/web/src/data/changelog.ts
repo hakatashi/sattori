@@ -21,8 +21,8 @@ export const changelogEntries: ChangelogEntry[] = [
   },
   {
     date: "2026-08-25",
-    ja: "確認メールが届かない場合に備え、アップロード画面へ戻ってやり直せる導線を追加",
-    en: "Added a way to go back to the upload screen if the confirmation email doesn't arrive",
+    ja: "アップロード後の画面UIを調整",
+    en: "Adjusted the UI of the post-upload screen",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/153",
   },
   {
