@@ -13,6 +13,11 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-08-24",
+    ja: "更新履歴ページ (/changelog) を追加",
+    en: "Added the changelog page (/changelog)",
+  },
+  {
     date: "2026-08-23",
     ja: "アップロード画面のドロップゾーンに注意書きを追加",
     en: "Added a notice to the upload screen's drop zone",
