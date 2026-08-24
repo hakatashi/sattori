@@ -104,8 +104,10 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
     50%/80%/100%＋予測120%の4通知。Budgets自体はメールへ直接通知するため
     `OpsAlertTopic`は経由しない）。
   - `SattoriStack`（eu-south-2）: `RecordingStateMachine`の実行失敗
-    （`ExecutionsFailed`、1時間で3件以上）、`makeHandler`経由の全Lambda
-    （21本）それぞれの`Errors`/`Throttles`（5分で1件以上）、
+    （`ExecutionsFailed`、1時間で3件以上）、Lambdaの`Errors`/`Throttles`
+    （5分で1件以上。関数ごとではなく`AWS/Lambda`のFunctionNameディメンション
+    無しアカウント全体集計に1本ずつ。CloudWatch AlarmのFree Tierに収めるため、
+    詳細は[`docs/decisions/0027`](../docs/decisions/0027-lambda-alarms-account-wide-not-per-function.md)）、
     `SendCompletionEmailFn`のログに対するメトリクスフィルタ
     （`send_completion_email_failed`、1件以上。同Lambdaは後続のDynamoDB
     Streamsレコード処理を止めないよう例外を握り潰す設計のため、これが

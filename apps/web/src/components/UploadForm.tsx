@@ -25,7 +25,7 @@ import { MagicLinkSent } from "./MagicLinkSent.tsx";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
-import { helpCircleOutline } from "ionicons/icons";
+import { helpCircleOutline, warningOutline } from "ionicons/icons";
 
 /**
  * idle: 未選択、または直前の選択がエラーで終わった状態。
@@ -509,6 +509,10 @@ export function UploadForm() {
             {t("uploadForm.dropzoneRest")}
             <br/>
             {t("uploadForm.dropzoneOr")}
+            <span className={styles.dropzoneNotice}>
+              <ion-icon icon={warningOutline} className={styles.dropzoneNoticeIcon} aria-hidden="true" />
+              {t("uploadForm.dropzoneOwnPlayNotice")}
+            </span>
           </>}
         </span>
       </label>

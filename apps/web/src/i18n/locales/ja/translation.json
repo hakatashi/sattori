@@ -13,8 +13,13 @@
     "footerNav": {
       "about": "このサービスについて",
       "gameInfo": "対応タイトルの情報",
-      "terms": "利用規約"
+      "terms": "利用規約",
+      "changelog": "更新履歴"
     }
+  },
+  "changelog": {
+    "heading": "更新履歴",
+    "description": "TouhouSattoriに加えた変更を新しい順に掲載しています。"
   },
   "about": {
     "heading": "Sattoriについて",
@@ -103,6 +108,7 @@
     "dropzoneClick": "ここをクリック",
     "dropzoneRest": "してリプレイファイル (.rpy) をアップロード",
     "dropzoneOr": "もしくはドラッグ&ドロップ",
+    "dropzoneOwnPlayNotice": "ご自身のプレイを記録したファイルを選択してください。",
     "invalidFileExtension": "リプレイファイル (.rpy) を選択してください",
     "unexpectedError": "予期しないエラーが発生しました",
     "uploading": "アップロード中…",
