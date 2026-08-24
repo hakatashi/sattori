@@ -96,6 +96,32 @@ def test_update_status_includes_optional_fields(monkeypatch):
     assert "#e = :e" in kwargs["UpdateExpression"]
 
 
+def test_update_status_includes_desync_detected(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "converting", desync_detected=True)
+
+    _, kwargs = mock_table.update_item.call_args
+    assert kwargs["ExpressionAttributeValues"][":dd"] is True
+    assert "desyncDetected = :dd" in kwargs["UpdateExpression"]
+
+
+def test_update_status_omits_desync_detected_when_not_verified(monkeypatch):
+    # Noneは「検証できなかった」場合の既定であり、この引数を渡さない呼び出しでは
+    # 他のオプション引数と同じく属性に一切触れない(JobRecord側のデフォルトnullのまま)。
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "converting")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert ":dd" not in kwargs["ExpressionAttributeValues"]
+    assert "desyncDetected" not in kwargs["UpdateExpression"]
+
+
 def test_update_status_includes_error_code(monkeypatch):
     monkeypatch.setenv("JOBS_TABLE", "jobs-table")
     mock_resource = mock_dynamodb_resource(monkeypatch)

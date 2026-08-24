@@ -46,6 +46,7 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     previewImageUrl: null,
     replayInfo: REPLAY_INFO,
     slowMotion: false,
+    desyncDetected: null,
     ...overrides,
   };
 }
@@ -92,6 +93,34 @@ describe("JobProgressView のダウンロード", () => {
     render(<JobProgressView job={buildDoneJob({ downloadExpiresAt: null })} loadError={null} />);
 
     expect(screen.queryByText(/までダウンロードできます/)).toBeNull();
+  });
+});
+
+describe("JobProgressView のリプレイずれ注意書き（Issue #103）", () => {
+  it("desyncDetected:true のジョブは注意書きを表示する", () => {
+    render(<JobProgressView job={buildDoneJob({ desyncDetected: true })} loadError={null} />);
+
+    expect(
+      screen.getByText(
+        "録画終了時のスコアが記録されたスコアと一致しませんでした。リプレイずれが発生した可能性があります",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("desyncDetected:false（一致）では注意書きを表示しない", () => {
+    render(<JobProgressView job={buildDoneJob({ desyncDetected: false })} loadError={null} />);
+
+    expect(
+      screen.queryByText(/リプレイずれが発生した可能性があります/),
+    ).toBeNull();
+  });
+
+  it("desyncDetected:null（未検証）では注意書きを表示しない", () => {
+    render(<JobProgressView job={buildDoneJob({ desyncDetected: null })} loadError={null} />);
+
+    expect(
+      screen.queryByText(/リプレイずれが発生した可能性があります/),
+    ).toBeNull();
   });
 });
 
@@ -163,6 +192,7 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     previewImageUrl: null,
     replayInfo: REPLAY_INFO,
     slowMotion: false,
+    desyncDetected: null,
     ...overrides,
   };
 }

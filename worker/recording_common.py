@@ -217,6 +217,36 @@ GEOMETRY_SETTLE_TIMEOUT_AFTER_MOVE_SEC = 3.0
 MAX_ATTEMPTS_DEFAULT = 3
 MAX_DUPLICATE_RATE_DEFAULT = 30.0
 
+# ---------------------------------------------------------------------------
+# リプレイずれ(デシンク)の事後検証(Issue #103)
+# ---------------------------------------------------------------------------
+# mods/common/score_monitor.* が1秒間隔でMODログへ出力する
+# "ScoreMonitor: score=N stage=N lives=N graze=N epoch_ms=N" 行から、リプレイ
+# 再生終了時点のゲーム内スコア(生値)を読み取る。全5タイトルで実機検証済み
+# (touhou-recorder reports/53_phase53_score_monitor_all_titles.md)。
+SCORE_MONITOR_RE = re.compile(
+    r"ScoreMonitor: score=(\d+) stage=(-?\d+) lives=(-?\d+) graze=(-?\d+) epoch_ms=(\d+)"
+)
+
+# MOD内部のスコア生値を画面表示値(=リプレイファイルの記録スコアと同じ単位)へ
+# 換算する倍率。タイトルごとに実機で確認済みの値
+# (reports/53_phase53_score_monitor_all_titles.md)。th06のみ等倍で、他は
+# TH10以降のエンジンの慣習(内部値が表示値の1/10)を引き継いでいる。
+GAME_SCORE_MULTIPLIERS = {
+    "th06": 1,
+    "th07": 10,
+    "th08": 10,
+    "th11": 10,
+    "th20": 10,
+}
+
+# th07/th08(ポインタ間接参照方式)は、状態構造体が未初期化/解放済みの一瞬だけ
+# 別用途のメモリを読んでしまい、グレイズが現実離れした値(例: -1878654718)になる
+# 「ゴミ値」サンプルが1回だけ記録されることがある(reports/53参照)。グレイズは
+# どのタイトル・どの局面でも現実的な上限を大きく超えることがないため、この範囲を
+# 外れたサンプルは機械的に除外する。
+GRAZE_GARBAGE_MAX = 1_000_000
+
 
 @dataclass(frozen=True)
 class GameConfig:
@@ -747,6 +777,73 @@ def scan_fps_runaway(log_path):
     return None
 
 
+def read_final_verified_score(log_path, game_id):
+    """MODのScoreMonitorログから、リプレイ再生終了時点の画面表示相当スコアを読み取る
+    (取得できなければNone)。
+
+    ログの最終行をそのまま採用すると、th07/th08で状態構造体が解放された直後に
+    別用途で再利用されたメモリを読んでしまう「ゴミ値」(GRAZE_GARBAGE_MAX参照)を
+    拾ってしまうことがある(reports/53)。該当サンプルを除外したうえで最後の1件を
+    採用する。"""
+    if not os.path.exists(log_path):
+        return None
+    with open(log_path) as f:
+        text = f.read()
+    raw_score = None
+    for m in SCORE_MONITOR_RE.finditer(text):
+        score, graze = int(m.group(1)), int(m.group(4))
+        if graze < 0 or graze > GRAZE_GARBAGE_MAX:
+            continue
+        raw_score = score
+    if raw_score is None:
+        return None
+    return raw_score * GAME_SCORE_MULTIPLIERS.get(game_id, 1)
+
+
+def check_replay_desync(config, expected_score, log=print):
+    """録画終了時点のゲーム内スコアと、リプレイファイルに記録された最終スコアを
+    突き合わせ、リプレイずれ(デシンク)が疑われるかを判定する(Issue #103)。
+
+    MODがRVA直指定で読んでいる生値に基づく検証であり、信頼性が高いとは言えない
+    (ゲームデータのバージョン差で無意味な値になりうる、reports/53)。そのため
+    不一致を検知しても自動リトライ・失敗扱いはせず、警告として記録するだけに
+    留める(呼び出し側がJobsTableへ書き込み、ユーザーには注意書きとして表示する)。
+
+    戻り値: True=不一致(リプレイずれの疑い)、False=一致、None=検証できなかった
+    (期待スコア未取得、またはMODのログから有効なスコアが読み取れなかった)。
+    """
+    if expected_score is None:
+        return None
+    final_score = read_final_verified_score(config.log_path, config.game_id)
+    if final_score is None:
+        log("リプレイずれ検証: MODのスコアログが取得できなかったため検証をスキップしました")
+        return None
+    if final_score == expected_score:
+        log(f"リプレイずれ検証: 録画終了時のスコア({final_score})は記録スコアと一致しました")
+        return False
+    log(
+        f"WARNING: リプレイずれの可能性があります。録画終了時のスコア({final_score})が"
+        f"記録されたスコア({expected_score})と一致しません"
+    )
+    return True
+
+
+def write_desync_result(path, desync_detected):
+    """リプレイずれ検証の結果をJSONへ書き出す。
+
+    record_with_retry()は record_thNN.py という別プロセス(entrypoint.pyの
+    subprocess.run経由)で動くため、戻り値をそのまま親プロセスへ返せない。
+    ProgressReporterのstate.json(save_progress_snapshot())と同じファイル受け渡しの
+    方式を使い、entrypoint.py側がジョブ完了後にこれを読んでJobsTableへ書き込む。
+    """
+    if not path:
+        return
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w") as f:
+        json.dump({"desyncDetected": desync_detected}, f)
+    os.replace(tmp_path, path)
+
+
 def save_progress_snapshot(progress_dir, color_frame, elapsed_seconds, expected_duration_seconds):
     """録画中の画面プレビュー(frame.jpg)と進捗算出用の状態(state.json)を書き出す。
     entrypoint.py側のバックグラウンドスレッドがこれをポーリングしてS3へアップロードする。
@@ -1252,6 +1349,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
 def record_with_retry(config, replay_path, output_path, *,
                        progress_dir=None, expected_duration_seconds=None,
                        max_attempts=MAX_ATTEMPTS_DEFAULT, max_duplicate_rate=MAX_DUPLICATE_RATE_DEFAULT,
+                       expected_score=None, desync_result_path=None,
                        log=print):
     """attempt_recording()を最大max_attempts回試行し、fps暴走・処理落ちの早期検知や
     事後の重複フレーム率チェックに引っかかった場合は出力を破棄してリトライする。
@@ -1260,18 +1358,24 @@ def record_with_retry(config, replay_path, output_path, *,
     このジョブ専用のPulseAudio null-sink(config.pulse_sink)はここで作成し、成功・失敗を
     問わず戻る際に破棄する(Issue #48)。全試行で同じsinkを使い回す(試行ごとにWineと
     録音ffmpegは起動し直されるため、sinkだけを共有しても前試行の残留ストリームは残らない)。
+
+    expected_score/desync_result_path はリプレイずれの事後検証(Issue #103、
+    check_replay_desync()参照)用。録画が成功した時点で1回だけ検証し、
+    desync_result_path が指定されていれば結果をJSONへ書き出す。
     """
     with pulse.job_sink(config.pulse_sink, log=log):
         return _record_with_retry(
             config, replay_path, output_path,
             progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
-            max_attempts=max_attempts, max_duplicate_rate=max_duplicate_rate, log=log,
+            max_attempts=max_attempts, max_duplicate_rate=max_duplicate_rate,
+            expected_score=expected_score, desync_result_path=desync_result_path, log=log,
         )
 
 
 def _record_with_retry(config, replay_path, output_path, *,
                        progress_dir, expected_duration_seconds,
-                       max_attempts, max_duplicate_rate, log):
+                       max_attempts, max_duplicate_rate,
+                       expected_score, desync_result_path, log):
     for attempt in range(1, max_attempts + 1):
         log(f"=== 試行 {attempt}/{max_attempts} ===")
         result = attempt_recording(
@@ -1302,6 +1406,8 @@ def _record_with_retry(config, replay_path, output_path, *,
             continue
 
         log(f"試行{attempt}で正常な録画を確認しました")
+        desync_detected = check_replay_desync(config, expected_score, log=log)
+        write_desync_result(desync_result_path, desync_detected)
         return True
 
     log(f"ERROR: {max_attempts}回試行しても正常な録画が得られませんでした")

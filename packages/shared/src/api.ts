@@ -137,6 +137,13 @@ export interface GetJobResponse {
    * 織り込むために使う（`apps/web/src/hooks/jobProgressBudget.ts`）。
    */
   slowMotion: boolean;
+  /**
+   * リプレイずれ（デシンク）の疑い（Issue #103、`JobRecord.desyncDetected`をそのまま
+   * 転記）。`true`のときページBは「録画終了時のスコアが記録されたスコアと一致
+   * しませんでした。リプレイずれが発生した可能性があります」という注意書きを出す
+   * （自動失敗・再試行はしない——判定の信頼性が高くないため）。
+   */
+  desyncDetected: boolean | null;
 }
 
 /**

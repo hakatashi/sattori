@@ -21,7 +21,7 @@ cd worker/mods/th11_replay_autoplay
 mkdir -p build
 i686-w64-mingw32-g++ -shared -O2 -o build/th11_hook.dll \
   dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
-  ../common/logging.cpp ../common/fps_monitor.cpp \
+  ../common/logging.cpp ../common/fps_monitor.cpp ../common/score_monitor.cpp \
   -luser32 -static-libgcc -static-libstdc++
 ```
 
@@ -46,16 +46,20 @@ i686-w64-mingw32-g++ -shared -O2 -o build/th20_hook.dll \
 ## th06 / th07 / th08（mingw-w64）
 
 `fps_monitor.cpp` を含めるかどうかだけが違う。th06/th07 は含めず、th08 は含める
-（fps 暴走検知用、touhou-recorder reports/22）。
+（fps 暴走検知用、touhou-recorder reports/22）。`score_monitor.cpp`（リプレイずれ
+判定用のスコア監視、Issue #103）は3タイトルとも共通で含める。
 
 ```bash
 cd worker/mods/th08_replay_autoplay
 mkdir -p build
 i686-w64-mingw32-g++ -shared -O2 -o build/th08_hook.dll \
   dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
-  ../common/logging.cpp ../common/fps_monitor.cpp \
+  ../common/logging.cpp ../common/fps_monitor.cpp ../common/score_monitor.cpp \
   -luser32 -static-libgcc -static-libstdc++
 ```
+
+th06/th07 は上記コマンドから `../common/fps_monitor.cpp` を除いたもの（`dllmain.cpp`
+を各ディレクトリのものに差し替える）。
 
 ## MSVC（正式なビルド経路。このマシンでは実行できない）
 
@@ -77,10 +81,10 @@ worker\mods\th20_replay_autoplay\build.bat
   （タイトル非依存の共通バイナリ。複数 DLL の順次注入に対応し、th06 の VsyncPatch と MOD
   本体の共存に使う）。
 - 各 `build.bat` がリンクするソースの組み合わせは上記の mingw コマンドと同じ
-  （th06/th07 は `dinput_hook` / `window_wait` / `logging`、th08/th11 は `fps_monitor` を
-  追加、th20 はさらに `fps_limiter_hook` / `dsound_hook` / `fps_display_hook` /
-  `score_monitor`)。th11 は `InstallKeyboardStateHook` を使うが、リンクするソースファイル
-  自体は th08 と同じ構成。
+  （th06/th07/th08/th11 はいずれも `dinput_hook` / `window_wait` / `logging` /
+  `score_monitor` を含み、th08/th11 だけ `fps_monitor` を追加、th20 はさらに
+  `fps_limiter_hook` / `dsound_hook` / `fps_display_hook`)。th11 は
+  `InstallKeyboardStateHook` を使うが、リンクするソースファイル自体は th08 と同じ構成。
 
 ## th06 / th07 / th08 のビルド済み DLL はソースと乖離している
 

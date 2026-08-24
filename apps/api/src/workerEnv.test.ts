@@ -58,4 +58,29 @@ describe("buildWorkerEnv", () => {
     expect(redacted.TASK_TOKEN).toBeUndefined();
     expect(redacted.FPS_LIMIT_TARGET_HZ).toBe(String(SLOW_MOTION_TARGET_HZ));
   });
+
+  it("replayInfo.score があればリプレイずれ検証用に EXPECTED_SCORE を付ける(Issue #103)", () => {
+    const jobWithScore = {
+      ...job,
+      replayInfo: { score: 481237400 },
+    } as unknown as JobRecord;
+
+    const env = buildWorkerEnv(config, jobWithScore, "task-token", { slowMotion: false });
+
+    expect(env.EXPECTED_SCORE).toBe("481237400");
+  });
+
+  it("replayInfo が無い/score が未取得なら EXPECTED_SCORE を付けない", () => {
+    const envWithoutReplayInfo = buildWorkerEnv(config, job, "task-token", { slowMotion: false });
+    expect(envWithoutReplayInfo.EXPECTED_SCORE).toBeUndefined();
+
+    const jobWithNullScore = {
+      ...job,
+      replayInfo: { score: null },
+    } as unknown as JobRecord;
+    const envWithNullScore = buildWorkerEnv(config, jobWithNullScore, "task-token", {
+      slowMotion: false,
+    });
+    expect(envWithNullScore.EXPECTED_SCORE).toBeUndefined();
+  });
 });

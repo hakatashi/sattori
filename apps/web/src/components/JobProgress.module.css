@@ -216,6 +216,17 @@
   font-size: 0.875rem;
 }
 
+/* リプレイずれ（デシンク）の疑いの注意書き（Issue #103）。判定の信頼性が高くないため
+   失敗（--danger）ではなく警告色で出す（UploadForm.module.cssの.noticeと同じ方針）。 */
+.desyncWarning {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  color: var(--warning-text);
+  font-size: 0.85rem;
+  background: var(--warning);
+  border-radius: var(--radius);
+}
+
 .preview {
   display: flex;
   flex-direction: column;

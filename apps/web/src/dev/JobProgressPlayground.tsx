@@ -32,6 +32,7 @@ const BASE: Omit<
   updatedAt: new Date().toISOString(),
   replayInfo: SAMPLE_REPLAY_INFO,
   slowMotion: false,
+  desyncDetected: null,
 };
 
 function buildJob(overrides: Partial<GetJobResponse> & { status: JobStatus }): GetJobResponse {

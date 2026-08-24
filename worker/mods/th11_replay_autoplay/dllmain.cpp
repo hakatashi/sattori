@@ -28,6 +28,7 @@
 #include "../common/window_wait.h"
 #include "../common/logging.h"
 #include "../common/fps_monitor.h"
+#include "../common/score_monitor.h"
 
 using namespace autoplay;
 
@@ -97,6 +98,30 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         Log("DLL_PROCESS_ATTACH: installing IAT hooks");
         InstallDinputHook();
         InstallKeyboardStateHook();
+        // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
+        // (thprac_th11.cpp)の`Globals* globals = (Globals*)0x4a56e0`(絶対VA、
+        // RVA=0xa56e0)由来。th20と同じくポインタ間接参照は不要(構造体自体が固定
+        // RVAに置かれている)。score(int32, +0x04)は画面表示値の1/10(th07/th20と
+        // 同じ慣習)。stage(+0x48)はthprac側の`STAGE_NUM`列挙値(=globals+0x48)と
+        // 一致することを構造体オフセット計算で裏付け済み。フル尺録画でリプレイ
+        // 記録スコアとの完全一致を実機確認済み(touhou-recorder
+        // reports/53_phase53_score_monitor_all_titles.md、ゲームオーバーで終わる
+        // リプレイでも最終スコアが記録値と厳密に一致することまで確認済み)。
+        {
+            ScoreMonitorConfig sm;
+            sm.baseRva = 0xa56e0;
+            sm.baseIsPointer = false;
+            sm.scoreOffset = 0x04;
+            sm.scoreWidth = 4;
+            sm.stageOffset = 0x48;
+            sm.stageWidth = 4;
+            sm.livesOffset = 0x38;
+            sm.livesWidth = 4;
+            sm.grazeOffset = 0x74;
+            sm.grazeWidth = 4;
+            sm.intervalMs = 1000;
+            StartScoreMonitorThread(sm);
+        }
         StartFpsMonitorThread();
         CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
     }

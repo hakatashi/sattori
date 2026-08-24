@@ -199,6 +199,7 @@
     "elapsed": "{{time}} elapsed",
     "etaMinutes": "About {{minutes}} min remaining",
     "retryHint": "This is taking longer than usual. Please wait a bit longer.",
+    "desyncWarning": "The in-game score at the end of recording didn't match the score recorded in the replay file. A replay desync may have occurred.",
     "slowMotionHint": "Slow-motion recording is being used to prioritize quality, so this takes about twice as long as usual.",
     "genericError": "A problem occurred while recording. Please try again.",
     "previewVideoLabel": "Preview of the recorded video",
