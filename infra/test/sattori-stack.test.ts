@@ -79,6 +79,20 @@ describe("SattoriStack", () => {
     expect(Object.keys(resources).length).toBeGreaterThanOrEqual(8);
   });
 
+  it("送信元アドレスに表示名を付け、問い合わせ先をReply-Toとして渡している(Issue #139 UX-5)", () => {
+    const resources = template.findResources("AWS::Lambda::Function", {
+      Properties: {
+        Environment: {
+          Variables: Match.objectLike({
+            SES_FROM_ADDRESS: "Sattori <no-reply@sattori.hakatashi.com>",
+            SES_REPLY_TO_ADDRESS: "ops@example.com",
+          }),
+        },
+      },
+    });
+    expect(Object.keys(resources).length).toBeGreaterThanOrEqual(1);
+  });
+
   it("CloudFront は配信用と Web 用の2つ", () => {
     template.resourceCountIs("AWS::CloudFront::Distribution", 2);
   });

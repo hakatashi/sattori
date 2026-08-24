@@ -15,6 +15,18 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-25",
+    ja: "アップロード画面から他ページへ移動後、ブラウザで戻っても入力内容が消えないよう修正",
+    en: "Fixed input on the upload screen being lost after navigating away and back with the browser",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/139",
+  },
+  {
+    date: "2026-08-25",
+    ja: "アップロード後の画面UIを調整",
+    en: "Adjusted the UI of the post-upload screen",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/153",
+  },
+  {
+    date: "2026-08-25",
     ja: "追加ワーカーの通信障害を検知し、録画処理を自動でAWS側へ切り替える仕組みを追加",
     en: "Added detection of additional-worker network issues that automatically falls back recording to AWS",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/165",

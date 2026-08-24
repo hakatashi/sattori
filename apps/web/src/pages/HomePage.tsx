@@ -1,18 +1,11 @@
-import { useState } from "react";
 import { UploadForm } from "../components/UploadForm.tsx";
-import { MagicLinkSent } from "../components/MagicLinkSent.tsx";
 
-type View = { kind: "upload" } | { kind: "sent"; email: string };
-
-/** ページA（`/`）。リプレイのアップロード〜マジックリンク送信要求まで。 */
+/**
+ * ページA（`/`）。リプレイのアップロード〜マジックリンク送信要求まで。送信後の
+ * 「メールを確認してください」画面（`MagicLinkSent`）はファイル選択・`replayKey`を
+ * 保持したまま「戻る」で入力フォームへ戻れる必要があるため、`UploadForm`が
+ * 自身のstateとして内包する。
+ */
 export function HomePage() {
-  const [view, setView] = useState<View>({ kind: "upload" });
-
-  if (view.kind === "sent") {
-    return (
-      <MagicLinkSent email={view.email} />
-    );
-  }
-
-  return <UploadForm onMagicLinkSent={(email) => setView({ kind: "sent", email })} />;
+  return <UploadForm />;
 }

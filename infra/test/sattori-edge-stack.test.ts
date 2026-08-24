@@ -29,6 +29,20 @@ describe("SattoriEdgeStack", () => {
     });
   });
 
+  it("SPFアラインメント用にカスタムMAIL FROMドメインを設定している(Issue #139 UX-5)", () => {
+    template.hasResourceProperties("AWS::SES::EmailIdentity", {
+      MailFromAttributes: Match.objectLike({
+        MailFromDomain: "mail.sattori.hakatashi.com",
+      }),
+    });
+    const outputs = template.findOutputs("*");
+    const values = Object.values(outputs)
+      .map((output) => output.Value)
+      .filter((value): value is string => typeof value === "string");
+    expect(values.some((value) => value.includes("mail.sattori.hakatashi.com MX"))).toBe(true);
+    expect(values.some((value) => value.includes("mail.sattori.hakatashi.com TXT"))).toBe(true);
+  });
+
   it("SESのConfigurationSetがバウンス・苦情・拒否イベントをSNSへ流す(Issue #133 OPS-1)", () => {
     template.resourceCountIs("AWS::SES::ConfigurationSet", 1);
     template.hasResourceProperties("AWS::SES::ConfigurationSetEventDestination", {
