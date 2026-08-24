@@ -5,7 +5,11 @@
  * **AWSが自宅を叩くのではなく、自宅がジョブを取りに行くPull型**にしている。
  * 1周ごとに:
  *
- *   1. 自身の空き状況を `WorkersTable` へハートビートとして書く。
+ *   1. 余力があり、かつ`networkCheckIntervalSec`ごとの疎通確認（`#checkNetworkIfDue`、
+ *      Issue #160）でコンテナのネットワーク名前空間からAWSへ実際に到達できることを
+ *      確かめられていれば、自身の空き状況を `WorkersTable` へハートビートとして書く
+ *      （疎通が無ければ `accepting: false` を書いて候補から外れる——ホストは正常でも
+ *      コンテナだけ通信不能という障害は、ホスト発のハートビートだけでは検知できない）。
  *   2. 余力があれば、オファー中のジョブ（sparse GSI `HomeWorkerOfferIndex`）を探し、
  *      条件付き更新で原子的にclaimする。
  *   3. claimできたらワーカーコンテナ（EC2と同一のECRイメージ）を起動し、その出力を
@@ -54,6 +58,7 @@ import { CredentialProvider } from "./credentials.js";
 import type { CredentialSource, TemporaryCredentials } from "./credentials.js";
 import { publishHeartbeat as writeHeartbeat } from "./heartbeat.js";
 import { CloudWatchLogShipper } from "./logShipper.js";
+import { checkContainerNetwork } from "./network.js";
 import { ContainerRun, ImagePreparationError, ecrLogin, pullImage } from "./runner.js";
 import type { Killable, RunCommand, SpawnContainer } from "./runner.js";
 import { Signal, sleep } from "./signal.js";
@@ -125,6 +130,9 @@ export class HomeWorkerDaemon {
   /** jobId -> 実行中ジョブ（claim直後、コンテナ起動前から登録する）。 */
   readonly #running = new Map<string, RunningJob>();
   #lastHeartbeatAtMs = 0;
+  #lastNetworkCheckAtMs = 0;
+  /** 直近の疎通確認の結果。起動直後は健全と仮定する（1周目で即座に確認し直る）。 */
+  #networkHealthy = true;
   #documents: DynamoDBDocumentClient | undefined;
   #logs: CloudWatchLogsClient | undefined;
   #ecr: ECRClient | undefined;
@@ -214,7 +222,10 @@ export class HomeWorkerDaemon {
   async tick(): Promise<void> {
     const active = this.activeJobs();
     const load = this.#loadPerCpu();
-    const accepting = !this.#stopping.isSet && canAccept(this.#config, active, load);
+    const capacityOk = !this.#stopping.isSet && canAccept(this.#config, active, load);
+    // 空きが無い/停止中なら疎通確認自体が無意味なので省く(不要なdocker runを避ける)。
+    const networkHealthy = capacityOk ? await this.#checkNetworkIfDue() : this.#networkHealthy;
+    const accepting = capacityOk && networkHealthy;
     await this.publishHeartbeat(accepting, active);
     if (!accepting) {
       return;
@@ -258,6 +269,39 @@ export class HomeWorkerDaemon {
       activeJobs,
     });
     this.#lastHeartbeatAtMs = now;
+  }
+
+  /**
+   * `networkCheckIntervalSec`ごとに、コンテナのネットワーク名前空間から実際に
+   * AWSへ到達できるかを確認する（Issue #160）。ホストは正常なのにコンテナだけ
+   * 通信不能という障害はホスト発のハートビートだけでは検知できず、これを見逃すと
+   * AWS側は自宅ワーカーを健在と判断し続けてジョブを自宅へ出し続け、EC2への
+   * フォールバックが一度も起こらないままリトライを消費し尽くす。
+   *
+   * 確認自体が例外になった場合（`docker`コマンドが無い等）は前回の判定を維持する。
+   * 「確認できない」を「異常」へ倒すと、確認手段自体の一時的な不調で自宅ワーカーが
+   * 恒久的に使われなくなりかねない。
+   */
+  async #checkNetworkIfDue(): Promise<boolean> {
+    const now = Date.now();
+    if (now - this.#lastNetworkCheckAtMs < this.#config.networkCheckIntervalSec * 1000) {
+      return this.#networkHealthy;
+    }
+    this.#lastNetworkCheckAtMs = now;
+    try {
+      const healthy = await checkContainerNetwork(this.#config, { run: this.#runnerOptions.run });
+      if (healthy !== this.#networkHealthy) {
+        this.#log(
+          healthy
+            ? "コンテナのネットワーク疎通が回復しました。claimを再開します"
+            : "コンテナからAWSへ到達できません(Issue #160)。新規claimを停止します",
+        );
+      }
+      this.#networkHealthy = healthy;
+    } catch (err) {
+      this.#log(`ネットワーク疎通確認でエラーが発生しました(前回の判定を維持): ${String(err)}`);
+    }
+    return this.#networkHealthy;
   }
 
   /**
