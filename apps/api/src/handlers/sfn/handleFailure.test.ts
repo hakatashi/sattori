@@ -27,6 +27,7 @@ const REQUIRED_ENV: Record<string, string> = {
   SES_REPLY_TO_ADDRESS: "reply@example.com",
   SES_CONFIGURATION_SET: "sattori-config-set",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
+  ANALYTICS_EVENTS_TABLE: "sattori-analytics-events",
 };
 
 const ec2Mock = mockClient(EC2Client);

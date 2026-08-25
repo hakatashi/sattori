@@ -45,6 +45,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | `admin/stopJob.ts` | `POST /admin/jobs/{jobId}/stop` | 暴走ジョブの緊急停止（実行停止→インスタンス終了→`failed`確定） |
 | `admin/retryJob.ts` | `POST /admin/jobs/{jobId}/retry` | 失敗ジョブの再実行（**新しいjobId**へ複製して起動） |
 | `admin/getCosts.ts` | `GET /admin/costs` | コスト推定の日次/週次/月次集計（全件Scan + アプリ側集計） |
+| `admin/getAnalytics.ts` | `GET /admin/analytics` | 訪問者アナリティクスの日別集計（ユニーク訪問者数・ページビュー数・パースエラー件数・属性別内訳、Issue #149。§13） |
 | `admin/getSettings.ts` | `GET /admin/settings` | キルスイッチ・月間コストガード閾値の現在値と当月推定コストを取得（Issue #14） |
 | `admin/updateSettings.ts` | `POST /admin/settings` | キルスイッチ・月間コストガード閾値の更新（Issue #14） |
 | `recordAnalyticsEvent.ts` | `POST /beacon` | Cookie無しの計測ビーコンの受け口。pageview/parse_errorイベントを`AnalyticsEventsTable`へ記録する（Issue #142。§13） |
@@ -337,8 +338,8 @@ Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId�
 `sweepOrphanInstances.ts`専用の`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
 `ADMIN_TOKEN_PARAMETER_NAME`、`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定、
 `sweepOrphanInstances.ts`専用の`JOBS_TABLE`単独指定）
-から注入される。`loadConfig()`が必須環境変数の存在を
-検証する（管理API用Lambdaは`commonEnv`を使わず個別の環境変数のみを持つ）。
+から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
+`admin/getLogs.ts`・`RecordAnalyticsEventFn`以外の管理API用Lambdaは`commonEnv`を使う）。
 
 `SES_CONFIGURATION_SET`は`SattoriEdgeStack`が作った`ses.ConfigurationSet`名
 （`crossRegionReferences`経由）。`ses.ts`が`SendEmailCommand`へ指定し、
@@ -379,8 +380,9 @@ Cookie/localStorageを一切使わないサーバーサイド計測。フロン�
   設計の詳細は
   [`docs/decisions/0026`](../../docs/decisions/0026-hashed-visitor-id-daily-salt.md)。
 - **`RecordAnalyticsEventFn`は`commonEnv`を使わない**（`loadAnalyticsConfig()`が
-  `ANALYTICS_EVENTS_TABLE`・`SETTINGS_TABLE`のみを読む）。管理系Lambdaと同じ理由で、
-  計測用テーブル・salt保管用の`SettingsTable`の読み書きしか行わないため（§12）。
+  `ANALYTICS_EVENTS_TABLE`・`SETTINGS_TABLE`のみを読む）。`admin/authorizer.ts`・
+  `admin/getLogs.ts`と同じく、計測用テーブルとsalt保管用の`SettingsTable`の
+  読み書きしか行わないため（§12）。
 - 計測の失敗（DynamoDB書き込みエラー等）はユーザー体験に影響させないため、常に
   202を返す（呼び出し側は`navigator.sendBeacon`でレスポンスを見ない）。
 
@@ -388,7 +390,9 @@ Cookie/localStorageを一切使わないサーバーサイド計測。フロン�
 > 必ず[`docs/decisions/0024`](../../docs/decisions/0024-cookieless-analytics-beacon.md)
 > の「あえて集めないもの」と
 > [`docs/decisions/0026`](../../docs/decisions/0026-hashed-visitor-id-daily-salt.md)
-> を確認してから行うこと。**
+> を確認してから行うこと。** 集計（`GET /admin/analytics`、Issue #149）は
+> `adminAnalytics.ts`が日付ごとにQueryして行う（Scanの`adminCosts.ts`とは違う）。
+> 詳細は[`docs/decisions/0029`](../../docs/decisions/0029-analytics-aggregation-daily-only-uniques.md)。
 
 ## 14. テスト
 

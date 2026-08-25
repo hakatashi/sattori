@@ -51,6 +51,12 @@ export function AdminLayout({ children, onLogout }: Props) {
             コスト
           </NavLink>
           <NavLink
+            to="/admin/analytics"
+            className={({ isActive }) => (isActive ? styles.navLinkActive : styles.navLink)}
+          >
+            アナリティクス
+          </NavLink>
+          <NavLink
             to="/admin/settings"
             className={({ isActive }) => (isActive ? styles.navLinkActive : styles.navLink)}
           >
