@@ -276,8 +276,8 @@ UserDataスクリプトがやること:
 `admin/authorizer.ts`専用の`ADMIN_TOKEN_PARAMETER_NAME`、
 `admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定、
 `sweepOrphanInstances.ts`/`sweepStalledJobs.ts`専用の`JOBS_TABLE`単独指定、
-`admin/getCosts.ts`専用のCloudFront実配信量取得用`CLOUDFRONT_DISTRIBUTION_ID`
-（Issue #163）から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
+`admin/getCosts.ts`専用のCloudFront実配信量取得用`CLOUDFRONT_DISTRIBUTION_ID`、
+Issue #163）から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
 `admin/getLogs.ts`・`RecordAnalyticsEventFn`以外の管理API用Lambdaは`commonEnv`を使う）。
 
 `SES_CONFIGURATION_SET`は`SattoriEdgeStack`が作った`ses.ConfigurationSet`名
