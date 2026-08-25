@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { marshall } from "@aws-sdk/util-dynamodb";
-import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
+import {
+  DescribeExecutionCommand,
+  ExecutionDoesNotExist,
+  SFNClient,
+  StartExecutionCommand,
+} from "@aws-sdk/client-sfn";
 import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import type { JobRecord } from "@sattori/shared";
@@ -182,6 +187,50 @@ describe("POST /jobs/{jobId}/start", () => {
     // ReturnValuesOnConditionCheckFailureで取得した既存itemを使うため、ジョブ自体への
     // 追加のGetItem往復は発生しない(job取得1回+キルスイッチ確認用のsettings取得1回)。
     expect(ddbMock.commandCalls(GetCommand)).toHaveLength(2);
+  });
+
+  it("queuedで実行がabsentなら StartExecution を張り直す(Issue #132 経路a)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...pendingJob, status: "queued" } });
+    sfnMock
+      .on(DescribeExecutionCommand)
+      .rejects(new ExecutionDoesNotExist({ message: "does not exist", $metadata: {} }));
+    sfnMock.on(StartExecutionCommand).resolves({ executionArn: "arn:exec", startDate: new Date() });
+
+    const { handler } = await import("./startJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const result = res as APIGatewayProxyStructuredResultV2;
+
+    expect(result.statusCode).toBe(200);
+    expect(parseBody(result)).toEqual({ jobId: "job-1", status: "queued" });
+    expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(1);
+    // startPendingJobは既にqueued確定済みなので、条件付き更新はやり直さない。
+    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);
+  });
+
+  it("queuedで実行が生きていれば再起動せず現在の状態を返す", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...pendingJob, status: "queued" } });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "RUNNING" });
+
+    const { handler } = await import("./startJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const result = res as APIGatewayProxyStructuredResultV2;
+
+    expect(result.statusCode).toBe(200);
+    expect(parseBody(result)).toEqual({ jobId: "job-1", status: "queued" });
+    expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(0);
+  });
+
+  it("queuedでDescribeExecutionが判定不能なら再起動せず現在の状態を返す(安全側)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...pendingJob, status: "queued" } });
+    sfnMock.on(DescribeExecutionCommand).rejects(new Error("throttled"));
+
+    const { handler } = await import("./startJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const result = res as APIGatewayProxyStructuredResultV2;
+
+    expect(result.statusCode).toBe(200);
+    expect(parseBody(result)).toEqual({ jobId: "job-1", status: "queued" });
+    expect(sfnMock.commandCalls(StartExecutionCommand)).toHaveLength(0);
   });
 
   it("StartExecution失敗時はジョブをfailedにし502を返す", async () => {
