@@ -35,6 +35,7 @@ Issue の作り方・GitHub Projects のカラム運用・PR の作法。Issue �
 
 ## 4. PR
 
+- PR をマージする際は **merge commit 方式**を用いる（squash・rebase は使わない）。
 - Issue に対応する PR を作成する際は、**本文に `Closes #xxx` 形式のコメントを書く**。
   マージ時に Issue が自動クローズされるようにするため。
 - **Issue を解決する修正は直接 main にコミットせず、必ず PR を作成する**（上記の
