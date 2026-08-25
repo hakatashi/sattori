@@ -16,6 +16,7 @@ import type {
   CostGranularity,
   JobCostInput,
 } from "@sattori/shared";
+import { fetchMeasuredCloudFrontBytesByMonth } from "./cloudfrontMetrics.js";
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -45,6 +46,15 @@ export interface CostSummaryParams {
   limit: number;
   /** 「現在時刻」。実行中ジョブの課金時間算出に使う（テストで固定するため注入する）。 */
   now: Date;
+  /**
+   * 指定するとCloudWatchから実配信量（Issue #163、`AdminCloudFrontMonth.measuredDeliveryBytes`）
+   * も取得して併記する。省略時は実測値の取得自体を行わない——月間コストガード
+   * （`costGuard.ts`の`estimateCurrentMonthCostUsd()`）は推定合計だけを必要とし、
+   * 新規受付を止めるかどうかの判定経路に外部APIへの依存を増やしたくないため
+   * （`docs/decisions/0021`と同じ「付随データは本体を壊さない」方針。ここでは
+   * 「付随データの取得自体をそもそも呼ばない」形で徹底する）。
+   */
+  cloudFrontDistributionId?: string;
 }
 
 export interface CostSummaryResult {
@@ -78,6 +88,12 @@ function newBucket(key: string): MutableBucket {
       unknownOutputSizeJobs: 0,
     },
   };
+}
+
+/** `YYYY-MM`（UTC）をその月初0時のDateへ変換する（CloudWatch取得範囲の起点用）。 */
+function monthStart(month: string): Date {
+  const [year, monthIndex] = month.split("-").map(Number) as [number, number];
+  return new Date(Date.UTC(year, monthIndex - 1, 1));
 }
 
 /** クエリパラメータの`granularity`を検証する。不正・未指定なら null。 */
@@ -215,13 +231,30 @@ export async function summarizeCosts(
     jobCount += bucket.jobCount;
   }
 
-  const cloudFront: AdminCloudFrontMonth[] = [...deliveryBytesByMonth.entries()]
+  const cloudFrontMonths = [...deliveryBytesByMonth.entries()]
     .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
-    .slice(0, CLOUDFRONT_MONTHS_LIMIT)
-    .map(([month, deliveryBytes]) => {
-      const { deliveryGb, overageGb, usd } = estimateCloudFrontCost(deliveryBytes);
-      return { month, deliveryBytes, deliveryGb, overageGb, usd };
-    });
+    .slice(0, CLOUDFRONT_MONTHS_LIMIT);
+
+  const measuredByMonth =
+    params.cloudFrontDistributionId !== undefined && cloudFrontMonths.length > 0
+      ? await fetchMeasuredCloudFrontBytesByMonth(
+          params.cloudFrontDistributionId,
+          monthStart(cloudFrontMonths[cloudFrontMonths.length - 1]![0]),
+          params.now,
+        )
+      : new Map<string, number>();
+
+  const cloudFront: AdminCloudFrontMonth[] = cloudFrontMonths.map(([month, deliveryBytes]) => {
+    const { deliveryGb, overageGb, usd } = estimateCloudFrontCost(deliveryBytes);
+    return {
+      month,
+      deliveryBytes,
+      deliveryGb,
+      overageGb,
+      usd,
+      measuredDeliveryBytes: measuredByMonth.get(month) ?? null,
+    };
+  });
 
   return {
     // 内部用の`quality`を落として`AdminCostBucket`の形に揃える。

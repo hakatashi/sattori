@@ -3,3 +3,6 @@ packages:
   - "packages/*"
   - "infra"
   - "home-worker"
+
+overrides:
+  "@smithy/types": "4.16.1"

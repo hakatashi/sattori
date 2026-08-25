@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { CloudWatchClient, GetMetricDataCommand } from "@aws-sdk/client-cloudwatch";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
@@ -7,6 +8,7 @@ import type { JobCostInput } from "@sattori/shared";
 import { estimateCurrentMonthCostUsd, parseGranularity, summarizeCosts } from "./adminCosts.js";
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
+const cloudwatchMock = mockClient(CloudWatchClient);
 
 const NOW = new Date("2026-08-02T00:00:00.000Z");
 
@@ -101,6 +103,7 @@ describe("自宅ワーカーのジョブの扱い（Issue #49）", () => {
 describe("summarizeCosts", () => {
   beforeEach(() => {
     ddbMock.reset();
+    cloudwatchMock.reset();
   });
 
   it("Scanのページングを追い切って全件集計する", async () => {
@@ -222,6 +225,61 @@ describe("summarizeCosts", () => {
     expect(result.cloudFront[0]?.month).toBe("2026-08");
     expect(result.cloudFront[0]?.overageGb).toBeCloseTo(100, 6);
     expect(result.cloudFront[0]?.usd).toBeCloseTo(100 * 0.085, 6);
+  });
+
+  it("cloudFrontDistributionIdを渡さなければCloudWatchを呼ばず、実測値はnullになる（Issue #163）", async () => {
+    ddbMock.on(ScanCommand).resolves({ Items: [job()] });
+
+    const result = await summarizeCosts("jobs", { granularity: "monthly", limit: 30, now: NOW });
+
+    expect(cloudwatchMock.commandCalls(GetMetricDataCommand)).toHaveLength(0);
+    expect(result.cloudFront[0]?.measuredDeliveryBytes).toBeNull();
+  });
+
+  it("cloudFrontDistributionIdを渡すとCloudWatchのBytesDownloadedを月ごとに合算してmeasuredDeliveryBytesへ入れる（Issue #163）", async () => {
+    ddbMock.on(ScanCommand).resolves({ Items: [job()] });
+    cloudwatchMock.on(GetMetricDataCommand).resolves({
+      MetricDataResults: [
+        {
+          Id: "bytesDownloaded",
+          Timestamps: [new Date("2026-08-01T00:00:00.000Z"), new Date("2026-08-02T00:00:00.000Z")],
+          Values: [10 * BYTES_PER_GB, 5 * BYTES_PER_GB],
+        },
+      ],
+    });
+
+    const result = await summarizeCosts("jobs", {
+      granularity: "monthly",
+      limit: 30,
+      now: NOW,
+      cloudFrontDistributionId: "E1234567890ABC",
+    });
+
+    const calls = cloudwatchMock.commandCalls(GetMetricDataCommand);
+    expect(calls).toHaveLength(1);
+    const input = calls[0]!.args[0].input;
+    expect(input.MetricDataQueries?.[0]?.MetricStat?.Metric?.Dimensions).toEqual([
+      { Name: "DistributionId", Value: "E1234567890ABC" },
+      { Name: "Region", Value: "Global" },
+    ]);
+    expect(input.StartTime).toEqual(new Date("2026-08-01T00:00:00.000Z"));
+    expect(input.EndTime).toEqual(NOW);
+    expect(result.cloudFront[0]?.measuredDeliveryBytes).toBeCloseTo(15 * BYTES_PER_GB, 6);
+  });
+
+  it("CloudWatch呼び出しが失敗しても集計自体は壊れず、実測値だけnullになる（Issue #163）", async () => {
+    ddbMock.on(ScanCommand).resolves({ Items: [job()] });
+    cloudwatchMock.on(GetMetricDataCommand).rejects(new Error("AccessDenied"));
+
+    const result = await summarizeCosts("jobs", {
+      granularity: "monthly",
+      limit: 30,
+      now: NOW,
+      cloudFrontDistributionId: "E1234567890ABC",
+    });
+
+    expect(result.cloudFront[0]?.deliveryBytes).toBeGreaterThan(0);
+    expect(result.cloudFront[0]?.measuredDeliveryBytes).toBeNull();
   });
 
   it("時刻が壊れているレコードは集計から除外する（例外にしない）", async () => {

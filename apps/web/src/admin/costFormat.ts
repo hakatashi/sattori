@@ -46,9 +46,14 @@ export function formatMoney(usd: number, currency: CostCurrency, digits = 4): st
  */
 export const JPY_RATE_NOTE = `円は $1 = ¥${USD_TO_JPY_RATE}（${USD_TO_JPY_RATE_AS_OF}時点）の固定レートで換算した概算で、AWSが請求時に適用する実際のレートとは異なります。`;
 
-/** バイト数を MiB / GiB で読みやすく表示する。 */
+/**
+ * バイト数を MiB / GiB で読みやすく表示する。`!Number.isFinite`のガードは、
+ * デプロイの前後でAPIレスポンスの型がズレた場合（フィールドが`undefined`になる等）
+ * に`NaN`表示を避けるための防御——`bytes <= 0`だけだと`undefined`は
+ * すり抜けて`NaN`まで計算が進んでしまう。
+ */
 export function formatBytes(bytes: number): string {
-  if (bytes <= 0) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
     return "-";
   }
   const gib = bytes / BYTES_PER_GB;

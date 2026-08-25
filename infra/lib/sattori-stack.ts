@@ -898,6 +898,18 @@ export class SattoriStack extends Stack {
       memorySize: 512,
     });
     jobsTable.grantReadData(adminGetCostsFn);
+    // CloudFrontの実配信量（Issue #163、`apps/api/src/cloudfrontMetrics.ts`）。
+    // `STATE_MACHINE_ARN`と同じく、このハンドラ専用の環境変数として個別付与する
+    // （commonEnvに混ぜると他の全Lambdaに無関係な変数が伝播するため）。
+    adminGetCostsFn.addEnvironment("CLOUDFRONT_DISTRIBUTION_ID", mediaDistribution.distributionId);
+    // GetMetricDataはリソースレベル権限に非対応のためResource: "*"がAWS側の制約
+    // として必要（`adminGetLogsFn`のGetConsoleOutputと違い個別インスタンスへ絞れない）。
+    adminGetCostsFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["cloudwatch:GetMetricData"],
+        resources: ["*"],
+      }),
+    );
 
     // 訪問者アナリティクス集計（Issue #149）。`AnalyticsEventsTable`はPK=eventDateなので
     // 全件Scanではなく日付ごとにQueryを発行するが（`apps/api/src/adminAnalytics.ts`）、

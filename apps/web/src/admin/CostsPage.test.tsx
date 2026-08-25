@@ -53,6 +53,7 @@ const response: AdminCostSummaryResponse = {
       deliveryGb: CLOUDFRONT_FREE_TIER_GB_PER_MONTH + 100,
       overageGb: 100,
       usd: 8.5,
+      measuredDeliveryBytes: (CLOUDFRONT_FREE_TIER_GB_PER_MONTH + 150) * BYTES_PER_GB,
     },
   ],
   quality: {
@@ -130,6 +131,36 @@ describe("CostsPage", () => {
 
     expect(await screen.findByText("$8.50")).toBeTruthy();
     expect(screen.getByText("100.0 GB")).toBeTruthy();
+  });
+
+  it("CloudFrontの実測配信量（Issue #163）を併記する", async () => {
+    renderPage();
+
+    expect(await screen.findByText("1150.00 GiB")).toBeTruthy();
+  });
+
+  it("実測値が取得できていない月は「-」を表示する", async () => {
+    mocked.fetchAdminCosts.mockResolvedValue({
+      ...response,
+      cloudFront: [{ ...response.cloudFront[0]!, measuredDeliveryBytes: null }],
+    });
+    renderPage();
+
+    expect(await screen.findByText("$8.50")).toBeTruthy();
+    expect(screen.getAllByText("-").length).toBeGreaterThan(0);
+  });
+
+  it("APIがmeasuredDeliveryBytesを返さない場合（デプロイ前後の不整合）でも「NaN MiB」にならず「-」にする", async () => {
+    const { measuredDeliveryBytes: _omit, ...staleMonth } = response.cloudFront[0]!;
+    mocked.fetchAdminCosts.mockResolvedValue({
+      ...response,
+      cloudFront: [staleMonth as (typeof response.cloudFront)[number]],
+    });
+    renderPage();
+
+    expect(await screen.findByText("$8.50")).toBeTruthy();
+    expect(screen.getAllByText("-").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/NaN/)).toBeNull();
   });
 
   it("推定に仮定が混ざっている場合は注記を出す", async () => {

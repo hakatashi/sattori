@@ -206,3 +206,12 @@ CloudFrontの配信料だけは`granularity`によらず常に月次で返す—
 フィールドはIssue #60で追加したもので**それ以前のジョブは値を持たない**ため、
 「表示中の数字にどれだけ仮定が混ざっているか」を画面に出せないと、運用者が推定値を
 実績として読んでしまう。
+
+`cloudFront[].deliveryBytes`（ジョブ単位推定の月次積み上げ）に加え、
+`cloudFront[].measuredDeliveryBytes`はCloudWatch `AWS/CloudFront`名前空間の
+`BytesDownloaded`から取得した**実配信量**（Issue #163、`apps/api/src/cloudfrontMetrics.ts`）。
+無料枠判定・超過額の計算は引き続き`deliveryBytes`側で行い、`measuredDeliveryBytes`は
+突き合わせ用の参考値として併記するだけ。取得に失敗した場合（権限不足・
+CloudWatchにまだデータが無い等）は`null`——`GET /admin/costs`自体は失敗させない
+（`docs/decisions/0021`と同じ「付随データは本体を壊さない」方針、
+[`docs/decisions/0030`](../../../docs/decisions/0030-cloudfront-measured-usage-best-effort.md)）。

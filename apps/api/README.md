@@ -44,7 +44,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | `admin/getLogs.ts` | `GET /admin/jobs/{jobId}/logs` | ワーカーコンテナのCloudWatch Logs（見つからない場合はEC2コンソール出力にフォールバック） |
 | `admin/stopJob.ts` | `POST /admin/jobs/{jobId}/stop` | 暴走ジョブの緊急停止（実行停止→インスタンス終了→`failed`確定） |
 | `admin/retryJob.ts` | `POST /admin/jobs/{jobId}/retry` | 失敗ジョブの再実行（**新しいjobId**へ複製して起動） |
-| `admin/getCosts.ts` | `GET /admin/costs` | コスト推定の日次/週次/月次集計（全件Scan + アプリ側集計） |
+| `admin/getCosts.ts` | `GET /admin/costs` | コスト推定の日次/週次/月次集計（全件Scan + アプリ側集計）。CloudFrontの月次配信量はジョブ単位推定に加えCloudWatch実測値も併記（Issue #163） |
 | `admin/getAnalytics.ts` | `GET /admin/analytics` | 訪問者アナリティクスの日別集計（ユニーク訪問者数・ページビュー数・パースエラー件数・属性別内訳、Issue #149。§13） |
 | `admin/getSettings.ts` | `GET /admin/settings` | キルスイッチ・月間コストガード閾値の現在値と当月推定コストを取得（Issue #14） |
 | `admin/updateSettings.ts` | `POST /admin/settings` | キルスイッチ・月間コストガード閾値の更新（Issue #14） |
@@ -337,7 +337,7 @@ Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId�
 `admin/getExecution.ts`/`admin/stopJob.ts`/`admin/retryJob.ts`/
 `sweepOrphanInstances.ts`専用の`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
 `ADMIN_TOKEN_PARAMETER_NAME`、`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定、
-`sweepOrphanInstances.ts`専用の`JOBS_TABLE`単独指定）
+`sweepOrphanInstances.ts`専用の`JOBS_TABLE`単独指定、`admin/getCosts.ts`専用のCloudFront実配信量取得用`CLOUDFRONT_DISTRIBUTION_ID`、Issue #163）
 から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
 `admin/getLogs.ts`・`RecordAnalyticsEventFn`以外の管理API用Lambdaは`commonEnv`を使う）。
 
