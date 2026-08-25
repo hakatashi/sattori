@@ -9,6 +9,7 @@ import { clearAdminToken, loadAdminToken, saveAdminToken } from "./adminToken.ts
 import { JobListPage } from "./JobListPage.tsx";
 import { JobDetailPage } from "./JobDetailPage.tsx";
 import { CostsPage } from "./CostsPage.tsx";
+import { AnalyticsPage } from "./AnalyticsPage.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
 
 /**
@@ -59,6 +60,7 @@ export function AdminApp() {
             <Route index element={<JobListPage />} />
             <Route path="jobs/:jobId" element={<JobDetailPage />} />
             <Route path="costs" element={<CostsPage />} />
+            <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Routes>

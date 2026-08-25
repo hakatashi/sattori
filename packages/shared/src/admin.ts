@@ -278,3 +278,88 @@ export interface AdminCostSummaryResponse {
   /** 全期間（返したバケットの範囲外も含む）のジョブ数。取りこぼしの検知用。 */
   totalJobCount: number;
 }
+
+/**
+ * GET /admin/analytics の集計期間（日数）の既定・上限（Issue #149）。
+ * `AnalyticsEventsTable`はPK=eventDateなので、期間内の日数ぶんだけQueryを発行する
+ * （`apps/api/src/adminAnalytics.ts`）。上限は`AnalyticsEventsTable`のTTL（180日、
+ * `apps/api/src/analytics.ts`の`ANALYTICS_EVENT_TTL_DAYS`）より十分小さい値にして、
+ * 1リクエストのLambda実行時間を抑える。
+ */
+export const ADMIN_ANALYTICS_DEFAULT_DAYS = 30;
+export const ADMIN_ANALYTICS_MAX_DAYS = 90;
+
+/** 集計対象にする内訳の上位件数（`apps/api/src/adminAnalytics.ts`の`topEntries()`）。 */
+export const ADMIN_ANALYTICS_BREAKDOWN_LIMIT = 10;
+
+/** 参照元が無い（直接アクセス・アプリ内遷移）ことを表す内訳キー。 */
+export const ADMIN_ANALYTICS_DIRECT_LABEL = "(direct)";
+/** 国・言語・ブラウザ/OS等が不明（`CloudFront-Viewer-Country`の取得元にCloudFrontを
+ * 経由しないリクエスト等）であることを表す内訳キー。 */
+export const ADMIN_ANALYTICS_UNKNOWN_LABEL = "(unknown)";
+
+/** 内訳の1行分（キーとその出現回数）。 */
+export interface AdminAnalyticsBreakdownItem {
+  key: string;
+  count: number;
+}
+
+/** 集計期間内の1日ぶん（UTC基準の`YYYY-MM-DD`）。 */
+export interface AdminAnalyticsDailyBucket {
+  date: string;
+  pageviews: number;
+  /**
+   * その日の`visitorHash`のユニーク件数。**日をまたいだ人数の重複排除はできない**
+   * （ハッシュ化訪問者IDのsaltが日次ローテーションのため、`docs/decisions/0026`）。
+   * 同一人物が2日訪れれば2としてカウントされる。
+   */
+  uniqueVisitors: number;
+  parseErrors: number;
+}
+
+/**
+ * GET /admin/analytics のレスポンス（Issue #149）。ユニーク訪問者数だけでなく
+ * ページビュー数・パースエラー件数、および属性別の内訳（`breakdowns`）を返す。
+ */
+export interface AdminAnalyticsSummaryResponse {
+  /** リクエストされた集計日数（`days`クエリパラメータをクランプした値）。 */
+  days: number;
+  /** 集計期間の先頭・末尾（両端含む、UTC基準の`YYYY-MM-DD`）。 */
+  from: string;
+  to: string;
+  /** 古い順（時系列グラフ用）。 */
+  daily: AdminAnalyticsDailyBucket[];
+  totals: {
+    pageviews: number;
+    /**
+     * `daily[].uniqueVisitors`の単純合計。**期間全体のユニーク訪問者数ではない**
+     * （上記`uniqueVisitors`の注記と同じ理由）。名前を`uniqueVisitors`ではなく
+     * `uniqueVisitorDays`にしているのはこの誤解を避けるため。
+     */
+    uniqueVisitorDays: number;
+    parseErrors: number;
+  };
+  /** 集計期間内での属性別の内訳。いずれも件数の多い順、最大`ADMIN_ANALYTICS_BREAKDOWN_LIMIT`件。 */
+  breakdowns: {
+    /** ページパス別（`pageview`イベントのみ）。 */
+    paths: AdminAnalyticsBreakdownItem[];
+    /** 参照元ホスト別（`pageview`イベントのみ）。参照元が無ければ`ADMIN_ANALYTICS_DIRECT_LABEL`。 */
+    referrers: AdminAnalyticsBreakdownItem[];
+    /** 国別（`CloudFront-Viewer-Country`、全イベント種別）。 */
+    countries: AdminAnalyticsBreakdownItem[];
+    /** 言語別（`Accept-Language`の主言語タグ、全イベント種別）。 */
+    languages: AdminAnalyticsBreakdownItem[];
+    /** デバイスカテゴリ別（`pageview`イベントのみ）。 */
+    deviceCategories: AdminAnalyticsBreakdownItem[];
+    /** ブラウザ系統別（全イベント種別）。 */
+    browserFamilies: AdminAnalyticsBreakdownItem[];
+    /** OS系統別（全イベント種別）。 */
+    osFamilies: AdminAnalyticsBreakdownItem[];
+    /** `utm_source`別（`pageview`イベントのみ、値がある場合のみ集計）。 */
+    utmSources: AdminAnalyticsBreakdownItem[];
+    /** リプレイのパース失敗コード別（`parse_error`イベントのみ）。 */
+    parseErrorCodes: AdminAnalyticsBreakdownItem[];
+    /** パース失敗時に検出されたタイトル別（`errorCode: "unsupported_game"`のみ判明）。 */
+    parseErrorGames: AdminAnalyticsBreakdownItem[];
+  };
+}

@@ -1,8 +1,9 @@
 # 管理画面（`src/admin/`、Issue #51）
 
 運用調査用のジョブ一覧・詳細・ダウンロード導線と、ジョブの緊急停止・再実行
-（Issue #59）、コスト集計（Issue #60）、キルスイッチ・月間コストガードの設定
-（Issue #14）。ユーザーは管理者1人固定。**利用者向けの本流フローとは完全に独立した
+（Issue #59）、コスト集計（Issue #60）、訪問者アナリティクス集計（Issue #149）、
+キルスイッチ・月間コストガードの設定（Issue #14）。ユーザーは管理者1人固定。
+**利用者向けの本流フローとは完全に独立した
 機能**で、通常の作業では読む必要がない。API側の詳細は
 [`apps/api/docs/admin-api.md`](../../api/docs/admin-api.md) を参照。
 
@@ -32,6 +33,7 @@ status絞り込み・カーソルページング。状態は`useSearchParams`で
 `JobDetailPage.tsx`（`JobRecord`全フィールド＋ダウンロード導線＋コスト推定＋
 ユーザー向けジョブページへのリンク）／`LogsPanel.tsx`（ワーカーログ、Issue #58）／
 `CostsPage.tsx`（コスト集計、Issue #60）／
+`AnalyticsPage.tsx`（訪問者アナリティクス集計、Issue #149、§7.1）／
 `ExecutionPanel.tsx`（Step Functions実行状態、`JobDetailPage`とは別にfetchする。
 理由は[`apps/api/docs/admin-api.md`](../../api/docs/admin-api.md)参照）。データ取得は
 共通フック`useAdminResource.ts`（`AdminUnauthorizedError`を検知して`onUnauthorized`を
@@ -108,6 +110,26 @@ APIの契約を増やさずに済むため。
 冒頭のコメント参照）、**順番の入れ替えや循環をしないこと**。棒の色だけに情報を
 持たせないよう、凡例に系列名と期間合計の数値を併記し、各行に合計金額を出す。
 表示が推定値であること・仮定が混ざっている件数（`quality`）は必ず画面に出す。
+
+### 7.1 訪問者アナリティクス表示（`AnalyticsPage.tsx`、`/admin/analytics`、Issue #149）
+
+`GET /admin/analytics`（既定30日・最大90日、`days`クエリパラメータ）の結果を表示する。
+ページビュー数・ユニーク訪問者数・パースエラー件数の日別推移（表＋横棒、新しい順）と、
+属性別の内訳カード（ページ・参照元・国・言語・デバイス・ブラウザ/OS・UTM流入元・
+パースエラー種別・未対応タイトル検出）を並べる。CostsPageと同じくチャートライブラリは
+使わず、CSSの横棒（`.barFill`/`.breakdownBarFill`）で比率を示す。
+
+- **「ユニーク訪問（日別合計）」の数字は期間内の実訪問者数ではない**ことを画面下部の
+  注記で明示する。ハッシュ化訪問者ID（`visitorHash`）のsaltが日次ローテーションのため
+  （`apps/api/README.md`§13、[`docs/decisions/0026`](../../../docs/decisions/0026-hashed-visitor-id-daily-salt.md)）、
+  複数日を選ぶとAPIが返す`totals.uniqueVisitorDays`は「日別ユニーク数の単純合計」に
+  しかならない。この数字をコストページの「1ジョブ平均」のような確定値と誤読させない
+  よう、ラベル自体に「（日別合計）」と添えている。
+- 内訳カードの横棒は**カード内の最大値を100%とする相対表示**で、カード間
+  （例:「ページ」の棒と「国」の棒）の比較はできない——母数がイベント種別によって
+  異なるため（ページ・参照元・デバイス・UTM流入元は`pageview`イベントのみ、
+  パースエラー種別・検出タイトルは`parse_error`イベントのみ、国・言語・ブラウザ/OSは
+  両方から積み上げる。`apps/api/README.md`§13.1参照）。
 
 ## 8. 通貨切り替え
 

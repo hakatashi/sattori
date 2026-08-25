@@ -449,6 +449,9 @@ export class SattoriStack extends Stack {
       // 拒否イベントをSNS経由で運用アラートへ流すための紐付け(Issue #133 OPS-1)。
       SES_CONFIGURATION_SET: props.sesConfigurationSetName,
       WEB_BASE_URL: `https://${webDomainName}`,
+      // 訪問者アナリティクス（Issue #142）の集計に使う（`admin/getAnalytics.ts`、Issue #149）。
+      // `RecordAnalyticsEventFn`は下記の専用環境変数で別途同じ値を受け取る。
+      ANALYTICS_EVENTS_TABLE: analyticsEventsTable.tableName,
     };
 
     // `environment`省略時は`commonEnv`を使う。管理画面のauthorizer(Issue #51)のように
@@ -896,6 +899,15 @@ export class SattoriStack extends Stack {
     });
     jobsTable.grantReadData(adminGetCostsFn);
 
+    // 訪問者アナリティクス集計（Issue #149）。`AnalyticsEventsTable`はPK=eventDateなので
+    // 全件Scanではなく日付ごとにQueryを発行するが（`apps/api/src/adminAnalytics.ts`）、
+    // 最大90日ぶん並行に投げるためタイムアウト・メモリはadminGetCostsFnと同じだけ広げる。
+    const adminGetAnalyticsFn = makeHandler("AdminGetAnalyticsFn", "admin/getAnalytics.ts", commonEnv, {
+      timeout: Duration.seconds(60),
+      memorySize: 512,
+    });
+    analyticsEventsTable.grantReadData(adminGetAnalyticsFn);
+
     // キルスイッチ・月間コストガード（Issue #14）。どちらも`estimateCurrentMonthCostUsd()`
     // 経由でJobsTableの全件Scanを行うため、adminGetCostsFnと同じくタイムアウト・
     // メモリを広げておく。
@@ -1004,6 +1016,12 @@ export class SattoriStack extends Stack {
       path: "/admin/costs",
       methods: [apigw.HttpMethod.GET],
       integration: new HttpLambdaIntegration("AdminGetCostsInt", adminGetCostsFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/analytics",
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration("AdminGetAnalyticsInt", adminGetAnalyticsFn),
       authorizer: adminAuthorizer,
     });
     httpApi.addRoutes({

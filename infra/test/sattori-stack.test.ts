@@ -414,6 +414,8 @@ describe("SattoriStack", () => {
       "POST /admin/jobs/{jobId}/retry",
       // Issue #60。コスト推定の日次/週次/月次集計。
       "GET /admin/costs",
+      // Issue #149。訪問者アナリティクス（ユニーク訪問者数・ページビュー数等）の集計。
+      "GET /admin/analytics",
     ];
     for (const routeKey of adminRouteKeys) {
       const route = routeEntries.find((r) => r.Properties.RouteKey === routeKey);

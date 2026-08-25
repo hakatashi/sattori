@@ -38,6 +38,7 @@ const config: ApiConfig = {
   sesReplyToAddress: "reply@example.com",
   sesConfigurationSetName: "sattori-config-set",
   webBaseUrl: "https://sattori.hakatashi.com",
+  analyticsEventsTable: "sattori-analytics-events",
   ec2: {
     subnetIds: ["subnet-aaaa", "subnet-bbbb"],
     region: "ap-northeast-1",

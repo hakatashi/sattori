@@ -40,6 +40,7 @@
 | [0026](0026-hashed-visitor-id-daily-salt.md) | 2026-08-16 | apps/api / infra | ユニーク訪問者数はIPを日次saltでハッシュ化した仮の訪問者IDで数える | 有効 |
 | [0027](0027-lambda-alarms-account-wide-not-per-function.md) | 2026-08-19 | infra | Lambdaのエラー・スロットルアラームは関数ごとではなくアカウント全体集計に1本ずつ張る | 有効 |
 | [0028](0028-home-worker-container-network-check.md) | 2026-08-24 | home-worker / apps/api | 自宅ワーカーは新規claim前に「コンテナのネットワーク名前空間」からAWSへの疎通を確認する | 有効 |
+| [0029](0029-analytics-aggregation-daily-only-uniques.md) | 2026-08-25 | apps/api / packages/shared / apps/web / infra | 訪問者アナリティクスの集計はパーティション単位のQueryで行い、ユニーク訪問者数は日次のみ意味を持たせる | 有効 |
 
 ## 書き方
 
