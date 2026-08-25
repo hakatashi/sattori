@@ -36,7 +36,6 @@ export function ChangelogPage() {
   return (
     <section className={staticStyles.card}>
       <h1 className={staticStyles.heading}>{t("changelog.heading")}</h1>
-      <p>{t("changelog.description")}</p>
       <ul className={styles.list}>
         {groupByDate(changelogEntries).map((group) => (
           <li key={group.date} className={styles.entry}>
