@@ -203,6 +203,12 @@ API側の実装詳細（GSI設計・authorizer・ダウンロードURLの発行�
   月単位でしか判定できず、ジョブ単位には原理的に配分できないため。ジョブ側は
   「このジョブが生む配信量(`deliveryBytes`)」だけを返し、月次の超過分の課金は
   集計API側（`estimateCloudFrontCost()`）が算出する。
+- **`AdminCloudFrontMonth.measuredDeliveryBytes`（Issue #163）はジョブ単位推定とは独立した
+  実測値**。CloudWatch `AWS/CloudFront`の`BytesDownloaded`から取得する
+  （`apps/api/src/cloudfrontMetrics.ts`）ため`src/cost.ts`の外で計算されるが、
+  「見積り」の`deliveryBytes`と「実測」を併記して乖離を確認できるようにするための
+  フィールドとして`AdminCloudFrontMonth`（`src/admin.ts`）に置いている。無料枠判定・
+  超過額の計算は引き続き見積り側（`deliveryBytes`）で行う。
 
 - **円換算は固定レートの定数**（`USD_TO_JPY_RATE` / `USD_TO_JPY_RATE_AS_OF` /
   `usdToJpy()`）。管理画面の通貨切り替え用で、計算・集計・API応答はすべてUSDのまま行い

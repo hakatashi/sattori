@@ -165,7 +165,9 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   Issue #49。信頼ポリシーはアカウント内プリンシパル、`maxSessionDuration`は4時間
   ＝ジョブ1本の最長所要時間より確実に長い値。実際に誰が使えるかは、手動で作る
   IAMユーザー側の`sts:AssumeRole`ポリシーで制御する。手順は
-  `home-worker/README.md`参照）。
+  `home-worker/README.md`参照）、AdminGetCosts Lambdaロール（CloudFrontの実配信量
+  を取得する`cloudwatch:GetMetricData`。GetMetricDataもリソースレベル権限に非対応の
+  ため`Resource: "*"`が必要、Issue #163）。
 - **EventBridge**: `OrphanInstanceSweepRule`（`ORPHAN_SWEEP_INTERVAL_MINUTES`＝10分
   間隔で`SweepOrphanInstancesFn`を起動、Issue #23）。孤児化した録画EC2の定期掃除で、
   **ジョブレコードではなくAWS上に実在するインスタンス（タグ`sattori:jobId`）を起点に

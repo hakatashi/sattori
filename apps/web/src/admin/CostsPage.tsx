@@ -174,8 +174,12 @@ export function CostsPage() {
             <h2 className={styles.cardHeading}>CloudFront 配信量（月次・無料枠1TB/月）</h2>
             <p className={styles.cardNote}>
               無料枠はアカウント単位・月単位でしか判定できないため、粒度の指定によらず常に
-              月次で表示する。「720p版が1回ダウンロードされる」前提の見積りで、元解像度版も
-              落とされていれば実際の配信量はこれより増える。
+              月次で表示する。「配信量」は「720p版が1回ダウンロードされる」前提の見積りで、
+              元解像度版も落とされていれば実際の配信量はこれより増える。「実測」は
+              CloudWatch（`AWS/CloudFront`の`BytesDownloaded`）から取得した実際の配信量
+              （Issue #163）で、再ダウンロード・レンジリクエストも含む。無料枠判定・
+              超過額はいずれも見積りの「配信量」側で計算しており、実測値は突き合わせ用の
+              参考値。
             </p>
             {data.cloudFront.length === 0 ? (
               <p className={styles.empty}>配信量の記録がありません</p>
@@ -184,7 +188,8 @@ export function CostsPage() {
                 <thead>
                   <tr>
                     <th>月</th>
-                    <th>配信量</th>
+                    <th>配信量（見積り）</th>
+                    <th>配信量（実測）</th>
                     <th>無料枠の消化</th>
                     <th>超過</th>
                     <th>推定額</th>
@@ -200,6 +205,15 @@ export function CostsPage() {
                       <tr key={month.month}>
                         <td>{month.month}</td>
                         <td className={styles.numeric}>{formatBytes(month.deliveryBytes)}</td>
+                        <td className={styles.numeric}>
+                          {/* `== null`はnullに加え、デプロイの前後でAPIが
+                              このフィールドをまだ返さない場合のundefinedも
+                              まとめて弾く（`formatBytes`側もNaN対策済みだが、
+                              ここでは型を`number`へ narrow するために必要）。 */}
+                          {month.measuredDeliveryBytes == null
+                            ? "-"
+                            : formatBytes(month.measuredDeliveryBytes)}
+                        </td>
                         <td>
                           <span className={styles.gauge}>
                             <span

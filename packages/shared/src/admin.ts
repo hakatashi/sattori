@@ -249,6 +249,14 @@ export interface AdminCloudFrontMonth {
   /** 無料枠を超えた分（GB）。0なら課金は発生していない見込み。 */
   overageGb: number;
   usd: number;
+  /**
+   * CloudWatch `AWS/CloudFront` 名前空間の `BytesDownloaded` から取得した実配信量
+   * （バイト、Issue #163）。`deliveryBytes`（「720p版が1回ダウンロードされる」前提の
+   * ジョブ単位推定の積み上げ）とは独立した実測値で、両者の乖離を見るために併記する。
+   * 取得に失敗した場合（権限不足・メトリクスがまだ存在しない等）は null
+   * （`apps/api/src/cloudfrontMetrics.ts`）。
+   */
+  measuredDeliveryBytes: number | null;
 }
 
 /**

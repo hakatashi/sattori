@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CloudWatchClient, GetMetricDataCommand } from "@aws-sdk/client-cloudwatch";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
@@ -23,9 +24,14 @@ const REQUIRED_ENV: Record<string, string> = {
   SES_CONFIGURATION_SET: "sattori-config-set",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
   ANALYTICS_EVENTS_TABLE: "sattori-analytics-events",
+  CLOUDFRONT_DISTRIBUTION_ID: "E1234567890ABC",
 };
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
+// CloudWatch(us-east-1、Issue #163)は実ネットワーク呼び出しを避けるためモックする。
+// `fetchMeasuredCloudFrontBytesByMonth`は失敗を握りつぶす作りなので未設定でも
+// テスト自体は落ちないが、モック無しだと実際にAWSへ発信されてしまう。
+const cloudwatchMock = mockClient(CloudWatchClient);
 
 const job: JobCostInput = {
   status: "done",
@@ -55,6 +61,8 @@ function parseBody(res: APIGatewayProxyStructuredResultV2): AdminCostSummaryResp
 describe("GET /admin/costs", () => {
   beforeEach(() => {
     ddbMock.reset();
+    cloudwatchMock.reset();
+    cloudwatchMock.on(GetMetricDataCommand).resolves({ MetricDataResults: [] });
     for (const [key, value] of Object.entries(REQUIRED_ENV)) {
       vi.stubEnv(key, value);
     }
