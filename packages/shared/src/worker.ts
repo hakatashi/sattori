@@ -161,6 +161,20 @@ export const ORPHAN_SWEEP_INTERVAL_MINUTES = 10;
 export const ORPHAN_INSTANCE_GRACE_MINUTES = 15;
 
 /**
+ * ジョブレコードが非終端状態のまま固まっていると判定するまでの猶予（分、Issue #132）。
+ * `apps/api/src/stalledJobs.ts`が`JobRecord.updatedAt`からの経過時間として使う。
+ *
+ * `Launch`のタスクタイムアウト（150分、`infra/lib/sattori-stack.ts`）を超えても
+ * Step Functions実行がrunningでなければ、`HandleFailure`や管理画面の緊急停止といった
+ * 後始末経路自体がどこかで失敗し、ジョブレコードだけが取り残されたとみなせる
+ * （実行がrunningである限りこの掃除役は一切手を出さないので、Step Functionsの
+ * リトライで実際の所要時間がこれを超えること自体は誤判定にならない）。この掃除役は
+ * ジョブを`failed`に倒すだけで`orphanInstances.ts`のような破壊的操作（terminate）を
+ * 伴わないため、猶予はtaskTimeout直後ではなく余裕を見て+30分にしてある。
+ */
+export const STALLED_JOB_THRESHOLD_MINUTES = 180;
+
+/**
  * ワーカーコンテナへ渡す環境変数一式（`apps/api/src/workerEnv.ts` が組み立てる）。
  * EC2では UserData の `docker run -e` に展開され、自宅ワーカーではオファーに
  * 添えてジョブレコードへ書かれ、デーモンがそのまま `docker run` へ渡す。

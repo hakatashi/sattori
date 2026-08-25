@@ -222,6 +222,32 @@ describe("SattoriStack", () => {
     });
   });
 
+  it("非終端ジョブレコードの定期掃除ルールが孤児掃除と同じRuleに相乗りする(Issue #132)", () => {
+    template.hasResourceProperties("AWS::Events::Rule", {
+      ScheduleExpression: `rate(${ORPHAN_SWEEP_INTERVAL_MINUTES} minutes)`,
+      Targets: Match.arrayWith([
+        Match.objectLike({
+          Arn: Match.objectLike({
+            "Fn::GetAtt": Match.arrayWith([Match.stringLikeRegexp("^SweepStalledJobsFn")]),
+          }),
+        }),
+      ]),
+    });
+  });
+
+  it("非終端ジョブレコード掃除Lambdaに実行の生死確認とJobsTable読み書き権限が付与されている(Issue #132)", () => {
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({ Action: "states:DescribeExecution" }),
+        ]),
+      },
+      Roles: Match.arrayWith([
+        Match.objectLike({ Ref: Match.stringLikeRegexp("^SweepStalledJobsFnServiceRole") }),
+      ]),
+    });
+  });
+
   it("録画ジョブをオーケストレーションする Standard タイプの Step Functions ステートマシンが存在する", () => {
     template.hasResourceProperties("AWS::StepFunctions::StateMachine", {
       StateMachineType: "STANDARD",
@@ -275,10 +301,22 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("STATE_MACHINE_ARN 環境変数を個別付与されているLambdaは5つ(循環依存回避のためcommonEnvに含めていない)", () => {
-    // StartJob / AdminGetExecution / AdminStopJob / AdminRetryJob / SweepOrphanInstances
-    // (AdminStopJob・AdminRetryJobはIssue #59のジョブ緊急停止・再実行、
-    // SweepOrphanInstancesはIssue #23の孤児インスタンス掃除)。
+  it("StartJob Lambda に実行の生死確認(states:DescribeExecution)権限も付与されている(Issue #132、queuedのまま実行absentな場合の再起動用)", () => {
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([Match.objectLike({ Action: "states:DescribeExecution" })]),
+      },
+      Roles: Match.arrayWith([
+        Match.objectLike({ Ref: Match.stringLikeRegexp("^StartJobFnServiceRole") }),
+      ]),
+    });
+  });
+
+  it("STATE_MACHINE_ARN 環境変数を個別付与されているLambdaは6つ(循環依存回避のためcommonEnvに含めていない)", () => {
+    // StartJob / AdminGetExecution / AdminStopJob / AdminRetryJob / SweepOrphanInstances /
+    // SweepStalledJobs (AdminStopJob・AdminRetryJobはIssue #59のジョブ緊急停止・再実行、
+    // SweepOrphanInstancesはIssue #23の孤児インスタンス掃除、
+    // SweepStalledJobsはIssue #132の非終端ジョブレコード掃除)。
     const startJobResources = template.findResources("AWS::Lambda::Function", {
       Properties: {
         Environment: {
@@ -288,7 +326,7 @@ describe("SattoriStack", () => {
         },
       },
     });
-    expect(Object.keys(startJobResources).length).toBe(5);
+    expect(Object.keys(startJobResources).length).toBe(6);
   });
 
   it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {

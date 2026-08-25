@@ -754,6 +754,9 @@ export class SattoriStack extends Stack {
     const startJobFn = makeHandler("StartJobFn", "startJob.ts");
     jobsTable.grantReadWriteData(startJobFn);
     stateMachine.grantStartExecution(startJobFn);
+    // "queued"のまま実行が存在しない（`StartExecutionCommand`の前にLambdaが死んだ）
+    // ジョブを再起動できるようにするため（Issue #132 経路(a)）。
+    stateMachine.grantExecution(startJobFn, "states:DescribeExecution");
     // キルスイッチ判定用（Issue #130）。GetItem 1回のみでキャッシュしない
     // （`settings.ts`参照）。
     settingsTable.grantReadData(startJobFn);
@@ -791,11 +794,35 @@ export class SattoriStack extends Stack {
         resources: ["*"],
       }),
     );
+    // --- 非終端ジョブレコードの定期掃除(Issue #132) --------------------------
+    // 上のインスタンス起点の掃除と対をなす、**ジョブレコードの`status`を起点にした**
+    // 掃除役。起動直後にLambdaが死ぬ・後始末ハンドラ自体が例外を握り潰す・緊急停止の
+    // terminateが失敗する等、非終端のまま固まる経路は複数あるが、どれも最終的に
+    // 「非終端のままジョブレコードが取り残される」という同じ結末に収束するため、
+    // 個々の経路を塞ぐより結末そのものを検知する安全網にしてある。
+    // 追加インフラ不要（既存の`StatusCreatedAtIndex`・`getExecutionLiveness()`を
+    // 流用）なため、既存の`OrphanInstanceSweepRule`にもう1つのターゲットとして
+    // 相乗りさせる。詳細は`apps/api/README.md`「非終端ジョブレコードの掃除」・
+    // [`docs/decisions/0031`](../docs/decisions/0031-stalled-job-sweep-by-status.md)参照。
+    const sweepStalledJobsFn = makeHandler(
+      "SweepStalledJobsFn",
+      "sweepStalledJobs.ts",
+      { JOBS_TABLE: jobsTable.tableName },
+      { timeout: Duration.minutes(3) },
+    );
+    jobsTable.grantReadWriteData(sweepStalledJobsFn);
+    stateMachine.grantExecution(sweepStalledJobsFn, "states:DescribeExecution");
+    sweepStalledJobsFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
+
     new events.Rule(this, "OrphanInstanceSweepRule", {
-      description: "孤児化した録画EC2インスタンスを定期的に検知・terminateする(Issue #23)",
+      description:
+        "孤児化した録画EC2インスタンス・非終端のまま固まったジョブレコードを定期的に検知する(Issue #23、#132)",
       // 間隔は`@sattori/shared`の定数が唯一の出典(判定の猶予と対で意味を持つため)。
       schedule: events.Schedule.rate(Duration.minutes(ORPHAN_SWEEP_INTERVAL_MINUTES)),
-      targets: [new targets.LambdaFunction(sweepOrphanInstancesFn)],
+      targets: [
+        new targets.LambdaFunction(sweepOrphanInstancesFn),
+        new targets.LambdaFunction(sweepStalledJobsFn),
+      ],
     });
 
     // --- 管理画面(`/admin`, Issue #51) --------------------------------------

@@ -30,11 +30,12 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | `createUpload.ts` | `POST /uploads` | `.rpy` アップロード用の署名付きPUT URLを発行（ファイル本体はLambdaを経由しない）。`size`は`MAX_REPLAY_BYTES`以下の整数であることを検証したうえで署名の`ContentLength`に使うため、実際のPUTのバイト数がこの値と一致しないとS3が拒否する（Issue #128 SEC-2） |
 | `parseReplay.ts` | `POST /replays/parse` | アップロード済みリプレイを取得し `@sattori/shared` の `parseReplayInfo()` で解析。同じロジックはブラウザでも直接動くため（`apps/web/README.md`「ページAのフロー」参照）、現在のページAはこのAPIを呼ばず解析をクライアント内で完結させている。将来他のクライアント（管理画面の再解析等）が使う可能性を見込んで残してある |
 | `requestMagicLink.ts` | `POST /magic-links` | レート制限チェック→`status: "pending"`の`JobRecord`作成→SESでマジックリンク送信。メール送信自体が失敗したらジョブを削除してロールバックする。低速録画（Issue #68）の要求は**低速録画に対応したタイトル（`supportsSlowMotion()`、Issue #101）でなければ握り潰す**（等倍で録画できる以上エラーにはしない） |
-| `startJob.ts` | `POST /jobs/{jobId}/start` | `pending`→`queued`への原子遷移＋Step Functions `StartExecution` |
+| `startJob.ts` | `POST /jobs/{jobId}/start` | `pending`→`queued`への原子遷移＋Step Functions `StartExecution`。`queued`のまま実行が`absent`なら張り直す（[Issue #132対応](../../docs/decisions/0031-stalled-job-sweep-by-status.md)） |
 | `getJob.ts` | `GET /jobs/{jobId}` | ジョブ状態取得。完了時はCloudFrontのダウンロードURL・プレビュー再生URLを組み立てる。低速録画（Issue #68）で走るかどうか（`isSlowMotionRecording()`）も返す |
 | `getWorkerAvailability.ts` | `GET /worker-availability` | 常駐ワーカー（自宅ワーカー、Issue #49）の空き状況。ページAが「低速録画」を選べるか判定するためだけの公開エンドポイント。**認証なしで公開されるため`workerId`・台数・負荷は返さない**（開発者の自宅環境の稼働状況を必要以上に外へ出さない） |
 | `sendCompletionEmail.ts` | JobsTableのDynamoDB Streams | ジョブが`done`に遷移した瞬間を検知しSESで完了メール送信 |
 | `sweepOrphanInstances.ts` | EventBridgeのスケジュールルール（10分間隔） | 孤児化した録画EC2インスタンスの定期掃除（Issue #23。§5） |
+| `sweepStalledJobs.ts` | 同上（同じRuleに相乗り） | 非終端のまま固まったジョブレコードを`failed`へ確定する定期掃除（[Issue #132対応](../../docs/decisions/0031-stalled-job-sweep-by-status.md)） |
 | `sfn/launch.ts` | Step Functions `Launch`タスク | EC2 Fleetでワーカーを1台起動（`waitForTaskToken`。成否確定はワーカー自身が行う） |
 | `sfn/handleFailure.ts` | Step Functions `HandleFailure`タスク | 孤児インスタンスをterminateしつつリトライ可否を判定 |
 | `admin/authorizer.ts` | `/admin/*` の Lambda Authorizer | 共有トークンの検証（[`docs/admin-api.md`](docs/admin-api.md)） |
@@ -77,9 +78,8 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    `retryPolicy.ts` の `MAX_ATTEMPTS`（**10回**）未満なら
    `shouldRetry: true` を返してリトライ、上限に達していればジョブを `failed` に確定する
    （ワーカー自身が既に`failed`を書き込んでいれば上書きしない）。
-4. `handleFailure.ts` 自体がAWS APIの一時的な障害で例外を投げても、ジョブが
-   非終端状態のまま固まらないよう、インフラ側でリトライ＋最終的な`Fail`遷移が
-   用意されている（`infra/README.md`参照）。
+4. `handleFailure.ts`自体が例外を投げても、リトライ＋最終`Fail`遷移で実行は必ず終端する
+   （`infra/README.md`参照）。ジョブレコードには書かないため、取りこぼしは[`0031`](../../docs/decisions/0031-stalled-job-sweep-by-status.md)の掃除役が拾う（Issue #132）。
 
 ## 3. 自宅ワーカーへのジョブ割り当て（`homeWorker.ts` / `workerRouting.ts`, Issue #49）
 
@@ -335,9 +335,9 @@ Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId�
 
 すべて `infra/lib/sattori-stack.ts` の `commonEnv`（+ `startJob.ts`/
 `admin/getExecution.ts`/`admin/stopJob.ts`/`admin/retryJob.ts`/
-`sweepOrphanInstances.ts`専用の`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
-`ADMIN_TOKEN_PARAMETER_NAME`、`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定、
-`sweepOrphanInstances.ts`専用の`JOBS_TABLE`単独指定、`admin/getCosts.ts`専用のCloudFront実配信量取得用`CLOUDFRONT_DISTRIBUTION_ID`、Issue #163）
+`sweepOrphanInstances.ts`/`sweepStalledJobs.ts`専用の`STATE_MACHINE_ARN`、
+`admin/authorizer.ts`専用の`ADMIN_TOKEN_PARAMETER_NAME`、`admin/getLogs.ts`専用の
+`WORKER_LOG_GROUP`単独指定、`sweepOrphanInstances.ts`/`sweepStalledJobs.ts`専用の`JOBS_TABLE`単独指定、`admin/getCosts.ts`専用のCloudFront実配信量取得用`CLOUDFRONT_DISTRIBUTION_ID`、Issue #163）
 から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
 `admin/getLogs.ts`・`RecordAnalyticsEventFn`以外の管理API用Lambdaは`commonEnv`を使う）。
 
@@ -350,8 +350,8 @@ Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId�
 `handleFailureFn`（Lambda ARN）を呼び出すため、これらのLambdaの環境変数がステート
 マシンARNを参照するとCloudFormationの循環依存になる。`StartExecution`/`DescribeExecution`
 系を呼ぶ`startJob.ts`・`admin/getExecution.ts`・`admin/stopJob.ts`・`admin/retryJob.ts`・
-`sweepOrphanInstances.ts`だけが個別の環境変数として受け取る（いずれもステートマシンから
-呼ばれる側ではないため循環しない）。
+`sweepOrphanInstances.ts`・`sweepStalledJobs.ts`だけが個別の環境変数として受け取る
+（いずれもステートマシンから呼ばれる側ではないため循環しない）。
 
 ## 13. 計測（アナリティクス、`POST /beacon`、Issue #142・#144）
 
