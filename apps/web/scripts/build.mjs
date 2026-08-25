@@ -43,5 +43,13 @@ function resolveApiBase() {
 const apiBase = resolveApiBase();
 const env = apiBase ? { ...process.env, VITE_API_BASE: apiBase } : process.env;
 
-const vite = spawnSync("vite", ["build"], { stdio: "inherit", env });
+const vite = spawnSync("vite", ["build"], {
+  stdio: "inherit",
+  env,
+  shell: process.platform === "win32",
+});
+if (vite.error) {
+  console.error(vite.error);
+  process.exit(1);
+}
 process.exit(vite.status ?? 1);
