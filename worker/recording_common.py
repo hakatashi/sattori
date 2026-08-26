@@ -690,7 +690,9 @@ def kill_wine_and_wait(config, env, process_name, log=print):
         for pid in leftover_pids:
             try:
                 os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except OSError:
+                # ProcessLookupError(通常のプロセス終了とのレース)に加え、権限エラー等
+                # 想定外のOSErrorでもこの後片付けループ全体を中断させない。
                 pass
 
 
