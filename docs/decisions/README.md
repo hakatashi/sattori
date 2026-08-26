@@ -42,6 +42,10 @@
 | [0028](0028-home-worker-container-network-check.md) | 2026-08-24 | home-worker / apps/api | 自宅ワーカーは新規claim前に「コンテナのネットワーク名前空間」からAWSへの疎通を確認する | 有効 |
 | [0029](0029-analytics-aggregation-daily-only-uniques.md) | 2026-08-25 | apps/api / packages/shared / apps/web / infra | 訪問者アナリティクスの集計はパーティション単位のQueryで行い、ユニーク訪問者数は日次のみ意味を持たせる | 有効 |
 | [0030](0030-cloudfront-measured-usage-best-effort.md) | 2026-08-25 | apps/api / packages/shared / infra | CloudFrontの実配信量はCloudWatchから取得する付随データとし、失敗しても集計APIを壊さない | 有効 |
+| [0031](0031-stalled-job-sweep-by-status.md) | 2026-08-26 | apps/api / packages/shared / infra | 非終端のまま固まったジョブは、ジョブレコードのstatusを起点に既存の孤児EC2掃除Ruleへ相乗りして定期掃除する | 有効 |
+| [0032](0032-replay-info-server-side-reparse-only.md) | 2026-08-26 | apps/api | replayInfo/game/estimatedDurationSecondsはクライアント申告値を使わずサーバー側で再パースする | 有効 |
+| [0033](0033-admission-control-split-magic-link-vs-start-job.md) | 2026-08-26 | apps/api | 受付制御（キルスイッチ・月間コストガード）はrequestMagicLinkとstartJobで非対称にチェックする | 有効 |
+| [0034](0034-launch-handlefailure-timing.md) | 2026-08-26 | apps/api | Launch/HandleFailureの判定タイミングは早期失敗通知の遅延と書き込み競合を考慮して決める | 有効 |
 
 ## 書き方
 

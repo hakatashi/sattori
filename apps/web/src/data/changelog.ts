@@ -14,6 +14,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-08-26",
+    ja: "ジョブ実行に180分のタイムアウトを設け、それを超えたジョブはエラーとして終了するよう変更",
+    en: "Added a 180-minute timeout for job execution, terminating jobs that exceed it with an error",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/178",
+  },
+  {
     date: "2026-08-25",
     ja: "録画終了時のスコアがリプレイの記録スコアと一致しない場合、リプレイずれの可能性がある旨を表示するよう追加",
     en: "Added a notice warning of a possible replay desync when the score at the end of recording doesn't match the score recorded in the replay file",
