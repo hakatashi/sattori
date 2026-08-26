@@ -15,6 +15,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-26",
+    ja: "録画がタイムアウトした際にジョブページに警告を表示するよう修整",
+    en: "Fixed the job page to show a warning when recording times out",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/184",
+  },
+  {
+    date: "2026-08-26",
     ja: "ジョブ実行に180分のタイムアウトを設け、それを超えたジョブはエラーとして終了するよう変更",
     en: "Added a 180-minute timeout for job execution, terminating jobs that exceed it with an error",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/178",
