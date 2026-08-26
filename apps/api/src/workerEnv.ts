@@ -55,6 +55,13 @@ export function buildWorkerEnv(
     // ワーカーの録画進捗率算出用の参考値（取得できていなければ付与しない）。
     env.EXPECTED_DURATION_SECONDS = String(job.estimatedDurationSeconds);
   }
+  if (job.replayInfo?.score !== undefined && job.replayInfo?.score !== null) {
+    // リプレイずれの事後検証（Issue #103）用の期待スコア（画面表示値）。
+    // ワーカーはMODが読んだゲーム内スコアをこれと突き合わせ、一致しなければ
+    // `JobRecord.desyncDetected` を true にする
+    // （`worker/recording_common.py` の `check_replay_desync()`）。
+    env.EXPECTED_SCORE = String(job.replayInfo.score);
+  }
   if (options.slowMotion) {
     // MOD（Present/DirectSound/fps表示のフック）と録画スクリプトの実時間依存
     // パラメータが、この1つの値から同じ比率でスケールする

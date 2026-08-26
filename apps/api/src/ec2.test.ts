@@ -76,6 +76,7 @@ const job: JobRecord = {
   retriedToJobId: null,
   retriedFromJobId: null,
   language: "ja",
+  desyncDetected: null,
 };
 
 describe("buildUserData", () => {

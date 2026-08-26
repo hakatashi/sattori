@@ -58,6 +58,15 @@ def main():
         help="リプレイの推定再生時間(進捗率算出用の参考値、未指定なら進捗率は算出しない)",
     )
     parser.add_argument(
+        "--expected-score", type=int, default=None,
+        help="リプレイファイルに記録された最終スコア(画面表示値)。リプレイずれの事後検証"
+             "(Issue #103)に使う。未指定なら検証をスキップする",
+    )
+    parser.add_argument(
+        "--desync-result-path", default=None,
+        help="リプレイずれ検証の結果(JSON)の書き出し先。未指定なら書き出さない",
+    )
+    parser.add_argument(
         "--pulse-sink", default=None,
         help="このジョブ専用のPulseAudio null-sink名(録画開始時に作成し終了時に破棄する、Issue #48)。"
              "未指定ならプロセスIDから採番する(ローカル単体実行向け)",
@@ -78,6 +87,7 @@ def main():
         config, args.replay_path, args.output,
         progress_dir=args.progress_dir, expected_duration_seconds=args.expected_duration_seconds,
         max_attempts=args.max_attempts, max_duplicate_rate=args.max_duplicate_rate,
+        expected_score=args.expected_score, desync_result_path=args.desync_result_path,
         log=log,
     )
     if not success:

@@ -63,6 +63,7 @@ const baseJob: JobRecord = {
   retriedToJobId: null,
   retriedFromJobId: null,
   language: "ja",
+  desyncDetected: null,
 };
 
 /** statusを書き換えるUpdateItem（`SET #s = ...`）だけを取り出す。 */

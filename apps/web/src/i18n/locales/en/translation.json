@@ -12,7 +12,7 @@
     },
     "footerNav": {
       "about": "About",
-      "gameInfo": "Supported title info",
+      "gameInfo": "Supported titles",
       "terms": "Terms of Service",
       "changelog": "Changelog"
     }
@@ -199,6 +199,8 @@
     "elapsed": "{{time}} elapsed",
     "etaMinutes": "About {{minutes}} min remaining",
     "retryHint": "This is taking longer than usual. Please wait a bit longer.",
+    "desyncWarning": "The in-game score at the end of recording didn't match the score recorded in the replay file. A replay desync may have occurred.",
+    "desyncWarningDetail": "A replay desync is a phenomenon where the replay's playback diverges from what was originally recorded during gameplay. When it occurs, you may see hits in scenes that shouldn't have been hit, or the replay may end early. Please check the recorded video and make sure no desync has occurred. Note that this comes from the nature of the replay file and the game itself, so re-recording will produce the same result.",
     "slowMotionHint": "Slow-motion recording is being used to prioritize quality, so this takes about twice as long as usual.",
     "genericError": "A problem occurred while recording. Please try again.",
     "previewVideoLabel": "Preview of the recorded video",

@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { warningOutline } from "ionicons/icons";
 import { useTranslation } from "react-i18next";
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
 import { useEstimatedProgress } from "../hooks/useEstimatedProgress.ts";
@@ -116,6 +117,22 @@ export function JobProgressView({ job, loadError }: ViewProps) {
               <span className={styles.retryHint}>{t("jobProgress.retryHint")}</span>
             )}
           </div>
+        </div>
+      )}
+
+      {/*
+        リプレイずれ（デシンク）の事後検証（Issue #103）。判定の信頼性が高くないため
+        自動失敗・再試行はせず、注意書きの表示にのみ使う。録画成功が確定した
+        （converting以降の）ジョブでのみ値を持つため、pending/queued/launching/
+        recording中は常にnullで表示されない。
+      */}
+      {job.desyncDetected === true && (
+        <div className={styles.desyncWarning} role="note">
+          <p className={styles.desyncWarningTitle}>
+            <ion-icon icon={warningOutline} className={styles.desyncWarningIcon} aria-hidden="true" />
+            {t("jobProgress.desyncWarning")}
+          </p>
+          <p className={styles.desyncWarningDetail}>{t("jobProgress.desyncWarningDetail")}</p>
         </div>
       )}
 

@@ -281,4 +281,19 @@ export interface JobRecord {
    * 言語（`/` = ja, `/en` = en）に使う。
    */
   language: SupportedLanguage;
+  /**
+   * 録画終了時のゲーム内スコアが `replayInfo.score`（リプレイファイルの記録スコア）と
+   * 一致しなかった疑い（リプレイずれ／デシンク、Issue #103）。ワーカーが録画成功を
+   * 確定させた直後に一度だけ判定し、`status` が converting 以降になった時点で値を持つ
+   * （`worker/recording_common.py` の `check_replay_desync()`）。
+   *
+   * MOD が RVA 直指定で読んでいるゲーム内部の生値に基づく判定であり、信頼性は高くない
+   * （ゲームデータのバージョン差で無意味な値になりうる、touhou-recorder
+   * reports/53_phase53_score_monitor_all_titles.md）。そのため不一致を検知しても
+   * 自動リトライ・失敗扱いはしない——ユーザーへの注意書き表示にのみ使う。
+   *
+   * `true`=不一致（リプレイずれの疑い）、`false`=一致、`null`=未検証（このフィールド
+   * 追加より前のジョブ・MODのスコアログが取得できなかった等）。
+   */
+  desyncDetected: boolean | null;
 }

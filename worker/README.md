@@ -72,8 +72,16 @@
 | `mods/common/dsound_hook.*` / `fps_display_hook.*` | 低速録画時に音声を同じ比率へスローダウン
   させる(`SetFrequency`フック、reports/47)／画面に焼き付くfpsカウンター表示だけを等倍相当へ
   補正する(reports/48) |
-| `mods/common/score_monitor.*` | ゲーム内スコア等の定期サンプリング(reports/50)。デシンクの
-  事後調査用の証跡で、録画パイプラインの判定には使わない。RVA直指定のためth20専用 |
+| `mods/common/score_monitor.*` | ゲーム内スコア・ステージ番号・残機・グレイズの定期サンプリング
+  (reports/50、Issue #103)。`recording_common.check_replay_desync()`が録画成功直後にMODログの
+  スコア推移と`replayInfo.score`を突き合わせてリプレイずれ(デシンク)の疑いを判定する
+  (`JobRecord.desyncDetected`、自動リトライはしない)。RVAはタイトル毎に`dllmain.cpp`で指定
+  (baseRva+baseIsPointer+フィールドオフセット/幅の汎用設計)。全5タイトルで実機動作確認済み
+  ([`docs/reports/2026-08-25-th07-score-monitor-fix.md`](../docs/reports/2026-08-25-th07-score-monitor-fix.md)、
+  `docs/known-limitations.md`参照。th07だけはSattoriが配布するth07.exeが当初の検証環境と
+  バイナリが異なりゲームデータのバージョン差でRVAの再特定を要した) |
+| `mods/common/score_probe_hook.*` / `stage_probe_hook.*` | RVA特定用の診断専用コード(本番ビルドには
+  含めない)。score_monitorのRVAが通用しないタイトル・ゲームバージョンが出た場合の再調査に使う |
 
 `mods/` 配下はソースとビルドスクリプトのみ管理する(元は `touhou-recorder` の PoC 由来。ビルドは §9)。
 
@@ -92,6 +100,8 @@
 | `WATERMARK` | `1` でウォーターマーク合成、`0` で無効 |
 | `TASK_TOKEN` | Step Functions の `waitForTaskToken` トークン(省略時は通知をスキップ、ローカル検証用) |
 | `EXPECTED_DURATION_SECONDS` | リプレイの推定再生時間(進捗率算出の参考値、省略可) |
+| `EXPECTED_SCORE` | リプレイファイルの記録スコア(画面表示値)。リプレイずれの事後検証(Issue #103、
+  §2の`score_monitor`)に使う。`replayInfo.score`が取得できていなければ省略される |
 | `FPS_LIMIT_TARGET_HZ` | 低速録画(§5)の目標fps。**省略時は等倍**(既定60)。自宅ワーカーへのオファー時のみ `30` が渡る |
 | `THPRAC_ATTACH_TIMEOUT_SEC` / `_CONFIRM_SEC` / `_ATTEMPTS` | th20 の thprac アタッチの予算([`titles/th20.md`](docs/titles/th20.md)) |
 
@@ -289,10 +299,12 @@ docker push <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest
 一覧と詳細は [`docs/known-limitations.md`](../docs/known-limitations.md)。録画パイプラインに
 関わるものは次の3点。
 
-- **デシンク(リプレイずれ)を録画側で検知する手段が無い**。th20 は thprac の導入で大半が
-  解消したが([`titles/th20.md`](docs/titles/th20.md))、他タイトルには対処法がない。想定尺
-  より大幅に早く終了した/タイムアウトへ近づいたジョブでは、検知ロジック側を疑う前に**まず
-  録画された映像を目視して**不自然な被弾・ゲームオーバーが無いか確認すること(閾値調整や
+- **デシンク(リプレイずれ)を録画時に予防する手段は無い**。th20 は thprac の導入で大半が
+  解消したが([`titles/th20.md`](docs/titles/th20.md))、他タイトルには対処法がない。録画後の
+  スコア突き合わせによる事後検知(`JobRecord.desyncDetected`、Issue #103、§2の
+  `score_monitor`)は全5タイトルで実装済みだが、自動リトライはしない(警告表示のみ)。
+  想定尺より大幅に早く終了した/タイムアウトへ近づいたジョブでは、検知ロジック側を疑う前に
+  **まず録画された映像を目視して**不自然な被弾・ゲームオーバーが無いか確認すること(閾値調整や
   リトライでは解決しない —— 同一リプレイなら毎回同じ箇所で再現する)。
 - **重複フレーム率の自動チェックは録画開始15〜45秒の30秒スポットしか見ていない**
   (Issue #93)。全編の代表値ではない。

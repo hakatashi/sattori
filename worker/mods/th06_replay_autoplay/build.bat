@@ -11,6 +11,7 @@ cl.exe /nologo /LD /EHsc /O2 /utf-8 ^
     "%~dp0..\common\dinput_hook.cpp" ^
     "%~dp0..\common\window_wait.cpp" ^
     "%~dp0..\common\logging.cpp" ^
+    "%~dp0..\common\score_monitor.cpp" ^
     user32.lib
 if errorlevel 1 exit /b 1
 

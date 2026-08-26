@@ -67,6 +67,7 @@ const recordingJob: JobRecord = {
   retriedToJobId: null,
   retriedFromJobId: null,
   language: "ja",
+  desyncDetected: null,
 };
 
 function makeEvent(jobId?: string): APIGatewayProxyEventV2 {

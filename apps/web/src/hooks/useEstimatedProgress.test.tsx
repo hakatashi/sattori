@@ -38,6 +38,7 @@ function buildJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     previewImageUrl: null,
     replayInfo: REPLAY_INFO,
     slowMotion: false,
+    desyncDetected: null,
     ...overrides,
   };
 }
