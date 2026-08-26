@@ -55,6 +55,9 @@ def entrypoint(monkeypatch, tmp_path):
         with open(path, "wb") as f:
             f.write(b"x" * 10)
         monkeypatch.setattr(module, name, path)
+    # 本番は`/app/runs/{jobId}/desync_result.json`固定(書き込み権限が無い)なので、
+    # OUTPUT_VIDEO等と同じくテスト用の書ける場所へ差し替える。
+    monkeypatch.setattr(module, "DESYNC_RESULT_PATH", str(tmp_path / "desync_result.json"))
     monkeypatch.setattr(module, "update_status", lambda *a, **k: recorded_status.append((a, k)))
     monkeypatch.setattr(module, "update_progress", lambda *a, **k: None)
     monkeypatch.setattr(module, "upload_ffmpeg_upscale_log_if_present", lambda s3: None)
@@ -279,3 +282,40 @@ def test_upload_video_attaches_metadata_when_given(entrypoint):
 
     assert s3.uploads[0]["extra"]["Metadata"] == {"sattori-time-scale": "2.0"}
     assert s3.uploads[0]["extra"]["ContentType"] == "video/mp4"
+
+
+# --- リプレイずれ検証結果の読み取り(Issue #103) -----------------------------
+
+
+def test_read_desync_result_returns_none_when_file_missing(entrypoint):
+    assert entrypoint.read_desync_result() is None
+
+
+def test_read_desync_result_returns_true(entrypoint):
+    with open(entrypoint.DESYNC_RESULT_PATH, "w") as f:
+        f.write('{"desyncDetected": true}')
+
+    assert entrypoint.read_desync_result() is True
+
+
+def test_read_desync_result_returns_false(entrypoint):
+    with open(entrypoint.DESYNC_RESULT_PATH, "w") as f:
+        f.write('{"desyncDetected": false}')
+
+    assert entrypoint.read_desync_result() is False
+
+
+def test_read_desync_result_returns_none_when_not_verified(entrypoint):
+    # 検証できなかった場合(MODログ取得失敗・期待スコア未取得)はnull。
+    with open(entrypoint.DESYNC_RESULT_PATH, "w") as f:
+        f.write('{"desyncDetected": null}')
+
+    assert entrypoint.read_desync_result() is None
+
+
+def test_read_desync_result_returns_none_on_corrupt_json(entrypoint):
+    # 読み取り失敗はジョブ全体を失敗させず、未検証扱いに倒す。
+    with open(entrypoint.DESYNC_RESULT_PATH, "w") as f:
+        f.write("not json")
+
+    assert entrypoint.read_desync_result() is None

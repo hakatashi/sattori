@@ -14,7 +14,8 @@ EC2 Fleet インスタンスの UserData から `docker run` で起動される�
      record_{game}.py(recording_common.pyの共通録画パイプラインを使う、Issue #13)
      で録画(ProgressReporterが録画中のスクリーンショット/進捗をS3・DynamoDBへ反映する)
   3. 録画完了直後、生動画をS3へアップロードしoutputPathを保存(=チェックポイント) →
-     status を converting に更新
+     status を converting に更新(併せてリプレイずれの事後検証結果 desyncDetected も
+     書き込む、Issue #103。recording_common.check_replay_desync() 参照)
   4. 配信用変換(等倍への戻し・解像度合わせ・ウォーターマーク合成を1パスで。
      進捗%を10秒間隔程度で報告)
   5. 変換後動画をS3へアップロード → status を done に更新。出力が1本か2本かは
@@ -37,6 +38,7 @@ SendTaskSuccess/SendTaskFailure で Step Functions にも通知する。
 ジョブ固有の値はすべて環境変数で渡される(apps/api の ec2.buildUserData /
 handlers/sfn/launch.ts 参照)。
 """
+import json
 import os
 import subprocess
 import sys
@@ -63,6 +65,10 @@ TITLE_ASSETS_BUCKET = os.environ["TITLE_ASSETS_BUCKET"]
 WATERMARK = os.environ.get("WATERMARK", "1") == "1"
 TASK_TOKEN = os.environ.get("TASK_TOKEN")
 EXPECTED_DURATION_SECONDS = os.environ.get("EXPECTED_DURATION_SECONDS")
+# リプレイファイルに記録された最終スコア(画面表示値)。apps/api/src/workerEnv.tsが
+# job.replayInfo.scoreから転記する(未取得なら未設定)。リプレイずれの事後検証
+# (Issue #103、recording_common.check_replay_desync())に使う。
+EXPECTED_SCORE = os.environ.get("EXPECTED_SCORE")
 
 REPO = "/app"
 WORK_DIR = f"/app/runs/{JOB_ID}"
@@ -70,6 +76,9 @@ REPLAY_PATH = f"{WORK_DIR}/upload.rpy"
 OUTPUT_VIDEO = f"{WORK_DIR}/video.mp4"
 OUTPUT_VIDEO_DELIVERY = f"{WORK_DIR}/video_delivery.mp4"
 PROGRESS_DIR = f"{WORK_DIR}/progress"
+# リプレイずれ検証(Issue #103)の結果。record_thNN.pyは別プロセスのため、戻り値を
+# ファイル経由で受け渡す(recording_common.write_desync_result()が書く)。
+DESYNC_RESULT_PATH = f"{WORK_DIR}/desync_result.json"
 # 出力オブジェクトキー。CloudFront はこのキーをパスとして配信する。
 # `OUTPUT_KEY` は録画直後の生データ(チェックポイント)の置き場でもある。
 # `_720p` という接尾辞は歴史的なもので、実際の解像度は録画によって変わる
@@ -280,6 +289,9 @@ def record(s3):
         ]
         if EXPECTED_DURATION_SECONDS:
             cmd += ["--expected-duration-seconds", EXPECTED_DURATION_SECONDS]
+        if EXPECTED_SCORE:
+            cmd += ["--expected-score", EXPECTED_SCORE]
+        cmd += ["--desync-result-path", DESYNC_RESULT_PATH]
 
         result = subprocess.run(cmd)
     finally:
@@ -302,7 +314,26 @@ def record(s3):
         # 書き換えると、変換フェーズの進捗が届くまでの数秒間「変換中 100%」に
         # 見えてしまう(Issue #108)。
         reset_progress=True,
+        desync_detected=read_desync_result(),
     )
+
+
+def read_desync_result():
+    """record_thNN.pyが書き出したリプレイずれ検証結果(Issue #103)を読む。
+
+    True/False が判明した場合のみ返し、未検証(ファイル無し・null)の場合は
+    Noneを返す(update_status()はNoneなら`desyncDetected`属性に触れない)。
+    """
+    if not os.path.exists(DESYNC_RESULT_PATH):
+        return None
+    try:
+        with open(DESYNC_RESULT_PATH) as f:
+            data = json.load(f)
+        detected = data.get("desyncDetected")
+        return detected if isinstance(detected, bool) else None
+    except (OSError, ValueError) as err:  # noqa: BLE001 - 診断結果の読み取り失敗でジョブは失敗させない
+        log(f"リプレイずれ検証結果の読み取りに失敗しました(継続): {err}")
+        return None
 
 
 def convert_and_upload(s3, time_scale):

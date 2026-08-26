@@ -132,20 +132,28 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         // 表示計算に使われていることを実証済みの特定コールサイトのみ時刻の
         // 進み方を補正し、等倍相当のfps値を表示させる(reports/48参照)。
         InstallFpsDisplayCorrectionHook();
-        // デシンク(リプレイずれ)の事後調査用に、ゲーム内スコア・ステージ番号・
-        // 残機・グレイズを1秒間隔でMODログへ出力する(reports/50)。録画パイプラインの
-        // 判定には使わない(score_monitor.h参照)。
+        // リプレイずれ判定用に、ゲーム内スコア・ステージ番号・残機・グレイズを
+        // 1秒間隔でMODログへ出力する(Issue #103、reports/50)。
         // RVAはthpracのthprac_th20.cpp(rel_addrs::GAME_SIDE0 = 0x1ba568 と
         // GlobalsSide構造体)由来。GlobalsSide本体は RVA(GAME_SIDE0 + 0x88) に
         // 直に置かれており、score(uint64)がその先頭、life_stocksが+0xb8、
-        // grazeが+0xe4、ステージ番号が+0x1f4。th20 ver1.00cで検証済み。
+        // grazeが+0xe4、ステージ番号が+0x1f4。th20 ver1.00cで検証済み。フル尺録画で
+        // リプレイ記録スコアとの完全一致を実機確認済み(reports/50、
+        // touhou-recorder reports/53_phase53_score_monitor_all_titlesで
+        // score_monitor.hの構造体リファクタ後もリグレッション無しを再確認済み)。
         {
             const uint32_t kGlobalsSide = 0x1ba568 + 0x88; // = 0x1ba5f0
             ScoreMonitorConfig sm;
-            sm.scoreRva = kGlobalsSide + 0x00;
-            sm.livesRva = kGlobalsSide + 0xb8;
-            sm.grazeRva = kGlobalsSide + 0xe4;
-            sm.stageRva = kGlobalsSide + 0x1f4;
+            sm.baseRva = kGlobalsSide;
+            sm.baseIsPointer = false;
+            sm.scoreOffset = 0x00;
+            sm.scoreWidth = 8;
+            sm.stageOffset = 0x1f4;
+            sm.stageWidth = 4;
+            sm.livesOffset = 0xb8;
+            sm.livesWidth = 4;
+            sm.grazeOffset = 0xe4;
+            sm.grazeWidth = 4;
             sm.intervalMs = 1000;
             StartScoreMonitorThread(sm);
         }

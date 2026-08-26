@@ -15,6 +15,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-25",
+    ja: "録画終了時のスコアがリプレイの記録スコアと一致しない場合、リプレイずれの可能性がある旨を表示するよう追加",
+    en: "Added a notice warning of a possible replay desync when the score at the end of recording doesn't match the score recorded in the replay file",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/169",
+  },
+  {
+    date: "2026-08-25",
     ja: "アップロード画面から他ページへ移動後、ブラウザで戻っても入力内容が消えないよう修正",
     en: "Fixed input on the upload screen being lost after navigating away and back with the browser",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/139",
