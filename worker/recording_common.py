@@ -57,6 +57,7 @@ import re
 import signal
 import subprocess
 import time
+import traceback
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -641,16 +642,56 @@ def log_thprac_output(out, log):
             log(f"thprac出力: {line.rstrip()}")
 
 
-def kill_wine_and_wait(config, env, process_name):
+def _find_pids_with_wineprefix(wineprefix):
+    """指定WINEPREFIXで動作中の全プロセスのPIDを`/proc`から洗い出す。
+    プロセス名でのpkillは並列録画中の他インスタンス(同名の別WINEPREFIX、reports/33)まで
+    巻き込みかねないため、各プロセスの環境変数WINEPREFIXで対象を絞り込む。"""
+    target = f"WINEPREFIX={wineprefix}".encode()
+    pids = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/environ", "rb") as f:
+                environ = f.read()
+        except OSError:
+            # プロセスがこの読み取り中に終了しただけの正常なレース。
+            continue
+        if target in environ.split(b"\0"):
+            pids.append(int(entry))
+    return pids
+
+
+def kill_wine_and_wait(config, env, process_name, log=print):
     """ゲーム本体とwineserverを終了させ、実際にwineserverが終了するまで待つ。
     固定sleepで待っていたところ、AWSのようにCPUが逼迫した環境ではwineserverの
     終了処理自体に2秒以上かかることがあり、終了前に次の試行のinjectorを起動して
     ウィンドウ検出に失敗する事象が確認された(reports/24)。`wineserver -w`は
     現在起動中のwineserverが実際に終了するまでブロックするため、固定時間の
-    推測より確実。呼び出し側は`config.process_name`を渡すこと(find_live_game_pid()参照)。"""
+    推測より確実。呼び出し側は`config.process_name`を渡すこと(find_live_game_pid()参照)。
+
+    ゲームプロセスがGPU待ち等でD state(カーネルレベルで割り込み不可能)に陥っていると
+    `wineserver -k`のシグナルが効かず、`-w`が60秒待っても終了を確認できないことがある
+    (2026-08-27、ホストのsystem D-Busメッセージキュー枯渇インシデント。放置された
+    winedevice.exeがsystem D-Busの購読を持ったまま残り続けたのが一因)。その場合は
+    諦めてこのWINEPREFIX配下に残る全プロセスをSIGKILLする。ここで例外にせず必ず
+    後片付けを完結させないと、呼び出し元(リトライループ)が例外で中断した際に
+    wineserver/winedeviceがホストに無期限に取り残されてしまう。"""
     subprocess.run(["pkill", "-9", "-x", process_name])
     subprocess.run(["wineserver", "-k"], env=env)
-    subprocess.run(["wineserver", "-w"], env=env, timeout=60)
+    try:
+        subprocess.run(["wineserver", "-w"], env=env, timeout=60)
+    except subprocess.TimeoutExpired:
+        leftover_pids = _find_pids_with_wineprefix(config.wineprefix)
+        log(
+            f"WARNING: wineserver -w が60秒でタイムアウトしました(wineprefix={config.wineprefix})。"
+            f"残存プロセスをSIGKILLします: {leftover_pids}"
+        )
+        for pid in leftover_pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 def wait_for_log_marker(log_path, marker, timeout, poll_interval=0.1, log_all=False, seen_lines=None, log=print):
@@ -1026,7 +1067,7 @@ def _failure_result(config, env, log):
     output_exists=Falseにしておけばrecord_with_retry()の失敗判定がそのまま効く
     (reports/24で、以前はsys.exit(1)によりリトライループごとプロセスが終了して
     しまう不具合があった教訓を踏まえた設計)。"""
-    kill_wine_and_wait(config, env, config.process_name)
+    kill_wine_and_wait(config, env, config.process_name, log=log)
     return {
         "output_exists": False,
         "classification": "setup_error",
@@ -1345,7 +1386,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         stop_reason = "タイムアウト"
     log(f"録画終了。総録画時間 {total_record_sec:.1f}秒 検知方式: {stop_reason}")
 
-    kill_wine_and_wait(config, env, config.process_name)
+    kill_wine_and_wait(config, env, config.process_name, log=log)
 
     return {
         "output_exists": output_exists,
@@ -1391,9 +1432,24 @@ def _record_with_retry(config, replay_path, output_path, *,
                        expected_score, desync_result_path, log):
     for attempt in range(1, max_attempts + 1):
         log(f"=== 試行 {attempt}/{max_attempts} ===")
-        result = attempt_recording(
-            config, replay_path, output_path, progress_dir, expected_duration_seconds, log=log,
-        )
+        try:
+            result = attempt_recording(
+                config, replay_path, output_path, progress_dir, expected_duration_seconds, log=log,
+            )
+        except Exception as err:  # noqa: BLE001 - この試行の後始末をしてリトライへ倒す
+            # attempt_recording()は正常系・setup_error系のどちらの戻り道でも
+            # kill_wine_and_wait()を呼んでから返る設計だが、その手前(GameConfig組み立てや
+            # ウィンドウ検出等)で想定外の例外が起きると後片付けが一切行われないまま
+            # 関数を抜けてしまう。ここで捕まえずに例外を伝播させると、リトライループごと
+            # 中断してスクリプト全体がクラッシュし、wineserver/winedeviceがホストに
+            # 無期限に取り残される(2026-08-27インシデント)。
+            log(f"ERROR: 試行{attempt}中に想定外の例外が発生しました: {err!r}")
+            log(traceback.format_exc())
+            try:
+                kill_wine_and_wait(config, config.build_env(), config.process_name, log=log)
+            except Exception as cleanup_err:  # noqa: BLE001 - 後片付け自体の失敗でループを止めない
+                log(f"ERROR: 後片付け中にも例外が発生しました: {cleanup_err!r}")
+            continue
         if not result["output_exists"]:
             log("WARNING: 出力ファイルが生成されなかったため、この試行は失敗として扱います")
             continue

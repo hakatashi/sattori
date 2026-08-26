@@ -46,6 +46,7 @@
 | [0032](0032-replay-info-server-side-reparse-only.md) | 2026-08-26 | apps/api | replayInfo/game/estimatedDurationSecondsはクライアント申告値を使わずサーバー側で再パースする | 有効 |
 | [0033](0033-admission-control-split-magic-link-vs-start-job.md) | 2026-08-26 | apps/api | 受付制御（キルスイッチ・月間コストガード）はrequestMagicLinkとstartJobで非対称にチェックする | 有効 |
 | [0034](0034-launch-handlefailure-timing.md) | 2026-08-26 | apps/api | Launch/HandleFailureの判定タイミングは早期失敗通知の遅延と書き込み競合を考慮して決める | 有効 |
+| [0035](0035-outer-timeout-wrapper-for-bare-metal-runs.md) | 2026-08-27 | worker | 録画処理のハング対策はコード側の後片付け頑健化とベアメタル実行時の外側timeoutラッパーの二段構えにする | 有効 |
 
 ## 書き方
 

@@ -12,6 +12,7 @@
 
 | 検証日 | 内容 | 結論 |
 | --- | --- | --- |
+| [2026-08-27](2026-08-27-wine-cleanup-hang-incident.md) | 自宅ワーカーホストのsystemdハングインシデントの原因調査(Issue #186) | `kill_wine_and_wait()`のタイムアウト未捕捉でwineserver/winedeviceがホストに取り残され、system D-Busのメッセージキューを枯渇させたことが一因。修正済み |
 | [2026-08-26](2026-08-26-th20-post-cooler-replacement-verification.md) | CPUクーラー換装(簡易水冷→空冷)後の自宅ワーカー健全性確認(Issue #162)。th20の低速/等倍/低速2並列 | サーマルは解消(録画中も最大61℃)。ただしth20低速録画2並列で温度と無関係の新規フリーズバグを発見(Issue #179) |
 | [2026-08-25](2026-08-25-th07-score-monitor-fix.md) | th07のscore_monitor無効化(RVA不一致)を修正し、判定ロジックも頑健化 | th07を含む全5タイトルで実機動作確認。末尾ゴミ値の新パターンにも対応 |
 | [2026-08-25](2026-08-25-score-monitor-desync-verification.md) | score_monitor（リプレイずれ検証、Issue #103）の5タイトル横展開を実機検証 | th06/08/11/20は動作確認。th07はゲームバイナリのバージョン差でMODのRVAが通用せず無効化 |
