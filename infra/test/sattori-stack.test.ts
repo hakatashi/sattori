@@ -64,6 +64,32 @@ describe("SattoriStack", () => {
     });
   });
 
+  it("タイトル固有アセット用バケットがRETAIN + バージョニング有効になっている(Issue #136、ゲーム本体+WINEPREFIX+MODの誤削除・誤上書きから守る)", () => {
+    template.hasResource("AWS::S3::Bucket", {
+      Properties: Match.objectLike({
+        VersioningConfiguration: { Status: "Enabled" },
+      }),
+      DeletionPolicy: "Retain",
+      UpdateReplacePolicy: "Retain",
+    });
+    // autoDeleteObjectsのカスタムリソース(BucketDeployment等のヘルパー)が
+    // 付いていないことの確認を兼ねる。付くとRETAINにしても中身が消える。
+    template.resourceCountIs("Custom::S3AutoDeleteObjects", 3);
+  });
+
+  it("タイトル固有アセット用バケットの旧バージョンが90日で自動削除される(Issue #136、無期限に積み上がるストレージ費を抑える)", () => {
+    template.hasResourceProperties("AWS::S3::Bucket", {
+      LifecycleConfiguration: {
+        Rules: Match.arrayWith([
+          Match.objectLike({
+            NoncurrentVersionExpiration: { NoncurrentDays: 90 },
+            Status: "Enabled",
+          }),
+        ]),
+      },
+    });
+  });
+
   it("全ハンドラの共通環境変数に TITLE_ASSETS_BUCKET が設定されている(Issue #22)", () => {
     const resources = template.findResources("AWS::Lambda::Function", {
       Properties: {
@@ -307,6 +333,17 @@ describe("SattoriStack", () => {
     template.hasResourceProperties("AWS::DynamoDB::Table", {
       KeySchema: [{ AttributeName: "jobId", KeyType: "HASH" }],
       StreamSpecification: { StreamViewType: "NEW_AND_OLD_IMAGES" },
+    });
+  });
+
+  it("JobsTableがRETAIN + PITR有効になっている(Issue #136、管理画面のコスト集計が全件Scanに依存するため誤削除・誤更新から守る)", () => {
+    template.hasResource("AWS::DynamoDB::Table", {
+      Properties: Match.objectLike({
+        KeySchema: [{ AttributeName: "jobId", KeyType: "HASH" }],
+        PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true },
+      }),
+      DeletionPolicy: "Retain",
+      UpdateReplacePolicy: "Retain",
     });
   });
 
