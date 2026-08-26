@@ -59,6 +59,7 @@ function baseJob(overrides: Partial<JobRecord>): JobRecord {
     retriedFromJobId: null,
     language: "ja",
     desyncDetected: null,
+    timedOut: null,
     ...overrides,
   };
 }

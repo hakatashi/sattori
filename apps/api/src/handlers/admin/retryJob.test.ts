@@ -64,6 +64,7 @@ const failedJob: JobRecord = {
   retriedFromJobId: null,
   language: "en",
   desyncDetected: null,
+  timedOut: null,
 };
 
 function makeEvent(jobId?: string): APIGatewayProxyEventV2 {

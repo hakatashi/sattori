@@ -39,6 +39,7 @@ function buildJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     replayInfo: REPLAY_INFO,
     slowMotion: false,
     desyncDetected: null,
+    timedOut: null,
     ...overrides,
   };
 }
