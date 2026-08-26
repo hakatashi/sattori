@@ -160,7 +160,8 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   `ses:SendEmail`。SESサンドボックス中は送信先IDも権限チェック対象になるため、
   Resourceはアカウント配下のSES identity全体`identity/*`に絞っている）、
   SweepOrphanInstances Lambdaロール（`ec2:DescribeInstances`/`ec2:TerminateInstances`
-  ＋`states:DescribeExecution`＋`JobsTable`読み取り、Issue #23）、
+  ＋`states:DescribeExecution`＋`JobsTable`読み取り、Issue #23）、SweepStalledJobs
+  Lambdaロール（`states:DescribeExecution`＋`JobsTable`読み書き、Issue #132）、
   **`HomeWorkerRole`**（自宅サーバーの常駐デーモンがassumeする最小権限ロール、
   Issue #49。信頼ポリシーはアカウント内プリンシパル、`maxSessionDuration`は4時間
   ＝ジョブ1本の最長所要時間より確実に長い値。実際に誰が使えるかは、手動で作る
@@ -169,34 +170,39 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   を取得する`cloudwatch:GetMetricData`。GetMetricDataもリソースレベル権限に非対応の
   ため`Resource: "*"`が必要、Issue #163）。
 - **EventBridge**: `OrphanInstanceSweepRule`（`ORPHAN_SWEEP_INTERVAL_MINUTES`＝10分
-  間隔で`SweepOrphanInstancesFn`を起動、Issue #23）。孤児化した録画EC2の定期掃除で、
-  **ジョブレコードではなくAWS上に実在するインスタンス（タグ`sattori:jobId`）を起点に
-  走査する**のが要点。`Launch`が`instanceId`をDynamoDBへ書く前に死んだ場合、ジョブ側
-  からは辿れないインスタンスが残って課金だけが続くため、ジョブ起点の後始末
-  （`HandleFailure`・管理画面の緊急停止）では構造的に拾えない。判定を安全側へ倒す
-  仕組み（15分の猶予・実行中ジョブでは最新1台を保護）は`apps/api/README.md`
-  「孤児インスタンスの検知」と
+  間隔で`SweepOrphanInstancesFn`と`SweepStalledJobsFn`の2つを起動）。前者（Issue #23）
+  は孤児化した録画EC2の定期掃除で、**ジョブレコードではなくAWS上に実在するインスタンス
+  （タグ`sattori:jobId`）を起点に走査する**のが要点。`Launch`が`instanceId`をDynamoDB
+  へ書く前に死んだ場合、ジョブ側からは辿れないインスタンスが残って課金だけが続くため、
+  ジョブ起点の後始末（`HandleFailure`・管理画面の緊急停止）では構造的に拾えない。
+  判定を安全側へ倒す仕組み（15分の猶予・実行中ジョブでは最新1台を保護）は
+  `apps/api/README.md`「孤児インスタンスの検知」と
   [`docs/decisions/0017`](../docs/decisions/0017-orphan-sweep-from-aws-instances.md)参照。
+  後者（`SweepStalledJobsFn`、Issue #132）は逆に**ジョブレコードのstatusを起点**にし、
+  非終端のまま固まったジョブを`failed`へ確定する対の掃除役。追加のRule・GSIを増やさず
+  同じRuleへ相乗りしている。詳細は`apps/api/README.md`「非終端ジョブレコードの掃除」と
+  [`docs/decisions/0031`](../docs/decisions/0031-stalled-job-sweep-by-status.md)参照。
 - **CloudWatch Logs**: `/sattori/worker`（2週間保持）。EC2ワーカーはdockerの
   `awslogs`ドライバで、自宅ワーカーは常駐デーモンが`PutLogEvents`で
   （dockerデーモンにAWS認証情報を持たせないため）、いずれも`{jobId}`という同じ
   ストリーム名で書き込む。重複フレーム診断のため失敗時も残す。
 - **Lambda**（`NodejsFunction`、CJS出力。ESM出力だとAWS SDK内部の動的
-  `require("node:https")`がLambda(ESM)で失敗するため）× 22: createUpload /
+  `require("node:https")`がLambda(ESM)で失敗するため）× 23: createUpload /
   parseReplay / requestMagicLink / startJob / getJob / getWorkerAvailability /
   recordAnalyticsEvent / sendCompletionEmail / sfn.launch / sfn.handleFailure /
-  sweepOrphanInstances / admin.authorizer / admin.listJobs / admin.getJobDetail /
-  admin.getExecution / admin.getLogs / admin.stopJob / admin.retryJob /
-  admin.getCosts / admin.getAnalytics（Issue #149）/ admin.getSettings /
-  admin.updateSettings。HTTP APIをトリガー
-  としないものが2本あり、`sendCompletionEmail`は`JobsTable`のDynamoDB Streams
-  （`eventName: MODIFY`・`NewImage.status: "done"`にフィルタ）、
-  `sweepOrphanInstances`はEventBridgeのスケジュールルール（上記、Issue #23）を
-  イベントソースとする。管理系（`admin.*`）の大半は他のLambdaと同じ`commonEnv`を
+  sweepOrphanInstances / sweepStalledJobs（Issue #132）/ admin.authorizer /
+  admin.listJobs / admin.getJobDetail / admin.getExecution / admin.getLogs /
+  admin.stopJob / admin.retryJob / admin.getCosts / admin.getAnalytics（Issue #149）/
+  admin.getSettings / admin.updateSettings。HTTP APIをトリガー
+  としないものが3本あり、`sendCompletionEmail`は`JobsTable`のDynamoDB Streams
+  （`eventName: MODIFY`・`NewImage.status: "done"`にフィルタ）、`sweepOrphanInstances`・
+  `sweepStalledJobs`はどちらも同じEventBridgeのスケジュールルール（上記、Issue #23・
+  #132）をイベントソースとする。管理系（`admin.*`）の大半は他のLambdaと同じ`commonEnv`を
   使う（認可はAPI Gateway側のLambda Authorizerで完結するため環境変数を絞る動機が
   無い）。`commonEnv`を使わず用途ごとの環境変数のみを個別付与するのは
-  `admin.authorizer`・`admin.getLogs`・`sweepOrphanInstances`・`recordAnalyticsEvent`
-  だけ（下記「管理画面」・`apps/api/README.md`「環境変数」「計測」参照）。
+  `admin.authorizer`・`admin.getLogs`・`sweepOrphanInstances`・`sweepStalledJobs`・
+  `recordAnalyticsEvent`だけ（下記「管理画面」・`apps/api/README.md`「環境変数」
+  「計測」参照）。
 - ワーカーAMIはSSMの ECS 最適化 AL2023（Docker同梱）を参照。
 
 ## 管理画面（`/admin`、Issue #51）

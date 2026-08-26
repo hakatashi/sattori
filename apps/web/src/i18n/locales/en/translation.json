@@ -229,6 +229,7 @@
     "http_error": "The request failed ({{status}})",
     "retries_exhausted": "Recording failed multiple times. Please try again later",
     "recording_failed": "An error occurred while recording",
-    "admin_stopped": "Stopped by an administrator"
+    "admin_stopped": "Stopped by an administrator",
+    "stalled": "The recording process stopped responding for an extended period. Please upload your replay file again"
   }
 }

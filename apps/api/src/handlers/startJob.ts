@@ -6,9 +6,51 @@ import { error, json } from "../http.js";
 import { getJob, JobAlreadyStartedError, startPendingJob, updateJobStatus } from "../jobs.js";
 import { INITIAL_ATTEMPT } from "../retryPolicy.js";
 import { getSettings } from "../settings.js";
+import { buildExecutionArn, getExecutionLiveness } from "../stepFunctions.js";
 import type { LaunchTaskEvent } from "./sfn/launch.js";
 
 const sfn = new SFNClient({});
+
+/**
+ * ジョブの`queued`への遷移が確定した後にStep Functionsの実行を開始する
+ * （初回起動、および下記`重複起動の救済`からの再試行の両方から呼ぶ）。
+ * 失敗時は原因をCloudWatch Logsへ残したうえでジョブを`failed`に確定し、例外を投げる
+ * （呼び出し側は捕まえて502を返す）。
+ */
+async function startExecution(jobId: string, jobsTable: string): Promise<StartJobResponse> {
+  try {
+    const input: Pick<LaunchTaskEvent, "jobId" | "attempt"> = {
+      jobId,
+      attempt: INITIAL_ATTEMPT,
+    };
+    await sfn.send(
+      new StartExecutionCommand({
+        stateMachineArn: required("STATE_MACHINE_ARN"),
+        name: jobId,
+        input: JSON.stringify(input),
+      }),
+    );
+  } catch (err) {
+    // StartExecution 失敗の原因を切り分けられるよう、例外の詳細を CloudWatch Logs
+    // に残す（DynamoDB の error は簡潔な文言のみ保持）。
+    console.error(
+      JSON.stringify({
+        event: "start_execution_failed",
+        jobId,
+        name: err instanceof Error ? err.name : undefined,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    await updateJobStatus(jobsTable, jobId, "failed", "録画ワーカーの起動に失敗しました", {
+      errorCode: "launch_failed",
+    });
+    throw err;
+  }
+
+  // 実際の "launching" への遷移は非同期に Launch タスクが行う。フロントは
+  // ポーリングで状態を追従するため、ここでは queued のまま返してよい。
+  return { jobId, status: "queued" };
+}
 
 /**
  * POST /jobs/{jobId}/start
@@ -31,7 +73,46 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }
 
   if (job.status !== "pending") {
-    // 起動済み（2回目以降のアクセス）。現在の状態をそのまま返すだけでよい。
+    // 起動済み（2回目以降のアクセス）。
+    //
+    // `queued`のみ、Step Functions実行の生死を確認する（Issue #132 経路(a)）。
+    // `startPendingJob`が成功した直後、`StartExecutionCommand`が呼ばれる前に
+    // Lambdaが死ぬと、ジョブは`queued`のまま実行が存在しない状態で永久に固まる
+    // ——実行名にjobIdをそのまま使っているため、`absent`（未起動）と分かれば
+    // `StartExecutionCommand`だけを冪等に張り直せる。`queued`以外
+    // （`launching`以降）は、実行が既に一度は始まっている証拠なのでここでは扱わない
+    // （実行だけが消えて非終端のまま固まるケースは`handlers/sweepStalledJobs.ts`が拾う）。
+    if (job.status === "queued") {
+      let liveness;
+      try {
+        liveness = await getExecutionLiveness(
+          sfn,
+          buildExecutionArn(required("STATE_MACHINE_ARN"), jobId),
+        );
+      } catch (err) {
+        // 判定不能なら再起動せず現状のまま返す（二重起動の害の方が大きい）。
+        console.error(
+          JSON.stringify({
+            event: "start_job_describe_execution_failed",
+            jobId,
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
+        liveness = "running" as const;
+      }
+      if (liveness === "absent") {
+        try {
+          const response = await startExecution(jobId, config.jobsTable);
+          return json(200, response);
+        } catch {
+          return error(
+            502,
+            "launch_failed",
+            "録画ワーカーの起動に失敗しました。時間をおいて再試行してください",
+          );
+        }
+      }
+    }
     const response: StartJobResponse = { jobId: job.jobId, status: job.status };
     return json(200, response);
   }
@@ -74,40 +155,13 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }
 
   try {
-    const input: Pick<LaunchTaskEvent, "jobId" | "attempt"> = {
-      jobId,
-      attempt: INITIAL_ATTEMPT,
-    };
-    await sfn.send(
-      new StartExecutionCommand({
-        stateMachineArn: required("STATE_MACHINE_ARN"),
-        name: jobId,
-        input: JSON.stringify(input),
-      }),
-    );
-  } catch (err) {
-    // StartExecution 失敗の原因を切り分けられるよう、例外の詳細を CloudWatch Logs
-    // に残す（DynamoDB の error は簡潔な文言のみ保持）。
-    console.error(
-      JSON.stringify({
-        event: "start_execution_failed",
-        jobId,
-        name: err instanceof Error ? err.name : undefined,
-        message: err instanceof Error ? err.message : String(err),
-      }),
-    );
-    await updateJobStatus(config.jobsTable, jobId, "failed", "録画ワーカーの起動に失敗しました", {
-      errorCode: "launch_failed",
-    });
+    const response = await startExecution(jobId, config.jobsTable);
+    return json(200, response);
+  } catch {
     return error(
       502,
       "launch_failed",
       "録画ワーカーの起動に失敗しました。時間をおいて再試行してください",
     );
   }
-
-  // 実際の "launching" への遷移は非同期に Launch タスクが行う。フロントは
-  // ポーリングで状態を追従するため、ここでは queued のまま返してよい。
-  const response: StartJobResponse = { jobId, status: "queued" };
-  return json(200, response);
 };

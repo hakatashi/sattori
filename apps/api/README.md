@@ -30,11 +30,12 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | `createUpload.ts` | `POST /uploads` | `.rpy` アップロード用の署名付きPUT URLを発行（ファイル本体はLambdaを経由しない）。`size`は`MAX_REPLAY_BYTES`以下の整数であることを検証したうえで署名の`ContentLength`に使うため、実際のPUTのバイト数がこの値と一致しないとS3が拒否する（Issue #128 SEC-2） |
 | `parseReplay.ts` | `POST /replays/parse` | アップロード済みリプレイを取得し `@sattori/shared` の `parseReplayInfo()` で解析。同じロジックはブラウザでも直接動くため（`apps/web/README.md`「ページAのフロー」参照）、現在のページAはこのAPIを呼ばず解析をクライアント内で完結させている。将来他のクライアント（管理画面の再解析等）が使う可能性を見込んで残してある |
 | `requestMagicLink.ts` | `POST /magic-links` | レート制限チェック→`status: "pending"`の`JobRecord`作成→SESでマジックリンク送信。メール送信自体が失敗したらジョブを削除してロールバックする。低速録画（Issue #68）の要求は**低速録画に対応したタイトル（`supportsSlowMotion()`、Issue #101）でなければ握り潰す**（等倍で録画できる以上エラーにはしない） |
-| `startJob.ts` | `POST /jobs/{jobId}/start` | `pending`→`queued`への原子遷移＋Step Functions `StartExecution` |
+| `startJob.ts` | `POST /jobs/{jobId}/start` | `pending`→`queued`への原子遷移＋Step Functions `StartExecution`。`queued`のまま実行が`absent`なら張り直す（[Issue #132対応](../../docs/decisions/0031-stalled-job-sweep-by-status.md)） |
 | `getJob.ts` | `GET /jobs/{jobId}` | ジョブ状態取得。完了時はCloudFrontのダウンロードURL・プレビュー再生URLを組み立てる。低速録画（Issue #68）で走るかどうか（`isSlowMotionRecording()`）も返す |
 | `getWorkerAvailability.ts` | `GET /worker-availability` | 常駐ワーカー（自宅ワーカー、Issue #49）の空き状況。ページAが「低速録画」を選べるか判定するためだけの公開エンドポイント。**認証なしで公開されるため`workerId`・台数・負荷は返さない**（開発者の自宅環境の稼働状況を必要以上に外へ出さない） |
 | `sendCompletionEmail.ts` | JobsTableのDynamoDB Streams | ジョブが`done`に遷移した瞬間を検知しSESで完了メール送信 |
 | `sweepOrphanInstances.ts` | EventBridgeのスケジュールルール（10分間隔） | 孤児化した録画EC2インスタンスの定期掃除（Issue #23。§5） |
+| `sweepStalledJobs.ts` | 同上（同じRuleに相乗り） | 非終端のまま固まったジョブレコードを`failed`へ確定する定期掃除（[Issue #132対応](../../docs/decisions/0031-stalled-job-sweep-by-status.md)） |
 | `sfn/launch.ts` | Step Functions `Launch`タスク | EC2 Fleetでワーカーを1台起動（`waitForTaskToken`。成否確定はワーカー自身が行う） |
 | `sfn/handleFailure.ts` | Step Functions `HandleFailure`タスク | 孤児インスタンスをterminateしつつリトライ可否を判定 |
 | `admin/authorizer.ts` | `/admin/*` の Lambda Authorizer | 共有トークンの検証（[`docs/admin-api.md`](docs/admin-api.md)） |
@@ -62,24 +63,24 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    （Issue #49、§3）かEC2 Fleetのどちらかで、EC2の場合は
    `launchRecordingInstance()`（`ec2.ts`）でSpotインスタンスを1台起動し、ジョブを
    `launching` に更新する（自宅ワーカーの場合は**claimと同じ条件付き更新の中で
-   デーモンが**`launching`にする。後から書くと、先に走り出したコンテナの`recording`を
-   上書きしうるため）。
+   デーモンが**`launching`にする。理由は
+   [`0034`](../../docs/decisions/0034-launch-handlefailure-timing.md)）。
    **このハンドラの戻り値はStep Functionsの実行結果に影響しない** — 成功/失敗の確定は
    ワーカー自身が`taskToken`経由で`SendTaskSuccess`/`SendTaskFailure`を呼ぶことで行う。
 3. Spot中断・タイムアウト等で失敗すると、3分の待機（インフラ側の`WaitBeforeCheck`。
-   Spot中断の早期失敗通知はワーカーの処理継続中に送られるため、即座に判定せず
-   猶予を置く）を挟んで `sfn/handleFailure.ts` が呼ばれる。ジョブが待機中に
+   理由は`0034`）を挟んで `sfn/handleFailure.ts` が呼ばれる。ジョブが待機中に
    `done` へ遷移していれば何もしない。未完了なら孤児化した可能性のあるインスタンスを
-   `terminateInstance()` し（対象は`JobRecord.instanceId`と**タグ`sattori:jobId`から
-   引いたインスタンスの和集合**。§5）、
-   自宅ワーカーへの割り当て・オファーを
+   `terminateInstance()` し（対象は§5参照）、自宅ワーカーへの割り当て・オファーを
    `releaseHomeWorkerAssignment()`（`homeWorker.ts`）で解除したうえで、
    `retryPolicy.ts` の `MAX_ATTEMPTS`（**10回**）未満なら
    `shouldRetry: true` を返してリトライ、上限に達していればジョブを `failed` に確定する
    （ワーカー自身が既に`failed`を書き込んでいれば上書きしない）。
 4. `handleFailure.ts` 自体がAWS APIの一時的な障害で例外を投げても、ジョブが
    非終端状態のまま固まらないよう、インフラ側でリトライ＋最終的な`Fail`遷移が
-   用意されている（`infra/README.md`参照）。
+   用意されている（`infra/README.md`参照）。ただしこの経路はジョブレコード自体を
+   直接更新しないため、それでも取りこぼした場合は
+   [`0031`](../../docs/decisions/0031-stalled-job-sweep-by-status.md)の定期掃除役が
+   拾う（Issue #132）。
 
 ## 3. 自宅ワーカーへのジョブ割り当て（`homeWorker.ts` / `workerRouting.ts`, Issue #49）
 
@@ -97,11 +98,9 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 
 1. `routingPolicyFor(job)`（`workerRouting.ts`）でこのジョブの方針を決める。
    タイトルごとに「オファーするか」「要求する追加能力」「待機秒数」を変えられる
-   （**th20だけ待機を上限まで伸ばす**・**低速録画の能力要求はタイトルではなく
-   `job.options.slowMotion` に紐づく**。理由は `0018`）。
+   （方針の中身と理由は`0018`）。
 2. `WorkersTable` のハートビート（`selectHomeWorker()`）を見て、引き受けられる
-   ワーカーがいるか判定する。**いなければ何もせず即EC2を起動する**ので、自宅が
-   落ちている平常時に録画開始が遅れることはない。
+   ワーカーがいるか判定する。**いなければ何もせず即EC2を起動する**。
 3. いれば `offerJobToHomeWorker()` でジョブレコードにオファーを書く。オファーには
    ワーカーコンテナへ渡す環境変数一式（`workerEnv.ts`、taskTokenを含む）を添える
    ので、デーモンはそれをそのまま`docker run`へ渡すだけでよい。オファーは
@@ -121,11 +120,9 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 
 ## 4. EC2 Fleet インスタンスタイプの分散配置（`ec2.ts`, Issue #29）
 
-単一インスタンスタイプのみだとそのハードウェアプールが時間帯によって枯渇し
-`InsufficientInstanceCapacity` で起動自体が失敗するため、サブネット（=AZ）×候補
-インスタンスタイプの全組み合わせを `CreateFleet` の `Overrides` に渡し、
-`AllocationStrategy: "price-capacity-optimized"`（`SingleInstanceType: false`）で
-配置する。候補はタイトルごとに違う。
+サブネット（=AZ）×候補インスタンスタイプの全組み合わせを `CreateFleet` の
+`Overrides` に渡し、`AllocationStrategy: "price-capacity-optimized"`
+（`SingleInstanceType: false`）で配置する。候補はタイトルごとに違う。
 
 | 対象 | 定数（`ec2.ts`） | 候補インスタンスタイプ |
 | --- | --- | --- |
@@ -148,9 +145,8 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 `fetchSpotPrice()`が`DescribeSpotPriceHistory`を1回だけ引いて
 `JobRecord.spotPricePerHour`へ記録し、`sfn/launch.ts`が`markJobLaunched()`で
 `JobRecord.launchedAt`（課金起点）を記録する。**単価の取得に失敗しても録画ジョブは
-落とさない**（nullへ縮退）、**`launchedAt`は既に値があれば書き換えない**（条件付き更新）。
-理由は
-[`docs/decisions/0021`](../../docs/decisions/0021-cost-estimation-side-data-never-fails-the-job.md)。
+落とさない**（nullへ縮退）、**`launchedAt`は既に値があれば書き換えない**（条件付き更新、
+理由は[`0021`](../../docs/decisions/0021-cost-estimation-side-data-never-fails-the-job.md)）。
 
 ## 5. 孤児インスタンスの検知（`orphanInstances.ts` / `handlers/sweepOrphanInstances.ts`, Issue #23）
 
@@ -180,10 +176,9 @@ Step Functions実行の生死（`getExecutionLiveness()`）・実行中ジョブ
 一元的に組み立て、**EC2（UserDataの`docker run -e`）と自宅ワーカー（オファーに添えて
 `JobRecord.homeWorkerEnv` に書き、デーモンがそのまま`docker run`へ渡す）で共有する**。
 
-こうしておくとワーカー側は「自分がどこで動いているか」を一切知らずに済み、環境差分は
-すべてこの関数の出力の違いとして表現される。低速録画（Issue #68。自宅ワーカーでのみ
-行う）のような分岐も、ワーカーの`if`ではなく「起動側が録画速度の環境変数を足すか
-どうか」で表現すること（[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
+低速録画（Issue #68。自宅ワーカーでのみ行う）のような環境差分も、ワーカーの`if`
+ではなく起動側がこの関数の出力に足すかどうかで表現する（理由は
+[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
 
 `TASK_TOKEN`（Step Functionsの実行を任意に成功/失敗させられるベアラ）を含むため、
 ログや外部への出力では必ず `redactWorkerEnv()` を通すこと。**この約束は型で強制して
@@ -206,43 +201,34 @@ UserDataスクリプトがやること:
 > [`docs/decisions/0019`](../../docs/decisions/0019-userdata-ecs-agent-off-and-bootstrap-failure-notification.md)。
 
 `-e KEY=VALUE`として埋め込む環境変数の値（`taskToken`含む）はすべて`shellEscape()`で
-単一引用符に括ってからスクリプトへ差し込む。`replayKey`等の入口検証（§8）をすり抜けた
-値やDB内の既存汚染データが来ても、コマンドインジェクションへ変換されないための
-多層防御（Issue #127 SEC-1）。
+単一引用符に括ってからスクリプトへ差し込む（入口検証をすり抜けた値が来ても
+コマンドインジェクションへ変換されない多層防御、Issue #127 SEC-1）。
 
 ## 8. マジックリンク送信・レート制限（`requestMagicLink.ts`, `rateLimit.ts`）
 
 - 同一メール（`+`エイリアス正規化後、`normalizeEmailForRateLimit()`）は24時間5件まで
   （`RATE_LIMIT_MAX_REQUESTS_PER_DAY`）。判定と記録を`EmailRateLimitTable`への条件付き
-  `UpdateCommand`1回に一本化して原子的に行う（旧実装のQuery→Put 2段階では、間隙に
-  同時到着したリクエスト同士が互いのカウントを見落とす競合状態があった）。固定
-  ウィンドウ方式（「そのメールで最初にカウントされた時刻から24時間」）で、厳密な
-  スライディングウィンドウではないがこの規模のサービスには十分という判断。
+  `UpdateCommand`1回に一本化して原子的に行う（競合状態を避けるため）。固定ウィンドウ
+  方式（「そのメールで最初にカウントされた時刻から24時間」）で、厳密なスライディング
+  ウィンドウではない。
 - ジョブは`status: "pending"`で作成されるが、Step Functionsはまだ起動しない
   （`POST /jobs/{jobId}/start`で初めて起動）。メール送信自体が失敗した場合は
-  作成したジョブを削除してロールバックする（誰もアクセスできないジョブを残さない）。
+  作成したジョブを削除してロールバックする。
 - `pending`ジョブの受付期限は24時間（`jobs.ts`の`PENDING_JOB_TTL_MS`。bot/濫用対策で、
   アップロード用S3の保持期間とは独立）。
 - `replayKey`はサーバー採番の形式（`uploads.ts`の`REPLAY_KEY_PATTERN`、
-  `replays/<uuid>.rpy`）と一致しない値を400で拒否する（Issue #127 SEC-1。
-  ワーカーEC2の起動スクリプトへそのまま渡る値のため、入口で形式を固定する）。
+  `replays/<uuid>.rpy`）と一致しない値を400で拒否する（Issue #127 SEC-1）。
 - `RequestMagicLinkRequest`に`game`/`estimatedDurationSeconds`/`replayInfo`は
-  **含まない**（Issue #133 OPS-1 フォローアップ）。`JobRecord`のこれら3項目は
-  すべて`replayKey`が指すアップロード済み.rpyをサーバー側で取得・再パースした
-  結果だけから決まる——`replay.ts`の`fetchReplayBytes()`（`POST /replays/parse`
-  （`parseReplay.ts`）と共通処理）で取得し、`parseReplayInfo()`で解析する。
-  クライアントに渡させていた旧実装には2つの問題があった:
-  1. `replayInfo.player`が完了メール本文へそのまま載る（`ses.ts`の
-     `formatReplayInfo()`）ため、第三者宛にフィッシング文面を仕込める経路になる。
-  2. `game`はEC2インスタンスタイプ選定（`ec2.ts`の`getCandidateInstanceTypes()`）
-     を直接左右するため、検証せず信用すると実際のリプレイと無関係な高コストな
-     タイトルを申告されうる。
-  再パースに失敗した場合（形式不明の破損ファイル等）のみ`game`はth07を既定とし、
-  `estimatedDurationSeconds`は`null`（進捗率非表示）として録画自体は継続する
-  （`decisions/0021`と同じ割り切り）。`parseReplayInfo()`は「形式不明」と
-  「形式は読めるが録画未対応」をどちらも`ok:false`にまとめるため、後者は
-  `result.error.game`から検出タイトルを別途拾う（でないと録画未対応タイトルの
-  検出をすり抜けさせてしまう）。
+  **含まない**。`JobRecord`のこれら3項目はすべて`replayKey`が指すアップロード済み
+  .rpyをサーバー側で取得・再パースした結果だけから決まる——`replay.ts`の
+  `fetchReplayBytes()`（`POST /replays/parse`（`parseReplay.ts`）と共通処理）で
+  取得し、`parseReplayInfo()`で解析する。再パースに失敗した場合（形式不明の破損
+  ファイル等）のみ`game`はth07を既定とし、`estimatedDurationSeconds`は`null`
+  （進捗率非表示）として録画自体は継続する（`decisions/0021`と同じ割り切り）。
+  `parseReplayInfo()`は「形式不明」と「形式は読めるが録画未対応」をどちらも
+  `ok:false`にまとめるため、後者は`result.error.game`から検出タイトルを別途拾う。
+  クライアント申告値をやめた理由は
+  [`docs/decisions/0032`](../../docs/decisions/0032-replay-info-server-side-reparse-only.md)。
 
 > 濫用対策をここから増やす前に
 > [`docs/decisions/0007`](../../docs/decisions/0007-no-ip-rate-limit-no-recaptcha.md) を読むこと
@@ -250,61 +236,18 @@ UserDataスクリプトがやること:
 
 ### メール本文（`ses.ts`）
 
-マジックリンクメール・完了メールの2通とも、文面はジョブ作成時に選ばれた言語
-（`JobRecord.language`）で出し分ける。本文の構成はどちらも共通で、冒頭に**どのリプレイに
-ついてのメールかを示すブロック**（作品タイトル・プレイヤー名・難易度・自機タイプ・スコア。
-`JobRecord.replayInfo` 由来で、値が取れない項目と `replayInfo` 自体が無いジョブでは
-その行／ブロックごと省く）を置き、続けてジョブページへのリンクを案内する（Issue #95）。
-
-- リンクは常に**ジョブページ**（`/jobs/{jobId}`、`en`なら`/en/jobs/{jobId}`）で、
-  動画の直リンクは載せない（ダウンロードURLはジョブの状態次第で変わり得るため）。
-- 完了メールのダウンロード期限（`calculateDownloadExpiresAt()`）は、**日本語の文面はJST、
-  英語の文面はUTC**で表記する（メールでは閲覧者のタイムゾーンが分からないため、
-  タイムゾーン名まで必ず併記する）。
-- 作品タイトルは `GAME_TITLES`（日本語名。副題に英語名を含む）を両言語で使い、自機タイプは
-  言語に応じたローカライズ名（`localizedCharacterName()`）を使う。
-- `player`/`character`/`difficulty`は`sanitizeReplayInfoField()`で改行・制御文字を
-  除去し32文字に打ち切ってから埋め込む（Issue #133 OPS-1）。`@sattori/touhou-replay-parser`
-  はth08・th11・th20でこれらをCRLF終端の可変長文字列として読むため、`requestMagicLink.ts`
-  でのサーバー側再パース（上記）だけでは「CRLFを含まない任意バイト列を偽装した.rpy」
-  による長文注入を防げない——ここが実質的な防御層になる。
+マジックリンクメール・完了メールの文面組み立て（言語別の出し分け・リンクの組み立て・
+ダウンロード期限のタイムゾーン表記・フィールドのサニタイズ）は
+[`docs/email-templates.md`](docs/email-templates.md) に分けてある。
 
 ## 9. キルスイッチ・月間コストガード（`settings.ts`, `costGuard.ts`, Issue #14／#130）
 
-`requestMagicLink.ts`は上記のメールレート制限より前に、以下2つのグローバルな
-受付制御を順に行う。どちらも`SettingsTable`（PK固定値1件のシングルトン設定、
-`SETTINGS_KEY = "global"`）に持つ`AdminSettings`を参照する。
-
-- **キルスイッチ**（`acceptingNewJobs`）: 管理画面（`/admin/settings`）から手動で
-  新規録画の受付を即座に停止できる。月間コストガードが発動する前に運用者が
-  緊急停止する用途を想定している。`getSettings()`はキャッシュせず毎回GetItem
-  するため（1件のみの軽量な読み取り）、切替は次のリクエストから反映される。
-- **月間コストガード**（`monthlyCostLimitUsd`、既定`DEFAULT_MONTHLY_COST_LIMIT_USD`
-  ＝50 USD）: 月間の録画**回数**ではなく、推定コスト機能
-  （`@sattori/shared`の`estimateJobCost()`、Issue #60）による**当月の推定コスト合計**
-  が閾値に達したら新規受付を止める。当月コストの算出
-  （`adminCosts.ts`の`estimateCurrentMonthCostUsd()`）は`JobsTable`の全件Scanを要する
-  ため、ユーザー向け経路専用の`costGuard.ts`が5分（`COST_GUARD_CACHE_TTL_MS`）
-  Lambda実行コンテキストにキャッシュする（＝閾値到達直後の数分は数件超過して受け付ける）。
-  金額で判定する理由とこの割り切りの根拠は
-  [`docs/decisions/0022`](../../docs/decisions/0022-cost-guard-by-estimated-amount-not-job-count.md)。
-- どちらも該当すれば`POST /magic-links`は503（`service_paused` /
-  `monthly_cost_limit_reached`）を返す。エラーメッセージはそのままフロントエンドに
-  表示される（`apps/web`はAPIの`ApiError.message`をそのままユーザーに見せる設計）。
-- **キルスイッチは`startJob.ts`（`POST /jobs/{jobId}/start`）でも確認する**（Issue #130、
-  `REL-1`）。マジックリンク発行後は`pending`ジョブが最大24時間有効なため、
-  `requestMagicLink.ts`側の受付停止だけでは、既に発行済みのリンクを開かれると
-  録画が始まってしまう。`startJobFn`が`pending`→`queued`の原子遷移
-  （`startPendingJob()`）を行う**前**に`getSettings()`を確認し、停止中なら
-  ジョブを`pending`のまま据え置いて503（`service_paused`）を返す——起動済み
-  （`pending`以外）へのアクセスは冪等応答なのでこのチェックを通らず、受付再開後は
-  同じリンクで起動できるため、ユーザー側の損失はゼロ。**月間コストガードは
-  `startJob.ts`では見ていない**——`getCachedMonthlyCostUsd()`はJobsTableの全件Scanを
-  要し、かつ録画リクエストが一度成功した（メールが届いた）にもかかわらず起動できない
-  というユーザー体験の悪化を避けるため、意図的にキルスイッチのみとしている。
-- 設定の更新（`POST /admin/settings`）は`settings.ts`の`updateSettings()`が単純な
-  読み取り→マージ→上書きで行う。管理者は1人固定で更新頻度も低いため、
-  `rateLimit.ts`のような原子的な条件付き更新は採用していない。
+`requestMagicLink.ts`はメールレート制限より前に、キルスイッチ（`acceptingNewJobs`）と
+月間コストガード（`monthlyCostLimitUsd`）の2つのグローバルな受付制御を確認する
+（`SettingsTable`の`AdminSettings`）。該当すれば`POST /magic-links`は503を返す。
+`startJob.ts`ではキルスイッチのみ確認する。エンドポイントごとのチェック内容・
+キャッシュ・非対称な扱いの理由は
+[`docs/admission-control.md`](docs/admission-control.md) に分けてある。
 
 ## 10. ダウンロードURLとContent-Disposition（`getJob.ts`）
 
@@ -316,29 +259,25 @@ UserDataスクリプトがやること:
 `downloadUrl`/`downloadUrl720p`を返すだけで、フロントエンド側は単純な
 `<a href={...} download>`でよく、fetch+Blob化もCORS許可も不要になる。CloudFront側は
 このクエリをオリジンへ転送しキャッシュキーにも含める専用の`CachePolicy`を使う
-（含めないと720p/オリジナル解像度など異なるファイル名のリクエスト間でキャッシュが
-混線する。`infra/README.md`参照）。
+（異なる解像度のファイル名でキャッシュが混線しないため。`infra/README.md`参照）。
 
 ## 11. 管理API（`/admin/*`、Issue #51）
 
-運用調査用の管理画面（`apps/web/src/admin/`）向けのAPI群。ジョブ一覧・詳細・
-ダウンロード導線・Step Functions実行の閲覧・ワーカーログ・緊急停止・再実行・
-コスト集計・設定更新を提供する。認証はSSM Parameter Storeに置いた共有トークンを
-Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId自体が秘密値）とは別系統
-（[`docs/decisions/0005`](../../docs/decisions/0005-admin-auth-ssm-shared-token.md)）。
-**利用者向けの本流フローとは完全に独立しているため、詳細は
-[`docs/admin-api.md`](docs/admin-api.md) に分けてある**（一覧のページング・停止/再実行の
-順序・ログ取得のフォールバックなど、触るなら必読の前提がそこにある）。フロント側は
+運用調査用の管理画面（`apps/web/src/admin/`）向けAPI群。**利用者向けの本流フローとは
+完全に独立しているため、エンドポイント一覧・認証方式・触る前提は
+[`docs/admin-api.md`](docs/admin-api.md) に分けてある**。フロント側は
 [`apps/web/docs/admin-ui.md`](../web/docs/admin-ui.md)。
 
 ## 12. 環境変数（`config.ts`）
 
 すべて `infra/lib/sattori-stack.ts` の `commonEnv`（+ `startJob.ts`/
 `admin/getExecution.ts`/`admin/stopJob.ts`/`admin/retryJob.ts`/
-`sweepOrphanInstances.ts`専用の`STATE_MACHINE_ARN`、`admin/authorizer.ts`専用の
-`ADMIN_TOKEN_PARAMETER_NAME`、`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定、
-`sweepOrphanInstances.ts`専用の`JOBS_TABLE`単独指定、`admin/getCosts.ts`専用のCloudFront実配信量取得用`CLOUDFRONT_DISTRIBUTION_ID`、Issue #163）
-から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
+`sweepOrphanInstances.ts`/`sweepStalledJobs.ts`専用の`STATE_MACHINE_ARN`、
+`admin/authorizer.ts`専用の`ADMIN_TOKEN_PARAMETER_NAME`、
+`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定、
+`sweepOrphanInstances.ts`/`sweepStalledJobs.ts`専用の`JOBS_TABLE`単独指定、
+`admin/getCosts.ts`専用のCloudFront実配信量取得用`CLOUDFRONT_DISTRIBUTION_ID`、
+Issue #163）から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
 `admin/getLogs.ts`・`RecordAnalyticsEventFn`以外の管理API用Lambdaは`commonEnv`を使う）。
 
 `SES_CONFIGURATION_SET`は`SattoriEdgeStack`が作った`ses.ConfigurationSet`名
@@ -346,53 +285,19 @@ Lambda Authorizerで検証する方式で、ユーザー向けの認可（jobId�
 バウンス・苦情・拒否イベントを運用アラート用SNSへ流す（Issue #133 OPS-1、
 [`docs/decisions/0025`](../../docs/decisions/0025-ops-alerts-per-region-sns-topics.md)）。
 
-`STATE_MACHINE_ARN`が`commonEnv`に含まれない理由: ステートマシンは`launchFn`/
-`handleFailureFn`（Lambda ARN）を呼び出すため、これらのLambdaの環境変数がステート
-マシンARNを参照するとCloudFormationの循環依存になる。`StartExecution`/`DescribeExecution`
-系を呼ぶ`startJob.ts`・`admin/getExecution.ts`・`admin/stopJob.ts`・`admin/retryJob.ts`・
-`sweepOrphanInstances.ts`だけが個別の環境変数として受け取る（いずれもステートマシンから
-呼ばれる側ではないため循環しない）。
+`STATE_MACHINE_ARN`が`commonEnv`に含まれない理由: ステートマシンが`launchFn`/
+`handleFailureFn`を呼び出すため、これらのLambdaの環境変数がステートマシンARNを
+参照すると循環依存になる。`StartExecution`/`DescribeExecution`系を呼ぶ`startJob.ts`・
+`admin/getExecution.ts`・`admin/stopJob.ts`・`admin/retryJob.ts`・
+`sweepOrphanInstances.ts`・`sweepStalledJobs.ts`だけが個別に受け取る。
 
 ## 13. 計測（アナリティクス、`POST /beacon`、Issue #142・#144）
 
-Cookie/localStorageを一切使わないサーバーサイド計測。フロントエンドから送られる
+Cookie/localStorageを一切使わないサーバーサイド計測。`recordAnalyticsEvent.ts`が
 `AnalyticsEventInput`（`@sattori/shared`。pageview/parse_errorの2種類）を受け、
-`analytics.ts`の`recordAnalyticsEvent()`が生IP・生User-Agentを含まない形へ正規化
-してから`AnalyticsEventsTable`（DynamoDB、PK=eventDate/SK=eventId、TTL 180日）へ
-書き込む。
-
-- `CloudFront-Viewer-Country`ヘッダーから国を得るが、これはWebCdn(CloudFront)の
-  `/beacon`ビヘイビア経由のリクエストにしか付与されない（他のエンドポイントと違い、
-  このパスだけCloudFrontを前段に置いている。`infra/README.md`参照）。ヘッダーが
-  無い（＝直接HTTP APIを叩かれた）場合も`country: null`で記録するだけで、リクエスト
-  自体は失敗させない。
-- User-Agentは`userAgent.ts`の`classifyUserAgent()`でブラウザ/OSの粗いカテゴリへ
-  正規化する（バージョンは保持しない）。ビューポート幅・`document.referrer`の丸め方
-  はフロントエンド側（`apps/web/README.md`）と合わせて
-  [`docs/decisions/0024`](../../docs/decisions/0024-cookieless-analytics-beacon.md)
-  にまとめてある。
-- **ユニーク訪問者数算出用に`visitorHash`を記録する**（Issue #144）。
-  `analytics.ts`の`extractClientIp()`がクライアントIPを推定し（CloudFront経由
-  なら`X-Forwarded-For`の先頭値、直接叩かれた場合はAPI Gatewayの`sourceIp`）、
-  `analyticsSalt.ts`の`getOrCreateDailySalt()`が`SettingsTable`から取得・生成
-  した日次saltで`hashVisitorId()`がハッシュ化する。**生IPは保存せず、saltは
-  日ごとにローテーションするため日をまたいだ訪問者の突き合わせはできない**。
-  設計の詳細は
-  [`docs/decisions/0026`](../../docs/decisions/0026-hashed-visitor-id-daily-salt.md)。
-- **`RecordAnalyticsEventFn`は`commonEnv`を使わない**（`loadAnalyticsConfig()`が
-  `ANALYTICS_EVENTS_TABLE`・`SETTINGS_TABLE`のみを読む）。`admin/authorizer.ts`・
-  `admin/getLogs.ts`と同じく、計測用テーブルとsalt保管用の`SettingsTable`の
-  読み書きしか行わないため（§12）。
-- 計測の失敗（DynamoDB書き込みエラー等）はユーザー体験に影響させないため、常に
-  202を返す（呼び出し側は`navigator.sendBeacon`でレスポンスを見ない）。
-
-> **収集する情報を増やす・訪問者を横断して繋げる識別子を持たせる等の変更は、
-> 必ず[`docs/decisions/0024`](../../docs/decisions/0024-cookieless-analytics-beacon.md)
-> の「あえて集めないもの」と
-> [`docs/decisions/0026`](../../docs/decisions/0026-hashed-visitor-id-daily-salt.md)
-> を確認してから行うこと。** 集計（`GET /admin/analytics`、Issue #149）は
-> `adminAnalytics.ts`が日付ごとにQueryして行う（Scanの`adminCosts.ts`とは違う）。
-> 詳細は[`docs/decisions/0029`](../../docs/decisions/0029-analytics-aggregation-daily-only-uniques.md)。
+生IP・生User-Agentを含まない形へ正規化してから`AnalyticsEventsTable`（DynamoDB、
+PK=eventDate/SK=eventId、TTL 180日）へ書き込む。国の取得・User-Agent正規化・
+訪問者ハッシュ化・集計の参照仕様は[`docs/analytics.md`](docs/analytics.md)に分けてある。
 
 ## 14. テスト
 
