@@ -1,6 +1,6 @@
 ---
 name: build-mods
-description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th11・th20）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th20 は `-static` が必須、th06/07/08/11 のビルド済み DLL はソースと乖離しているなど、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
+description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th11・th20）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th20 は `-static` が必須など、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
 ---
 
 # MOD（`*_hook.dll`）・injector.exe のビルド
@@ -72,15 +72,6 @@ i686-w64-mingw32-g++ -shared -O2 -o build/th08_hook.dll \
 
 th06/th07 は上記コマンドから `../common/fps_monitor.cpp` を除いたもの（`dllmain.cpp`
 を各ディレクトリのものに差し替える）。
-
-## th06 / th07 / th08 のビルド済み DLL はソースと乖離している
-
-`mods/common/dinput_hook.cpp` は th20 対応で修正が入っている（`DirectInput8Create` の
-二重呼び出しによる無限再帰の防止、touhou-recorder reports/44）。th06/th07/th08/th11 の
-ビルド済み DLL には未反映で、**現状は無害だがソースとは乖離している**。
-
-これらの MOD を次に触る際は本修正込みで再ビルドし、タイトル資産を再アップロードすること
-（`upload-title-assets` skill）。
 
 ## 関連
 

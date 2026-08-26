@@ -246,9 +246,6 @@ MOD が何をしているか(各フックの役割)は §2 の `mods/` の行と
 リポジトリにも S3 にも置いていない**ので別途用意すること。配置・レジストリ登録が要る理由は
 [`titles/th07.md`](docs/titles/th07.md)(MS ゴシック)・[`titles/th11.md`](docs/titles/th11.md)(MS 明朝)。
 
-`mods/common/dinput_hook.cpp` の th20 対応修正は th06/07/08/11 のビルド済み DLL に未反映で、
-**ソースと成果物が乖離している**(現状は無害。`build-mods` skill)。
-
 ## 10. テスト(`tests/`)
 
 Wine/Xvfb/実ゲームに依存する録画本体(`recording_common.attempt_recording()`)以外の、
