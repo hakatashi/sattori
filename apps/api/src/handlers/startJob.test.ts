@@ -67,6 +67,7 @@ const pendingJob: JobRecord = {
   retriedFromJobId: null,
   language: "ja",
   desyncDetected: null,
+  timedOut: null,
 };
 
 function makeEvent(jobId: string): APIGatewayProxyEventV2 {

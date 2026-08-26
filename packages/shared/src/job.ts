@@ -296,4 +296,20 @@ export interface JobRecord {
    * 追加より前のジョブ・MODのスコアログが取得できなかった等）。
    */
   desyncDetected: boolean | null;
+  /**
+   * リプレイ終了を検知できないままタイムアウトで打ち切られた録画か（Issue #161）。
+   * ワーカーが録画成功を確定させた直後に一度だけ判定し、`status` が converting
+   * 以降になった時点で値を持つ（`worker/recording_common.py` の
+   * `attempt_recording()` が返す `classification` が `"timeout"` かどうかで決まる）。
+   *
+   * テンプレート照合・画面静止でリプレイ終了を検知できず録画時間の上限に達した
+   * ことを意味し、リプレイ終盤が録画されていない可能性が高い（fps低下等で
+   * ゲーム内進行が想定より遅れるケースが実機で確認された、Issue #161）。fps低下
+   * 自体の原因は未特定のため自動リトライ・失敗扱いはせず、`desyncDetected` と
+   * 同様にユーザーへの注意書き表示にのみ使う。
+   *
+   * `true`=タイムアウト打ち切り、`false`=リプレイ終了を検知して正常終了、
+   * `null`=このフィールド追加より前のジョブ、または録画が全試行失敗した場合。
+   */
+  timedOut: boolean | null;
 }

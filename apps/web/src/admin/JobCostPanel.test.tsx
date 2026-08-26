@@ -37,6 +37,7 @@ function makeJob(overrides: Partial<JobRecord> = {}): JobRecord {
     retriedFromJobId: null,
     language: "ja",
     desyncDetected: null,
+    timedOut: null,
     ...overrides,
   };
 }

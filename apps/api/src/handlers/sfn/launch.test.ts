@@ -64,6 +64,7 @@ const job: JobRecord = {
   retriedFromJobId: null,
   language: "ja",
   desyncDetected: null,
+  timedOut: null,
 };
 
 /** 空き十分・対応タイトルありの自宅ワーカー（Issue #49）。 */

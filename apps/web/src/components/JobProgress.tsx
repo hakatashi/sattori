@@ -121,18 +121,32 @@ export function JobProgressView({ job, loadError }: ViewProps) {
       )}
 
       {/*
-        リプレイずれ（デシンク）の事後検証（Issue #103）。判定の信頼性が高くないため
-        自動失敗・再試行はせず、注意書きの表示にのみ使う。録画成功が確定した
+        リプレイ終了検知のタイムアウト打ち切り（Issue #161）とリプレイずれ（デシンク、
+        Issue #103）の事後検証。いずれも判定の信頼性が高くない・原因を特定できていない
+        ため自動失敗・再試行はせず、注意書きの表示にのみ使う。録画成功が確定した
         （converting以降の）ジョブでのみ値を持つため、pending/queued/launching/
-        recording中は常にnullで表示されない。
+        recording中は常にnullで表示されない。両方同時に発生しうるため並べて表示する。
       */}
-      {job.desyncDetected === true && (
-        <div className={styles.desyncWarning} role="note">
-          <p className={styles.desyncWarningTitle}>
-            <ion-icon icon={warningOutline} className={styles.desyncWarningIcon} aria-hidden="true" />
-            {t("jobProgress.desyncWarning")}
-          </p>
-          <p className={styles.desyncWarningDetail}>{t("jobProgress.desyncWarningDetail")}</p>
+      {(job.timedOut === true || job.desyncDetected === true) && (
+        <div className={styles.warnings}>
+          {job.timedOut === true && (
+            <div className={styles.warningBox} role="note">
+              <p className={styles.warningTitle}>
+                <ion-icon icon={warningOutline} className={styles.warningIcon} aria-hidden="true" />
+                {t("jobProgress.timeoutWarning")}
+              </p>
+              <p className={styles.warningDetail}>{t("jobProgress.timeoutWarningDetail")}</p>
+            </div>
+          )}
+          {job.desyncDetected === true && (
+            <div className={styles.warningBox} role="note">
+              <p className={styles.warningTitle}>
+                <ion-icon icon={warningOutline} className={styles.warningIcon} aria-hidden="true" />
+                {t("jobProgress.desyncWarning")}
+              </p>
+              <p className={styles.warningDetail}>{t("jobProgress.desyncWarningDetail")}</p>
+            </div>
+          )}
         </div>
       )}
 

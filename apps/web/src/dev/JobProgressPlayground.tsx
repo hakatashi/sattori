@@ -33,6 +33,7 @@ const BASE: Omit<
   replayInfo: SAMPLE_REPLAY_INFO,
   slowMotion: false,
   desyncDetected: null,
+  timedOut: null,
 };
 
 function buildJob(overrides: Partial<GetJobResponse> & { status: JobStatus }): GetJobResponse {
@@ -102,6 +103,31 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
       downloadExpiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
       previewVideoUrl: "https://example.com/sample-720p.mp4",
       previewImageUrl: "https://placehold.co/640x480/222/fff?text=Preview",
+      desyncDetected: true,
+    }),
+  },
+  {
+    title: "status: done（タイムアウト打ち切りの疑いあり、Issue #161）",
+    job: buildJob({
+      status: "done",
+      downloadUrl: "https://example.com/sample.mp4",
+      downloadUrl720p: "https://example.com/sample-720p.mp4",
+      downloadExpiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+      previewVideoUrl: "https://example.com/sample-720p.mp4",
+      previewImageUrl: "https://placehold.co/640x480/222/fff?text=Preview",
+      timedOut: true,
+    }),
+  },
+  {
+    title: "status: done（タイムアウト打ち切り・リプレイずれ疑いが同時発生、2つの警告を並べて表示）",
+    job: buildJob({
+      status: "done",
+      downloadUrl: "https://example.com/sample.mp4",
+      downloadUrl720p: "https://example.com/sample-720p.mp4",
+      downloadExpiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+      previewVideoUrl: "https://example.com/sample-720p.mp4",
+      previewImageUrl: "https://placehold.co/640x480/222/fff?text=Preview",
+      timedOut: true,
       desyncDetected: true,
     }),
   },

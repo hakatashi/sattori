@@ -200,6 +200,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     retriedFromJobId: null,
     language,
     desyncDetected: null,
+    timedOut: null,
   };
 
   try {
