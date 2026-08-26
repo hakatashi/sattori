@@ -163,10 +163,14 @@ export class SattoriStack extends Stack {
 
     // --- ジョブ状態(DynamoDB) ----------------------------------------------
 
+    // 管理画面のコスト集計(adminCosts.ts)が全件Scanの唯一の情報源にしているため、
+    // 誤ってテーブルが消えると過去の運用実績が復旧不能になる(Issue #136)。
+    // RETAIN + PITR でスタック削除・誤操作の両方から守る。
     const jobsTable = new dynamodb.Table(this, "JobsTable", {
       partitionKey: { name: "jobId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.DESTROY,
+      removalPolicy: RemovalPolicy.RETAIN,
+      pointInTimeRecovery: true,
       // 完了メール送信(SendCompletionEmailFn)がstatus:doneへの遷移を検知するために使う
       // (Issue #10)。新旧両方の値が要る(遷移の判定に旧statusが必要)ためNEW_AND_OLD_IMAGES。
       stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
@@ -284,11 +288,20 @@ export class SattoriStack extends Stack {
     // 保管するバケット。ECRストレージコストがタイトル数に比例して増大する問題への対応
     // として、これらをワーカーイメージから分離しS3へ移した(Issue #22、S3StandardはECR
     // より4倍以上安い)。ワーカーが起動時にGAME環境変数に応じてダウンロード・展開する。
+    // 中身はth06/07/08/11/th20のゲーム本体+WINEPREFIX+MOD(2.3GB超)で、消えると
+    // 「バックアップから復元」ではなく`upload-title-assets` skillでの手作業の
+    // ビルドし直しになる(Issue #136)。RETAIN + バージョニングで誤削除・誤上書きの
+    // 両方から守る。復旧手順は`docs/runbooks/recover-title-assets.md`参照。
+    // 旧バージョンを無期限に残すと上書きのたびにストレージ費が積み上がるため、
+    // 90日で自動削除する(差し替え事故に気づいて巻き戻すには十分な猶予)。
     const titleAssetsBucket = new s3.Bucket(this, "TitleAssetsBucket", {
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      removalPolicy: RemovalPolicy.DESTROY,
-      autoDeleteObjects: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+      versioned: true,
+      lifecycleRules: [
+        { noncurrentVersionExpiration: Duration.days(90) },
+      ],
     });
 
     // NAT を持たない公開サブネット構成(ワーカーは外向き通信のみ必要 = 最小コスト)。
