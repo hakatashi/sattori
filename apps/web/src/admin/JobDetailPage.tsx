@@ -142,6 +142,11 @@ export function JobDetailPage() {
                 <dd className={data.job.desyncDetected ? styles.error : undefined}>
                   {data.job.desyncDetected === null ? "-" : data.job.desyncDetected ? "true" : "false"}
                 </dd>
+                {/* リプレイ終了を検知できずタイムアウトで打ち切られたか（Issue #161）。null=旧ジョブ・未成功。 */}
+                <dt>timedOut</dt>
+                <dd className={data.job.timedOut ? styles.error : undefined}>
+                  {data.job.timedOut === null ? "-" : data.job.timedOut ? "true" : "false"}
+                </dd>
                 {data.job.error && (
                   <>
                     <dt>error</dt>

@@ -754,6 +754,74 @@ def test_record_with_retry_writes_desync_result_on_success(monkeypatch, tmp_path
         assert json.load(f) == {"desyncDetected": True}
 
 
+def test_write_timeout_result_writes_json(tmp_path):
+    path = str(tmp_path / "timeout_result.json")
+
+    rc.write_timeout_result(path, True)
+
+    with open(path) as f:
+        assert json.load(f) == {"timedOut": True}
+
+
+def test_write_timeout_result_skips_without_path():
+    # 例外を出さずに何もしないこと(--timeout-result-path未指定のローカル実行向け)。
+    rc.write_timeout_result(None, True)
+
+
+def test_record_with_retry_writes_timed_out_true_on_timeout_classification(monkeypatch, tmp_path):
+    # 検知方式がタイムアウトでも録画自体は成功扱いになる(Issue #161)が、
+    # timedOut:true として記録され、フロントの警告表示に使われる。
+    config = make_config()
+    monkeypatch.setattr(rc, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "timeout", "fps_runaway_hz": None, "total_record_sec": 60.0,
+    })
+    monkeypatch.setattr(rc, "measure_duplicate_rate", lambda *a, **k: 1.0)
+    monkeypatch.setattr(rc, "check_replay_desync", lambda *a, **k: None)
+    result_path = str(tmp_path / "timeout_result.json")
+
+    success = rc.record_with_retry(
+        config, "/replay.rpy", "/out.mp4", max_attempts=1,
+        timeout_result_path=result_path, log=lambda msg: None,
+    )
+
+    assert success is True
+    with open(result_path) as f:
+        assert json.load(f) == {"timedOut": True}
+
+
+def test_record_with_retry_writes_timed_out_false_on_good_classification(monkeypatch, tmp_path):
+    config = make_config()
+    monkeypatch.setattr(rc, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0,
+    })
+    monkeypatch.setattr(rc, "measure_duplicate_rate", lambda *a, **k: 1.0)
+    monkeypatch.setattr(rc, "check_replay_desync", lambda *a, **k: None)
+    result_path = str(tmp_path / "timeout_result.json")
+
+    success = rc.record_with_retry(
+        config, "/replay.rpy", "/out.mp4", max_attempts=1,
+        timeout_result_path=result_path, log=lambda msg: None,
+    )
+
+    assert success is True
+    with open(result_path) as f:
+        assert json.load(f) == {"timedOut": False}
+
+
+def test_record_with_retry_logs_warning_on_timeout_classification(monkeypatch):
+    config = make_config()
+    monkeypatch.setattr(rc, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "timeout", "fps_runaway_hz": None, "total_record_sec": 60.0,
+    })
+    monkeypatch.setattr(rc, "measure_duplicate_rate", lambda *a, **k: 1.0)
+    monkeypatch.setattr(rc, "check_replay_desync", lambda *a, **k: None)
+    logs = []
+
+    rc.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=1, log=logs.append)
+
+    assert any("WARNING" in msg and "タイムアウト" in msg for msg in logs)
+
+
 def test_record_with_retry_gives_up_after_max_attempts(monkeypatch):
     config = make_config()
     monkeypatch.setattr(rc, "attempt_recording", lambda *a, **k: {

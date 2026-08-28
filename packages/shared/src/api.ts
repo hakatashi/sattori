@@ -144,6 +144,14 @@ export interface GetJobResponse {
    * （自動失敗・再試行はしない——判定の信頼性が高くないため）。
    */
   desyncDetected: boolean | null;
+  /**
+   * リプレイ終了を検知できないままタイムアウトで打ち切られた録画か（Issue #161、
+   * `JobRecord.timedOut`をそのまま転記）。`true`のときページBは「リプレイ終了を
+   * 検知できずタイムアウトで打ち切られました。リプレイ終盤が録画されていない
+   * 可能性があります」という注意書きを出す（自動失敗・再試行はしない）。
+   * `desyncDetected`と同時にtrueになりうる。その場合は両方の注意書きを並べて出す。
+   */
+  timedOut: boolean | null;
 }
 
 /**

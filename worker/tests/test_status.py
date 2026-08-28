@@ -122,6 +122,30 @@ def test_update_status_omits_desync_detected_when_not_verified(monkeypatch):
     assert "desyncDetected" not in kwargs["UpdateExpression"]
 
 
+def test_update_status_includes_timed_out(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "converting", timed_out=True)
+
+    _, kwargs = mock_table.update_item.call_args
+    assert kwargs["ExpressionAttributeValues"][":to"] is True
+    assert "timedOut = :to" in kwargs["UpdateExpression"]
+
+
+def test_update_status_omits_timed_out_when_not_passed(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "converting")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert ":to" not in kwargs["ExpressionAttributeValues"]
+    assert "timedOut" not in kwargs["UpdateExpression"]
+
+
 def test_update_status_includes_error_code(monkeypatch):
     monkeypatch.setenv("JOBS_TABLE", "jobs-table")
     mock_resource = mock_dynamodb_resource(monkeypatch)
