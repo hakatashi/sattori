@@ -110,6 +110,15 @@ jobs:
             ../common/logging.cpp ../common/fps_monitor.cpp ../common/score_monitor.cpp \
             -luser32 -static-libgcc -static-libstdc++
 
+      - name: Build th10_hook.dll
+        working-directory: worker/mods/th10_replay_autoplay
+        run: |
+          mkdir -p build
+          i686-w64-mingw32-g++ -shared -O2 -o build/th10_hook.dll \
+            dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
+            ../common/logging.cpp ../common/fps_monitor.cpp ../common/score_monitor.cpp \
+            -luser32 -static-libgcc -static-libstdc++
+
       - name: Build th11_hook.dll
         working-directory: worker/mods/th11_replay_autoplay
         run: |

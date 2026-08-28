@@ -46,7 +46,7 @@ const doneJob: JobRecord = {
   game: "th11",
   replayKey: "replays/abc.rpy",
   status: "done",
-  options: { watermark: true, slowMotion: false },
+  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
   outputPath: "output/job-1/video.mp4",
   outputPath720p: "output/job-1/video-720p.mp4",
   error: null,
