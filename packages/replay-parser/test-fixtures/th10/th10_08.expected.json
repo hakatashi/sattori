@@ -1,0 +1,107 @@
+{
+  "game": "th10",
+  "gameTitle": "東方風神録 ～ Mountain of Faith.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "11/11/01 00:46",
+  "character": "ReimuB",
+  "characterNameJa": "霊夢B",
+  "characterNameEn": "Reimu B",
+  "difficulty": "Hard",
+  "stage": "Stage 1 ～ 6",
+  "score": 124290050,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "0.00",
+      "piv": 5000,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 8673
+    },
+    {
+      "stage": 2,
+      "score": 5312630,
+      "power": "3.60",
+      "piv": 11718,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 10062
+    },
+    {
+      "stage": 3,
+      "score": 16783560,
+      "power": "5.00",
+      "piv": 12583,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 13113
+    },
+    {
+      "stage": 4,
+      "score": 34642280,
+      "power": "5.00",
+      "piv": 16723,
+      "lives": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 15673
+    },
+    {
+      "stage": 5,
+      "score": 53935420,
+      "power": "3.20",
+      "piv": 8207,
+      "lives": {
+        "count": 1,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 15704
+    },
+    {
+      "stage": 6,
+      "score": 80414640,
+      "power": "3.90",
+      "piv": 24194,
+      "lives": {
+        "count": 1,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 14559
+    }
+  ],
+  "frameCount": 77784
+}
