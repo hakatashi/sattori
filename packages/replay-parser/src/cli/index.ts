@@ -3,11 +3,11 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import process from "node:process";
-import { runCli, type CliIO } from "./cli-core.js";
+import { runCli, type CliIO } from "./core.js";
 
 function getVersion(): string {
   try {
-    const pkgUrl = new URL("../package.json", import.meta.url);
+    const pkgUrl = new URL("../../package.json", import.meta.url);
     const content = readFileSync(pkgUrl, "utf-8");
     const pkg = JSON.parse(content) as { version?: string };
     return pkg.version ?? "unknown";

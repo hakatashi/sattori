@@ -7,8 +7,8 @@ import {
   formatScore,
   formatSplitDuration,
   formatSplitsTable,
-} from "./cli-format.js";
-import type { ParsedReplay } from "./types.js";
+} from "./format.js";
+import type { ParsedReplay } from "../types.js";
 
 describe("cli-format", () => {
   const sampleReplay: ParsedReplay = {

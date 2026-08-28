@@ -6,9 +6,9 @@ import { describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const cliPath = resolve(__dirname, "../dist/cli.js");
-const fixturePath = resolve(__dirname, "../test-fixtures/th07/th7_07.rpy");
-const fixture2Path = resolve(__dirname, "../test-fixtures/th07/th7_08.rpy");
+const cliPath = resolve(__dirname, "../../dist/cli/index.js");
+const fixturePath = resolve(__dirname, "../../test-fixtures/th07/th7_07.rpy");
+const fixture2Path = resolve(__dirname, "../../test-fixtures/th07/th7_08.rpy");
 
 describe("cli E2E", () => {
   it("prints help with --help", async () => {
