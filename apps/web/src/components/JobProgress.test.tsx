@@ -47,6 +47,7 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     replayInfo: REPLAY_INFO,
     slowMotion: false,
     desyncDetected: null,
+    timedOut: null,
     ...overrides,
   };
 }
@@ -140,6 +141,48 @@ describe("JobProgressView のリプレイずれ注意書き（Issue #103）", ()
   });
 });
 
+describe("JobProgressView のタイムアウト打ち切り注意書き（Issue #161）", () => {
+  it("timedOut:true のジョブは注意書きを表示する", () => {
+    render(<JobProgressView job={buildDoneJob({ timedOut: true })} loadError={null} />);
+
+    expect(
+      screen.getByText(/録画時間の上限に達したため打ち切られました/),
+    ).toBeTruthy();
+  });
+
+  it("timedOut:false（正常終了）では注意書きを表示しない", () => {
+    render(<JobProgressView job={buildDoneJob({ timedOut: false })} loadError={null} />);
+
+    expect(
+      screen.queryByText(/録画時間の上限に達したため打ち切られました/),
+    ).toBeNull();
+  });
+
+  it("timedOut:null（旧ジョブ等）では注意書きを表示しない", () => {
+    render(<JobProgressView job={buildDoneJob({ timedOut: null })} loadError={null} />);
+
+    expect(
+      screen.queryByText(/録画時間の上限に達したため打ち切られました/),
+    ).toBeNull();
+  });
+
+  it("timedOutとdesyncDetectedが同時にtrueのときは2つの注意書きを並べて表示する", () => {
+    render(
+      <JobProgressView
+        job={buildDoneJob({ timedOut: true, desyncDetected: true })}
+        loadError={null}
+      />,
+    );
+
+    expect(
+      screen.getByText(/録画時間の上限に達したため打ち切られました/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/リプレイずれが発生した可能性があります/),
+    ).toBeTruthy();
+  });
+});
+
 describe("JobProgressView のプレビュー再生（Issue #71）", () => {
   it("完了ジョブはpreviewVideoUrlを<video>で再生できる", () => {
     render(
@@ -209,6 +252,7 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     replayInfo: REPLAY_INFO,
     slowMotion: false,
     desyncDetected: null,
+    timedOut: null,
     ...overrides,
   };
 }

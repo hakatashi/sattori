@@ -80,6 +80,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     // `errorCode`と同じ理由（Issue #103追加より前の旧ジョブでは属性自体が無く
     // `undefined`になりうる）で`?? null`を通す。
     desyncDetected: job.desyncDetected ?? null,
+    // 同じ理由（Issue #161追加より前の旧ジョブでは属性自体が無く`undefined`になりうる）。
+    timedOut: job.timedOut ?? null,
   };
   return json(200, response);
 };

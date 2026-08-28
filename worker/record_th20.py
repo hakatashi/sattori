@@ -114,6 +114,10 @@ def main():
         help="リプレイずれ検証の結果(JSON)の書き出し先。未指定なら書き出さない",
     )
     parser.add_argument(
+        "--timeout-result-path", default=None,
+        help="タイムアウト打ち切り検知結果(JSON、Issue #161)の書き出し先。未指定なら書き出さない",
+    )
+    parser.add_argument(
         "--pulse-sink", default=None,
         help="このジョブ専用のPulseAudio null-sink名(録画開始時に作成し終了時に破棄する、Issue #48)。"
              "未指定ならプロセスIDから採番する(ローカル単体実行向け)",
@@ -137,6 +141,7 @@ def main():
         progress_dir=args.progress_dir, expected_duration_seconds=args.expected_duration_seconds,
         max_attempts=args.max_attempts, max_duplicate_rate=args.max_duplicate_rate,
         expected_score=args.expected_score, desync_result_path=args.desync_result_path,
+        timeout_result_path=args.timeout_result_path,
         log=log,
     )
     if not success:

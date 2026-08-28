@@ -72,6 +72,7 @@ const doneJob: JobRecord = {
   retriedFromJobId: null,
   language: "ja",
   desyncDetected: null,
+  timedOut: null,
 };
 
 function makeEvent(jobId: string): APIGatewayProxyEventV2 {
@@ -256,6 +257,27 @@ describe("GET /jobs/{jobId}", () => {
     const body = parseBody(res as APIGatewayProxyStructuredResultV2);
 
     expect(body.desyncDetected).toBeNull();
+  });
+
+  it("タイムアウト打ち切りのジョブは timedOut:true を返す(Issue #161)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: { ...doneJob, timedOut: true } });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.timedOut).toBe(true);
+  });
+
+  it("timedOut未設定の旧ジョブ（DynamoDB上に属性自体が無い）ではnullを返す", async () => {
+    const { timedOut: _omit, ...legacyItem } = doneJob;
+    ddbMock.on(GetCommand).resolves({ Item: legacyItem });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.timedOut).toBeNull();
   });
 
   it("ジョブが存在しなければ404を返す", async () => {

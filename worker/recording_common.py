@@ -900,6 +900,21 @@ def write_desync_result(path, desync_detected):
     os.replace(tmp_path, path)
 
 
+def write_timeout_result(path, timed_out):
+    """録画終了の検知方式がタイムアウト打ち切りだったかをJSONへ書き出す(Issue #161)。
+
+    テンプレート照合・画面静止でリプレイ終了を検知できないまま録画時間の上限に
+    達した場合、リプレイ終盤が録画されていない可能性が高い。write_desync_result()
+    と同じファイル受け渡しの方式(record_thNN.pyの別プロセス→entrypoint.py)を使う。
+    """
+    if not path:
+        return
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w") as f:
+        json.dump({"timedOut": timed_out}, f)
+    os.replace(tmp_path, path)
+
+
 def save_progress_snapshot(progress_dir, color_frame, elapsed_seconds, expected_duration_seconds):
     """録画中の画面プレビュー(frame.jpg)と進捗算出用の状態(state.json)を書き出す。
     entrypoint.py側のバックグラウンドスレッドがこれをポーリングしてS3へアップロードする。
@@ -1405,7 +1420,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
 def record_with_retry(config, replay_path, output_path, *,
                        progress_dir=None, expected_duration_seconds=None,
                        max_attempts=MAX_ATTEMPTS_DEFAULT, max_duplicate_rate=MAX_DUPLICATE_RATE_DEFAULT,
-                       expected_score=None, desync_result_path=None,
+                       expected_score=None, desync_result_path=None, timeout_result_path=None,
                        log=print):
     """attempt_recording()を最大max_attempts回試行し、fps暴走・処理落ちの早期検知や
     事後の重複フレーム率チェックに引っかかった場合は出力を破棄してリトライする。
@@ -1418,20 +1433,25 @@ def record_with_retry(config, replay_path, output_path, *,
     expected_score/desync_result_path はリプレイずれの事後検証(Issue #103、
     check_replay_desync()参照)用。録画が成功した時点で1回だけ検証し、
     desync_result_path が指定されていれば結果をJSONへ書き出す。
+
+    timeout_result_path はリプレイ終了を検知できずタイムアウトで打ち切られたか
+    (Issue #161)の記録先。desync_result_pathと同様、指定されていれば
+    録画成功が確定した時点で結果をJSONへ書き出す。
     """
     with pulse.job_sink(config.pulse_sink, log=log):
         return _record_with_retry(
             config, replay_path, output_path,
             progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
             max_attempts=max_attempts, max_duplicate_rate=max_duplicate_rate,
-            expected_score=expected_score, desync_result_path=desync_result_path, log=log,
+            expected_score=expected_score, desync_result_path=desync_result_path,
+            timeout_result_path=timeout_result_path, log=log,
         )
 
 
 def _record_with_retry(config, replay_path, output_path, *,
                        progress_dir, expected_duration_seconds,
                        max_attempts, max_duplicate_rate,
-                       expected_score, desync_result_path, log):
+                       expected_score, desync_result_path, timeout_result_path, log):
     for attempt in range(1, max_attempts + 1):
         log(f"=== 試行 {attempt}/{max_attempts} ===")
         try:
@@ -1476,9 +1496,16 @@ def _record_with_retry(config, replay_path, output_path, *,
             log(f"WARNING: 重複フレーム率({dup_rate}%)が閾値({threshold:.1f}%)を超えました。破棄してリトライします")
             continue
 
+        timed_out = result["classification"] == "timeout"
+        if timed_out:
+            log(
+                "WARNING: リプレイ終了を検知できないままタイムアウトで打ち切られました。"
+                "リプレイ終盤が録画されていない可能性があります"
+            )
         log(f"試行{attempt}で正常な録画を確認しました")
         desync_detected = check_replay_desync(config, expected_score, log=log)
         write_desync_result(desync_result_path, desync_detected)
+        write_timeout_result(timeout_result_path, timed_out)
         return True
 
     log(f"ERROR: {max_attempts}回試行しても正常な録画が得られませんでした")
