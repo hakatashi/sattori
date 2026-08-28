@@ -42,8 +42,45 @@ if (result.ok) {
 }
 ```
 
-`parseReplay` never throws. Internally detected corruption is caught as a
-`ReplayCorruptError` and converted to `{ ok: false, error: { code: "corrupt", ... } }`.
+## CLI
+
+The package bundles a zero-dependency CLI tool (`touhou-replay-parser` and its short alias `threp`).
+
+```bash
+# Run directly via npx
+npx @sattori/touhou-replay-parser th7_01.rpy
+
+# Or install globally
+npm install -g @sattori/touhou-replay-parser
+threp th7_01.rpy
+```
+
+### Options
+
+- `<file...>`: One or more `.rpy` files to parse. Use `-` (or pipe into stdin) to read from standard input.
+- `-j, --json`: Output result as JSON. When multiple files are parsed, defaults to NDJSON (newline-delimited JSON, one record per line). Single files output formatted (pretty) JSON.
+- `-s, --splits`: Display per-stage split records (text mode only).
+- `-h, --help`: Show help message.
+- `-v, --version`: Show version number.
+
+### Examples
+
+```bash
+# Human-readable summary
+threp th7_01.rpy
+
+# Detailed split records
+threp -s th7_01.rpy
+
+# Formatted JSON output
+threp -j th7_01.rpy
+
+# NDJSON output for multiple files
+threp -j th7_*.rpy
+
+# Read from stdin
+cat th7_01.rpy | threp -j
+```
 
 ## Supported titles
 
