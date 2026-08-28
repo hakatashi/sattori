@@ -279,6 +279,22 @@ python3 -c "from convert import convert_for_delivery; convert_for_delivery('/tmp
 干渉しない)。分離できているかは `pactl list sink-inputs` で各ゲームの接続先を見る
 ([`reports/2026-08-08-parallel-audio-isolation.md`](../docs/reports/2026-08-08-parallel-audio-isolation.md))。
 
+**手動検証時はOSレベルの強制終了ラッパーを併用すること。** 既知の未修正バグ(th20の低速録画
+2並列がハングするIssue #179、その他未知のタイトル固有バグ)により、ゲームプロセスがGPU待ち等の
+D state(カーネルレベルで割り込み不可能)に陥り録画処理自体が完全にハングする可能性がある。
+`kill_wine_and_wait()`はこのケースをタイムアウト検知しWINEPREFIX配下の残存プロセスをSIGKILLする
+フォールバックを持つが(Issue #186)、内部のリトライ/クリーンアップが機能しない未知の経路まで
+保証するものではない。本番のDocker経路はジョブ完了後にコンテナごと破棄されるため実害が無いが、
+本節のようにホスト上で直接実行する場合はプロセスが確実に終了するよう外側から保険を掛ける:
+
+```bash
+timeout --kill-after=30s 600s python3 record_th20.py --replay-path /path/to/any.rpy --output /tmp/out.mp4
+```
+
+放置されたWineプロセス(`winedevice.exe`等)がsystem D-Busのシグナル購読を持ったまま残り続けると
+D-Busのメッセージキューが枯渇し、ホストのsystemdごとハングする事故が実際に起きている
+([`docs/reports/2026-08-27-wine-cleanup-hang-incident.md`](../docs/reports/2026-08-27-wine-cleanup-hang-incident.md))。
+
 ## 12. ビルドとECRへのpush
 
 本番のECRリポジトリ名は`sattori-worker`(`infra/lib/sattori-stack.ts`が作成、本体スタックと

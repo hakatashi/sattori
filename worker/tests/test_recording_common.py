@@ -844,6 +844,100 @@ def test_record_with_retry_reuses_single_sink_across_attempts(monkeypatch, fake_
     assert [event for event, _ in fake_job_sink] == ["create", "unload"]
 
 
+def test_record_with_retry_recovers_from_unexpected_exception_and_retries(monkeypatch):
+    """attempt_recording()自体が(kill_wine_and_wait()を呼ぶ前に)想定外の例外を送出しても、
+    リトライループが例外ごとクラッシュせず後片付けして次の試行へ進むこと(2026-08-27
+    インシデント: D stateのゲームプロセス相手にwineserver -wがTimeoutExpiredを送出し、
+    それが未捕捉のままリトライループごとスクリプトをクラッシュさせ、wineserver/
+    winedeviceがホストに取り残された)。"""
+    config = make_config()
+    calls = []
+    cleanup_calls = []
+
+    def fake_attempt(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired("wineserver", 60)
+        return {"output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0}
+
+    monkeypatch.setattr(rc, "attempt_recording", fake_attempt)
+    monkeypatch.setattr(rc, "measure_duplicate_rate", lambda *a, **k: 1.0)
+    monkeypatch.setattr(
+        rc, "kill_wine_and_wait",
+        lambda cfg, env, process_name, log=print: cleanup_calls.append(process_name),
+    )
+
+    logs = []
+    success = rc.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=3, log=logs.append)
+
+    assert success is True
+    assert len(calls) == 2
+    assert cleanup_calls == [config.process_name]
+    assert any("ERROR" in msg for msg in logs)
+
+
+def test_record_with_retry_gives_up_after_max_attempts_on_repeated_exceptions(monkeypatch):
+    """後片付け自体が失敗し続けても、リトライループは例外を外へ伝播させず
+    max_attempts回で諦めて安全にFalseを返すこと。"""
+    config = make_config()
+
+    def always_raise(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(rc, "attempt_recording", always_raise)
+    monkeypatch.setattr(rc, "kill_wine_and_wait", always_raise)
+
+    success = rc.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=2, log=lambda msg: None)
+
+    assert success is False
+
+
+def test_kill_wine_and_wait_sigkills_leftover_processes_on_timeout(monkeypatch):
+    """`wineserver -w`がD state対策のタイムアウトに達した場合、このWINEPREFIX配下の
+    残存プロセスをSIGKILLへフォールバックすること(2026-08-27インシデント)。"""
+    config = make_config(wineprefix="/prefix/th20-a")
+    run_calls = []
+
+    def fake_run(cmd, **kwargs):
+        run_calls.append(cmd)
+        if cmd[:2] == ["wineserver", "-w"]:
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
+        return type("Result", (), {"returncode": 0})()
+
+    killed = []
+    monkeypatch.setattr(rc.subprocess, "run", fake_run)
+    monkeypatch.setattr(rc, "_find_pids_with_wineprefix", lambda wineprefix: [111, 222])
+    monkeypatch.setattr(rc.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+
+    logs = []
+    rc.kill_wine_and_wait(config, {}, config.process_name, log=logs.append)
+
+    assert killed == [(111, rc.signal.SIGKILL), (222, rc.signal.SIGKILL)]
+    assert any("WARNING" in msg and "SIGKILL" in msg for msg in logs)
+
+
+def test_kill_wine_and_wait_ignores_already_dead_leftover_processes(monkeypatch):
+    """SIGKILL対象がSIGKILL送信前にすでに終了していても(通常のプロセス終了との
+    レース)例外にせず後片付けを完走すること。"""
+    config = make_config()
+
+    def fake_run(cmd, **kwargs):
+        if cmd[:2] == ["wineserver", "-w"]:
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout"))
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(rc.subprocess, "run", fake_run)
+    monkeypatch.setattr(rc, "_find_pids_with_wineprefix", lambda wineprefix: [999])
+
+    def fake_kill(pid, sig):
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(rc.os, "kill", fake_kill)
+
+    # 例外を送出しないこと。
+    rc.kill_wine_and_wait(config, {}, config.process_name, log=lambda msg: None)
+
+
 def test_wait_for_stable_geometry_waits_until_two_reads_agree(monkeypatch):
     """ゲームが初期化中に自分でウィンドウを再配置する間(th11)は座標を確定しない。
 
