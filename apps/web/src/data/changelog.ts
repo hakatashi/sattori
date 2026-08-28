@@ -15,6 +15,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-28",
+    ja: "リプレイ解析パッケージ（@sattori/touhou-replay-parser）にCLIツール（touhou-replay-parser / threp）を同梱",
+    en: "Bundled a CLI tool (touhou-replay-parser / threp) in the replay parser package (@sattori/touhou-replay-parser)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/189",
+  },
+  {
+    date: "2026-08-28",
     ja: "録画がタイムアウトした際にジョブページに警告を表示するよう修整",
     en: "Fixed the job page to show a warning when recording times out",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/184",
