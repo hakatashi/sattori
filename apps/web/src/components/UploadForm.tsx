@@ -7,6 +7,7 @@ import {
   parseReplayInfo,
   SLOW_MOTION_CAPABILITY,
   supportsSlowMotion,
+  supportsTh10BugfixMarisaB,
 } from "@sattori/shared";
 import { trackParseError } from "../api/analytics.ts";
 import {
@@ -66,7 +67,7 @@ const gameTitles = [
     japanese: "東方風神録",
     english: "Mountain of Faith",
     shortName: "MoF",
-    supported: false,
+    supported: true,
     icon: 'th10.png',
   },
   {
@@ -206,6 +207,8 @@ export function UploadForm() {
     setSlowMotionTouched,
     slowMotion,
     setSlowMotion,
+    th10BugfixMarisaB,
+    setTh10BugfixMarisaB,
   } = useUploadFormState();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -237,6 +240,15 @@ export function UploadForm() {
       : slowMotionAvailable
         ? t("uploadForm.slowMotionHintLine2")
         : t("uploadForm.slowMotionUnavailable");
+
+  // th10「バグマリ」修正オプション(Issue #75)。バグの発生条件(魔理沙Bのショット
+  // 火力パワー3依存)自体が対象を規定するため、低速録画と異なりワーカーの空き状況には
+  // 依存しない——「th10かつ魔理沙B」の組み合わせだけで選択可否が決まる。
+  const th10BugfixMarisaBSelectable = supportsTh10BugfixMarisaB(
+    preview?.game ?? null,
+    preview?.character ?? null,
+  );
+  const th10BugfixMarisaBChecked = th10BugfixMarisaBSelectable && th10BugfixMarisaB;
 
   // 自宅ワーカーの空き状況はページ表示時に1回だけ取得する。実際に録画が始まるのは
   // ユーザーがマジックリンクを開いた後（最大24時間後）で、その時点の可否とは
@@ -379,7 +391,7 @@ export function UploadForm() {
     try {
       await requestMagicLink(
         replayKey,
-        { watermark, slowMotion: slowMotionChecked },
+        { watermark, slowMotion: slowMotionChecked, th10BugfixMarisaB: th10BugfixMarisaBChecked },
         email,
         locale,
       );
@@ -588,6 +600,33 @@ export function UploadForm() {
             <small className={styles.optionHint}>
               {t("uploadForm.slowMotionHintLine1")}<br/>
               <span className={styles.slowMotionHint}>{slowMotionHint}</span>
+            </small>
+          </span>
+        </label>
+        {/*
+          th10「バグマリ」修正オプション(Issue #75)。VsyncPatchの`BugFixTh10Power3`は
+          記録リプレイと再生時で設定が食い違うとリプレイずれ(デシンク)を起こすが、
+          リプレイファイル自体にはこの設定情報が含まれないため利用者の自己申告に頼る
+          しかない(`worker/docs/titles/th10.md`)。バグの発生条件(魔理沙Bのショット
+          火力パワー3依存)自体が対象を規定するため、「th10かつ魔理沙B」以外は
+          グレーアウトする。
+        */}
+        <label
+          className={clsx(styles.option, !th10BugfixMarisaBSelectable && styles.optionDisabled)}
+        >
+          <input
+            type="checkbox"
+            checked={th10BugfixMarisaBChecked}
+            onChange={(e) => setTh10BugfixMarisaB(e.target.checked)}
+            disabled={busy || !th10BugfixMarisaBSelectable}
+          />
+          <span>
+            {t("uploadForm.th10BugfixMarisaBOption")}
+            <small className={styles.optionHint}>
+              {t("uploadForm.th10BugfixMarisaBHintLine1")}<br/>
+              {th10BugfixMarisaBSelectable
+                ? t("uploadForm.th10BugfixMarisaBHintLine2")
+                : t("uploadForm.th10BugfixMarisaBUnsupportedGame")}
             </small>
           </span>
         </label>

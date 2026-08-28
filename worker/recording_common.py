@@ -48,6 +48,7 @@ start_timeとして保持し、mux_audio_video()がその差分を実測して�
 作成・破棄は record_with_retry() が pulse.job_sink() で行い、Wine側の出力先は
 GameConfig.build_env() が渡す`PULSE_SINK`で固定する。
 """
+import configparser
 import getpass
 import io
 import json
@@ -237,6 +238,7 @@ GAME_SCORE_MULTIPLIERS = {
     "th06": 1,
     "th07": 10,
     "th08": 10,
+    "th10": 10,
     "th11": 10,
     "th20": 10,
 }
@@ -306,6 +308,16 @@ class GameConfig:
     still_detect_exclude_rect: (
         tuple[int, int, int, int] | list[tuple[int, int, int, int]] | None
     ) = None
+    # 終了検知テンプレート照合の対象領域(元のウィンドウ座標系、x0, y0, x1, y1)。未指定
+    # (None)なら従来通り「上部END_TEMPLATE_ROWS行×全幅」を使う(th06/07/08)。th10の
+    # リプレイ選択画面は背景全体が常時アニメーションしており、上部帯全体を比較すると
+    # 同一画面同士でもMADが上振れして誤判定を招くため、リプレイ内容に依存しない
+    # 左上の"REPLAY"見出し部分だけに絞り込む必要がある(touhou-recorder reports/56)。
+    end_template_rect: tuple[int, int, int, int] | None = None
+    # 終了検知テンプレート照合のMAD閾値。未指定(None)なら従来通りEND_TEMPLATE_MAD_THRESHOLD。
+    # th10はend_template_rectで絞り込んだ領域でも同一画面同士の実測MADがth06/07/08より
+    # 高め(背景アニメーションの影響)なため、専用の閾値を使う(touhou-recorder reports/56)。
+    end_template_mad_threshold: float | None = None
     # Xvfbの画面サイズ("WxHx24")。未指定なら全タイトル共通の XVFB_SCREEN(800x600x24)。
     # th20は1280x960ウィンドウで起動するため個別指定が要る(reports/44)。
     xvfb_screen: str | None = None
@@ -324,6 +336,12 @@ class GameConfig:
     # いる ZUN 側のバグ(未初期化 AnmVM の残骸漏れ・宝珠の use-after-free 等)であり、
     # thprac を噛ませるだけで実測4本すべてのずれが解消した(reports/50)。
     thprac_exe: str | None = None
+    # 起動前に書き換えるvpatch.ini(VsyncPatch)の設定((section, key, value)のタプル)。
+    # th10のBugFixTh10Power3(魔理沙Bのパワー3バグ修正)のように、記録リプレイと再生時の
+    # 設定が食い違うとリプレイずれが起きるVsyncPatchオプションを、ジョブごとの録画
+    # オプション(RecordingOptions)に応じて動的に上書きするために使う(空タプルが既定で、
+    # その場合は同梱のvpatch.iniをそのまま使う。touhou-recorder reports/58)。
+    vpatch_ini_overrides: tuple[tuple[str, str, str], ...] = ()
 
     def __post_init__(self):
         if self.game_exe is None:
@@ -442,9 +460,30 @@ def prepare_instance(config, replay_path, log=print):
             # 資産アーカイブの作り忘れをここで診断できるようにしておく(reports/44)。
             log(f"WARNING: {cfg_src} が見つかりません。初回起動ダイアログで停止する可能性があります")
         log(f"%APPDATA%配下にもcfg/リプレイを配置しました ({appdata_dir})")
+    if config.vpatch_ini_overrides:
+        apply_vpatch_ini_overrides(
+            f"{config.instance_dir}/vpatch.ini", config.vpatch_ini_overrides, log=log,
+        )
     if os.path.exists(config.log_path):
         os.remove(config.log_path)
     log(f"instance 準備完了 (対象リプレイを {config.canonical_slot} として配置)")
+
+
+def apply_vpatch_ini_overrides(path, overrides, log=print):
+    """VsyncPatch(vpatch.ini)の指定キーをジョブごとの値へ上書きする。他の設定は
+    そのまま保持する(configparserは既定でキーを小文字化するため、vpatch.iniの
+    キャメルケースキー(`BugFixTh10Power3`等)を保つためoptionxform=strを指定する)。
+    """
+    parser = configparser.ConfigParser()
+    parser.optionxform = str
+    parser.read(path)
+    for section, key, value in overrides:
+        if not parser.has_section(section):
+            parser.add_section(section)
+        parser.set(section, key, value)
+        log(f"vpatch.ini上書き: [{section}] {key} = {value}")
+    with open(path, "w") as f:
+        parser.write(f)
 
 
 def build_injector_cmd(config):
@@ -776,13 +815,36 @@ def mad_masked(a, b, mask):
 
 def load_end_template(path):
     """リプレイ選択画面テンプレートを読み込み、grab_frameと同じ160x120グレースケール
-    座標系に揃えた上で、リプレイ内容に依存しない上部の帯(END_TEMPLATE_ROWS)だけを
-    切り出して返す。ファイル未設定・未存在の場合はNone(呼び出し側は画面静止のみで
-    判定する従来のフォールバック動作になる、reports/33参照)。"""
+    座標系に揃えたフル画像を返す(切り出しは呼び出し側がbuild_end_template_maskで
+    行う)。ファイル未設定・未存在の場合はNone(呼び出し側は画面静止のみで判定する
+    従来のフォールバック動作になる、reports/33参照)。"""
     if not path or not os.path.exists(path):
         return None
     img = Image.open(path).convert("L").resize((160, 120))
-    return np.asarray(img, dtype=np.float32)[:END_TEMPLATE_ROWS, :]
+    return np.asarray(img, dtype=np.float32)
+
+
+def build_end_template_mask(rect, w, h):
+    """GameConfig.end_template_rect(元のウィンドウ座標系のx0,y0,x1,y1)を、
+    grab_frame()が常にリサイズする160x120グレースケール座標系のブールマスク
+    (True=テンプレート照合に使う画素)に変換する。rect未設定なら従来通り
+    「上部END_TEMPLATE_ROWS行×全幅」を使う(th06/07/08、後方互換)。
+
+    th10のリプレイ選択画面は背景全体が常時アニメーションしており、上部帯全体を
+    比較すると同一画面同士でもMADが上振れして誤判定を招くため、リプレイ内容に
+    依存しない左上の"REPLAY"見出し部分だけに絞り込む必要がある
+    (touhou-recorder reports/56)。"""
+    mask = np.zeros((120, 160), dtype=bool)
+    if rect is None:
+        mask[:END_TEMPLATE_ROWS, :] = True
+        return mask
+    x0, y0, x1, y1 = rect
+    rx0 = int(x0 * 160 / w)
+    rx1 = int(np.ceil(x1 * 160 / w))
+    ry0 = int(y0 * 120 / h)
+    ry1 = int(np.ceil(y1 * 120 / h))
+    mask[ry0:ry1, rx0:rx1] = True
+    return mask
 
 
 def probe_stutter(config, env, x, y, w, h, interval_sec=STUTTER_PROBE_INTERVAL_SEC):
@@ -1231,6 +1293,8 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     else:
         log(f"ウィンドウは既に画面内に収まっているため移動をスキップします: x={x} y={y} w={w} h={h}")
     still_mask = build_still_mask(config.still_detect_exclude_rect, w, h)
+    end_template_mask = build_end_template_mask(config.end_template_rect, w, h)
+    end_template_mad_threshold = config.end_template_mad_threshold or END_TEMPLATE_MAD_THRESHOLD
     log("録画を開始します")
 
     base, _ext = os.path.splitext(output_path)
@@ -1321,8 +1385,8 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
             # ステージクリア画面等の無関係な画面と大きく乖離する(MAD 40〜140超、reports/33・34)
             # ため誤検知リスクは小さいが、動画圧縮ノイズ等による単発の偶然一致を弾くため
             # END_TEMPLATE_CONSECUTIVE_REQUIRED回連続の一致を要求する。
-            template_d = mad(frame[:END_TEMPLATE_ROWS, :], end_template)
-            if template_d < END_TEMPLATE_MAD_THRESHOLD:
+            template_d = mad_masked(frame, end_template, end_template_mask)
+            if template_d < end_template_mad_threshold:
                 end_template_consecutive += 1
             else:
                 end_template_consecutive = 0

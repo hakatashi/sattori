@@ -51,7 +51,7 @@ const job: JobRecord = {
   game: "th07",
   replayKey: "replays/abc.rpy",
   status: "queued",
-  options: { watermark: true, slowMotion: false },
+  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
   outputPath: null,
   outputPath720p: null,
   error: null,
@@ -112,7 +112,11 @@ describe("buildUserData", () => {
 
   it("ウォーターマーク無効時は WATERMARK=0", () => {
     const decoded = Buffer.from(
-      buildUserData(config, { ...job, options: { watermark: false, slowMotion: false } }, "task-token-abc"),
+      buildUserData(
+        config,
+        { ...job, options: { watermark: false, slowMotion: false, th10BugfixMarisaB: false } },
+        "task-token-abc",
+      ),
       "base64",
     ).toString("utf-8");
     expect(decoded).toContain("WATERMARK='0'");

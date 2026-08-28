@@ -7,6 +7,7 @@ import {
   isSupportedLanguage,
   parseReplayInfo,
   supportsSlowMotion,
+  supportsTh10BugfixMarisaB,
   type GameId,
   type JobRecord,
   type ReplayInfo,
@@ -173,6 +174,15 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       // 削除される。UI側もグレーアウトするが、ここはその防御線。エラーにはしない
       // ——録画自体は等倍で問題なく行えるため、断るより静かに落とす方がよい。
       slowMotion: body.options.slowMotion === true && supportsSlowMotion(game),
+      // th10「バグマリ」修正オプション(Issue #75)。ここも上のslowMotionと同じ理由
+      // (Issue #101)でサーバー側の再パース結果に基づいて握り潰す——クライアント申告の
+      // `game`/`character`をそのまま信用すると、実際は非対応の組み合わせなのに
+      // オプションだけ有効化させられてしまう(=`worker/docs/titles/th10.md`が警告する
+      // デシンクの原因を録画側に持ち込む)。`replayInfo`はこの関数内で既にS3から
+      // 再取得・再パース済みのものなので、`character`もクライアントの任意入力ではない。
+      th10BugfixMarisaB:
+        body.options.th10BugfixMarisaB === true &&
+        supportsTh10BugfixMarisaB(game, replayInfo?.character ?? null),
     },
     outputPath: null,
     outputPath720p: null,

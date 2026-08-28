@@ -29,6 +29,7 @@
 | th06 東方紅魔郷 | `record_th06.py` | [docs/titles/th06.md](docs/titles/th06.md) | テンプレート照合 | 640x480 |
 | th07 東方妖々夢 | `record_th07.py` | [docs/titles/th07.md](docs/titles/th07.md) | テンプレート照合 | 640x480 |
 | th08 東方永夜抄 | `record_th08.py` | [docs/titles/th08.md](docs/titles/th08.md) | テンプレート照合 | 640x480 |
+| th10 東方風神録 | `record_th10.py` | [docs/titles/th10.md](docs/titles/th10.md) | テンプレート照合(絞り込み領域) | 640x480 |
 | th11 東方地霊殿 | `record_th11.py` | [docs/titles/th11.md](docs/titles/th11.md) | 画面静止のみ | 640x480 |
 | th20 東方錦上京 | `record_th20.py` | [docs/titles/th20.md](docs/titles/th20.md) | 画面静止のみ | 1280x960 |
 
@@ -104,6 +105,11 @@
   §2の`score_monitor`)に使う。`replayInfo.score`が取得できていなければ省略される |
 | `FPS_LIMIT_TARGET_HZ` | 低速録画(§5)の目標fps。**省略時は等倍**(既定60)。自宅ワーカーへのオファー時のみ `30` が渡る |
 | `THPRAC_ATTACH_TIMEOUT_SEC` / `_CONFIRM_SEC` / `_ATTEMPTS` | th20 の thprac アタッチの予算([`titles/th20.md`](docs/titles/th20.md)) |
+| `TH10_BUGFIX_MARISA_B` | `1` で th10 の VsyncPatch(`vpatch.ini`の`BugFixTh10Power3`)を有効にして録画する
+  (魔理沙Bの「バグマリ」修正、Issue #75)。**リプレイ記録時と同じ設定で録画しないとリプレイずれが
+  起きる**([`titles/th10.md`](docs/titles/th10.md))ため、`RecordingOptions.th10BugfixMarisaB`
+  (既定false)をそのまま転記する。省略時・`0`ならパッチ無効(バグマリの挙動をそのまま再現)で
+  録画する |
 
 ## 4. 出力ファイル
 
@@ -113,7 +119,7 @@
 
 | 録画 | 配信版 | 生データ(元解像度版) | 理由 |
 | --- | --- | --- | --- |
-| th06/07/08/11(640x480・等倍) | 960x720へ拡大 | **そのまま2本目として配信** | 生データが無加工で通用するので、再エンコードは配信版の1回だけで済む |
+| th06/07/08/10/11(640x480・等倍) | 960x720へ拡大 | **そのまま2本目として配信** | 生データが無加工で通用するので、再エンコードは配信版の1回だけで済む |
 | th20(1280x960・等倍) | 1280x960のまま | 出さない | 2本目はウォーターマークの有無しか違わず、S3保管料とCloudFront転送量が倍になるだけ |
 | th20(低速録画) | 1280x960のまま | 出さない | 生データが半分の速度でそのまま配信できない。別途出すには等倍化の再エンコードがもう1回要る |
 
@@ -204,7 +210,7 @@ S3オブジェクトメタデータ(`sattori-time-scale`)として運ぶ。ま�
 
 - **イメージに焼き込むもの**(`docker build` の前に `worker/` 配下へ配置する): ウォーター
   マーク素材 `assets/watermark/watermark-60fps.webm`(VP9アルファ)と、リプレイ終了検知用の
-  テンプレート `assets/replay_end_templates/{th06,th07,th08}.png`
+  テンプレート `assets/replay_end_templates/{th06,th07,th08,th10}.png`
   ([`decisions/0011`](../docs/decisions/0011-replay-end-template-matching.md))。いずれも
   タイトル固有アセットではなく録画パイプライン自体が使う共通素材のため。
 - **イメージには含めず、タイトル資産アーカイブとしてS3へ置くもの**: ゲーム本体
@@ -328,5 +334,9 @@ docker push <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest
   検知・警告の仕組み自体は残してある。
 - **重複フレーム率の自動チェックは録画開始15〜45秒の30秒スポットしか見ていない**
   (Issue #93)。全編の代表値ではない。
-- **対応タイトルは §1 の5本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
+- **対応タイトルは §1 の6本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
   対応 —— MOD 移植・実機検証。Issue #13 配下)。
+- **th10のVsyncPatch「バグマリ」修正(`BugFixTh10Power3`)は記録時の設定を録画前に自動判別
+  できない**。ページAの`th10BugfixMarisaB`オプション(既定false)で利用者の自己申告に頼っており、
+  誤った申告のリプレイはリプレイずれ(デシンク)を起こす([`titles/th10.md`](docs/titles/th10.md)、
+  reports/58)。

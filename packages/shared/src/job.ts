@@ -54,11 +54,28 @@ export interface RecordingOptions {
    * `defaultSlowMotionFor()` がフロントエンド側で行う）。
    */
   slowMotion: boolean;
+  /**
+   * th10（東方風神録）の既知バグ「バグマリ」（魔理沙Bのパワーが3.00〜3.95の間に
+   * あるときショット火力が異常上昇する）をVsyncPatchで修正した状態で録画するか
+   * （Issue #75）。詳細と定数は `th10BugfixMarisaB.ts` 参照。
+   *
+   * これは録画品質の設定ではなく、**リプレイを記録した際のVsyncPatch設定を録画側へ
+   * 伝えるための申告**である。記録時と異なる設定で再生するとリプレイずれが起きるが、
+   * リプレイファイル自体にはこの設定情報が含まれないため録画側では自動判別できない
+   * （`worker/docs/titles/th10.md`）。
+   *
+   * **「th10かつ魔理沙B」のリプレイでしか選べない**
+   * （`supportsTh10BugfixMarisaB()`）。それ以外の組み合わせではページAがグレーアウト
+   * し、`POST /magic-links` も true を握り潰す。デフォルト false（未修正=バグ挙動を
+   * 再現する方が大半のリプレイに合致するため）。
+   */
+  th10BugfixMarisaB: boolean;
 }
 
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   watermark: true,
   slowMotion: false,
+  th10BugfixMarisaB: false,
 };
 
 /**

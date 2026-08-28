@@ -32,6 +32,8 @@ export interface UploadFormPersistedState {
   setSlowMotionTouched: Dispatch<SetStateAction<boolean>>;
   slowMotion: boolean;
   setSlowMotion: Dispatch<SetStateAction<boolean>>;
+  th10BugfixMarisaB: boolean;
+  setTh10BugfixMarisaB: Dispatch<SetStateAction<boolean>>;
 }
 
 export const UploadFormStateContext = createContext<UploadFormPersistedState | null>(null);
@@ -52,6 +54,9 @@ export function useUploadFormPersistedState(): UploadFormPersistedState {
   const [phase, setPhase] = useState<UploadFormPhase>("idle");
   const [slowMotionTouched, setSlowMotionTouched] = useState(false);
   const [slowMotion, setSlowMotion] = useState(false);
+  const [th10BugfixMarisaB, setTh10BugfixMarisaB] = useState(
+    DEFAULT_RECORDING_OPTIONS.th10BugfixMarisaB,
+  );
 
   return {
     file,
@@ -70,6 +75,8 @@ export function useUploadFormPersistedState(): UploadFormPersistedState {
     setSlowMotionTouched,
     slowMotion,
     setSlowMotion,
+    th10BugfixMarisaB,
+    setTh10BugfixMarisaB,
   };
 }
 

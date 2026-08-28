@@ -47,6 +47,8 @@
 | [0033](0033-admission-control-split-magic-link-vs-start-job.md) | 2026-08-26 | apps/api | 受付制御（キルスイッチ・月間コストガード）はrequestMagicLinkとstartJobで非対称にチェックする | 有効 |
 | [0034](0034-launch-handlefailure-timing.md) | 2026-08-26 | apps/api | Launch/HandleFailureの判定タイミングは早期失敗通知の遅延と書き込み競合を考慮して決める | 有効 |
 | [0035](0035-outer-timeout-wrapper-for-bare-metal-runs.md) | 2026-08-27 | worker | 録画処理のハング対策はコード側の後片付け頑健化とベアメタル実行時の外側timeoutラッパーの二段構えにする | 有効 |
+| [0036](0036-th10-bugfix-marisab-self-report.md) | 2026-08-29 | worker / packages/shared / apps/api / apps/web | th10「バグマリ」修正の要否はリプレイに記録されないため自動判別せず、利用者の自己申告オプションに委ねる | 有効 |
+| [0037](0037-end-template-restricted-region-for-th10.md) | 2026-08-29 | worker | 終了検知テンプレート照合に絞り込み領域・専用閾値を持たせ、背景が常時アニメーションするth10に対応する | 有効 |
 
 ## 書き方
 

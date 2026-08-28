@@ -261,7 +261,7 @@ describe("UploadForm", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, slowMotion: false },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
       "user@example.com",
       "ja",
     );
@@ -371,7 +371,7 @@ describe("UploadForm の低速録画オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      { watermark: true, slowMotion: false },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
       "koishi@example.com",
       "ja",
     );
@@ -405,5 +405,108 @@ describe("UploadForm の低速録画オプション", () => {
     // 処理落ちの注意自体は常に出すが、低速録画をすすめる一文だけを落とす。
     expect(screen.getByText(/描画が重く/)).toBeTruthy();
     expect(screen.queryByText(/ある程度の改善/)).toBeNull();
+  });
+});
+
+describe("UploadForm のth10「バグマリ」修正オプション", () => {
+  function th10BugfixMarisaBCheckbox(): HTMLInputElement {
+    const label = screen
+      .getAllByText(/「バグマリ」修正を有効にして録画する|bug Marisa/)
+      .at(0)
+      ?.closest("label");
+    return label?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+  }
+
+  const TH10_MARISA_B_REPLAY_INFO: ReplayInfo = {
+    ...SAMPLE_REPLAY_INFO,
+    game: "th10",
+    character: "MarisaB",
+  };
+
+  it("th10かつ魔理沙Bのリプレイなら選択でき、既定はオフ", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH10_MARISA_B_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th10_01.rpy");
+
+    // 選択直後はアップロード処理中でボタン等が非活性になる(busy)ため、その解消
+    // (=phaseがreadyになる)を待ってから判定する。
+    await waitFor(() => expect(th10BugfixMarisaBCheckbox()?.disabled).toBe(false));
+    expect(th10BugfixMarisaBCheckbox().checked).toBe(false);
+  });
+
+  it("th10でも魔理沙B以外はグレーアウトする", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({
+      ok: true,
+      info: { ...TH10_MARISA_B_REPLAY_INFO, character: "ReimuA" },
+    });
+    renderUploadForm();
+    selectFile("th10_01.rpy");
+
+    await waitFor(() => expect(screen.getByText("ReimuA")).toBeTruthy());
+    expect(th10BugfixMarisaBCheckbox().disabled).toBe(true);
+    expect(th10BugfixMarisaBCheckbox().checked).toBe(false);
+    expect(screen.getByText(/東方風神録の魔理沙Bのリプレイでのみ/)).toBeTruthy();
+  });
+
+  it("魔理沙Bでもth10以外(th07)はグレーアウトする", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th7_07.rpy");
+
+    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    expect(th10BugfixMarisaBCheckbox().disabled).toBe(true);
+    expect(th10BugfixMarisaBCheckbox().checked).toBe(false);
+  });
+
+  it("チェックを入れて送信すると options.th10BugfixMarisaB が true で送られる", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH10_MARISA_B_REPLAY_INFO });
+    mockedClient.requestMagicLink.mockResolvedValue({});
+    renderUploadForm();
+    selectFile("th10_01.rpy");
+    await waitFor(() => expect(th10BugfixMarisaBCheckbox()?.disabled).toBe(false));
+
+    fireEvent.click(th10BugfixMarisaBCheckbox());
+    fillEmail("marisa@example.com");
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(nextStepButton());
+    });
+
+    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
+    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
+      "replays/x.rpy",
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: true },
+      "marisa@example.com",
+      "ja",
+    );
+  });
+
+  it("チェック済みで非対応の組み合わせへ差し替えると、送信される値がオフに戻る", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH10_MARISA_B_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th10_01.rpy");
+    await waitFor(() => expect(th10BugfixMarisaBCheckbox()?.disabled).toBe(false));
+    fireEvent.click(th10BugfixMarisaBCheckbox());
+    expect(th10BugfixMarisaBCheckbox().checked).toBe(true);
+
+    // th10・魔理沙B から th07・魔理沙A（非対応の組み合わせ）へ差し替える。
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+    selectFile("th7_07.rpy");
+    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    expect(th10BugfixMarisaBCheckbox().checked).toBe(false);
+
+    mockedClient.requestMagicLink.mockResolvedValue({});
+    fillEmail("koishi@example.com");
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(nextStepButton());
+    });
+    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
+    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
+      expect.anything(),
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
+      "koishi@example.com",
+      "ja",
+    );
   });
 });
