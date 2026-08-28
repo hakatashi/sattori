@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runCli, type CliIO } from "./cli-core.js";
+import { runCli, type CliIO } from "./core.js";
 
 function createMockIO(overrides?: Partial<CliIO>) {
   const stdoutLines: string[] = [];

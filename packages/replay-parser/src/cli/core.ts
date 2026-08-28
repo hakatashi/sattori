@@ -1,6 +1,6 @@
-import { parseCliArgs } from "./cli-args.js";
-import { formatReplayJson, formatReplayText } from "./cli-format.js";
-import { parseReplay } from "./index.js";
+import { parseCliArgs } from "./args.js";
+import { formatReplayJson, formatReplayText } from "./format.js";
+import { parseReplay } from "../index.js";
 
 export interface CliIO {
   stdout: (message: string) => void;

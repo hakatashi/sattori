@@ -1,4 +1,4 @@
-import type { ParsedReplay, ReplayResourceCount, ReplayStageSplit } from "./types.js";
+import type { ParsedReplay, ReplayResourceCount, ReplayStageSplit } from "../types.js";
 
 /**
  * Formats a frame count into a human-readable duration string.
