@@ -95,7 +95,7 @@ they are distinguished by a version byte in the header.
 | `th08` | 東方永夜抄 (IN) | Same as above (includes Shift_JIS character names) |
 | `th09` | 東方花映塚 (PoFV) | Verified with real replays (samples obtained from [Silent Selene](https://www.silentselene.net/)) |
 | `th095` | 東方文花帖 (StB) | Same as above |
-| `th10` | 東方風神録 (MoF) | Verified with real replays + screenshots/samples |
+| `th10` | 東方風神録 (MoF) | Verified with checked-in replays in `test-fixtures/` |
 | `th11` | 東方地霊殿 (SA) | Verified with `test-fixtures/` + screenshots |
 | `th12` | 東方星蓮船 (UFO) | Verified with Silent Selene samples |
 | `th125` | ダブルスポイラー (DS) | Verified with checked-in replays in `test-fixtures/` |

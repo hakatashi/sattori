@@ -1,0 +1,107 @@
+{
+  "game": "th10",
+  "gameTitle": "東方風神録 ～ Mountain of Faith.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "26/03/18 15:10",
+  "character": "MarisaB",
+  "characterNameJa": "魔理沙B",
+  "characterNameEn": "Marisa B",
+  "difficulty": "Lunatic",
+  "stage": "Stage All Clear",
+  "score": 260490170,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "0.00",
+      "piv": 5000,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 7970
+    },
+    {
+      "stage": 2,
+      "score": 13057450,
+      "power": "3.95",
+      "piv": 17686,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 10047
+    },
+    {
+      "stage": 3,
+      "score": 35787310,
+      "power": "4.00",
+      "piv": 29010,
+      "lives": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 10955
+    },
+    {
+      "stage": 4,
+      "score": 67164150,
+      "power": "2.15",
+      "piv": 53270,
+      "lives": {
+        "count": 5,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 14502
+    },
+    {
+      "stage": 5,
+      "score": 108100210,
+      "power": "3.20",
+      "piv": 29208,
+      "lives": {
+        "count": 4,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 14563
+    },
+    {
+      "stage": 6,
+      "score": 175335290,
+      "power": "0.80",
+      "piv": 47684,
+      "lives": {
+        "count": 5,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 20997
+    }
+  ],
+  "frameCount": 79034
+}
