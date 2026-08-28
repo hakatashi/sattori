@@ -14,7 +14,7 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
-    date: "2026-08-26",
+    date: "2026-08-28",
     ja: "録画がタイムアウトした際にジョブページに警告を表示するよう修整",
     en: "Fixed the job page to show a warning when recording times out",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/184",
