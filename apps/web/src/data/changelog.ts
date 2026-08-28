@@ -17,7 +17,7 @@ export const changelogEntries: ChangelogEntry[] = [
     date: "2026-08-28",
     ja: "リプレイ解析パッケージ（@sattori/touhou-replay-parser）にCLIツール（touhou-replay-parser / threp）を同梱",
     en: "Bundled a CLI tool (touhou-replay-parser / threp) in the replay parser package (@sattori/touhou-replay-parser)",
-    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/189",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/190",
   },
   {
     date: "2026-08-28",
