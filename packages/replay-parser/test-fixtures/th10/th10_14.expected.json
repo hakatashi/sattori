@@ -1,0 +1,47 @@
+{
+  "game": "th10",
+  "gameTitle": "東方風神録 ～ Mountain of Faith.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "26/03/05 01:17",
+  "character": "ReimuA",
+  "characterNameJa": "霊夢A",
+  "characterNameEn": "Reimu A",
+  "difficulty": "Lunatic",
+  "stage": "Stage All Clear",
+  "score": 87132850,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 5,
+      "score": 0,
+      "power": "4.00",
+      "piv": 5000,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 16370
+    },
+    {
+      "stage": 6,
+      "score": 34317200,
+      "power": "1.60",
+      "piv": 31719,
+      "lives": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 22594
+    }
+  ],
+  "frameCount": 38964
+}

@@ -1,0 +1,32 @@
+{
+  "game": "th10",
+  "gameTitle": "東方風神録 ～ Mountain of Faith.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "11/11/03 03:04",
+  "character": "ReimuB",
+  "characterNameJa": "霊夢B",
+  "characterNameEn": "Reimu B",
+  "difficulty": "Extra",
+  "stage": "Extra Stage",
+  "score": 92988950,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 7,
+      "score": 0,
+      "power": "4.00",
+      "piv": 5000,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": 0,
+      "additional": null,
+      "frameCount": 43939
+    }
+  ],
+  "frameCount": 43939
+}
