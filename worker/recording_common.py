@@ -224,8 +224,9 @@ MAX_DUPLICATE_RATE_DEFAULT = 30.0
 # ---------------------------------------------------------------------------
 # mods/common/score_monitor.* が1秒間隔でMODログへ出力する
 # "ScoreMonitor: score=N stage=N lives=N graze=N epoch_ms=N" 行から、リプレイ
-# 再生終了時点のゲーム内スコア(生値)を読み取る。全5タイトルで実機検証済み
-# (touhou-recorder reports/53_phase53_score_monitor_all_titles.md)。
+# 再生終了時点のゲーム内スコア(生値)を読み取る。th06/07/08/11/20は実機検証済み
+# (touhou-recorder reports/53_phase53_score_monitor_all_titles.md)。th10は別途
+# reports/57で実機検証済み(mods/th10_replay_autoplay/dllmain.cpp参照)。
 SCORE_MONITOR_RE = re.compile(
     r"ScoreMonitor: score=(\d+) stage=(-?\d+) lives=(-?\d+) graze=(-?\d+) epoch_ms=(\d+)"
 )
