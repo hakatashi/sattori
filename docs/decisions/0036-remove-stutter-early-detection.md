@@ -3,7 +3,7 @@
 - **状態**: 有効
 - **決定日**: 2026-08-29
 - **対象**: worker
-- **関連**: reports/12・13・22(touhou-recorder、導入時の根拠)、[`0014`](0014-slow-motion-scaling-across-pipeline.md)
+- **関連**: Issue #193、reports/12・13・22(touhou-recorder、導入時の根拠)、[`0014`](0014-slow-motion-scaling-across-pipeline.md)
 
 `recording_common.py` の処理落ち早期検知(`probe_stutter()`、通称stutter probe)を削除する。
 公開リリース以降の実績を調査した結果、真陽性(実際の処理落ちを捉えた例)が1件も無く、
