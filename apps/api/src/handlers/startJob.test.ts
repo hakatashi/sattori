@@ -41,7 +41,7 @@ const pendingJob: JobRecord = {
   game: "th07",
   replayKey: "replays/abc.rpy",
   status: "pending",
-  options: { watermark: true, slowMotion: false },
+  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
   outputPath: null,
   outputPath720p: null,
   error: null,

@@ -12,11 +12,12 @@
 # 含めない(.gitignore 済み)。docker build 前にビルドコンテキスト(worker/)配下へ
 # 配置しておくこと(詳細は worker/README.md):
 #   assets/watermark/watermark-60fps.webm … ウォーターマーク素材(VP9 アルファ、タイトル非依存の共通素材)
-#   assets/replay_end_templates/{th06,th07,th08}.png … リプレイ選択画面テンプレート
+#   assets/replay_end_templates/{th06,th07,th08,th10}.png … リプレイ選択画面テンプレート
 #     (リプレイ終了検知用。ゲーム本体ではなく録画パイプライン自体の参照画像なので
 #     タイトル資産アーカイブ(S3)ではなくこのイメージに含める。th11は終了画面が
 #     リプレイ内容依存でテンプレート照合に不向きなため意図的に用意せず、画面静止
-#     検知のみで運用する。worker/README.md・record_th11.py参照)
+#     検知のみで運用する。worker/README.md・record_th11.py参照。th10は背景全体が
+#     常時アニメーションするため絞り込み領域でのみ照合する、record_th10.py参照)
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -49,7 +50,7 @@ COPY assets/watermark/watermark-60fps.webm /app/assets/watermark/watermark-60fps
 COPY assets/replay_end_templates/ /app/assets/replay_end_templates/
 
 # ワーカーのソース(リポジトリ管理)
-COPY recording_common.py record_th06.py record_th07.py record_th08.py record_th11.py record_th20.py entrypoint.py status.py convert.py interruption_watcher.py task_heartbeat.py progress_reporter.py title_assets.py pulse.py /app/
+COPY recording_common.py record_th06.py record_th07.py record_th08.py record_th10.py record_th11.py record_th20.py entrypoint.py status.py convert.py interruption_watcher.py task_heartbeat.py progress_reporter.py title_assets.py pulse.py /app/
 
 RUN mkdir -p /app/instances /app/runs
 
