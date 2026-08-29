@@ -44,7 +44,10 @@ export function ChangelogPage() {
             </p>
             <ul className={styles.descriptionList}>
               {group.entries.map((entry) => (
-                <li key={entry.ja} className={styles.description}>
+                <li
+                  key={entry.ja}
+                  className={entry.important ? styles.descriptionImportant : styles.description}
+                >
                   {entry[lang]}
                 </li>
               ))}
