@@ -411,7 +411,7 @@ describe("UploadForm の低速録画オプション", () => {
 describe("UploadForm のth10「バグマリ」修正オプション", () => {
   function th10BugfixMarisaBCheckbox(): HTMLInputElement {
     const label = screen
-      .getAllByText(/「バグマリ」修正を有効にして録画する|bug Marisa/)
+      .getAllByText(/魔理沙Bのショット威力修正を有効にして録画する|shot power fix enabled/)
       .at(0)
       ?.closest("label");
     return label?.querySelector('input[type="checkbox"]') as HTMLInputElement;
