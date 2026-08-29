@@ -174,6 +174,17 @@ END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録�
                                        # 低速録画では time_scale 倍される)。動画圧縮ノイズ等に
                                        # よる単発の偶然一致を弾くため連続一致を要求する(reports/34)
 
+# end_templateを使うゲームは終了判定そのものに画面静止を使わない(上記の通り)ため、
+# デシンク・非再生等で本編が完全に固まった場合にこれを検知する手段が無く、TIMEOUT_SEC
+# (60分)まで打ち切られない。処理落ち早期検知(stutter probe)を削除した結果(Issue #193、
+# decisions/0038)、こうした完全フリーズは録画開始直後の重複フレーム率チェックに
+# 引っかかって破棄・リトライされるだけで、1試行あたり60分を要したままMAX_ATTEMPTS_DEFAULT
+# 回繰り返されてしまう。画面が完全に静止したまま5分続いたらタイムアウトと同様に打ち切る
+# ことで、1試行あたりの無駄な待ち時間を短縮する。stutter probeが会話シーン等で誤検知した
+# 教訓(decisions/0038)を踏まえ、STILL_CONSECUTIVE_REQUIRED(16秒)よりはるかに長い連続
+# 静止を要求することで、通常のリプレイ内容(会話イベント等)では届かない値にしてある。
+FREEZE_CONSECUTIVE_REQUIRED = 150  # 150 * POLL_INTERVAL_SEC = 300秒(5分、等倍録画時)
+
 # 進捗スクリーンショットの書き出し間隔。POLL_INTERVAL_SEC(2秒)毎に取得している
 # フレームのうち5回に1回だけ保存する(=約10秒毎)。既存のMAD差分検知用のffmpeg
 # キャプチャを流用するため、追加のffmpeg呼び出しは発生しない。
@@ -1140,6 +1151,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     end_template_consecutive_required = scaled_poll_count(
         END_TEMPLATE_CONSECUTIVE_REQUIRED, time_scale,
     )
+    freeze_consecutive_required = scaled_poll_count(FREEZE_CONSECUTIVE_REQUIRED, time_scale)
     end_template = load_end_template(config.end_template_path)
     if end_template is None:
         log(
@@ -1292,7 +1304,9 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     prev_frame = None
     consecutive_still = 0
     end_template_consecutive = 0
+    consecutive_freeze = 0
     detected = False
+    frozen = False
     fps_runaway_hz = None
     poll_count = 0
     while True:
@@ -1342,6 +1356,25 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
                 log("リプレイ選択画面と連続して一致したためリプレイ終了と判定しました")
                 detected = True
                 break
+            # end_template方式は終了判定に画面静止を使わないため、本編が完全に固まった
+            # (デシンク・非再生等)場合を別途検知する必要がある(FREEZE_CONSECUTIVE_REQUIRED
+            # 参照)。閾値はSTILL_MAD_THRESHOLDを流用するが、要求する連続回数が16秒相当
+            # ではなく5分相当と大幅に長いため、通常のリプレイ内容(会話イベント等)で
+            # 誤って打ち切られる心配はない。
+            if prev_frame is not None:
+                freeze_d = mad_masked(prev_frame, frame, still_mask)
+                if freeze_d < STILL_MAD_THRESHOLD:
+                    consecutive_freeze += 1
+                else:
+                    consecutive_freeze = 0
+                if consecutive_freeze >= freeze_consecutive_required:
+                    log(
+                        f"WARNING: 画面が{freeze_consecutive_required * POLL_INTERVAL_SEC / 60:.0f}"
+                        "分間静止したままのため強制停止します"
+                    )
+                    frozen = True
+                    break
+            prev_frame = frame
         else:
             if prev_frame is not None:
                 d = mad_masked(prev_frame, frame, still_mask)
@@ -1403,6 +1436,9 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     elif detected:
         classification = "good"
         stop_reason = "画面静止検知"
+    elif frozen:
+        classification = "timeout"
+        stop_reason = "画面固着の早期検知(タイムアウト相当)"
     else:
         classification = "timeout"
         stop_reason = "タイムアウト"
