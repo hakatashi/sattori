@@ -77,10 +77,11 @@
   (reports/50、Issue #103)。`recording_common.check_replay_desync()`が録画成功直後にMODログの
   スコア推移と`replayInfo.score`を突き合わせてリプレイずれ(デシンク)の疑いを判定する
   (`JobRecord.desyncDetected`、自動リトライはしない)。RVAはタイトル毎に`dllmain.cpp`で指定
-  (baseRva+baseIsPointer+フィールドオフセット/幅の汎用設計)。全5タイトルで実機動作確認済み
+  (baseRva+baseIsPointer+フィールドオフセット/幅の汎用設計)。対応6タイトル全てで実機動作確認済み
   ([`docs/reports/2026-08-25-th07-score-monitor-fix.md`](../docs/reports/2026-08-25-th07-score-monitor-fix.md)、
   `docs/known-limitations.md`参照。th07だけはSattoriが配布するth07.exeが当初の検証環境と
-  バイナリが異なりゲームデータのバージョン差でRVAの再特定を要した) |
+  バイナリが異なりゲームデータのバージョン差でRVAの再特定を要した。th10はtouhou-recorder
+  reports/57で別途確認) |
 | `mods/common/score_probe_hook.*` / `stage_probe_hook.*` | RVA特定用の診断専用コード(本番ビルドには
   含めない)。score_monitorのRVAが通用しないタイトル・ゲームバージョンが出た場合の再調査に使う |
 
@@ -321,7 +322,7 @@ docker push <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest
 - **デシンク(リプレイずれ)を録画時に予防する手段は無い**。th20 は thprac の導入で大半が
   解消したが([`titles/th20.md`](docs/titles/th20.md))、他タイトルには対処法がない。録画後の
   スコア突き合わせによる事後検知(`JobRecord.desyncDetected`、Issue #103、§2の
-  `score_monitor`)は全5タイトルで実装済みだが、自動リトライはしない(警告表示のみ)。
+  `score_monitor`)は対応6タイトル全てで実装済みだが、自動リトライはしない(警告表示のみ)。
   想定尺より大幅に早く終了した/タイムアウトへ近づいたジョブでは、検知ロジック側を疑う前に
   **まず録画された映像を目視して**不自然な被弾・ゲームオーバーが無いか確認すること(閾値調整や
   リトライでは解決しない —— 同一リプレイなら毎回同じ箇所で再現する)。
