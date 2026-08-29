@@ -12,7 +12,10 @@ import {
 import type { GameRoutingPolicy } from "./workerRouting.js";
 
 const NOW = new Date("2026-08-09T12:00:00.000Z");
-const JOB = { game: "th07", options: { watermark: true, slowMotion: false } } as const;
+const JOB = {
+  game: "th07",
+  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
+} as const;
 
 function heartbeat(overrides: Partial<WorkerHeartbeat> = {}): WorkerHeartbeat {
   return {
@@ -37,7 +40,7 @@ describe("routingPolicyFor", () => {
   it("低速録画を希望するジョブは slow-motion-recording を宣言したワーカーにだけオファーする", () => {
     const policy = routingPolicyFor({
       game: "th20",
-      options: { watermark: true, slowMotion: true },
+      options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false },
     });
     expect(policy.requiredCapabilities).toContain("slow-motion-recording");
   });
@@ -45,7 +48,7 @@ describe("routingPolicyFor", () => {
   it("低速録画を希望しなければ、th20でも能力の要求は足さない(オファー先を無用に狭めない)", () => {
     const policy = routingPolicyFor({
       game: "th20",
-      options: { watermark: true, slowMotion: false },
+      options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
     });
     expect(policy.requiredCapabilities).toEqual([]);
   });
@@ -53,7 +56,10 @@ describe("routingPolicyFor", () => {
   it("th20は自宅ワーカーを待つ価値が高いのでオファー待機を上限まで伸ばしてある", () => {
     // EC2フォールバック先が`.4xlarge`帯と高価で、かつ低速録画は自宅でしかできない。
     expect(routingPolicyFor(JOB).offerWindowSeconds).toBeLessThan(
-      routingPolicyFor({ game: "th20", options: { watermark: true, slowMotion: true } })
+      routingPolicyFor({
+        game: "th20",
+        options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false },
+      })
         .offerWindowSeconds,
     );
   });

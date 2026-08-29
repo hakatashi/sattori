@@ -27,7 +27,7 @@ const job: AdminJobRecord = {
   game: "th11",
   replayKey: "replays/abc.rpy",
   status: "recording",
-  options: { watermark: true, slowMotion: false },
+  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
   outputPath: "videos/job-1.mp4",
   outputPath720p: null,
   error: null,

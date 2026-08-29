@@ -39,10 +39,11 @@
 //   thprac_th06.cpp / thprac_th07.cpp / thprac_th08.cpp / thprac_th11.cpp
 // - th20: 同thprac_th20.cpp の rel_addrs / GlobalsSide 定義(v1.00cで検証済み)
 //
-// 全5タイトルで、フル尺録画による「リプレイ再生終了時のゲーム内スコアがリプレイの
+// 上記5タイトルで、フル尺録画による「リプレイ再生終了時のゲーム内スコアがリプレイの
 // 記録スコアと完全一致する」ことを実機検証済み(touhou-recorder
-// reports/53_phase53_score_monitor_all_titles.md)。ゲームデータのバージョンが
-// 変われば無意味な値になりうる点には注意すること。
+// reports/53_phase53_score_monitor_all_titles.md)。th10は別途RVAを特定し
+// 同様に完全一致を確認済み(reports/57、dllmain.cppのコメント参照)。ゲームデータの
+// バージョンが変われば無意味な値になりうる点には注意すること。
 
 namespace autoplay {
 
