@@ -32,3 +32,9 @@
   margin: 0;
   font-size: 0.8rem;
 }
+
+.descriptionImportant {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: bold;
+}

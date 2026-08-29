@@ -10,6 +10,8 @@ export interface ChangelogEntry {
   en: string;
   /** 対応するIssue/PRのURL。管理目的の記録のみで、ページ上には表示しない。 */
   issueUrl?: string;
+  /** trueの場合、重要な更新として太字で表示する。 */
+  important?: boolean;
 }
 
 export const changelogEntries: ChangelogEntry[] = [
@@ -24,6 +26,7 @@ export const changelogEntries: ChangelogEntry[] = [
     ja: "東方風神録 (th10) の録画に対応",
     en: "Added recording support for Mountain of Faith (th10)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/192",
+    important: true,
   },
   {
     date: "2026-08-28",
@@ -76,5 +79,6 @@ export const changelogEntries: ChangelogEntry[] = [
     date: "2026-08-22",
     ja: "TouhouSattori 正式公開",
     en: "TouhouSattori public launch",
+    important: true,
   },
 ];
