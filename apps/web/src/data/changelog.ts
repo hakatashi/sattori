@@ -20,6 +20,12 @@ export const changelogEntries: ChangelogEntry[] = [
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/193",
   },
   {
+    date: "2026-08-29",
+    ja: "東方風神録 (th10) の録画に対応",
+    en: "Added recording support for Mountain of Faith (th10)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/192",
+  },
+  {
     date: "2026-08-28",
     ja: "録画がタイムアウトした際にジョブページに警告を表示するよう修整",
     en: "Fixed the job page to show a warning when recording times out",

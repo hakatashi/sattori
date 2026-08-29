@@ -1,6 +1,6 @@
 ---
 name: upload-title-assets
-description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th07/th08/th11/th20）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
+description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th07/th08/th10/th11/th20）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
 ---
 
 # タイトル資産（ゲームデータ）の S3 アップロード
@@ -89,6 +89,24 @@ aws s3 cp /tmp/th08-assets.tar.gz \
   "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th08/assets.tar.gz"
 ```
 
+### th10（東方風神録）
+
+`games/th10` は `touhou-recorder` の `games/th10` から `rsync` でコピーする。
+VsyncPatch本体（`vpatch.exe` / `vpatch.ini` / `vpatch_th10.dll`）を `games/th10` 直下に
+同梱すること（th06と同じ`extra_dlls`の仕組みで注入される）。同梱する`vpatch.ini`の
+`BugFixTh10Power3`の値自体はどちらでもよい —— `record_th10.py`が録画直前に
+`TH10_BUGFIX_MARISA_B`環境変数に応じて必ず上書きする（`worker/docs/titles/th10.md`参照）。
+
+```bash
+tar -czf /tmp/th10-assets.tar.gz \
+  games/th10 \
+  prefixes/th10-wined3d-gl \
+  mods/common/build/injector.exe \
+  mods/th10_replay_autoplay/build/th10_hook.dll
+aws s3 cp /tmp/th10-assets.tar.gz \
+  "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th10/assets.tar.gz"
+```
+
 ### th11（東方地霊殿）
 
 `games/th11` は `touhou-recorder` の `games/th11` から `rsync` でコピーする
@@ -141,7 +159,7 @@ aws s3 cp /tmp/th20-assets.tar.gz \
 
 ## 3. WINEPREFIX の作成・更新（`setup_wineprefix.sh`）
 
-5タイトルとも同じ手順（`wineboot -u` 初期化 + MS Gothic / MS Mincho 配置・レジストリ登録）で
+6タイトルとも同じ手順（`wineboot -u` 初期化 + MS Gothic / MS Mincho 配置・レジストリ登録）で
 作成する。`WINEPREFIX` 引数は**絶対パス必須**のため `$(pwd)` で絶対パス化して渡す。
 
 ローカルに X server がない場合は `xvfb-run -a` を前置する（`wineboot` の
@@ -149,7 +167,7 @@ aws s3 cp /tmp/th20-assets.tar.gz \
 
 ```bash
 cd worker
-for t in th06 th07 th08 th11 th20; do
+for t in th06 th07 th08 th10 th11 th20; do
   xvfb-run -a ./setup_wineprefix.sh "$(pwd)/prefixes/${t}-wined3d-gl" \
     "$(pwd)/games/assets/msgothic.ttc" "$(pwd)/games/assets/msmincho.ttc"
 done

@@ -25,6 +25,8 @@ const TH07_FIXTURE = path.join(FIXTURES_DIR, "th07/th7_07.rpy");
 // (parseReplay.test.tsと同じ用途)。
 const TH13_FIXTURE = path.join(FIXTURES_DIR, "th13/th13_01.rpy");
 const TH20_FIXTURE = path.join(FIXTURES_DIR, "th20/th20_01.rpy");
+const TH10_MARISA_B_FIXTURE = path.join(FIXTURES_DIR, "th10/th10_23.rpy");
+const TH10_REIMU_A_FIXTURE = path.join(FIXTURES_DIR, "th10/th10_02.rpy");
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -361,6 +363,66 @@ describe("POST /magic-links", () => {
       .commandCalls(PutCommand)
       .find((call) => call.args[0].input.Item?.status === "pending");
     expect(jobPut?.args[0].input.Item?.options).toMatchObject({ slowMotion: false });
+  });
+
+  it("th10かつ魔理沙Bの.rpyなら options.th10BugfixMarisaB をそのまま保存する(Issue #75)", async () => {
+    mockUploadedReplay(new Uint8Array(await readFile(TH10_MARISA_B_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        options: { watermark: true, th10BugfixMarisaB: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.game).toBe("th10");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ th10BugfixMarisaB: true });
+  });
+
+  it("th10でも魔理沙B以外の.rpyなら options.th10BugfixMarisaB を握り潰す", async () => {
+    // クライアント申告のgame/characterを信用すると、バグの発生条件外なのに
+    // オプションだけ有効化させられてしまう(worker/docs/titles/th10.mdが警告する
+    // デシンクの原因を録画側に持ち込む)。ページAのグレーアウトをすり抜けた要求は
+    // ここで落とす。
+    mockUploadedReplay(new Uint8Array(await readFile(TH10_REIMU_A_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    const res = await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        options: { watermark: true, th10BugfixMarisaB: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(202);
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ th10BugfixMarisaB: false });
+  });
+
+  it("魔理沙Bでもth10以外(th07)の.rpyなら options.th10BugfixMarisaB を握り潰す", async () => {
+    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        options: { watermark: true, th10BugfixMarisaB: true },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ th10BugfixMarisaB: false });
   });
 
   it("レート制限に達していれば429を返しメールを送らない", async () => {

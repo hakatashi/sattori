@@ -69,6 +69,13 @@ export function buildWorkerEnv(
     // **未指定＝等倍**が既定なので、等倍録画では付与しない。
     env.FPS_LIMIT_TARGET_HZ = String(SLOW_MOTION_TARGET_HZ);
   }
+  if (job.options.th10BugfixMarisaB) {
+    // th10「バグマリ」修正オプション（Issue #75）。低速録画と異なりEC2/自宅どちらでも
+    // 実時間コストは変わらない（VsyncPatchの`vpatch.ini`を録画直前に書き換えるだけ）ため、
+    // `WorkerEnvOptions`を経由せず`job.options`から直接読む——割り当て先に応じて
+    // 呼び出し側が値を変える必要が無い。
+    env.TH10_BUGFIX_MARISA_B = "1";
+  }
   return env;
 }
 

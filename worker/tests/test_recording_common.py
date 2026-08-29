@@ -395,19 +395,38 @@ def test_load_end_template_returns_none_when_file_missing(tmp_path):
     assert rc.load_end_template(str(tmp_path / "missing.png")) is None
 
 
-def test_load_end_template_crops_top_band_at_downsampled_resolution(tmp_path):
-    # grab_frame()と同じ160x120グレースケールへダウンサンプルした上で、リプレイ内容に
-    # 依存しない上部の帯(END_TEMPLATE_ROWS)だけを切り出す(reports/33)。
+def test_load_end_template_returns_full_downsampled_frame(tmp_path):
+    # grab_frame()と同じ160x120グレースケールへダウンサンプルしたフル画像を返す
+    # (切り出しはbuild_end_template_maskの責務、reports/33・56)。
     path = tmp_path / "template.png"
     Image.new("RGB", (640, 480), color=(100, 150, 200)).save(path)
 
     template = rc.load_end_template(str(path))
 
-    assert template.shape == (rc.END_TEMPLATE_ROWS, 160)
+    assert template.shape == (120, 160)
 
 
-def test_load_end_template_is_content_independent_of_lower_region(tmp_path):
-    # フェーズ34: 切り出し領域(タイトル文言+列見出しの帯)はリプレイ一覧の中身
+def test_build_end_template_mask_defaults_to_top_band():
+    # rect未指定なら従来通り「上部END_TEMPLATE_ROWS行×全幅」(th06/07/08)。
+    mask = rc.build_end_template_mask(None, 640, 480)
+
+    assert mask.shape == (120, 160)
+    assert mask[: rc.END_TEMPLATE_ROWS, :].all()
+    assert not mask[rc.END_TEMPLATE_ROWS :, :].any()
+
+
+def test_build_end_template_mask_restricts_to_custom_rect():
+    # th10はリプレイ内容に依存しない左上の"REPLAY"見出し部分だけに絞り込む
+    # (touhou-recorder reports/56)。
+    mask = rc.build_end_template_mask((0, 0, 244, 76), 640, 480)
+
+    assert mask[:19, :61].all()
+    assert not mask[19:, :].any()
+    assert not mask[:, 61:].any()
+
+
+def test_masked_end_template_comparison_is_content_independent_of_lower_region(tmp_path):
+    # フェーズ34: 上部の帯(タイトル文言+列見出し)はリプレイ一覧の中身
     # (プレイヤー名・日付等、画像下部)に依存しないことを確認する。
     img_a = Image.new("RGB", (640, 480), color=(255, 255, 255))
     for y in range(400, 480):
@@ -422,8 +441,9 @@ def test_load_end_template_is_content_independent_of_lower_region(tmp_path):
 
     template_a = rc.load_end_template(str(path_a))
     template_b = rc.load_end_template(str(path_b))
+    mask = rc.build_end_template_mask(None, 640, 480)
 
-    assert rc.mad(template_a, template_b) == pytest.approx(0.0)
+    assert rc.mad_masked(template_a, template_b, mask) == pytest.approx(0.0)
 
 
 def test_build_video_ffmpeg_cmd_captures_without_watermark():
@@ -1268,3 +1288,89 @@ def test_prepare_instance_skips_the_appdata_profile_for_other_titles(tmp_path, m
     rc.prepare_instance(config, str(replay), log=lambda _m: None)
 
     assert not (tmp_path / "prefix").exists()
+
+
+def test_apply_vpatch_ini_overrides_rewrites_key_and_keeps_others(tmp_path):
+    ini = tmp_path / "vpatch.ini"
+    ini.write_text("[Window]\nenabled = 0\n\n[Option]\nVsync = 0\nBugFixTh10Power3 = 1\n")
+
+    rc.apply_vpatch_ini_overrides(str(ini), (("Option", "BugFixTh10Power3", "0"),), log=lambda _m: None)
+
+    parser = rc.configparser.ConfigParser()
+    parser.optionxform = str
+    parser.read(ini)
+    # 上書き対象以外のキー・セクションは保持される。
+    assert parser.get("Window", "enabled") == "0"
+    assert parser.get("Option", "Vsync") == "0"
+    # キャメルケースのキー名が小文字化されずに保たれる。
+    assert parser.get("Option", "BugFixTh10Power3") == "0"
+
+
+def test_apply_vpatch_ini_overrides_creates_missing_section(tmp_path):
+    ini = tmp_path / "vpatch.ini"
+    ini.write_text("[Window]\nenabled = 0\n")
+
+    rc.apply_vpatch_ini_overrides(str(ini), (("Option", "BugFixTh10Power3", "1"),), log=lambda _m: None)
+
+    parser = rc.configparser.ConfigParser()
+    parser.optionxform = str
+    parser.read(ini)
+    assert parser.get("Option", "BugFixTh10Power3") == "1"
+
+
+def test_prepare_instance_applies_vpatch_ini_overrides(tmp_path):
+    game_dir = tmp_path / "games" / "th10"
+    game_dir.mkdir(parents=True)
+    (game_dir / "vpatch.ini").write_text("[Option]\nBugFixTh10Power3 = 1\n")
+    replay = tmp_path / "upload.rpy"
+    replay.write_bytes(b"replay")
+    injector = tmp_path / "injector.exe"
+    injector.write_bytes(b"i")
+    hook = tmp_path / "th10_hook.dll"
+    hook.write_bytes(b"h")
+
+    config = make_config(
+        game_id="th10",
+        wineprefix=str(tmp_path / "prefix"),
+        instance_dir=str(tmp_path / "instance"),
+        game_dir_src=str(game_dir),
+        canonical_slot="th10_01.rpy",
+        injector_path=str(injector),
+        hook_dll_path=str(hook),
+        vpatch_ini_overrides=(("Option", "BugFixTh10Power3", "0"),),
+    )
+    (tmp_path / "instance").mkdir()
+
+    rc.prepare_instance(config, str(replay), log=lambda _m: None)
+
+    parser = rc.configparser.ConfigParser()
+    parser.optionxform = str
+    parser.read(tmp_path / "instance" / "vpatch.ini")
+    assert parser.get("Option", "BugFixTh10Power3") == "0"
+
+
+def test_prepare_instance_skips_vpatch_ini_rewrite_when_no_overrides(tmp_path):
+    """既定(overridesなし)では同梱のvpatch.iniをそのまま使う(他タイトルへの影響なし)。"""
+    game_dir = tmp_path / "games" / "th11"
+    game_dir.mkdir(parents=True)
+    replay = tmp_path / "upload.rpy"
+    replay.write_bytes(b"replay")
+    injector = tmp_path / "injector.exe"
+    injector.write_bytes(b"i")
+    hook = tmp_path / "th11_hook.dll"
+    hook.write_bytes(b"h")
+
+    config = make_config(
+        game_id="th11",
+        wineprefix=str(tmp_path / "prefix"),
+        instance_dir=str(tmp_path / "instance"),
+        game_dir_src=str(game_dir),
+        canonical_slot="th11_ud0000.rpy",
+        injector_path=str(injector),
+        hook_dll_path=str(hook),
+    )
+    (tmp_path / "instance").mkdir()
+
+    rc.prepare_instance(config, str(replay), log=lambda _m: None)
+
+    assert not (tmp_path / "instance" / "vpatch.ini").exists()
