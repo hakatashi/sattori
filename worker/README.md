@@ -46,10 +46,12 @@
   環境変数で `record_thNN.py` を呼び分ける |
 | `recording_common.py` | 全タイトル共通の録画パイプライン本体(Issue #13でth08対応時に共通化)。
   Xvfb起動・クロップ座標の確定([`0012`](../docs/decisions/0012-crop-geometry-after-window-stabilizes.md))・録画・
-  終了検知([`0011`](../docs/decisions/0011-replay-end-template-matching.md))・fps暴走/処理落ちの
-  早期検知・自動リトライ(既定3回)・映像/音声を別プロセスで録画し後でmuxする処理(reports/26)・
+  終了検知([`0011`](../docs/decisions/0011-replay-end-template-matching.md))・fps暴走検知・
+  自動リトライ(既定3回)・映像/音声を別プロセスで録画し後でmuxする処理(reports/26)・
   フックDLLより前の追加DLL注入(`GameConfig.extra_dlls`)・音声のジョブ専用sinkへの分離
-  ([`0013`](../docs/decisions/0013-per-job-pulseaudio-sink.md))を担う |
+  ([`0013`](../docs/decisions/0013-per-job-pulseaudio-sink.md))を担う。処理落ちの早期検知
+  (stutter probe)は真陽性の実績が無く正常なリプレイも誤検知しうることが判明したため
+  削除済み([`0038`](../docs/decisions/0038-remove-stutter-early-detection.md)) |
 | `pulse.py` | ジョブ専用のPulseAudio null-sinkの作成・破棄(Issue #48) |
 | `record_thNN.py` | タイトル固有のパス設定(`GameConfig`)を組み立てて `record_with_retry()` を呼ぶだけの薄いラッパー |
 | `convert.py` | 録画結果を「ユーザーへ配信する1本」へ変換する後処理。**録画後の再エンコード

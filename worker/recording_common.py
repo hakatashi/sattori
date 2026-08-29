@@ -179,17 +179,6 @@ END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録�
 # キャプチャを流用するため、追加のffmpeg呼び出しは発生しない。
 PROGRESS_SNAPSHOT_EVERY_N_POLLS = 5
 
-# 処理落ち(reports/12・13・22)の早期検知。通常ポーリング(2秒間隔)では処理落ち中
-# でも2秒あれば別のフレームを捉えてしまい見逃すため、0.15秒間隔の短時間サンプリング
-# で判定する。処理落ちは実測ではすべて録画開始25秒以内に発生していたため、早期
-# 打ち切り判定は録画開始5分以内に限定する(それ以降の高い重複率はリプレイが正常に
-# 終了して結果画面(静止画面)に達したケースと区別がつかないため、reports/22)。
-STUTTER_PROBE_SAMPLES = 10
-STUTTER_PROBE_INTERVAL_SEC = 0.15
-STUTTER_PROBE_PERIOD_SEC = 60.0
-STUTTER_DUP_FRACTION_THRESHOLD = 0.7
-STUTTER_PROBE_ACTIVE_UNTIL_SEC = 300.0
-
 # mods/common/fps_monitor.cpp が5秒ごとにログ出力する
 # "FpsMonitor: N GetDeviceState calls in M ms (H.H Hz)" 行からHz値を読み取る。
 # 正常時は55〜65Hz程度(垂直同期相当)で安定するが、fps暴走時は実測で479〜2700Hzに
@@ -769,17 +758,6 @@ def grab_frame(config, env, x, y, w, h):
     return gray, color
 
 
-def grab_frame_gray(config, env, x, y, w, h):
-    """stutter probe専用の軽量版(カラー画像のデコードを省く)。"""
-    cmd = [
-        "ffmpeg", "-y", "-f", "x11grab", "-draw_mouse", "0", "-video_size", f"{w}x{h}",
-        "-i", f"{config.display}+{x},{y}", "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-",
-    ]
-    result = subprocess.run(cmd, env=env, capture_output=True)
-    img = Image.open(io.BytesIO(result.stdout)).convert("L").resize((160, 120))
-    return np.asarray(img, dtype=np.float32)
-
-
 def mad(a, b):
     return float(np.mean(np.abs(a - b)))
 
@@ -846,25 +824,6 @@ def build_end_template_mask(rect, w, h):
     ry1 = int(np.ceil(y1 * 120 / h))
     mask[ry0:ry1, rx0:rx1] = True
     return mask
-
-
-def probe_stutter(config, env, x, y, w, h, interval_sec=STUTTER_PROBE_INTERVAL_SEC):
-    """短時間(約1.5秒)に複数フレームを`interval_sec`間隔で連続キャプチャし、隣接フレーム間が
-    ほぼ同一(MAD<STILL_MAD_THRESHOLD)である割合を返す。60fpsで本来動いているはずの
-    短い間隔でこの割合が高ければ、処理落ち(重複フレーム多発、reports/12・13・22)の
-    疑いが強い。
-
-    低速録画(Issue #68)ではゲームの描画頻度自体が下がるため、呼び出し側が同じ比率で
-    伸ばした間隔を渡す。等倍と同じ0.15秒のままだと、正常に目標fpsを維持できていても
-    隣接フレームが重複と判定され、処理落ちを誤検知する。"""
-    frames = [grab_frame_gray(config, env, x, y, w, h)]
-    for _ in range(STUTTER_PROBE_SAMPLES - 1):
-        time.sleep(interval_sec)
-        frames.append(grab_frame_gray(config, env, x, y, w, h))
-    dup_count = sum(
-        1 for i in range(1, len(frames)) if mad(frames[i - 1], frames[i]) < STILL_MAD_THRESHOLD
-    )
-    return dup_count / (len(frames) - 1)
 
 
 def scan_fps_runaway(log_path):
@@ -1159,7 +1118,7 @@ def _failure_result(config, env, log):
 
 def attempt_recording(config, replay_path, output_path, progress_dir, expected_duration_seconds, log=print):
     """録画を1回試行する。戻り値: dict(output_exists, classification, fps_runaway_hz, total_record_sec)。
-    classification は "good" / "fps_runaway" / "stutter" / "timeout" / "setup_error" のいずれか。
+    classification は "good" / "fps_runaway" / "timeout" / "setup_error" のいずれか。
     """
     env = config.build_env()
     # 低速録画(Issue #68)のスケール係数。等倍なら1.0で、以下の時間依存パラメータは
@@ -1171,9 +1130,6 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
             f"(実時間はゲーム内時間の{time_scale:.2f}倍。監視の猶予・タイムアウトも同じ比率で伸ばします)"
         )
     post_start_grace_sec = POST_START_GRACE_SEC * time_scale
-    stutter_probe_interval_sec = STUTTER_PROBE_INTERVAL_SEC * time_scale
-    stutter_probe_period_sec = STUTTER_PROBE_PERIOD_SEC * time_scale
-    stutter_probe_active_until_sec = STUTTER_PROBE_ACTIVE_UNTIL_SEC * time_scale
     timeout_sec = TIMEOUT_SEC * time_scale
     # 終了検知の「連続回数」も同じ比率で伸ばす。ポーリングは実時間駆動
     # (POLL_INTERVAL_SEC)なので、回数を据え置くと**ゲーム内時間で必要な静止の長さが
@@ -1337,10 +1293,8 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     consecutive_still = 0
     end_template_consecutive = 0
     detected = False
-    stutter_detected = False
     fps_runaway_hz = None
     poll_count = 0
-    next_stutter_probe = post_start_grace_sec
     while True:
         elapsed = time.time() - gameplay_start
         if elapsed > timeout_sec:
@@ -1356,17 +1310,6 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         if elapsed < post_start_grace_sec:
             time.sleep(POLL_INTERVAL_SEC)
             continue
-
-        if elapsed >= next_stutter_probe and elapsed < stutter_probe_active_until_sec:
-            dup_fraction = probe_stutter(config, env, x, y, w, h, stutter_probe_interval_sec)
-            elapsed_after_probe = time.time() - gameplay_start
-            next_stutter_probe = elapsed_after_probe + stutter_probe_period_sec
-            log(f"stutter probe: elapsed={elapsed_after_probe:.1f}s dup_fraction={dup_fraction:.2f}")
-            if dup_fraction >= STUTTER_DUP_FRACTION_THRESHOLD:
-                log(f"WARNING: 短間隔サンプリングでの重複フレーム率({dup_fraction:.2f})が閾値を超えました。早期終了します")
-                stutter_detected = True
-                break
-            prev_frame = None  # プローブでffmpeg呼び出しの時間が経っているため、次回はここから再計測する
 
         frame, color_frame = grab_frame(config, env, x, y, w, h)
         poll_count += 1
@@ -1457,9 +1400,6 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     if fps_runaway_hz is not None:
         classification = "fps_runaway"
         stop_reason = "fps暴走早期検知"
-    elif stutter_detected:
-        classification = "stutter"
-        stop_reason = "処理落ち早期検知"
     elif detected:
         classification = "good"
         stop_reason = "画面静止検知"
@@ -1542,9 +1482,6 @@ def _record_with_retry(config, replay_path, output_path, *,
             continue
         if result["classification"] == "fps_runaway":
             log(f"WARNING: fps暴走({result['fps_runaway_hz']:.1f}Hz)を検知したため破棄してリトライします")
-            continue
-        if result["classification"] == "stutter":
-            log("WARNING: 処理落ちの早期検知によりこの試行を破棄してリトライします")
             continue
 
         # 判定対象は**等倍へ戻す前の生データ**なので、閾値の方をスケールに合わせて

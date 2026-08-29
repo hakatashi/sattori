@@ -921,7 +921,7 @@ def test_record_with_retry_reuses_single_sink_across_attempts(monkeypatch, fake_
     def fake_attempt(*args, **kwargs):
         calls.append(1)
         if len(calls) == 1:
-            return {"output_exists": True, "classification": "stutter", "fps_runaway_hz": None, "total_record_sec": 5.0}
+            return {"output_exists": True, "classification": "fps_runaway", "fps_runaway_hz": 500.0, "total_record_sec": 5.0}
         return {"output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0}
 
     monkeypatch.setattr(rc, "attempt_recording", fake_attempt)

@@ -15,6 +15,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-29",
+    ja: "正常なリプレイが誤って「処理落ち」と判定され録画に失敗する場合がある不具合を修正",
+    en: "Fixed some valid replays being incorrectly flagged as \"processing lag\" and failing to record",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/193",
+  },
+  {
+    date: "2026-08-29",
     ja: "東方風神録 (th10) の録画に対応",
     en: "Added recording support for Mountain of Faith (th10)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/192",
