@@ -22,7 +22,7 @@ const job = {
   jobId: "job-1",
   game: "th20",
   replayKey: "replays/abc.rpy",
-  options: { watermark: true, slowMotion: true },
+  options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false },
   estimatedDurationSeconds: 1757,
 } as unknown as JobRecord;
 
@@ -31,6 +31,23 @@ describe("buildWorkerEnv", () => {
     const env = buildWorkerEnv(config, job, "task-token", { slowMotion: true });
 
     expect(env.FPS_LIMIT_TARGET_HZ).toBe(String(SLOW_MOTION_TARGET_HZ));
+  });
+
+  it("th10BugfixMarisaB が有効なら EC2/自宅どちらでも TH10_BUGFIX_MARISA_B を付ける", () => {
+    const jobWithBugfix = {
+      ...job,
+      options: { ...job.options, th10BugfixMarisaB: true },
+    } as unknown as JobRecord;
+
+    const env = buildWorkerEnv(config, jobWithBugfix, "task-token", { slowMotion: false });
+
+    expect(env.TH10_BUGFIX_MARISA_B).toBe("1");
+  });
+
+  it("th10BugfixMarisaB が無効なら TH10_BUGFIX_MARISA_B を付けない", () => {
+    const env = buildWorkerEnv(config, job, "task-token", { slowMotion: false });
+
+    expect(env.TH10_BUGFIX_MARISA_B).toBeUndefined();
   });
 
   it("等倍録画では FPS_LIMIT_TARGET_HZ を付けない(未指定＝等倍がワーカー側の既定)", () => {
