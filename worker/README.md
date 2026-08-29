@@ -51,7 +51,10 @@
   フックDLLより前の追加DLL注入(`GameConfig.extra_dlls`)・音声のジョブ専用sinkへの分離
   ([`0013`](../docs/decisions/0013-per-job-pulseaudio-sink.md))を担う。処理落ちの早期検知
   (stutter probe)は真陽性の実績が無く正常なリプレイも誤検知しうることが判明したため
-  削除済み([`0038`](../docs/decisions/0038-remove-stutter-early-detection.md)) |
+  削除済み([`0038`](../docs/decisions/0038-remove-stutter-early-detection.md))。代わりに、
+  終了判定に画面静止を使わないend_template方式のタイトルへは、画面が5分静止したら
+  タイムアウト扱いで強制停止する早期検知を追加してある
+  ([`0039`](../docs/decisions/0039-end-template-freeze-timeout.md)) |
 | `pulse.py` | ジョブ専用のPulseAudio null-sinkの作成・破棄(Issue #48) |
 | `record_thNN.py` | タイトル固有のパス設定(`GameConfig`)を組み立てて `record_with_retry()` を呼ぶだけの薄いラッパー |
 | `convert.py` | 録画結果を「ユーザーへ配信する1本」へ変換する後処理。**録画後の再エンコード

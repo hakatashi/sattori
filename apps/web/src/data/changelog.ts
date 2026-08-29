@@ -16,6 +16,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-08-30",
+    ja: "録画中に画面が長時間動かなくなった場合、強制的に録画を停止するよう修正",
+    en: "Fixed recording to be forcibly stopped when the screen freezes for an extended period during playback",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/195",
+  },
+  {
     date: "2026-08-29",
     ja: "正常なリプレイが誤って「処理落ち」と判定され録画に失敗する場合がある不具合を修正",
     en: "Fixed some valid replays being incorrectly flagged as \"processing lag\" and failing to record",

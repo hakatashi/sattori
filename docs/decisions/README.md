@@ -50,6 +50,7 @@
 | [0036](0036-th10-bugfix-marisab-self-report.md) | 2026-08-29 | worker / packages/shared / apps/api / apps/web | th10「バグマリ」修正の要否はリプレイに記録されないため自動判別せず、利用者の自己申告オプションに委ねる | 有効 |
 | [0037](0037-end-template-restricted-region-for-th10.md) | 2026-08-29 | worker | 終了検知テンプレート照合に絞り込み領域・専用閾値を持たせ、背景が常時アニメーションするth10に対応する | 有効 |
 | [0038](0038-remove-stutter-early-detection.md) | 2026-08-29 | worker | 処理落ち早期検知(stutter probe)は真陽性の実績が無く正常なリプレイも誤検知しうるため削除する | 有効 |
+| [0039](0039-end-template-freeze-timeout.md) | 2026-08-30 | worker | end_template方式のタイトルにも画面が5分静止したら強制打ち切りする早期検知を追加する | 有効 |
 
 ## 書き方
 
