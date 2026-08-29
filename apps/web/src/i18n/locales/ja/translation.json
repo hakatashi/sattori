@@ -96,6 +96,7 @@
     "heading": "対応タイトルの情報",
     "vpatchApplied": "vpatch rev{{rev}} 適用済み",
     "cherryBugFix": "桜点表示バグ修正適用済み (BugFixCherry = 1)",
+    "th10BugfixOption": "魔理沙Bのショット威力バグ修正オプションが利用可能 (BugFixTh10Power3)",
     "thpracApplied": "thprac v{{version}} 適用済み",
     "thpracPurpose": "リプレイずれの軽減のため、録画時に適用しています"
   },

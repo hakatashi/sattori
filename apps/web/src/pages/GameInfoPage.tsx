@@ -8,6 +8,10 @@ interface TitleInfo {
   version: string;
   vpatchRev?: number;
   cherryBugFix?: boolean;
+  /** 魔理沙Bの「バグマリ」修正(BugFixTh10Power3)をページAの詳細設定から選択できるか
+      (Issue #75)。cherryBugFixと異なり常時適用ではなく利用者が選ぶオプションなので、
+      「適用済み」ではなく「利用可能」と表示する。 */
+  th10BugfixOption?: boolean;
   /** 録画時にアタッチしているthpracのバージョン（Issue #105）。`worker/games/{id}/`に
       同梱する実行ファイル名（`thprac.v{version}.exe`）と一致させること。 */
   thpracVersion?: string;
@@ -18,7 +22,7 @@ const TITLE_INFO: TitleInfo[] = [
   { id: "th06", version: "ver 1.02h", vpatchRev: 4 },
   { id: "th07", version: "ver 1.00b", vpatchRev: 4, cherryBugFix: true },
   { id: "th08", version: "ver 1.00d" },
-  { id: "th10", version: "ver 1.00a" },
+  { id: "th10", version: "ver 1.00a", vpatchRev: 4, th10BugfixOption: true },
   { id: "th11", version: "ver 1.00a" },
   { id: "th20", version: "ver 1.00c", thpracVersion: "2.3.0.3" },
 ];
@@ -30,7 +34,7 @@ export function GameInfoPage() {
   return (
     <section className={staticStyles.card}>
       <h1 className={staticStyles.heading}>{t("gameInfo.heading")}</h1>
-      {TITLE_INFO.map(({ id, version, vpatchRev, cherryBugFix, thpracVersion }) => (
+      {TITLE_INFO.map(({ id, version, vpatchRev, cherryBugFix, th10BugfixOption, thpracVersion }) => (
         <div key={id}>
           <div className={styles.game}>
             <img className={styles.icon} src={`/icons/${id}.png`} alt="" />
@@ -40,6 +44,7 @@ export function GameInfoPage() {
             <li>{version}</li>
             {vpatchRev !== undefined && <li>{t("gameInfo.vpatchApplied", { rev: vpatchRev })}</li>}
             {cherryBugFix && <li className={styles.nestedItem}>{t("gameInfo.cherryBugFix")}</li>}
+            {th10BugfixOption && <li className={styles.nestedItem}>{t("gameInfo.th10BugfixOption")}</li>}
             {thpracVersion !== undefined && (
               <>
                 <li>{t("gameInfo.thpracApplied", { version: thpracVersion })}</li>
