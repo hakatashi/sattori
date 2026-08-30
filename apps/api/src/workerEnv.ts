@@ -16,6 +16,14 @@ export interface WorkerEnvOptions {
    * 呼び出し側（`handlers/sfn/launch.ts`）が割り当て先に応じて決める。
    */
   slowMotion: boolean;
+  /**
+   * EC2 Spot中断監視(`worker/interruption_watcher.py`)を起動するか（Issue #96）。
+   * IMDS（`http://169.254.169.254`）はEC2にしか存在しないため、自宅ワーカーで
+   * trueを渡すと7秒周期でタイムアウトし続けるログノイズになる。**EC2起動側だけが
+   * trueを渡す** —— 呼び出し側（`ec2.buildUserData`/`handlers/sfn/launch.ts`）が
+   * 割り当て先に応じて決める。
+   */
+  spotInterruptionWatch: boolean;
 }
 
 /**
@@ -68,6 +76,9 @@ export function buildWorkerEnv(
     // （`docs/decisions/0014-slow-motion-scaling-across-pipeline.md`）。
     // **未指定＝等倍**が既定なので、等倍録画では付与しない。
     env.FPS_LIMIT_TARGET_HZ = String(SLOW_MOTION_TARGET_HZ);
+  }
+  if (options.spotInterruptionWatch) {
+    env.SPOT_INTERRUPTION_WATCH = "1";
   }
   if (job.options.th10BugfixMarisaB) {
     // th10「バグマリ」修正オプション（Issue #75）。低速録画と異なりEC2/自宅どちらでも
