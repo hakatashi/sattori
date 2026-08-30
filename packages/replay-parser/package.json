@@ -2,7 +2,13 @@
   "name": "@sattori/touhou-replay-parser",
   "version": "1.0.0",
   "description": "Decoder for Touhou Project replay files (.rpy), covering th06 through th20. Zero runtime dependencies.",
-  "keywords": ["touhou", "replay", "rpy", "parser", "decoder"],
+  "keywords": [
+    "touhou",
+    "replay",
+    "rpy",
+    "parser",
+    "decoder"
+  ],
   "license": "MIT",
   "author": "Koki Takahashi",
   "homepage": "https://github.com/hakatashi/sattori/tree/main/packages/replay-parser#readme",
@@ -28,10 +34,12 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "touhou-replay-parser": "./dist/cli/index.js",
-    "threp": "./dist/cli/index.js"
+    "touhou-replay-parser": "dist/cli/index.js",
+    "threp": "dist/cli/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node -e \"import('node:fs').then(fs => fs.chmodSync('dist/cli/index.js', 0o755))\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
