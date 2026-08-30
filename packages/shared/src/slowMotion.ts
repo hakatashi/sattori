@@ -49,7 +49,7 @@ export const SLOW_MOTION_TARGET_HZ = 30;
  * 低速録画の実時間倍率（= 60 / 30 = 2）。「リプレイの再生時間（コンテンツ秒数）」に
  * 対して録画フェーズが実時間で何倍かかるかを表す。進捗バー・残り時間推定
  * （`apps/web/src/hooks/jobProgressBudget.ts`）と、録画のハードタイムアウト
- * （`worker/recording_common.py`）が同じ係数を使う。
+ * （`worker/recording/pipeline.py` の `TIMEOUT_SEC`）が同じ係数を使う。
  */
 export const SLOW_MOTION_TIME_SCALE = NATIVE_FRAME_RATE_HZ / SLOW_MOTION_TARGET_HZ;
 

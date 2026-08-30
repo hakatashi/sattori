@@ -302,7 +302,7 @@ export interface JobRecord {
    * 録画終了時のゲーム内スコアが `replayInfo.score`（リプレイファイルの記録スコア）と
    * 一致しなかった疑い（リプレイずれ／デシンク、Issue #103）。ワーカーが録画成功を
    * 確定させた直後に一度だけ判定し、`status` が converting 以降になった時点で値を持つ
-   * （`worker/recording_common.py` の `check_replay_desync()`）。
+   * （`worker/recording/modlog.py` の `check_replay_desync()`）。
    *
    * MOD が RVA 直指定で読んでいるゲーム内部の生値に基づく判定であり、信頼性は高くない
    * （ゲームデータのバージョン差で無意味な値になりうる、touhou-recorder
@@ -316,7 +316,7 @@ export interface JobRecord {
   /**
    * リプレイ終了を検知できないままタイムアウトで打ち切られた録画か（Issue #161）。
    * ワーカーが録画成功を確定させた直後に一度だけ判定し、`status` が converting
-   * 以降になった時点で値を持つ（`worker/recording_common.py` の
+   * 以降になった時点で値を持つ（`worker/recording/pipeline.py` の
    * `attempt_recording()` が返す `classification` が `"timeout"` かどうかで決まる）。
    *
    * テンプレート照合・画面静止でリプレイ終了を検知できず録画時間の上限に達した

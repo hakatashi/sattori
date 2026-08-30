@@ -99,7 +99,7 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 - `SLOW_MOTION_TARGET_HZ`（30）: ワーカーへ`FPS_LIMIT_TARGET_HZ`として渡る値。
 - `SLOW_MOTION_TIME_SCALE`（2）: 録画フェーズが実時間で何倍かかるか。ジョブページの
   進捗バジェット（`apps/web/src/hooks/jobProgressBudget.ts`）と録画のハードタイム
-  アウト（`worker/recording_common.py`）が同じ係数を使う。
+  アウト（`worker/recording/pipeline.py`）が同じ係数を使う。
 - `SLOW_MOTION_DEFAULT_GAME_IDS`（th20のみ）/ `defaultSlowMotionFor()`: 既定でオンに
   するタイトル。**自宅ワーカーが使えなければ常にfalse**（そもそも選べないため）。
 - `isSlowMotionRecording(options, workerKind)`: **`options.slowMotion`はユーザーの希望に
