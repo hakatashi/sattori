@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-30",
+    ja: "追加ワーカーでのタイトルデータ取得をキャッシュ化し、録画開始までの時間を短縮",
+    en: "Cached title data retrieval on the additional worker to reduce time to start recording",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/104",
+  },
+  {
+    date: "2026-08-30",
     ja: "録画中に画面が長時間動かなくなった場合、強制的に録画を停止するよう修正",
     en: "Fixed recording to be forcibly stopped when the screen freezes for an extended period during playback",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/195",
