@@ -64,6 +64,58 @@ describe("GET /admin/jobs/{jobId}/logs", () => {
     expect(call?.args[0].input.startFromHead).toBe(false);
   });
 
+  it("初回取得でGetLogEventsが空応答を返した場合、nextBackwardTokenを辿って実データを取得する", async () => {
+    logsMock
+      .on(GetLogEventsCommand)
+      .resolvesOnce({
+        events: [],
+        nextBackwardToken: "back-token-boundary",
+        nextForwardToken: "fwd-token-boundary",
+      })
+      .resolvesOnce({
+        events: [{ timestamp: 1000, message: "start recording" }],
+        nextBackwardToken: "back-token-1",
+        nextForwardToken: "fwd-token-1",
+      });
+
+    const { handler } = await import("./getLogs.js");
+    const res = (await handler(
+      makeEvent("job-1"),
+      {} as never,
+      () => {},
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = parseBody(res);
+
+    expect(body.logStreamFound).toBe(true);
+    expect(body.events).toHaveLength(1);
+    expect(body.events[0]?.message).toBe("start recording");
+    expect(body.nextBackwardToken).toBe("back-token-1");
+
+    const calls = logsMock.commandCalls(GetLogEventsCommand);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.args[0].input.nextToken).toBeUndefined();
+    expect(calls[1]?.args[0].input.nextToken).toBe("back-token-boundary");
+  });
+
+  it("空応答が続いてもトークンが前進しなくなれば打ち切って空のログとして返す", async () => {
+    logsMock.on(GetLogEventsCommand).resolves({
+      events: [],
+      nextBackwardToken: "same-token",
+    });
+
+    const { handler } = await import("./getLogs.js");
+    const res = (await handler(
+      makeEvent("job-1", { cursor: "same-token" }),
+      {} as never,
+      () => {},
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = parseBody(res);
+
+    expect(body.events).toEqual([]);
+    expect(body.nextBackwardToken).toBeNull();
+    expect(logsMock.commandCalls(GetLogEventsCommand)).toHaveLength(1);
+  });
+
   it("cursorを渡して古いイベントへページングできる", async () => {
     logsMock.on(GetLogEventsCommand).resolves({
       events: [{ timestamp: 500, message: "earlier line" }],
