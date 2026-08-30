@@ -17,8 +17,8 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-08-30",
-    ja: "追加ワーカーでのタイトルデータ取得をキャッシュ化し、録画開始までの時間を短縮",
-    en: "Cached title data retrieval on the additional worker to reduce time to start recording",
+    ja: "追加ワーカーで録画時の起動処理を高速化",
+    en: "Sped up startup processing for recording on the additional worker",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/104",
   },
   {
