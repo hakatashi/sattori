@@ -51,13 +51,13 @@ def update_status(
     """ジョブの status(と任意で outputPath / outputPath720p / 出力サイズ / error)を更新する。
 
     desync_detected は録画終了時のスコアがリプレイの記録スコアと一致しなかった疑い
-    (Issue #103、`recording_common.check_replay_desync()`)。True/False を渡した場合のみ
+    (Issue #103、`recording.modlog.check_replay_desync()`)。True/False を渡した場合のみ
     書き込む(他の引数と同じくNoneは「このフィールドには触れない」を表す——
     検証できなかった場合は他の引数同様この引数自体を渡さないこと。JobRecord側の
     デフォルトが null=未検証なので、書かなくても意味は保たれる)。
 
     timed_out はリプレイ終了を検知できないままタイムアウトで打ち切られた録画か
-    (Issue #161、`recording_common.attempt_recording()`の`classification == "timeout"`)。
+    (Issue #161、`recording.pipeline.attempt_recording()`の`classification == "timeout"`)。
     desync_detected と同じくTrue/Falseを渡した場合のみ書き込む。
 
     error_code は error（常に日本語固定の文言）に対応する機械可読コードで、

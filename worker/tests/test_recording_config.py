@@ -1,6 +1,6 @@
 """GameConfig の既定値の導出と、タイトルごとの上書き。"""
 
-from recording import config
+from recording.config import WORKER_ROOT, XVFB_SCREEN, GameConfig
 from recording_helpers import make_config
 
 
@@ -26,8 +26,7 @@ def test_game_config_process_name_defaults_to_game_exe():
 
 def test_game_config_allows_overriding_game_exe_and_process_name():
     # th06はVsyncPatchが実行ファイル名を検証しているらしく、th{N}.exeへリネームすると
-    # 白画面ハングが再発するため元のファイル名のまま使う(record_th06.pyのモジュール
-    # docstring参照)。/proc/PID/commは15バイトで切り詰められるため、pgrep/pkill専用の
+    # 白画面ハングが再発するため元のファイル名のまま使う(docs/titles/th06.md参照)。/proc/PID/commは15バイトで切り詰められるため、pgrep/pkill専用の
     # process_nameは拡張子なしの別の値を指定する(touhou-recorder reports/31)。
     config = make_config(
         game_id="th06", game_exe="東方紅魔郷.exe", process_name="東方紅魔郷",
@@ -71,12 +70,17 @@ def test_game_config_allows_overriding_still_detect_exclude_rect():
     assert config.still_detect_exclude_rect == (70, 288, 188, 318)
 
 
-def test_game_config_end_template_path_defaults_next_to_module():
-    # 未指定ならrecording_common.pyと同じディレクトリ配下のassets/replay_end_templates/
-    # {game_id}.pngを既定値として使う(record_th0X.py側での明示指定は不要、reports/33・34)。
+def test_game_config_end_template_path_defaults_under_the_worker_root():
+    """未指定ならworkerルート配下のassets/replay_end_templates/{game_id}.pngを使う。
+
+    **`recording/config.py`の`__file__`を起点にしてはならない**(assets/はworker直下)。
+    間違えても例外は出ず、load_end_template()がNoneを返して画面静止のみ判定へ
+    フォールバックするため、終了検知の劣化としてしか表面化しない(reports/33・34)。
+    """
     config = make_config(game_id="th07")
 
-    assert config.end_template_path.endswith("/assets/replay_end_templates/th07.png")
+    assert config.end_template_path == f"{WORKER_ROOT}/assets/replay_end_templates/th07.png"
+    assert WORKER_ROOT.endswith("/worker")
 
 
 def test_game_config_allows_overriding_end_template_path():
@@ -95,9 +99,56 @@ def test_game_config_thprac_exe_defaults_to_none():
 
 
 def test_xvfb_screen_defaults_to_shared_value_and_can_be_overridden():
-    assert make_config().xvfb_screen == config.XVFB_SCREEN
+    assert make_config().xvfb_screen == XVFB_SCREEN
     assert make_config(xvfb_screen="1400x1100x24").xvfb_screen == "1400x1100x24"
 
 
 def test_cfg_filename_defaults_to_game_id():
     assert make_config(game_id="th20").cfg_filename == "th20.cfg"
+
+
+# --- for_game(): game_id から機械的に決まる値の導出(Issue #188) ---------------
+
+
+def test_for_game_derives_every_path_from_the_game_id():
+    """6つの record_thNN.py で書き写していた導出。1つでもずれると別タイトルの資産を掴む。"""
+    cfg = GameConfig.for_game("th11", "sattori_job_test", display=":99",
+                              canonical_slot="th11_ud0000.rpy")
+
+    assert cfg.instance_dir == f"{WORKER_ROOT}/instances/th11-recording"
+    assert cfg.game_dir_src == f"{WORKER_ROOT}/games/th11"
+    assert cfg.wineprefix == f"{WORKER_ROOT}/prefixes/th11-wined3d-gl"
+    assert cfg.injector_path == f"{WORKER_ROOT}/mods/common/build/injector.exe"
+    assert cfg.hook_dll_path == f"{WORKER_ROOT}/mods/th11_replay_autoplay/build/th11_hook.dll"
+    assert cfg.display == ":99"
+
+
+def test_for_game_lets_the_environment_override_the_derived_paths(monkeypatch):
+    """ローカル単体実行でゲームデータの置き場所を差し替える経路(docs/reports/の再現手順)。"""
+    monkeypatch.setenv("SATTORI_INSTANCE_DIR", "/tmp/inst")
+    monkeypatch.setenv("SATTORI_GAME_DIR", "/tmp/game")
+    monkeypatch.setenv("SATTORI_MOD_DIR", "/tmp/mods")
+    monkeypatch.setenv("WINEPREFIX", "/tmp/prefix")
+    monkeypatch.setenv("SATTORI_DISPLAY", ":42")
+
+    cfg = GameConfig.for_game("th06", "sattori_job_test", display=":96",
+                              canonical_slot="th6_ud0000.rpy")
+
+    assert cfg.instance_dir == "/tmp/inst"
+    assert cfg.game_dir_src == "/tmp/game"
+    assert cfg.wineprefix == "/tmp/prefix"
+    assert cfg.injector_path == "/tmp/mods/common/build/injector.exe"
+    assert cfg.hook_dll_path == "/tmp/mods/th06_replay_autoplay/build/th06_hook.dll"
+    assert cfg.display == ":42"
+
+
+def test_for_game_passes_title_specific_overrides_through():
+    cfg = GameConfig.for_game("th06", "sattori_job_test", display=":96",
+                              canonical_slot="th6_ud0000.rpy",
+                              game_exe="東方紅魔郷.exe", process_name="東方紅魔郷",
+                              extra_dlls=("vpatch_th06.dll",))
+
+    assert cfg.game_exe == "東方紅魔郷.exe"
+    assert cfg.process_name == "東方紅魔郷"
+    assert cfg.extra_dlls == ("vpatch_th06.dll",)
+
