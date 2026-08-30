@@ -9,6 +9,7 @@ import signal
 import subprocess
 import time
 import traceback
+from dataclasses import dataclass
 
 import pulse
 
@@ -90,37 +91,37 @@ def _failure_result(config, env, log):
     }
 
 
-def attempt_recording(config, replay_path, output_path, progress_dir, expected_duration_seconds, log=print):
-    """録画を1回試行する。戻り値: dict(output_exists, classification, fps_runaway_hz, total_record_sec)。
-    classification は "good" / "fps_runaway" / "timeout" / "setup_error" のいずれか。
+@dataclass
+class _Capture:
+    """録画中の ffmpeg プロセス1本ぶんの持ち物(映像・音声で1つずつ作る)。"""
+
+    label: str  # ログに出す表示名("映像" / "音声")
+    proc: subprocess.Popen
+    target: str  # 出力先の中間ファイル
+    log_path: str
+    log_file: object
+
+
+@dataclass
+class _EndDetection:
+    """終了検知に使う参照画像とマスク。
+
+    **クロップ座標が確定してから、ffmpegを起動する前に組み立てること**。マスクの
+    組み立ては純粋な計算だが、ここで例外を出した場合に録画プロセスが起動済みだと
+    後片付けの対象から漏れて ffmpeg が取り残される。
     """
-    env = config.build_env()
-    # 低速録画(Issue #68)のスケール係数。等倍なら1.0で、以下の時間依存パラメータは
-    # すべて従来値のままになる。
-    time_scale = slow_motion_scale(env)
-    if time_scale != 1.0:
-        log(
-            f"低速録画モード: FPS_LIMIT_TARGET_HZ={env.get('FPS_LIMIT_TARGET_HZ')} "
-            f"(実時間はゲーム内時間の{time_scale:.2f}倍。監視の猶予・タイムアウトも同じ比率で伸ばします)"
-        )
-    post_start_grace_sec = POST_START_GRACE_SEC * time_scale
-    timeout_sec = TIMEOUT_SEC * time_scale
-    # 終了検知の「連続回数」も同じ比率で伸ばす。ポーリングは実時間駆動
-    # (POLL_INTERVAL_SEC)なので、回数を据え置くと**ゲーム内時間で必要な静止の長さが
-    # 1/time_scale に縮む**——低速録画のth20なら16秒→8秒相当になり、会話イベントや
-    # 弾幕の薄い区間でリプレイ途中の誤検知を招く(しかも classification は "good" に
-    # なるためリトライされず、途中で切れた動画がそのまま配信される)。
-    still_consecutive_required = scaled_poll_count(STILL_CONSECUTIVE_REQUIRED, time_scale)
-    end_template_consecutive_required = scaled_poll_count(
-        END_TEMPLATE_CONSECUTIVE_REQUIRED, time_scale,
-    )
-    freeze_consecutive_required = scaled_poll_count(FREEZE_CONSECUTIVE_REQUIRED, time_scale)
-    end_template = load_end_template(config.end_template_path)
-    if end_template is None:
-        log(
-            f"WARNING: {config.end_template_path} が見つからないため、画面静止のみで"
-            "リプレイ終了を判定します(誤検知の可能性あり、reports/33参照)"
-        )
+
+    template: object  # load_end_template()の戻り値。Noneなら画面静止のみ判定へフォールバック
+    template_mask: object
+    template_mad_threshold: float
+    still_mask: object
+
+
+def _launch_game(config, env, replay_path, log):
+    """Xvfb と instance を用意し、injector 経由でゲームを起動して PID を返す。
+
+    検出できなければ None(呼び出し側は `_failure_result()` で後片付けすること)。
+    """
     ensure_xvfb(config, env, log=log)
     prepare_instance(config, replay_path, log=log)
 
@@ -141,9 +142,18 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         time.sleep(0.1)
     if not game_pid:
         log(f"ERROR: {config.process_name} プロセスが検出できませんでした")
-        return _failure_result(config, env, log)
+        return None
     log(f"game_pid={game_pid} ({time.time()-t0:.1f}s)")
+    return game_pid
 
+
+def _settle_crop_geometry(config, env, game_pid, seen_lines, log):
+    """x11grab に渡すクロップ座標を確定させる。確定できなければ None を返す。
+
+    ウィンドウが見つかった直後の座標を使ってはならない理由と、Xvfb の画面外へ
+    はみ出した場合の移動については
+    [`docs/decisions/0012`](../../docs/decisions/0012-crop-geometry-after-window-stabilizes.md)。
+    """
     geom = None
     t0 = time.time()
     while time.time() - t0 < 20:
@@ -153,7 +163,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         time.sleep(0.1)
     if not geom:
         log("ERROR: ゲームウィンドウが検出できませんでした")
-        return _failure_result(config, env, log)
+        return None
     log(f"ウィンドウを検出しました: x={geom[0]} y={geom[1]} w={geom[2]} h={geom[3]} "
         f"(winid={geom[4]}。この時点の座標はまだ確定値ではない)")
 
@@ -175,14 +185,13 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     # (ローカル再現試験でCPUに負荷をかけると8試行中7回発生)。
     # th08は起動から約2.5秒後にウィンドウ自体を破棄・再生成する(座標は同じ(3,29))。
     # そのため、MOD側のWaitForStableWindowが安定を報告するまで待ってから座標を取り直す。
-    seen_lines = set()
     stable_time = wait_for_log_marker(
         config.log_path, "WaitForStableWindow: stable", timeout=20, poll_interval=0.1,
         log_all=True, seen_lines=seen_lines, log=log,
     )
     if stable_time is None:
         log("ERROR: ウィンドウの安定を確認できませんでした")
-        return _failure_result(config, env, log)
+        return None
     log("ウィンドウの安定を確認しました。クロップ座標を確定します")
 
     # MOD側のWaitForStableWindowはHWNDの同一性しか見ておらず(mods/common/window_wait.cpp)、
@@ -191,7 +200,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     geom = wait_for_stable_geometry(config, env, game_pid, log=log)
     if not geom:
         log("ERROR: ウィンドウ座標を確定できませんでした")
-        return _failure_result(config, env, log)
+        return None
     x, y, w, h, winid = geom
     log(f"クロップ座標を確定: x={x} y={y} w={w} h={h} (winid={winid})")
 
@@ -224,31 +233,34 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         log(f"移動後のウィンドウ座標: x={x} y={y} w={w} h={h}")
     else:
         log(f"ウィンドウは既に画面内に収まっているため移動をスキップします: x={x} y={y} w={w} h={h}")
-    still_mask = build_still_mask(config.still_detect_exclude_rect, w, h)
-    end_template_mask = build_end_template_mask(config.end_template_rect, w, h)
-    end_template_mad_threshold = config.end_template_mad_threshold or END_TEMPLATE_MAD_THRESHOLD
-    log("録画を開始します")
+    return x, y, w, h
 
-    base, _ext = os.path.splitext(output_path)
-    video_target = f"{base}.video.mp4"
-    audio_target = f"{base}.audio.m4a"
 
-    video_cmd = build_video_ffmpeg_cmd(config, x, y, w, h, video_target)
-    log(f"録画開始(映像): {' '.join(video_cmd)}")
-    video_log_path = f"{os.path.dirname(output_path)}/ffmpeg_video.log"
-    video_log_file = open(video_log_path, "wb")
-    video_proc = subprocess.Popen(
-        video_cmd, env=env, stdin=subprocess.PIPE, stdout=video_log_file, stderr=subprocess.STDOUT,
+def _monitor_until_end(config, env, geometry, detection, *, time_scale,
+                       progress_dir, expected_duration_seconds, seen_lines, log):
+    """リプレイ終了(または異常)を検知するまでポーリングする。
+
+    戻り値: (detected, frozen, fps_runaway_hz)。**録画の停止はここではやらない**
+    (呼び出し側が `_stop_and_mux()` で止める)。
+
+    時間に関する定数はすべてここで `time_scale` 倍する。ポーリングは実時間駆動
+    (`POLL_INTERVAL_SEC`)なので、回数を据え置くと**ゲーム内時間で必要な静止の長さが
+    1/time_scale に縮む**——低速録画のth20なら16秒→8秒相当になり、会話イベントや
+    弾幕の薄い区間でリプレイ途中の誤検知を招く(しかも classification は "good" に
+    なるためリトライされず、途中で切れた動画がそのまま配信される)。
+    """
+    x, y, w, h = geometry
+    post_start_grace_sec = POST_START_GRACE_SEC * time_scale
+    timeout_sec = TIMEOUT_SEC * time_scale
+    still_consecutive_required = scaled_poll_count(STILL_CONSECUTIVE_REQUIRED, time_scale)
+    end_template_consecutive_required = scaled_poll_count(
+        END_TEMPLATE_CONSECUTIVE_REQUIRED, time_scale,
     )
-
-    audio_cmd = build_audio_ffmpeg_cmd(config, audio_target)
-    log(f"録画開始(音声・別プロセス): {' '.join(audio_cmd)}")
-    audio_log_path = f"{os.path.dirname(output_path)}/ffmpeg_audio.log"
-    audio_log_file = open(audio_log_path, "wb")
-    audio_proc = subprocess.Popen(
-        audio_cmd, env=env, stdin=subprocess.PIPE, stdout=audio_log_file, stderr=subprocess.STDOUT,
-    )
-    record_start = time.time()
+    freeze_consecutive_required = scaled_poll_count(FREEZE_CONSECUTIVE_REQUIRED, time_scale)
+    end_template = detection.template
+    end_template_mask = detection.template_mask
+    end_template_mad_threshold = detection.template_mad_threshold
+    still_mask = detection.still_mask
 
     # MODのメニュー自動操作(dllmain.cppのScaledSleep)は低速録画時に同じ比率だけ
     # 実時間が伸びるため、その完了を待つこちらのタイムアウトも伸ばす。伸ばし忘れると
@@ -352,7 +364,14 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
                     break
             prev_frame = frame
         time.sleep(POLL_INTERVAL_SEC)
+    return detected, frozen, fps_runaway_hz
 
+
+def _stop_and_mux(video, audio, output_path, env, log):
+    """録画を停止し、映像と音声を1本の mp4 へ結合する。成功したら True。"""
+    video_proc, audio_proc = video.proc, audio.proc
+    video_target, audio_target = video.target, audio.target
+    video_log_file, audio_log_file = video.log_file, audio.log_file
     log("録画を停止します (SIGINT)")
     video_proc.send_signal(signal.SIGINT)
     audio_proc.send_signal(signal.SIGINT)
@@ -384,13 +403,85 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     else:
         # 失敗時の診断のため、ffmpegログの末尾をCloudWatch Logsに残す(ffmpeg.logは
         # ファイルなのでawslogsドライバに拾われず、コンテナ破棄で消えてしまうため)。
-        for label, path in (("映像", video_log_path), ("音声", audio_log_path)):
+        for capture in (video, audio):
+            label, path = capture.label, capture.log_path
             try:
                 with open(path, "rb") as f:
                     tail = f.read()[-2000:]
                 log(f"ffmpeg({label})ログ末尾: {tail.decode(errors='replace')}")
             except OSError:
                 pass
+    return output_exists
+
+
+def attempt_recording(config, replay_path, output_path, progress_dir, expected_duration_seconds, log=print):
+    """録画を1回試行する。戻り値: dict(output_exists, classification, fps_runaway_hz, total_record_sec)。
+    classification は "good" / "fps_runaway" / "timeout" / "setup_error" のいずれか。
+    """
+    env = config.build_env()
+    # 低速録画(Issue #68)のスケール係数。等倍なら1.0で、時間依存パラメータは
+    # すべて従来値のままになる(実際のスケーリングは `_monitor_until_end()`)。
+    time_scale = slow_motion_scale(env)
+    if time_scale != 1.0:
+        log(
+            f"低速録画モード: FPS_LIMIT_TARGET_HZ={env.get('FPS_LIMIT_TARGET_HZ')} "
+            f"(実時間はゲーム内時間の{time_scale:.2f}倍。監視の猶予・タイムアウトも同じ比率で伸ばします)"
+        )
+    end_template = load_end_template(config.end_template_path)
+    if end_template is None:
+        log(
+            f"WARNING: {config.end_template_path} が見つからないため、画面静止のみで"
+            "リプレイ終了を判定します(誤検知の可能性あり、reports/33参照)"
+        )
+
+    game_pid = _launch_game(config, env, replay_path, log)
+    if not game_pid:
+        return _failure_result(config, env, log)
+
+    # `seen_lines` は MOD ログの既読行。ウィンドウ安定待ちとキーシーケンス完了待ちで
+    # 共有し、同じ行を二度ログへ流さないようにする。
+    seen_lines = set()
+    geometry = _settle_crop_geometry(config, env, game_pid, seen_lines, log)
+    if not geometry:
+        return _failure_result(config, env, log)
+    x, y, w, h = geometry
+    detection = _EndDetection(
+        template=end_template,
+        still_mask=build_still_mask(config.still_detect_exclude_rect, w, h),
+        template_mask=build_end_template_mask(config.end_template_rect, w, h),
+        template_mad_threshold=(
+            config.end_template_mad_threshold or END_TEMPLATE_MAD_THRESHOLD),
+    )
+    log("録画を開始します")
+
+    base, _ext = os.path.splitext(output_path)
+    video_target = f"{base}.video.mp4"
+    audio_target = f"{base}.audio.m4a"
+
+    video_cmd = build_video_ffmpeg_cmd(config, x, y, w, h, video_target)
+    log(f"録画開始(映像): {' '.join(video_cmd)}")
+    video_log_path = f"{os.path.dirname(output_path)}/ffmpeg_video.log"
+    video_log_file = open(video_log_path, "wb")
+    video = _Capture("映像", subprocess.Popen(
+        video_cmd, env=env, stdin=subprocess.PIPE, stdout=video_log_file, stderr=subprocess.STDOUT,
+    ), video_target, video_log_path, video_log_file)
+
+    audio_cmd = build_audio_ffmpeg_cmd(config, audio_target)
+    log(f"録画開始(音声・別プロセス): {' '.join(audio_cmd)}")
+    audio_log_path = f"{os.path.dirname(output_path)}/ffmpeg_audio.log"
+    audio_log_file = open(audio_log_path, "wb")
+    audio = _Capture("音声", subprocess.Popen(
+        audio_cmd, env=env, stdin=subprocess.PIPE, stdout=audio_log_file, stderr=subprocess.STDOUT,
+    ), audio_target, audio_log_path, audio_log_file)
+    record_start = time.time()
+
+    detected, frozen, fps_runaway_hz = _monitor_until_end(
+        config, env, geometry, detection, time_scale=time_scale,
+        progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
+        seen_lines=seen_lines, log=log,
+    )
+
+    output_exists = _stop_and_mux(video, audio, output_path, env, log=log)
 
     total_record_sec = time.time() - record_start
     if fps_runaway_hz is not None:
