@@ -13,13 +13,15 @@ import numpy as np
 from PIL import Image
 
 
-# 終了検知(画面静止判定)の閾値・待機。PoC(touhou-recorder reports/13・14)の
-# 実測に基づく。変更する場合は当該レポートの根拠を必ず確認すること。
+# 終了検知(画面静止判定)の閾値。PoC(touhou-recorder reports/13・14)の実測に基づく。
+# 変更する場合は当該レポートの根拠を必ず確認すること。「何回連続で静止したら終了とみなすか」
+# (STILL_CONSECUTIVE_REQUIRED 等)は POLL_INTERVAL_SEC との積で意味が決まるため
+# `recording/pipeline.py` にある。
 STILL_MAD_THRESHOLD = 2.0
 
 
 # 終了検知(リプレイ選択画面テンプレート照合)。touhou-recorder reports/33・34で判明した
-# 通り、画面静止(STILL_MAD_THRESHOLD/STILL_CONSECUTIVE_REQUIRED)だけでは「リプレイ終了時に
+# 通り、画面静止(STILL_MAD_THRESHOLD/pipeline.STILL_CONSECUTIVE_REQUIRED)だけでは「リプレイ終了時に
 # 自動的に戻るリプレイ選択画面」と「ステージクリア後に一時的に表示されるリザルト画面」を
 # 区別できず、後者がSTILL_CONSECUTIVE_REQUIRED(16秒)を超えて静止し続けると、リプレイ本編の
 # 途中でも誤って「終了」と判定されてしまう(th06のth6_ud1vfq.rpyでステージ4クリア後に実際に
