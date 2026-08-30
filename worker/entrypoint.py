@@ -16,7 +16,7 @@ EC2 Fleet インスタンスの UserData から `docker run` で起動される�
   3. 録画完了直後、生動画をS3へアップロードしoutputPathを保存(=チェックポイント) →
      status を converting に更新(併せてリプレイずれの事後検証結果 desyncDetected、
      タイムアウト打ち切りの有無 timedOut も書き込む。Issue #103・#161。
-     recording.modlog.check_replay_desync() / attempt_recording() 参照)
+     recording.modlog.check_replay_desync() / recording.pipeline.attempt_recording() 参照)
   4. 配信用変換(等倍への戻し・解像度合わせ・ウォーターマーク合成を1パスで。
      進捗%を10秒間隔程度で報告)
   5. 変換後動画をS3へアップロード → status を done に更新。出力が1本か2本かは
