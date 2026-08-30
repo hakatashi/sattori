@@ -26,7 +26,8 @@ EC2 Fleet インスタンスの UserData から `docker run` で起動される�
 `SendTaskHeartbeat` を送り、ワーカーが生きていることを知らせる(Issue #49。自宅ワーカーの
 停電・回線断はAWS側から観測できないため、これが唯一の死活監視になる)。もう1つ、
 InterruptionWatcher が Spot中断通知(実際に発効する2分前通知)を
-監視し、検知次第 taskToken 経由で Step Functions に早期失敗通知する(60分のタイムアウトを
+監視する。IMDSが無い自宅ワーカーでは起動しない(`SPOT_INTERRUPTION_WATCH`環境変数、
+Issue #96)。検知次第 taskToken 経由で Step Functions に早期失敗通知する(60分のタイムアウトを
 待たずに新インスタンスでのリトライを開始させるため)。録画/変換処理自体はそのまま
 続行する(中断が実際に発効するまで、できるところまで進める)。リバランス推奨(発効するとは
 限らない予測的シグナル)は失敗扱いにせずログにのみ記録し処理を継続する(EC2 Fleetの
@@ -64,6 +65,10 @@ REPLAY_KEY = os.environ["REPLAY_KEY"]
 OUTPUT_BUCKET = os.environ["OUTPUT_BUCKET"]
 TITLE_ASSETS_BUCKET = os.environ["TITLE_ASSETS_BUCKET"]
 WATERMARK = os.environ.get("WATERMARK", "1") == "1"
+# EC2 Fleetでのみ有効(Issue #96)。IMDSが無い自宅ワーカーでは`SPOT_INTERRUPTION_WATCH`が
+# 渡されず、常にタイムアウトし続けるだけの`InterruptionWatcher`を起動しない
+# (`apps/api/src/workerEnv.ts`の`spotInterruptionWatch`が起動側の判断を渡す)。
+SPOT_INTERRUPTION_WATCH = os.environ.get("SPOT_INTERRUPTION_WATCH", "0") == "1"
 TASK_TOKEN = os.environ.get("TASK_TOKEN")
 EXPECTED_DURATION_SECONDS = os.environ.get("EXPECTED_DURATION_SECONDS")
 # リプレイファイルに記録された最終スコア(画面表示値)。apps/api/src/workerEnv.tsが
@@ -442,8 +447,9 @@ def main():
     s3 = boto3.client("s3")
     log(f"ジョブ開始 job_id={JOB_ID} game={GAME} watermark={WATERMARK}")
 
-    watcher = InterruptionWatcher(on_interruption, log=log)
-    watcher.start()
+    watcher = InterruptionWatcher(on_interruption, log=log) if SPOT_INTERRUPTION_WATCH else None
+    if watcher:
+        watcher.start()
 
     # Step Functions への死活通知(Issue #49)。ジョブの最初から最後まで動かす
     # (録画中だけでなく、タイトル資産のダウンロードや720p変換の最中も対象)。
@@ -475,11 +481,13 @@ def main():
             convert_and_upload(s3, time_scale)
 
         log("ジョブ完了")
-        watcher.stop()
+        if watcher:
+            watcher.stop()
         heartbeat.stop()
         notify_task_result(True)
     except Exception as err:  # noqa: BLE001 - 失敗はすべて failed として記録する
-        watcher.stop()
+        if watcher:
+            watcher.stop()
         heartbeat.stop()
         log(f"ERROR: {err}")
         if not _notified.is_set():
