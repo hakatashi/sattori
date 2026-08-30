@@ -58,6 +58,14 @@ describe("loadConfig", () => {
     ).toBe(30);
   });
 
+  it("タイトル資産キャッシュディレクトリは既定未設定、環境変数で指定できる(Issue #104)", () => {
+    expect(loadConfig(env()).titleAssetsCacheDir).toBeNull();
+    expect(
+      loadConfig(env({ HOME_WORKER_TITLE_ASSETS_CACHE_DIR: "/var/cache/sattori-title-assets" }))
+        .titleAssetsCacheDir,
+    ).toBe("/var/cache/sattori-title-assets");
+  });
+
   it("docker追加引数はシェルと同じ規則で分割する", () => {
     expect(loadConfig(env({ HOME_WORKER_DOCKER_ARGS: "--shm-size=1g --memory 8g" })).dockerExtraArgs)
       .toEqual(["--shm-size=1g", "--memory", "8g"]);
