@@ -5,6 +5,13 @@ Issue の作り方・GitHub Projects のカラム運用・PR の作法。Issue �
 
 初回リリースに向けた実装フェーズを終え、継続改善フェーズに移行するにあたっての方針である。
 
+## 0. 作成先リポジトリ
+
+**Issue・PR は必ずプライベートリポジトリ `hakatashi/sattori-dev` に作成する**。
+`hakatashi/sattori`（パブリック）はミラー的な位置づけで、開発の実体（Issue 管理・PR）は
+`sattori-dev` 側にある。`gh` コマンドで Issue・PR を作成する際は `--repo hakatashi/sattori-dev`
+を明示するか、作業ディレクトリの `origin` が `sattori-dev` を指していることを確認すること。
+
 ## 1. ラベル
 
 **`phase-1` / `phase-2` / `phase-3` ラベルによる Issue 管理は廃止**。フェーズ分けは

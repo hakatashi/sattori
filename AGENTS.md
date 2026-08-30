@@ -143,6 +143,7 @@ README の仕様だけを読んで推測で変更する（§3 が最も警戒す
 
 デプロイ・運用手順は Skill にしてある: `deploy-sattori`（CDK デプロイ・ワーカーイメージの push・
 管理画面トークン）／`upload-title-assets`（タイトル資産の S3 アップロード・WINEPREFIX 作成）／
-`build-mods`（`*_hook.dll` のビルド）。Issue・PR・GitHub Projects の運用ルールは
-[`docs/runbooks/issue-workflow.md`](docs/runbooks/issue-workflow.md)。**Issue を解決する修正は
-直接 main にコミットせず必ず PR を作り、本文に `Closes #xxx` を書くこと。**
+`build-mods`（`*_hook.dll` のビルド）。**Issue・PR を作成する前に必ず
+[`docs/runbooks/issue-workflow.md`](docs/runbooks/issue-workflow.md) を読むこと**（作成先リポジトリ・
+ラベル運用・PR の作法をまとめてある）。**Issue を解決する修正は直接 main にコミットせず必ず PR を
+作り、本文に `Closes #xxx` を書くこと。**
