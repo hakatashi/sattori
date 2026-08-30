@@ -90,6 +90,17 @@ export interface Config {
    * （`daemon.ts#checkNetworkIfDue`）。
    */
   networkCheckIntervalSec: number;
+  /**
+   * タイトル資産(ゲーム本体・WINEPREFIX・MOD)のキャッシュに使うホスト側ディレクトリ
+   * （Issue #104）。設定した場合のみ `docker run -v` でコンテナへマウントし、
+   * `TITLE_ASSETS_CACHE_DIR` としてコンテナへ渡す（`runner.ts#buildDockerCommand`）。
+   * ワーカーコンテナ（`worker/title_assets.py`）はこの環境変数の有無だけで
+   * キャッシュ経路と直接ダウンロード経路を切り替える——EC2はジョブ毎に使い捨てで
+   * 渡す意味が無いためこの変数を渡さず、常に直接ダウンロードになる
+   * （`docs/decisions/0010`と同じ「起動側が渡す環境変数の違いで表す」構造）。
+   * 未設定（既定）なら自宅ワーカーも従来どおり毎回ダウンロードする。
+   */
+  titleAssetsCacheDir: string | null;
 }
 
 /** 環境変数の読み取り元。テストでは擬似的な辞書を渡す。 */
@@ -237,5 +248,6 @@ export function loadConfig(env: Environment = process.env): Config {
     drainTimeoutSec: number_(env, "HOME_WORKER_DRAIN_TIMEOUT_SEC", 150 * 60),
     credentialDurationSec: number_(env, "HOME_WORKER_CREDENTIAL_DURATION_SEC", 4 * 60 * 60),
     networkCheckIntervalSec: number_(env, "HOME_WORKER_NETWORK_CHECK_INTERVAL_SEC", 60),
+    titleAssetsCacheDir: optional(env, "HOME_WORKER_TITLE_ASSETS_CACHE_DIR"),
   };
 }

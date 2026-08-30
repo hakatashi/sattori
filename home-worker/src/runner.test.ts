@@ -43,6 +43,25 @@ describe("buildDockerCommand", () => {
     expect(cmd).toContain("GAME=th07");
     expect(cmd.at(-1)).toBe(config.workerImage);
   });
+
+  it("タイトル資産キャッシュ未設定ならマウントも環境変数も付けない(Issue #104)", () => {
+    const cmd = buildDockerCommand(makeConfig(), "job-1", { JOB_ID: "job-1" });
+
+    expect(cmd).not.toContain("-v");
+    expect(cmd).not.toContain("TITLE_ASSETS_CACHE_DIR=/mnt/sattori-title-assets-cache");
+  });
+
+  it("タイトル資産キャッシュディレクトリをbind mountし対応する環境変数を渡す(Issue #104)", () => {
+    const config = makeConfig({ titleAssetsCacheDir: "/home/hakatashi/title-assets-cache" });
+
+    const cmd = buildDockerCommand(config, "job-1", { JOB_ID: "job-1" });
+
+    expect(cmd).toContain("-v");
+    expect(cmd).toContain(
+      "/home/hakatashi/title-assets-cache:/mnt/sattori-title-assets-cache",
+    );
+    expect(cmd).toContain("TITLE_ASSETS_CACHE_DIR=/mnt/sattori-title-assets-cache");
+  });
 });
 
 describe("redactCommand", () => {

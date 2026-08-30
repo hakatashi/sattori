@@ -23,6 +23,13 @@ import type { Config } from "./config.js";
  */
 export const CONTAINER_NAME_PREFIX = "sattori-job-";
 
+/**
+ * タイトル資産キャッシュ（Issue #104）のコンテナ内マウント先。`config.titleAssetsCacheDir`
+ * が設定されているときだけ、ホスト側ディレクトリをここへbind mountし、
+ * `TITLE_ASSETS_CACHE_DIR` としてこのパスを渡す（`worker/title_assets.py`参照）。
+ */
+export const TITLE_ASSETS_CACHE_CONTAINER_DIR = "/mnt/sattori-title-assets-cache";
+
 /** ECRログイン・イメージpullの再試行回数（EC2のUserDataと揃える）。 */
 export const RETRY_COUNT = 3;
 
@@ -140,9 +147,14 @@ export function buildDockerCommand(
   if (config.dockerCpus !== null) {
     cmd.push("--cpus", config.dockerCpus);
   }
+  const fullEnv = { ...env };
+  if (config.titleAssetsCacheDir !== null) {
+    cmd.push("-v", `${config.titleAssetsCacheDir}:${TITLE_ASSETS_CACHE_CONTAINER_DIR}`);
+    fullEnv["TITLE_ASSETS_CACHE_DIR"] = TITLE_ASSETS_CACHE_CONTAINER_DIR;
+  }
   cmd.push(...config.dockerExtraArgs);
-  for (const key of Object.keys(env).sort()) {
-    cmd.push("-e", `${key}=${env[key] ?? ""}`);
+  for (const key of Object.keys(fullEnv).sort()) {
+    cmd.push("-e", `${key}=${fullEnv[key] ?? ""}`);
   }
   cmd.push(config.workerImage);
   return cmd;

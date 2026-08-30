@@ -51,6 +51,7 @@
 | [0037](0037-end-template-restricted-region-for-th10.md) | 2026-08-29 | worker | 終了検知テンプレート照合に絞り込み領域・専用閾値を持たせ、背景が常時アニメーションするth10に対応する | 有効 |
 | [0038](0038-remove-stutter-early-detection.md) | 2026-08-29 | worker | 処理落ち早期検知(stutter probe)は真陽性の実績が無く正常なリプレイも誤検知しうるため削除する | 有効 |
 | [0039](0039-end-template-freeze-timeout.md) | 2026-08-30 | worker | end_template方式のタイトルにも画面が5分静止したら強制打ち切りする早期検知を追加する | 有効 |
+| [0040](0040-home-worker-title-assets-cache.md) | 2026-08-30 | worker / home-worker | 自宅ワーカーのタイトル資産はETagキー付き世代ディレクトリでキャッシュする | 有効 |
 
 ## 書き方
 
