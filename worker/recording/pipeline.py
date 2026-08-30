@@ -41,7 +41,7 @@ from .window import (
 
 
 # 連続回数はいずれも「等倍録画での秒数」をポーリング回数で表したもの。低速録画では
-# attempt_recording() が time_scale 倍して使う(ポーリング間隔は実時間駆動なので、
+# _monitor_until_end() が time_scale 倍して使う(ポーリング間隔は実時間駆動なので、
 # 回数を据え置くとゲーム内時間で必要な静止の長さが縮んでしまう)。
 STILL_CONSECUTIVE_REQUIRED = 8  # 8 * POLL_INTERVAL_SEC = 16秒(等倍録画時)
 POLL_INTERVAL_SEC = 2.0
@@ -49,12 +49,13 @@ POST_START_GRACE_SEC = 15.0
 TIMEOUT_SEC = 60 * 60
 
 
+# テンプレート照合そのものの説明と閾値は `recording/vision.py` にある。
 END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録画時。上記の通り
                                        # 低速録画では time_scale 倍される)。動画圧縮ノイズ等に
                                        # よる単発の偶然一致を弾くため連続一致を要求する(reports/34)
 
 
-# end_templateを使うゲームは終了判定そのものに画面静止を使わない(上記の通り)ため、
+# end_templateを使うゲームは終了判定そのものに画面静止を使わない(recording/vision.py)ため、
 # デシンク・非再生等で本編が完全に固まった場合にこれを検知する手段が無く、TIMEOUT_SEC
 # (60分)まで打ち切られない。処理落ち早期検知(stutter probe)を削除した結果(Issue #193、
 # decisions/0038)、こうした完全フリーズは録画開始直後の重複フレーム率チェックに
