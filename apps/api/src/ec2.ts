@@ -137,8 +137,9 @@ export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: stri
   // **EC2 では低速録画（Issue #68）を行わない**（録画に倍の実時間がかかり、その分
   // Spot料金も倍になるため。低速録画は電気代しかかからない自宅ワーカー限定）。
   // ユーザーが低速録画を選んでいても、この経路まで落ちてきた時点で等倍録画になる。
+  // Spot中断監視（Issue #96）はIMDSが存在するEC2でのみ有効にする。
   const envFlags = Object.entries(
-    buildWorkerEnv(config, job, taskToken, { slowMotion: false }),
+    buildWorkerEnv(config, job, taskToken, { slowMotion: false, spotInterruptionWatch: true }),
   ).map(([key, value]) =>
     key === "TASK_TOKEN" ? `-e TASK_TOKEN="$TASK_TOKEN"` : `-e ${key}=${shellEscape(value)}`,
   );

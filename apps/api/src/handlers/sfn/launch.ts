@@ -124,8 +124,11 @@ async function tryOfferToHomeWorker(
   const expiresAt = new Date(Date.now() + policy.offerWindowSeconds * 1000).toISOString();
   // 低速録画（Issue #68）が有効になるのはこの経路だけ。EC2 Fleet 起動時
   // （`ec2.buildUserData`）は常に等倍で、そちらがフォールバック先になる。
+  // Spot中断監視（Issue #96）は自宅マシンにIMDSが存在しないため無効にする
+  // （有効にすると`interruption_watcher.py`が7秒周期でタイムアウトし続ける）。
   const env = buildWorkerEnv(config, job, event.taskToken, {
     slowMotion: job.options.slowMotion,
+    spotInterruptionWatch: false,
   });
   try {
     const offered = await offerJobToHomeWorker({
