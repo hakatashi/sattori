@@ -2,6 +2,7 @@
   "name": "@sattori/home-worker",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "自宅サーバーを追加の録画ワーカーとして動かす常駐デーモン（Issue #49）",
   "main": "./dist/main.js",
