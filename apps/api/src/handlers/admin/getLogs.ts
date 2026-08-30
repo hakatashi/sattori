@@ -16,6 +16,15 @@ const ec2 = new EC2Client({});
 const LOG_EVENTS_LIMIT = 500;
 
 /**
+ * `GetLogEvents`の空応答を追跡する最大回数。`GetLogEvents`は`nextToken`未指定
+ * （＝ストリーム末尾からの初回取得）の場合、実際のイベントではなく境界位置だけを
+ * 指す空の`events`と有効な`nextBackwardToken`を返すことがある(AWS SDKドキュメント
+ * 「このAPIはより多くのデータがトークン方向に存在する場合でも空の結果を返すことが
+ * ある」)。空かつトークンが前進している間は同方向へ辿り直して実データへ到達する。
+ */
+const MAX_EMPTY_PAGE_RETRIES = 5;
+
+/**
  * ログストリーム(=jobId)が見つからない場合のフォールバック。UserData(bootstrap)段階の
  * 失敗（ECRログイン/pull失敗等）はコンテナが一度も起動せずawslogsドライバに乗らないため、
  * EC2インスタンス自体のコンソール出力を代わりに表示する（`apps/api/src/ec2.ts`のUserData
@@ -56,23 +65,46 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const instanceId = event.queryStringParameters?.instanceId;
 
   try {
-    const result = await logs.send(
+    let nextToken = cursor;
+    let result = await logs.send(
       new GetLogEventsCommand({
         logGroupName,
         logStreamName: jobId,
-        nextToken: cursor,
+        nextToken,
         startFromHead: false,
         limit: LOG_EVENTS_LIMIT,
       }),
     );
+    // 空応答＋前進するトークンの間は、実データに当たるまで同方向へ辿り直す
+    // （上のMAX_EMPTY_PAGE_RETRIESのコメント参照）。
+    for (
+      let attempt = 0;
+      (result.events?.length ?? 0) === 0 &&
+      result.nextBackwardToken &&
+      result.nextBackwardToken !== nextToken &&
+      attempt < MAX_EMPTY_PAGE_RETRIES;
+      attempt += 1
+    ) {
+      nextToken = result.nextBackwardToken;
+      result = await logs.send(
+        new GetLogEventsCommand({
+          logGroupName,
+          logStreamName: jobId,
+          nextToken,
+          startFromHead: false,
+          limit: LOG_EVENTS_LIMIT,
+        }),
+      );
+    }
 
     const events = (result.events ?? []).map((e) => ({
       timestamp: e.timestamp ?? null,
       message: e.message ?? "",
     }));
     // GetLogEventsは「これ以上古いイベントが無い」場合、渡したnextTokenと同じ
-    // nextBackwardTokenを返す(AWS仕様)。取得0件の場合も含め、そこで打ち切りとみなす。
-    const noMoreOlder = events.length === 0 || result.nextBackwardToken === cursor;
+    // nextBackwardTokenを返す(AWS仕様)。上のループで前進しなくなった時点が
+    // それにあたるため、そこで打ち切りとみなす。
+    const noMoreOlder = events.length === 0 || result.nextBackwardToken === nextToken;
 
     const response: AdminLogsResponse = {
       logStreamFound: true,
