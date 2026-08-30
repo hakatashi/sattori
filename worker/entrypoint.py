@@ -53,7 +53,7 @@ import pulse
 from convert import convert_for_delivery, needs_separate_raw_output, probe_resolution
 from interruption_watcher import InterruptionWatcher
 from progress_reporter import ProgressReporter
-from recording_common import slow_motion_scale
+from recording import slow_motion_scale
 from status import get_job, update_progress, update_status
 from task_heartbeat import TaskHeartbeat
 from title_assets import ensure_title_assets
