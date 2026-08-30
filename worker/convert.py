@@ -169,7 +169,7 @@ def convert_for_delivery(input_path, output_path, *, time_scale=1.0, watermark_p
     ffmpeg_log_path を指定すると、`-progress` の生出力(frame=/fps=/bitrate=等、
     out_time_ms以外の全キー)をこのファイルへ書き出す。CloudWatch Logsへ全行流すと
     1ジョブで数千行に達し他のログを埋もれさせるため(Issue #58フォローアップ、実機の
-    管理画面ログビューアで発覚)、`recording_common.py`のffmpeg_video.log/
+    管理画面ログビューアで発覚)、`recording/pipeline.py`のffmpeg_video.log/
     ffmpeg_audio.logと同じ方針でファイルへ退避し、呼び出し側(entrypoint.py)が
     変換完了後にS3(期限付き)へアップロードする。変換が失敗した場合のみ、診断のため
     末尾を`log()`(CloudWatch行き)にも残す。

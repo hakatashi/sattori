@@ -44,7 +44,8 @@
 | `entrypoint.py` | ジョブ全体の制御。チェックポイント確認 → (再開でなければ)S3 DL → 録画 →
   生動画をS3へチェックポイントUP → 配信用変換 → S3 UP → DynamoDB/taskToken 通知。`GAME`
   環境変数で `record_thNN.py` を呼び分ける |
-| `recording_common.py` | 全タイトル共通の録画パイプライン本体(Issue #13でth08対応時に共通化)。
+| `recording/` | 全タイトル共通の録画パイプライン本体。責務ごとに11モジュールへ分割してある
+  (下表。分割の経緯は [`0041`](../docs/decisions/0041-worker-recording-package-split.md))。
   Xvfb起動・クロップ座標の確定([`0012`](../docs/decisions/0012-crop-geometry-after-window-stabilizes.md))・録画・
   終了検知([`0011`](../docs/decisions/0011-replay-end-template-matching.md))・fps暴走検知・
   自動リトライ(既定3回)・映像/音声を別プロセスで録画し後でmuxする処理(reports/26)・
@@ -56,7 +57,7 @@
   タイムアウト扱いで強制停止する早期検知を追加してある
   ([`0039`](../docs/decisions/0039-end-template-freeze-timeout.md)) |
 | `pulse.py` | ジョブ専用のPulseAudio null-sinkの作成・破棄(Issue #48) |
-| `record_thNN.py` | タイトル固有のパス設定(`GameConfig`)を組み立てて `record_with_retry()` を呼ぶだけの薄いラッパー |
+| `record_thNN.py` | **そのタイトルでしか成り立たない `GameConfig` の値だけ**を持つシム(25〜36行)。CLI と録画の呼び出しは `recording/cli.py` に集約してある。タイトル固有の背景は [`docs/titles/thNN.md`](docs/titles/README.md) |
 | `convert.py` | 録画結果を「ユーザーへ配信する1本」へ変換する後処理。**録画後の再エンコード
   はどのタイトル・どの録画速度でもこの1パスだけ**で、等倍への戻し(§5)・解像度合わせ(720pに
   満たない録画だけ引き上げる、reports/21)・ウォーターマーク合成を1つのfilter_complexに
@@ -79,7 +80,7 @@
   させる(`SetFrequency`フック、reports/47)／画面に焼き付くfpsカウンター表示だけを等倍相当へ
   補正する(reports/48) |
 | `mods/common/score_monitor.*` | ゲーム内スコア・ステージ番号・残機・グレイズの定期サンプリング
-  (reports/50、Issue #103)。`recording_common.check_replay_desync()`が録画成功直後にMODログの
+  (reports/50、Issue #103)。`recording.modlog.check_replay_desync()`が録画成功直後にMODログの
   スコア推移と`replayInfo.score`を突き合わせてリプレイずれ(デシンク)の疑いを判定する
   (`JobRecord.desyncDetected`、自動リトライはしない)。RVAはタイトル毎に`dllmain.cpp`で指定
   (baseRva+baseIsPointer+フィールドオフセット/幅の汎用設計)。対応6タイトル全てで実機動作確認済み
@@ -89,6 +90,24 @@
   reports/57で別途確認) |
 | `mods/common/score_probe_hook.*` / `stage_probe_hook.*` | RVA特定用の診断専用コード(本番ビルドには
   含めない)。score_monitorのRVAが通用しないタイトル・ゲームバージョンが出た場合の再調査に使う |
+
+### `recording/` パッケージのモジュール
+
+**どこを触るか迷ったら、まずこの表で当たりを付けること。**
+
+| モジュール | 役割 |
+| --- | --- |
+| `config.py` | `GameConfig` とその既定値の導出(`for_game()`)。パス類は `WORKER_ROOT` 起点 |
+| `timing.py` | 低速録画(§5)の実時間スケーリングと、重複フレーム率の閾値換算 |
+| `instance.py` | Xvfb 起動・instance ディレクトリの複製・`vpatch.ini` の上書き・注入コマンド |
+| `process.py` | ゲームプロセスの探索・thprac のアタッチ・Wine の後片付け |
+| `window.py` | ウィンドウ検出とクロップ座標の確定 |
+| `modlog.py` | MOD が書き出すログの読み取り(マーカー待ち・fps暴走検知・スコア照合) |
+| `vision.py` | 画面キャプチャと画素比較。**画素比較の閾値はここ**(ポーリング回数は `pipeline.py`) |
+| `ffmpeg.py` | 録画・結合・重複フレーム率計測の ffmpeg/ffprobe 呼び出し |
+| `artifacts.py` | 進捗・デシンク検証結果・タイムアウト有無のファイル書き出し(別プロセスへの受け渡し) |
+| `pipeline.py` | 1回の録画試行(`attempt_recording()`)と自動リトライ(`record_with_retry()`)。**ポーリングの回数・秒数はここ** |
+| `cli.py` | `record_thNN.py` が共有する CLI(引数定義・ロガー) |
 
 `mods/` 配下はソースとビルドスクリプトのみ管理する(元は `touhou-recorder` の PoC 由来。ビルドは §9)。
 
@@ -273,7 +292,7 @@ MOD が何をしているか(各フックの役割)は §2 の `mods/` の行と
 
 ## 10. テスト(`tests/`)
 
-Wine/Xvfb/実ゲームに依存する録画本体(`recording_common.attempt_recording()`)以外の、
+Wine/Xvfb/実ゲームに依存する録画本体(`recording.pipeline.attempt_recording()`)以外の、
 純粋なロジック部分(MAD計算・ffmpegコマンド組み立て・fps暴走/重複フレーム率の判定・
 配信用変換の解像度/フィルタ組み立て/進捗計算・DynamoDB更新式の組み立て・Spot中断/リバランス
 判定・進捗レポートの重複排除等)を pytest でユニットテストする。boto3 呼び出しは
@@ -284,6 +303,12 @@ push・PR 毎に自動実行される。
 ```bash
 pip install -r requirements-dev.txt && pytest
 ```
+
+`recording/` パッケージのテストは `tests/test_recording_<モジュール名>.py` と1対1に対応させる
+(共有ヘルパは `tests/recording_helpers.py`)。パッケージ内は `from .process import
+kill_wine_and_wait` のように名前で import しているため、**monkeypatch は定義側ではなく
+「使う側」のモジュールに当てること**(`pipeline.kill_wine_and_wait` であって
+`process.kill_wine_and_wait` ではない)。
 
 ## 11. ローカルでの実行(ネットワーク不要)
 

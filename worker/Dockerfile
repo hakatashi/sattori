@@ -16,8 +16,8 @@
 #     (リプレイ終了検知用。ゲーム本体ではなく録画パイプライン自体の参照画像なので
 #     タイトル資産アーカイブ(S3)ではなくこのイメージに含める。th11は終了画面が
 #     リプレイ内容依存でテンプレート照合に不向きなため意図的に用意せず、画面静止
-#     検知のみで運用する。worker/README.md・record_th11.py参照。th10は背景全体が
-#     常時アニメーションするため絞り込み領域でのみ照合する、record_th10.py参照)
+#     検知のみで運用する。worker/docs/titles/th11.md参照。th10は背景全体が
+#     常時アニメーションするため絞り込み領域でのみ照合する、worker/docs/titles/th10.md参照)
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -50,7 +50,8 @@ COPY assets/watermark/watermark-60fps.webm /app/assets/watermark/watermark-60fps
 COPY assets/replay_end_templates/ /app/assets/replay_end_templates/
 
 # ワーカーのソース(リポジトリ管理)
-COPY recording_common.py record_th06.py record_th07.py record_th08.py record_th10.py record_th11.py record_th20.py entrypoint.py status.py convert.py interruption_watcher.py task_heartbeat.py progress_reporter.py title_assets.py pulse.py /app/
+COPY recording/ /app/recording/
+COPY record_th06.py record_th07.py record_th08.py record_th10.py record_th11.py record_th20.py entrypoint.py status.py convert.py interruption_watcher.py task_heartbeat.py progress_reporter.py title_assets.py pulse.py /app/
 
 RUN mkdir -p /app/instances /app/runs
 
