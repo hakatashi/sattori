@@ -2,6 +2,7 @@ import { ByteReader } from "../byte-reader.js";
 import { localizeCharacterName } from "../character-names.js";
 import { readBufferedUint32LE } from "../lzss.js";
 import { readModernUserdata } from "../userdata.js";
+import { DATE_TOKENS_YMD_HM, parseDateComponents } from "../date-format.js";
 import { normalizeText, type ParsedReplay } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
@@ -93,6 +94,7 @@ export function parseTh20(original: Uint8Array): ParsedReplay {
     // apply here; that title's equivalent field has not been located.
     recordedAt: null,
     date: normalizeText(userdata.date),
+    parsedDate: parseDateComponents(normalizeText(userdata.date), DATE_TOKENS_YMD_HM),
     character,
     characterNameJa,
     characterNameEn,

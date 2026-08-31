@@ -2,6 +2,7 @@ import { ByteReader } from "../byte-reader.js";
 import { ReplayCorruptError } from "../errors.js";
 import { decompress, readBufferedUint32LE, xorBlockDecode } from "../lzss.js";
 import { jumpToUser, parseScoreWithTrailingZero } from "../userdata.js";
+import { DATE_TOKENS_YMD_HM, parseDateComponents } from "../date-format.js";
 import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 
@@ -67,6 +68,7 @@ export function parseTh128(original: Uint8Array): ParsedReplay {
     formatVersion: null,
     player: normalizeText(name),
     date: normalizeText(date),
+    parsedDate: parseDateComponents(normalizeText(date), DATE_TOKENS_YMD_HM),
     recordedAt: null,
     character: null,
     characterNameJa: null,

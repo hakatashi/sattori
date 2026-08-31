@@ -176,6 +176,7 @@ The decoded replay metadata object (`result.replay`):
 | `formatVersion` | `number \| null` | Raw version/format byte from the header. Meaning varies by game (e.g. `5` for th07, `144` for th13; `null` for th06/th08). |
 | `player` | `string \| null` | Player name string (decoded from Shift_JIS with trailing padding trimmed). |
 | `date` | `string \| null` | Date/time string as recorded in the file (format varies by game, e.g. `"05/26/11"`, `"2026/01/24 16:18:16"`, `"25/11/09 17:41"`). |
+| `parsedDate` | [`ParsedDate`](#parseddate) \| `null` | `date` broken down into individual numeric components, so callers don't need to know each title's format to interpret it. `null` iff `date` is `null`. See below. |
 | `recordedAt` | `number \| null` | The same moment as `date`, as a raw Unix epoch (seconds, UTC) read from a second, independent timestamp field. Populated for th10-th18 only (`null` otherwise, including th20). See below. |
 | `character` | `string \| null` | Raw shot type or character string (e.g. `"ReimuA"`, `"ReimuRed"`, Japanese string `"博麗　霊夢"` for th08; `null` for th143/th165). |
 | `characterNameJa` | `string \| null` | Japanese display name for `character` (e.g. `"霊符"`, `"霊夢"`, `"霊夢A"`, `"霊夢 赤1"`). See below. |
@@ -202,6 +203,32 @@ Per-stage breakdown records in `ParsedReplay.splits`:
 | `graze` | `number \| null` | Graze count (`null` for th06). |
 | `additional` | `Record<string, number \| string \| (number \| string)[]> \| null` | Game-specific extra metrics (e.g. `{ rank: 16 }` for th06, `{ pointItems: 24, cherryMax: 250180 }` for th07, `{ trance: 200, tranceMax: 600 }` for th13). |
 | `frameCount` | `number \| null` | Number of in-game frames played during this stage/segment. |
+
+#### `ParsedDate`
+
+`date` broken down into individual numeric components (`ParsedReplay.parsedDate`). Every field is the value verbatim as recorded (no century inferred for `shortYear`, no timezone assumed) — a field is `null` only when that title's format genuinely does not record it (see the per-title table below):
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `fullYear` | `number \| null` | 4-digit year, e.g. `2026`. Only th08 records this. |
+| `shortYear` | `number \| null` | 2-digit year as recorded verbatim, e.g. `26`. |
+| `month` | `number \| null` | Month, 1-12. |
+| `date` | `number \| null` | Day of month. |
+| `hours` | `number \| null` | Hour, 0-23. |
+| `minutes` | `number \| null` | Minute. |
+| `seconds` | `number \| null` | Second. Only th08 records this. |
+
+`date`'s format (and thus which `parsedDate` fields end up populated) differs by title, confirmed against [n-rook/thscoreboard](https://github.com/n-rook/thscoreboard)'s own `time.strptime` calls in `replays/replay_parsing.py`:
+
+| Titles | `date` format | Example |
+| --- | --- | --- |
+| th06 | `MM/DD/YY` | `"05/26/11"` |
+| th07 | `MM/DD` (no year — genuinely absent from the file) | `"01/18"` |
+| th08 | `YYYY/MM/DD HH:mm:ss` | `"2026/01/24 16:18:16"` |
+| th09 | `YY/MM/DD` (no time) | `"26/01/23"` |
+| th095, th10-th18, th20, th125, th128, th143/th165 | `YY/MM/DD HH:mm` | `"25/11/09 17:41"` |
+
+`parseDateComponents()` (`src/date-format.ts`) implements this generically from an ordered list of components rather than one parser per title — see that file for the full derivation.
 
 #### `ReplayResourceCount`
 

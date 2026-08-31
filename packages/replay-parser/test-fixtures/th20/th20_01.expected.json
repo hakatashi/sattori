@@ -5,6 +5,15 @@
   "player": "koyi",
   "recordedAt": null,
   "date": "25/11/09 17:41",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 25,
+    "month": 11,
+    "date": 9,
+    "hours": 17,
+    "minutes": 41,
+    "seconds": null
+  },
   "character": "ReimuRed",
   "characterNameJa": "霊夢 赤1",
   "characterNameEn": "Reimu Red",

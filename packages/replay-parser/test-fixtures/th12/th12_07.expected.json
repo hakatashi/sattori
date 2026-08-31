@@ -4,6 +4,15 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "15/04/25 17:44",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 15,
+    "month": 4,
+    "date": 25,
+    "hours": 17,
+    "minutes": 44,
+    "seconds": null
+  },
   "recordedAt": 1429951451,
   "character": "ReimuA",
   "characterNameJa": "夢符",

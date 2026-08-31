@@ -5,6 +5,15 @@
   "player": "koyi",
   "recordedAt": null,
   "date": "25/10/23 15:05",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 25,
+    "month": 10,
+    "date": 23,
+    "hours": 15,
+    "minutes": 5,
+    "seconds": null
+  },
   "character": "ReimuBlue",
   "characterNameJa": "霊夢 青1",
   "characterNameEn": "Reimu Blue",

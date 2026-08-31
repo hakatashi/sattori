@@ -1,5 +1,6 @@
 import { ByteReader } from "../byte-reader.js";
 import { jumpToUser, parseScoreWithTrailingZero } from "../userdata.js";
+import { DATE_TOKENS_YMD_HM, parseDateComponents } from "../date-format.js";
 import { normalizeText, type ParsedReplay } from "../types.js";
 import { REPLAY_GAME_TITLES, type ReplayGameId } from "../game-ids.js";
 
@@ -30,6 +31,7 @@ export function parseTh143Family(original: Uint8Array, game: "th143" | "th165"):
     formatVersion: null,
     player: normalizeText(name),
     date: normalizeText(date),
+    parsedDate: parseDateComponents(normalizeText(date), DATE_TOKENS_YMD_HM),
     recordedAt: null,
     character: null,
     characterNameJa: null,

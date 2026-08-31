@@ -4,6 +4,15 @@
   "formatVersion": 139,
   "player": "koyi",
   "date": "23/02/14 17:21",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 23,
+    "month": 2,
+    "date": 14,
+    "hours": 17,
+    "minutes": 21,
+    "seconds": null
+  },
   "recordedAt": 1676362899,
   "character": "MarisaA",
   "characterNameJa": "魔理沙A",

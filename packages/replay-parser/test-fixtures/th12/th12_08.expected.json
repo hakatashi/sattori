@@ -4,6 +4,15 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "15/02/09 05:16",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 15,
+    "month": 2,
+    "date": 9,
+    "hours": 5,
+    "minutes": 16,
+    "seconds": null
+  },
   "recordedAt": 1423426608,
   "character": "SanaeA",
   "characterNameJa": "蛇符",

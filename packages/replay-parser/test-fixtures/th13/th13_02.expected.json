@@ -4,6 +4,15 @@
   "formatVersion": 144,
   "player": "koyi",
   "date": "24/05/11 22:37",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 24,
+    "month": 5,
+    "date": 11,
+    "hours": 22,
+    "minutes": 37,
+    "seconds": null
+  },
   "recordedAt": 1715434645,
   "character": "Reimu",
   "characterNameJa": "霊夢",
