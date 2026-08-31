@@ -9,13 +9,14 @@ import {
 } from "./index.js";
 
 describe("shared", () => {
-  it("th06・th07・th08・th11 が録画対応タイトル(Issue #13でth08、th06対応でth06、th11対応でth11を追加)", () => {
+  it("th06・th07・th08・th11・th12 が録画対応タイトル(Issue #13でth08、th06対応でth06、th11対応でth11、th12対応でth12を追加)", () => {
     expect(isSupportedGame("th06")).toBe(true);
     expect(isSupportedGame("th07")).toBe(true);
     expect(isSupportedGame("th08")).toBe(true);
     expect(isSupportedGame("th11")).toBe(true);
-    // th12以降はパーサー的には認識できるが録画には未対応(MOD移植が未着手)。
-    expect(isSupportedGame("th12")).toBe(false);
+    expect(isSupportedGame("th12")).toBe(true);
+    // th13以降はパーサー的には認識できるが録画には未対応(MOD移植が未着手)。
+    expect(isSupportedGame("th13")).toBe(false);
   });
 
   it("終端状態を正しく判定する", () => {

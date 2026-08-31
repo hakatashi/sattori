@@ -92,10 +92,28 @@ const TH20_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
   "c7i.4xlarge", // Intel Sapphire Rapids 16vCPU/32GiB。reports/46実測で重複フレーム率1.4%
 ];
 
+/**
+ * th12専用の候補インスタンスタイプ（Issue #76）。当初`.xlarge`帯（4vCPU）で実機検証した
+ * ところ重複フレーム率自体は良好（0.6%）だったが、th12は背景アニメーションが常時変化する
+ * ため「重複フレーム率だけでは処理落ちを過小評価する」ことが判明した
+ * （`docs/known-limitations.md` §3）。リプレイの`frameCount`（60fps基準の理論尺）と実測
+ * プレイ時間を比較すると、`.xlarge`帯では通常ステージで理論尺超過+2.11%という深刻な
+ * 処理落ちが隠れていたが、`.2xlarge`帯（8vCPU）では+0.16%まで改善した
+ * （touhou-recorder reports/67）。
+ *
+ * **`c7i.2xlarge`1タイプしか挙げていないのは意図的**（th20と同じ理由）。`c7a`/`m7i`の
+ * `.2xlarge`系はth12では未検証のため、推測で候補に加えない（AGENTS.md §3）。
+ */
+const TH12_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
+  "c7i.2xlarge", // Intel Sapphire Rapids 8vCPU/16GiB。reports/67実測で理論尺超過+0.16%
+];
+
 function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
   switch (game) {
     case "th11":
       return TH11_CANDIDATE_INSTANCE_TYPES;
+    case "th12":
+      return TH12_CANDIDATE_INSTANCE_TYPES;
     case "th20":
       return TH20_CANDIDATE_INSTANCE_TYPES;
     default:
