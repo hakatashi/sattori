@@ -176,6 +176,7 @@ The decoded replay metadata object (`result.replay`):
 | `formatVersion` | `number \| null` | Raw version/format byte from the header. Meaning varies by game (e.g. `5` for th07, `144` for th13; `null` for th06/th08). |
 | `player` | `string \| null` | Player name string (decoded from Shift_JIS with trailing padding trimmed). |
 | `date` | `string \| null` | Date/time string as recorded in the file (format varies by game, e.g. `"05/26/11"`, `"2026/01/24 16:18:16"`, `"25/11/09 17:41"`). |
+| `recordedAt` | `number \| null` | The same moment as `date`, as a raw Unix epoch (seconds, UTC) read from a second, independent timestamp field. Populated for th10-th18 only (`null` otherwise, including th20). See below. |
 | `character` | `string \| null` | Raw shot type or character string (e.g. `"ReimuA"`, `"ReimuRed"`, Japanese string `"博麗　霊夢"` for th08; `null` for th143/th165). |
 | `characterNameJa` | `string \| null` | Japanese display name for `character` (e.g. `"霊符"`, `"霊夢"`, `"霊夢A"`, `"霊夢 赤1"`). See below. |
 | `characterNameEn` | `string \| null` | English display name for `character` (e.g. `"Reimu A"`, `"Reimu"`, `"Reimu A (Yukari)"`, `"Reimu Red"`). See below. |
@@ -251,6 +252,41 @@ see the comments in `src/games/th128.ts` for details). Likewise,
 `splits[].additional` returns game-specific extra info (UFO color, trance,
 season, spell cards, etc.) as an object with typed properties rather than
 strings (e.g. `{ ufoColors: ["Red", "None", "None"] }`).
+
+### `recordedAt`
+
+For th10-th18 (`decodeModernBody`-family titles other than th20), the
+decompressed body opens with a fixed-width SJIS `name` field immediately
+followed by a raw Unix epoch timestamp — a *second*, independent recording
+of the same moment `date` represents, sourced from a different part of the
+file. `recordedAt` exposes it as a plain number (seconds since epoch, UTC).
+
+This was found by cross-referencing
+[n-rook/thscoreboard](https://github.com/n-rook/thscoreboard)'s per-title
+kaitai struct definitions (`replays/kaitai_parsers/th1{0..8}.py`, class
+`Header`), which define this field explicitly and use it — not the
+human-readable `date` string — as their own canonical timestamp source for
+these titles. Compared to `date`, `recordedAt` always carries the full
+4-digit year (`date` truncates to 2 digits for these titles) and
+second-level precision (`date` only has minutes here) — but it is still
+just a read of the recording PC's own system clock, so it carries the same
+"only as correct as that clock/timezone" caveat `date` already has; it is
+not an independently-verified truth source.
+
+Cross-validated against real replays (checked-in `test-fixtures/` plus
+fresh downloads via `.agents/skills/silent-selene/`) for th10, th11, th12,
+th13, th14, th15, th16, th17, and th18: converting the raw value to JST
+(UTC+9, ZUN's own locale) matched `date` down to the minute in all but 2 of
+roughly 15 samples checked, where it differed by exactly 1 hour — consistent
+with the recording PC's own clock/timezone being slightly off rather than a
+decoding error (see the comments on `RECORDED_AT_OFFSET_12BYTE_NAME` in
+`src/games/modern-body.ts` for the full offset derivation, including why
+th17/th18 need a different offset than th10-th16).
+
+`null` for every other title, including th20 — its body header has an
+entirely different layout from th10-th18's shared one (see the `th20`
+notes above), and this field's equivalent location hasn't been
+reverse-engineered there.
 
 ### `frameCount`
 

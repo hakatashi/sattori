@@ -140,6 +140,7 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
     formatVersion,
     player: normalizeText(name),
     date: normalizeText(date),
+    recordedAt: null,
     character,
     characterNameJa,
     characterNameEn,

@@ -116,6 +116,7 @@ export function parseTh08(original: Uint8Array): ParsedReplay {
     formatVersion: null,
     player: normalizeText(name),
     date: normalizeText(date),
+    recordedAt: null,
     character: characterName,
     characterNameJa,
     characterNameEn,

@@ -4,7 +4,7 @@ import { readBufferedUint32LE } from "../lzss.js";
 import { readModernUserdata } from "../userdata.js";
 import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
-import { decodeModernBody } from "./modern-body.js";
+import { decodeModernBody, RECORDED_AT_OFFSET_16BYTE_NAME } from "./modern-body.js";
 
 /** t18r (東方虹龍洞, UM) decoder. Ported from Read_t18r in threplay. */
 export function parseTh18(original: Uint8Array): ParsedReplay {
@@ -57,6 +57,7 @@ export function parseTh18(original: Uint8Array): ParsedReplay {
     formatVersion: null,
     player: normalizeText(userdata.name),
     date: normalizeText(userdata.date),
+    recordedAt: readBufferedUint32LE(decodedata, RECORDED_AT_OFFSET_16BYTE_NAME),
     character,
     characterNameJa,
     characterNameEn,

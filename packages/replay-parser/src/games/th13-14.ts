@@ -4,7 +4,7 @@ import { readBufferedUint32LE } from "../lzss.js";
 import { jumpToUser, parseScoreWithTrailingZero } from "../userdata.js";
 import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
-import { decodeModernBody } from "./modern-body.js";
+import { decodeModernBody, RECORDED_AT_OFFSET_12BYTE_NAME } from "./modern-body.js";
 
 /**
  * The t13r magic is shared by th13 (東方神霊廟, TD) and th14 (東方輝針城, DDC),
@@ -110,6 +110,7 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
     formatVersion: versionByte,
     player: normalizeText(name),
     date: normalizeText(date),
+    recordedAt: readBufferedUint32LE(decodedata, RECORDED_AT_OFFSET_12BYTE_NAME),
     character: characterName,
     characterNameJa,
     characterNameEn,

@@ -30,6 +30,7 @@ export function parseTh143Family(original: Uint8Array, game: "th143" | "th165"):
     formatVersion: null,
     player: normalizeText(name),
     date: normalizeText(date),
+    recordedAt: null,
     character: null,
     characterNameJa: null,
     characterNameEn: null,

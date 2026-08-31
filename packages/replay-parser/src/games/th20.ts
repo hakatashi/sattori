@@ -88,6 +88,10 @@ export function parseTh20(original: Uint8Array): ParsedReplay {
     gameTitle: REPLAY_GAME_TITLES.th20,
     formatVersion: null,
     player: normalizeText(userdata.name),
+    // th20's body header layout differs from th10-th18's (see
+    // TH20_HEADER_SIZE/SHOT_OFFSET above), so RECORDED_AT_OFFSET_* does not
+    // apply here; that title's equivalent field has not been located.
+    recordedAt: null,
     date: normalizeText(userdata.date),
     character,
     characterNameJa,
