@@ -95,6 +95,20 @@ def test_game_config_thprac_exe_defaults_to_none():
     assert config.thprac_exe is None
 
 
+def test_game_config_force_window_map_defaults_to_false():
+    config = make_config()
+
+    assert config.force_window_map is False
+
+
+def test_game_config_allows_overriding_force_window_map():
+    # th12はウィンドウが最小化(Iconic)状態で生成される既知の不具合対策として
+    # force_window_map=Trueを渡す(docs/titles/th12.md、touhou-recorder reports/61)。
+    config = make_config(game_id="th12", force_window_map=True)
+
+    assert config.force_window_map is True
+
+
 # --- th20 向けの GameConfig 拡張(Issue #87) --------------------------------
 
 

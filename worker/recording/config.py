@@ -113,6 +113,12 @@ class GameConfig:
     # オプション(RecordingOptions)に応じて動的に上書きするために使う(空タプルが既定で、
     # その場合は同梱のvpatch.iniをそのまま使う。touhou-recorder reports/58)。
     vpatch_ini_overrides: tuple[tuple[str, str, str], ...] = ()
+    # ゲームウィンドウが最小化(Iconic)状態で作成される既知の不具合への対策(th12)。
+    # find_window()のxwininfo判定はIsViewableを見るため、最小化状態のウィンドウを
+    # 検出できずウィンドウ検出ループが延々タイムアウトする。Trueにするとfind_window()が
+    # 検出した全ウィンドウへ`xdotool windowmap`を発行してから判定する
+    # (touhou-recorder reports/61)。既定Falseの他タイトルはこの追加処理を経ない。
+    force_window_map: bool = False
 
     def __post_init__(self):
         if self.game_exe is None:
