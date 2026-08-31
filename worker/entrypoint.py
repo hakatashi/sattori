@@ -118,6 +118,7 @@ RECORDING_SCRIPTS = {
     "th08": "record_th08.py",
     "th10": "record_th10.py",
     "th11": "record_th11.py",
+    "th12": "record_th12.py",
     "th20": "record_th20.py",
 }
 
