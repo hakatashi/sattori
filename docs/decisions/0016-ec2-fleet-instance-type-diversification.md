@@ -49,15 +49,19 @@
   Spotプールの分散が他タイトルより後退している点は Issue #98 で追う。
   なお**th20は原則として自宅ワーカーでの低速録画へ振り分けられる**ので、この経路は
   自宅が空いていないときのフォールバック（等倍録画）である。
-- **th12専用**（`TH12_CANDIDATE_INSTANCE_TYPES`、Issue #76）: `c7i.2xlarge`のみ。
-  当初`.xlarge`帯（4vCPU）で実機検証したところ重複フレーム率自体は良好（0.6%）
-  だったが、th12は背景アニメーションが常時変化するため「重複フレーム率だけでは
-  処理落ちを過小評価する」ことが判明した（`docs/known-limitations.md` §3）。
-  リプレイの`frameCount`（60fps基準の理論尺）と実測プレイ時間を比較したところ、
-  `.xlarge`帯では通常ステージで理論尺超過+2.11%という深刻な処理落ちが隠れていたが、
-  `.2xlarge`帯では+0.16%まで改善した（touhou-recorder reports/67）。th20と同じく
-  **1タイプしかないのは意図的**で、`c7a`/`m7i`の`.2xlarge`系はth12では未検証のため
-  候補に加えていない。
+- **th12専用**（`TH12_CANDIDATE_INSTANCE_TYPES`、Issue #76）: `c7i.2xlarge` /
+  `c7a.2xlarge` / `m7i.2xlarge`。当初`.xlarge`帯（4vCPU）で実機検証したところ重複
+  フレーム率自体は良好（0.6%）だったが、th12は背景アニメーションが常時変化するため
+  「重複フレーム率だけでは処理落ちを過小評価する」ことが判明した
+  （`docs/known-limitations.md` §3）。リプレイの`frameCount`（60fps基準の理論尺）と
+  実測プレイ時間を比較したところ、`.xlarge`帯では通常ステージで理論尺超過+2.11%
+  という深刻な処理落ちが隠れていたが、`.2xlarge`帯では+0.16%まで改善した
+  （touhou-recorder reports/67）。当初は`c7i.2xlarge`のみ実機検証済みだったが、
+  `c7a.2xlarge`・`m7i.2xlarge`も別途AWS実機検証（`docs/reports/2026-09-01-th12-2xlarge-instance-group-verification.md`）
+  で良好と確認し追加した。この3タイプはth11でも実機検証済みであり、異なる2タイトル
+  での実証実績に基づき「`.2xlarge`帯実機検証済みグループ」として扱う
+  （[`decisions/0042`](0042-2xlarge-instance-type-group-precedent.md)。**推測で
+  候補を足したのではない**点に注意）。
 
 ## 根拠
 

@@ -128,7 +128,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | --- | --- | --- |
 | th06/07/08/10 | `DEFAULT_CANDIDATE_INSTANCE_TYPES` | `c7i.xlarge` / `c7a.xlarge` / `c7i-flex.xlarge` / `m7i.xlarge` |
 | th11 | `TH11_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
-| th12 | `TH12_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` のみ |
+| th12 | `TH12_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th20 | `TH20_CANDIDATE_INSTANCE_TYPES` | `c7i.4xlarge` のみ |
 
 > **候補を足す・変える前に
