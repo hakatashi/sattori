@@ -1,0 +1,167 @@
+{
+  "game": "th12",
+  "gameTitle": "東方星蓮船 ～ Undefined Fantastic Object.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "15/01/31 17:02",
+  "character": "ReimuB",
+  "characterNameJa": "霊符",
+  "characterNameEn": "Reimu B",
+  "difficulty": "Hard",
+  "stage": "Stage All Clear",
+  "score": 183240710,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "1.00",
+      "piv": 15000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 0,
+      "additional": {
+        "ufoColors": [
+          "None",
+          "None",
+          "None"
+        ]
+      },
+      "frameCount": 10794
+    },
+    {
+      "stage": 2,
+      "score": 13027410,
+      "power": "2.71",
+      "piv": 15250,
+      "lives": {
+        "count": 4,
+        "pieces": 0,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 188,
+      "additional": {
+        "ufoColors": [
+          "Red",
+          "None",
+          "None"
+        ]
+      },
+      "frameCount": 13546
+    },
+    {
+      "stage": 3,
+      "score": 26220040,
+      "power": "2.57",
+      "piv": 15960,
+      "lives": {
+        "count": 3,
+        "pieces": 3,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 779,
+      "additional": {
+        "ufoColors": [
+          "Red",
+          "None",
+          "None"
+        ]
+      },
+      "frameCount": 15789
+    },
+    {
+      "stage": 4,
+      "score": 42196820,
+      "power": "3.45",
+      "piv": 18240,
+      "lives": {
+        "count": 3,
+        "pieces": 1,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 1602,
+      "additional": {
+        "ufoColors": [
+          "Blue",
+          "Red",
+          "None"
+        ]
+      },
+      "frameCount": 18978
+    },
+    {
+      "stage": 5,
+      "score": 82974180,
+      "power": "3.19",
+      "piv": 19640,
+      "lives": {
+        "count": 4,
+        "pieces": 2,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 2479,
+      "additional": {
+        "ufoColors": [
+          "Red",
+          "Red",
+          "None"
+        ]
+      },
+      "frameCount": 17952
+    },
+    {
+      "stage": 6,
+      "score": 127460400,
+      "power": "2.71",
+      "piv": 21060,
+      "lives": {
+        "count": 3,
+        "pieces": 0,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": 2,
+        "maxPieces": 3
+      },
+      "graze": 3094,
+      "additional": {
+        "ufoColors": [
+          "Blue",
+          "Red",
+          "None"
+        ]
+      },
+      "frameCount": 25267
+    }
+  ],
+  "frameCount": 102326
+}
