@@ -101,11 +101,20 @@ const TH20_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
  * 処理落ちが隠れていたが、`.2xlarge`帯（8vCPU）では+0.16%まで改善した
  * （touhou-recorder reports/67）。
  *
- * **`c7i.2xlarge`1タイプしか挙げていないのは意図的**（th20と同じ理由）。`c7a`/`m7i`の
- * `.2xlarge`系はth12では未検証のため、推測で候補に加えない（AGENTS.md §3）。
+ * 当初は`c7i.2xlarge`のみ実機検証済みだったが、`c7a.2xlarge`・`m7i.2xlarge`も
+ * AWS実機検証（`docs/reports/2026-09-01-th12-2xlarge-instance-group-verification.md`）
+ * で良好（`c7a.2xlarge`は重複フレーム率0.4%、`m7i.2xlarge`は表面上12.7%だったが
+ * 秒単位の生存フレーム再解析で15〜45秒の局所ノイズと判明、いずれもスコア完全一致・
+ * 理論尺どおりの尺）だったため追加した。この3タイプはth11でも実機検証済み
+ * （`TH11_CANDIDATE_INSTANCE_TYPES`）であり、異なる2タイトルでの実証実績に基づき
+ * 「`.2xlarge`帯実機検証済みグループ」として扱う
+ * （[`decisions/0042`](../../../docs/decisions/0042-2xlarge-instance-type-group-precedent.md)）。
+ * 推測で足したものではない。
  */
 const TH12_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "c7i.2xlarge", // Intel Sapphire Rapids 8vCPU/16GiB。reports/67実測で理論尺超過+0.16%
+  "c7i.2xlarge", // Intel Sapphire Rapids。reports/67実測で理論尺超過+0.16%、第一候補
+  "c7a.2xlarge", // AMD Genoa。2026-09-01実機検証で重複フレーム率0.4%
+  "m7i.2xlarge", // Intel Sapphire Rapids(メモリ倍増版)。2026-09-01実機検証で重複フレーム率12.7%(局所ノイズ、秒単位再解析で良好と確認)
 ];
 
 function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {

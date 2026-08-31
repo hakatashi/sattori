@@ -254,7 +254,7 @@ describe("launchRecordingInstance", () => {
     }
   });
 
-  it("th12ジョブはc7i.2xlarge単独の専用インスタンスタイプで起動する", async () => {
+  it("th12ジョブは.2xlarge帯の専用インスタンスタイプ(3タイプ)で起動する", async () => {
     ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
       LaunchTemplateVersion: { VersionNumber: 3 },
     });
@@ -266,15 +266,19 @@ describe("launchRecordingInstance", () => {
 
     const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
     const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
-    // th12はth20と同じく実機検証済みの1タイプのみ（touhou-recorder reports/67）
+    // th11と同じ3タイプ全てが実機検証済み（`.2xlarge`帯実機検証済みグループ、decisions/0042）
     expect(overrides).toEqual(
       expect.arrayContaining([
         { SubnetId: "subnet-aaaa", InstanceType: "c7i.2xlarge" },
         { SubnetId: "subnet-bbbb", InstanceType: "c7i.2xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "c7a.2xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "c7a.2xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "m7i.2xlarge" },
       ]),
     );
+    // th06/07/08向けの.xlarge帯は含まれない
     for (const override of overrides) {
-      expect(override.InstanceType).toBe("c7i.2xlarge");
+      expect(override.InstanceType).not.toMatch(/\.xlarge$/);
     }
   });
 

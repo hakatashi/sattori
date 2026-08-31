@@ -86,6 +86,8 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
 - **インスタンスタイプ・録画パイプラインの変更は必ず実機検証を経ること**。「同スペック帯・同価格帯
   だから安全」という推測は繰り返し裏切られている。妥当性は touhou-recorder のレポートか、この
   リポジトリでの実機検証の記録（[`docs/reports/`](docs/reports/README.md)）で必ず裏付けること。
+  唯一の例外は`c7i`/`c7a`/`m7i`の`.2xlarge`帯（異なる2タイトルでの実証実績に基づく限定的な
+  グループ化、[`decisions/0042`](docs/decisions/0042-2xlarge-instance-type-group-precedent.md)）。
 - **重複フレーム率の自動チェックは録画開始15〜45秒の30秒スポットしか見ていない**
   （`recording_common.measure_duplicate_rate`、Issue #93）。タイトル間・環境間で比較する際は
   「全編の代表値ではない」ことに注意（`docs/known-limitations.md` §3）。**さらに背景が
