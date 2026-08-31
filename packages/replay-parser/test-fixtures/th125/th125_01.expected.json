@@ -4,6 +4,15 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "26/07/18 06:39",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 7,
+    "date": 18,
+    "hours": 6,
+    "minutes": 39,
+    "seconds": null
+  },
   "recordedAt": null,
   "character": "Aya",
   "characterNameJa": "文",

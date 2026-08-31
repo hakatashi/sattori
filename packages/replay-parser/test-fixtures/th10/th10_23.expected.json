@@ -4,6 +4,15 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "26/03/18 15:10",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 3,
+    "date": 18,
+    "hours": 15,
+    "minutes": 10,
+    "seconds": null
+  },
   "recordedAt": 1773814204,
   "character": "MarisaB",
   "characterNameJa": "魔理沙B",

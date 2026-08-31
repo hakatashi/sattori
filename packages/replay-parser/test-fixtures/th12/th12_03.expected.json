@@ -4,6 +4,15 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "15/02/01 18:36",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 15,
+    "month": 2,
+    "date": 1,
+    "hours": 18,
+    "minutes": 36,
+    "seconds": null
+  },
   "recordedAt": 1422783362,
   "character": "MarisaA",
   "characterNameJa": "恋符",

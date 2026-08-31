@@ -4,6 +4,15 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "15/02/22 02:35",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 15,
+    "month": 2,
+    "date": 22,
+    "hours": 2,
+    "minutes": 35,
+    "seconds": null
+  },
   "recordedAt": 1424540105,
   "character": "SanaeB",
   "characterNameJa": "蛙符",

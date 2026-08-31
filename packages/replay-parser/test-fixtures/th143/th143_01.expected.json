@@ -4,6 +4,15 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "26/02/27 23:33",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 2,
+    "date": 27,
+    "hours": 23,
+    "minutes": 33,
+    "seconds": null
+  },
   "recordedAt": null,
   "character": null,
   "characterNameJa": null,

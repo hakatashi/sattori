@@ -1,4 +1,7 @@
+import type { ParsedDate } from "./date-format.js";
 import type { ReplayGameId } from "./game-ids.js";
+
+export type { ParsedDate } from "./date-format.js";
 
 /**
  * A resource count made up of a "whole unit count" plus "fragments toward the
@@ -79,6 +82,13 @@ export interface ParsedReplay {
   player: string | null;
   /** Recording date/time, kept verbatim as it appears in the source data (e.g. "25/12/31"). */
   date: string | null;
+  /**
+   * `date` broken down into individual numeric components (year/month/day/
+   * time), so callers don't need to know each title's specific format (see
+   * `date-format.ts`) to interpret it. `null` when `date` itself is `null`
+   * or doesn't match that title's expected format.
+   */
+  parsedDate: ParsedDate | null;
   /**
    * The same recording moment as `date`, but as a raw Unix epoch (seconds,
    * UTC) read from a second, independent timestamp field embedded in the

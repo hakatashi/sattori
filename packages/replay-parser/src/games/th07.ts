@@ -2,6 +2,7 @@ import { decodeAnsiText } from "../byte-reader.js";
 import { localizeCharacterName } from "../character-names.js";
 import { ReplayCorruptError } from "../errors.js";
 import { additiveKeyDecode, decompress, readBufferedUint32LE } from "../lzss.js";
+import { DATE_TOKENS_MD, parseDateComponents } from "../date-format.js";
 import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 
@@ -140,6 +141,7 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
     formatVersion,
     player: normalizeText(name),
     date: normalizeText(date),
+    parsedDate: parseDateComponents(normalizeText(date), DATE_TOKENS_MD),
     recordedAt: null,
     character,
     characterNameJa,

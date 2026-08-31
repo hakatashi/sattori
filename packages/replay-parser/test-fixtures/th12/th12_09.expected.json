@@ -4,6 +4,15 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "15/02/14 11:43",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 15,
+    "month": 2,
+    "date": 14,
+    "hours": 11,
+    "minutes": 43,
+    "seconds": null
+  },
   "recordedAt": 1423881836,
   "character": "MarisaB",
   "characterNameJa": "魔符",
