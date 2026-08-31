@@ -1,4 +1,5 @@
-"""録画フェーズ中、record_th07.py が書き出す進捗スクリーンショット/状態
+"""録画フェーズ中、record_thNN.py の別プロセス(recording.artifacts.save_progress_snapshot())が
+書き出す進捗スクリーンショット/状態
 (progress_dir/frame.jpg, progress_dir/state.json)をポーリングし、S3へアップロード
 しつつDynamoDBへ進捗(実際に処理が完了した時間、秒)を反映するバックグラウンドスレッド
 (Issue #11)。

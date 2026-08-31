@@ -67,7 +67,7 @@ export function buildWorkerEnv(
     // リプレイずれの事後検証（Issue #103）用の期待スコア（画面表示値）。
     // ワーカーはMODが読んだゲーム内スコアをこれと突き合わせ、一致しなければ
     // `JobRecord.desyncDetected` を true にする
-    // （`worker/recording_common.py` の `check_replay_desync()`）。
+    // （`worker/recording/modlog.py` の `check_replay_desync()`）。
     env.EXPECTED_SCORE = String(job.replayInfo.score);
   }
   if (options.slowMotion) {

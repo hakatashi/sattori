@@ -10,9 +10,9 @@ PulseAudio のデフォルト sink(`module-always-sink` が自動生成する `a
 いること」だけなので、ジョブごとに専用の null-sink を作り、
 
   - ゲーム(Wine)側は環境変数 `PULSE_SINK` で出力先をその sink に固定する
-    (`recording_common.GameConfig.build_env()`)
+    (`recording.config.GameConfig.build_env()`)
   - 録音側 ffmpeg はその sink の monitor(`<sink名>.monitor`)を入力にする
-    (`recording_common.GameConfig.pulse_source`)
+    (`recording.config.GameConfig.pulse_source`)
 
 とすれば分離できる。reports/41 では疑似音源4並列(FFTで他ジョブの周波数が混入しない
 ことを確認)と実ゲーム2並列(片方を SIGSTOP すると対応する sink の録音だけが -91dB
