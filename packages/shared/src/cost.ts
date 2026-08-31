@@ -273,6 +273,7 @@ function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD
 function sizeClassOfGame(game: GameId): keyof typeof FALLBACK_SPOT_PRICE_USD_PER_HOUR {
   switch (game) {
     case "th11":
+    case "th12":
       return "2xlarge";
     case "th20":
       return "4xlarge";

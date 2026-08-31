@@ -254,6 +254,30 @@ describe("launchRecordingInstance", () => {
     }
   });
 
+  it("th12ジョブはc7i.2xlarge単独の専用インスタンスタイプで起動する", async () => {
+    ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
+      LaunchTemplateVersion: { VersionNumber: 3 },
+    });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-0123456789abcdef0"] }],
+    });
+
+    await launchRecordingInstance(config, { ...job, game: "th12" }, "task-token-abc");
+
+    const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
+    const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    // th12はth20と同じく実機検証済みの1タイプのみ（touhou-recorder reports/67）
+    expect(overrides).toEqual(
+      expect.arrayContaining([
+        { SubnetId: "subnet-aaaa", InstanceType: "c7i.2xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "c7i.2xlarge" },
+      ]),
+    );
+    for (const override of overrides) {
+      expect(override.InstanceType).toBe("c7i.2xlarge");
+    }
+  });
+
   it("インスタンスが起動できなかった場合は Errors を含めて例外を投げる", async () => {
     ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
       LaunchTemplateVersion: { VersionNumber: 1 },
