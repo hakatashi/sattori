@@ -75,7 +75,7 @@ th20（東方錦上京）はタイトル固有の制約が多い。詳細は
 
 ### 重複フレーム率の自動チェックは30秒のスポットしか見ていない
 
-`recording_common.measure_duplicate_rate` は**録画開始15〜45秒の30秒間しか測っていない**
+`recording.ffmpeg.measure_duplicate_rate` は**録画開始15〜45秒の30秒間しか測っていない**
 ため、録画の途中で起きる劣化を取りこぼす（§4 の劣化した回も 6.9% で閾値を通過したが、
 実際には全編にわたって1〜2秒の処理落ちが散発していた）。
 
@@ -86,7 +86,7 @@ th20（東方錦上京）はタイトル固有の制約が多い。詳細は
 
 Issue #103 で、MOD が1秒間隔で出すゲーム内スコア（`mods/common/score_monitor.*`）と
 リプレイファイルの記録スコア（`replayInfo.score`）を録画成功直後に突き合わせる検証を
-実装した（`worker/recording_common.check_replay_desync()`）。不一致を検知しても
+実装した（`worker/recording.modlog.check_replay_desync()`）。不一致を検知しても
 **自動リトライ・失敗扱いはせず**、`JobRecord.desyncDetected` に記録してユーザーへ
 注意書きを出すだけに留める（判定の信頼性が高くないため。MOD が RVA 直指定で読む
 ゲーム内部の生値に基づく判定で、ゲームデータのバージョンが変われば無意味な値になりうる）。
@@ -108,7 +108,7 @@ MODログには、グレイズも同時に壊れるゴミ値と、グレイズ�
 ### タイムアウト打ち切りは警告付き配信に留まる(Issue #161)
 
 リプレイ終了検知（テンプレート照合・画面静止）が働かず録画時間の上限で打ち切られた
-場合（`worker/recording_common.attempt_recording()`の`classification == "timeout"`）、
+場合（`worker/recording.pipeline.attempt_recording()`の`classification == "timeout"`）、
 以前は成功と全く同じ扱いで `status=done` になり、リプレイ終盤が欠けた動画が完成品と
 して配信されていた。現在はこの打ち切りを`JobRecord.timedOut`に記録し、`desyncDetected`
 （上記）と同じ警告UIで注意書きを出す（両方trueなら並べて表示）。ワーカーのログにも
@@ -179,7 +179,7 @@ CPUクーラー換装後の健全性確認(Issue #162)
 
 ### 録画処理がハングした場合の後片付けは頑健化済みだが、外側の保険は手動運用に留まる(Issue #186)
 
-`worker/recording_common.py` の `kill_wine_and_wait()` は、ゲームプロセスがD state
+`worker/recording/process.py` の `kill_wine_and_wait()` は、ゲームプロセスがD state
 (カーネルレベルで割り込み不可能)に陥り `wineserver -w` が60秒でタイムアウトしても、
 WINEPREFIX配下の残存プロセスをSIGKILLするフォールバックで後片付けを完了できるように
 なった。`_record_with_retry()` の各試行も想定外の例外を捕捉し、後片付け後に次の試行へ

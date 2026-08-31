@@ -46,7 +46,7 @@ Wine のドライブマッピングとして正規に存在する。`-h` はア�
 `worker/docs/titles/th06.md`）。
 
 `vpatch.exe` / `vpatch.ini` / `vpatch_th06.dll`（VsyncPatch 本体）は `games/th06` 直下に
-同梱し、`recording_common.py` の rsync で自動コピーさせる。
+同梱し、`recording.instance.prepare_instance()` の rsync で自動コピーさせる。
 
 ```bash
 tar -czf /tmp/th06-assets.tar.gz \
@@ -154,7 +154,7 @@ aws s3 cp /tmp/th20-assets.tar.gz \
 
 > アーカイブ内の `prefixes/th20-wined3d-gl/drive_c/users/hakatashi/` はこのままでよい。
 > ワーカーは実行中の UNIX ユーザーから `%APPDATA%` を解決する
-> （`recording_common.resolve_appdata_dir()`）ので、コンテナの実行ユーザー（root）と
+> （`recording.instance.resolve_appdata_dir()`）ので、コンテナの実行ユーザー（root）と
 > 一致させる必要はない。
 
 ## 3. WINEPREFIX の作成・更新（`setup_wineprefix.sh`）
@@ -178,7 +178,7 @@ done
 **このスクリプトが再現するのは touhou-recorder のレポートで実際に文書化・検証された範囲
 （プレフィックス初期化 + フォント修正）だけ**なので、それ以外に WINEPREFIX へ手作業で加えた
 変更があった場合は再現されない可能性がある。日本語ロケール（`LANG`/`LC_ALL`）はここでは
-扱わない（`recording_common.py` が起動時に毎回設定する。理由は
+扱わない（`recording.config.GameConfig.build_env()` が起動時に毎回設定する。理由は
 `worker/docs/titles/th07.md`）。**WINEPREFIX を作り直したら §2 でタイトル資産アーカイブを
 作り直してアップロードすること。**
 

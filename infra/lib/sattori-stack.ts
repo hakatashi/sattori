@@ -660,7 +660,7 @@ export class SattoriStack extends Stack {
       // 内訳は「録画自体のタイムアウト + 720pアップスケール変換・S3アップロード・
       // DynamoDB更新・taskToken通知の余裕(30分)」。
       //
-      // 録画のタイムアウト(`worker/recording_common.py`の`TIMEOUT_SEC`)は等倍で60分
+      // 録画のタイムアウト(`worker/recording/pipeline.py`の`TIMEOUT_SEC`)は等倍で60分
       // だが、低速録画(Issue #68)ではゲーム進行が半分の速度になるぶん同じ比率で
       // 伸びて120分になる。**このフェイルセーフはジョブごとに変えられない**ので、
       // 最も長くなる低速録画に合わせて 120 + 30 = 150分にしてある。等倍のジョブが

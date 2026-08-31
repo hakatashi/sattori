@@ -11,12 +11,12 @@ EC2 Fleet インスタンスの UserData から `docker run` で起動される�
      未展開ならS3からダウンロード・展開(title_assets.py、Issue #22。ワーカーイメージ
      自体はタイトル数に依存しない共通部分のみで構成し、タイトル固有アセットは実行時に
      取得する) → S3からリプレイをダウンロード → recording状態 → GAMEに応じた
-     record_{game}.py(recording_common.pyの共通録画パイプラインを使う、Issue #13)
+     record_{game}.py(recording/パッケージの共通録画パイプラインを使う、Issue #13)
      で録画(ProgressReporterが録画中のスクリーンショット/進捗をS3・DynamoDBへ反映する)
   3. 録画完了直後、生動画をS3へアップロードしoutputPathを保存(=チェックポイント) →
      status を converting に更新(併せてリプレイずれの事後検証結果 desyncDetected、
      タイムアウト打ち切りの有無 timedOut も書き込む。Issue #103・#161。
-     recording_common.check_replay_desync() / attempt_recording() 参照)
+     recording.modlog.check_replay_desync() / recording.pipeline.attempt_recording() 参照)
   4. 配信用変換(等倍への戻し・解像度合わせ・ウォーターマーク合成を1パスで。
      進捗%を10秒間隔程度で報告)
   5. 変換後動画をS3へアップロード → status を done に更新。出力が1本か2本かは
@@ -53,7 +53,7 @@ import pulse
 from convert import convert_for_delivery, needs_separate_raw_output, probe_resolution
 from interruption_watcher import InterruptionWatcher
 from progress_reporter import ProgressReporter
-from recording_common import slow_motion_scale
+from recording import slow_motion_scale
 from status import get_job, update_progress, update_status
 from task_heartbeat import TaskHeartbeat
 from title_assets import ensure_title_assets
@@ -73,7 +73,7 @@ TASK_TOKEN = os.environ.get("TASK_TOKEN")
 EXPECTED_DURATION_SECONDS = os.environ.get("EXPECTED_DURATION_SECONDS")
 # リプレイファイルに記録された最終スコア(画面表示値)。apps/api/src/workerEnv.tsが
 # job.replayInfo.scoreから転記する(未取得なら未設定)。リプレイずれの事後検証
-# (Issue #103、recording_common.check_replay_desync())に使う。
+# (Issue #103、recording.modlog.check_replay_desync())に使う。
 EXPECTED_SCORE = os.environ.get("EXPECTED_SCORE")
 
 REPO = "/app"
@@ -83,10 +83,10 @@ OUTPUT_VIDEO = f"{WORK_DIR}/video.mp4"
 OUTPUT_VIDEO_DELIVERY = f"{WORK_DIR}/video_delivery.mp4"
 PROGRESS_DIR = f"{WORK_DIR}/progress"
 # リプレイずれ検証(Issue #103)の結果。record_thNN.pyは別プロセスのため、戻り値を
-# ファイル経由で受け渡す(recording_common.write_desync_result()が書く)。
+# ファイル経由で受け渡す(recording.artifacts.write_desync_result()が書く)。
 DESYNC_RESULT_PATH = f"{WORK_DIR}/desync_result.json"
 # リプレイ終了を検知できずタイムアウトで打ち切られたか(Issue #161)の結果。
-# DESYNC_RESULT_PATHと同じくrecording_common.write_timeout_result()がファイル経由で書く。
+# DESYNC_RESULT_PATHと同じくrecording.artifacts.write_timeout_result()がファイル経由で書く。
 TIMEOUT_RESULT_PATH = f"{WORK_DIR}/timeout_result.json"
 # 出力オブジェクトキー。CloudFront はこのキーをパスとして配信する。
 # `OUTPUT_KEY` は録画直後の生データ(チェックポイント)の置き場でもある。
@@ -174,7 +174,7 @@ def on_interruption(reason, detail):
 
 def start_pulseaudio():
     # デーモンを起動するだけで、sink はここでは作らない。録音に使うジョブ専用の
-    # null-sink は録画スクリプト側(recording_common.record_with_retry →
+    # null-sink は録画スクリプト側(recording.pipeline.record_with_retry →
     # pulse.job_sink)が作成・破棄する(Issue #48)。デフォルト sink(`auto_null`)には
     # 依存しない設計のため、専用 sink のロードに伴って `module-always-sink` が
     # `auto_null` を落としても実害はない(touhou-recorder reports/41)。
