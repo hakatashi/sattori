@@ -97,7 +97,7 @@ they are distinguished by a version byte in the header.
 | `th095` | 東方文花帖 (StB) | Same as above |
 | `th10` | 東方風神録 (MoF) | Verified with checked-in replays in `test-fixtures/` |
 | `th11` | 東方地霊殿 (SA) | Verified with `test-fixtures/` + screenshots |
-| `th12` | 東方星蓮船 (UFO) | Verified with Silent Selene samples |
+| `th12` | 東方星蓮船 (UFO) | Verified with checked-in replays in `test-fixtures/` (covering all six characters and Hard/Extra/Lunatic) + Silent Selene samples |
 | `th125` | ダブルスポイラー (DS) | Verified with checked-in replays in `test-fixtures/` |
 | `th128` | 妖精大戦争 (GFW) | Verified with Silent Selene samples |
 | `th13` | 東方神霊廟 (TD) | Verified with `test-fixtures/` + screenshots |
