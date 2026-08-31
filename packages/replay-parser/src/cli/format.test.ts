@@ -17,6 +17,7 @@ describe("cli-format", () => {
     formatVersion: 5,
     player: "Hakata",
     date: "05/26/11",
+    recordedAt: null,
     character: "ReimuA",
     characterNameJa: "霊符",
     characterNameEn: "Reimu A",
