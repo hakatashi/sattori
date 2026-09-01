@@ -38,7 +38,7 @@
         "self": "Komachi",
         "opponent": "Cirno"
       },
-      "frameCount": null
+      "frameCount": 2185
     },
     {
       "stage": 2,
@@ -56,7 +56,7 @@
         "self": "Komachi",
         "opponent": "Reisen"
       },
-      "frameCount": null
+      "frameCount": 2017
     },
     {
       "stage": 3,
@@ -74,7 +74,7 @@
         "self": "Komachi",
         "opponent": "Sakuya"
       },
-      "frameCount": null
+      "frameCount": 2322
     },
     {
       "stage": 4,
@@ -92,7 +92,7 @@
         "self": "Komachi",
         "opponent": "Tewi"
       },
-      "frameCount": null
+      "frameCount": 2487
     },
     {
       "stage": 5,
@@ -110,7 +110,7 @@
         "self": "Komachi",
         "opponent": "Youmu"
       },
-      "frameCount": null
+      "frameCount": 2354
     },
     {
       "stage": 6,
@@ -128,7 +128,7 @@
         "self": "Komachi",
         "opponent": "Marisa"
       },
-      "frameCount": null
+      "frameCount": 3365
     },
     {
       "stage": 7,
@@ -146,7 +146,7 @@
         "self": "Komachi",
         "opponent": "Yuuka"
       },
-      "frameCount": null
+      "frameCount": 3516
     },
     {
       "stage": 8,
@@ -164,7 +164,7 @@
         "self": "Komachi",
         "opponent": "Reimu"
       },
-      "frameCount": null
+      "frameCount": 4565
     },
     {
       "stage": 9,
@@ -182,8 +182,8 @@
         "self": "Komachi",
         "opponent": "Eiki"
       },
-      "frameCount": null
+      "frameCount": 8613
     }
   ],
-  "frameCount": null
+  "frameCount": 31424
 }
