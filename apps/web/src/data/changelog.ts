@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-02",
+    ja: "東方花映塚 (th09) のリプレイで推定録画時間を表示できるように",
+    en: "Estimated recording duration is now shown for Phantasmagoria of Flower View (th09) replays",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/213",
+  },
+  {
+    date: "2026-09-02",
     ja: "東方星蓮船 (th12) の録画に対応",
     en: "Added recording support for Undefined Fantastic Object (th12)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/207",
