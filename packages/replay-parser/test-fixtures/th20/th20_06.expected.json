@@ -18,7 +18,7 @@
   "characterNameJa": "霊夢 赤1",
   "characterNameEn": "Reimu Red",
   "difficulty": "Lunatic",
-  "stage": "Stage 6",
+  "stage": "Stage 6 (Spell Practice No. 100)",
   "score": 8652600,
   "cleared": false,
   "splits": [
@@ -46,7 +46,8 @@
           "green": 0
         },
         "stonesTotal": 0,
-        "misses": 0
+        "misses": 0,
+        "spellCardNumber": 100
       },
       "frameCount": 3494
     }

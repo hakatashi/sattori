@@ -82,6 +82,7 @@ next record. The number of stages is at header offset 0xd4.
 | 0xd4 | u32 | Number of stage records |
 | 0xd8 | u32 | Shot (0 = Reimu / 1 = Marisa). Already used before this investigation |
 | 0xdc | u32 | Stone (index into `STONE_NAMES`). Already used before this investigation |
+| 0xfc | u32 | **Spell card index (zero-based) for a spell practice replay**; `0xffffffff` for every other kind of record |
 
 The timestamp at 0x10 was cross-checked against the USER section's `date` string
 (which is local time) on 86 files: **every difference came out as a whole number
@@ -89,6 +90,15 @@ of hours**, and the distribution — UTC+9 on 47, UTC+8 on 22, UTC+7 on 4, and s
 on — looks like a real spread of time zones. The layout is the same "fixed-width
 `name` immediately followed by an epoch" shape th10-th18 use; the only difference
 is that `name` is 16 bytes here (the same width as th17/th18).
+
+0xfc is **the only thing that identifies a spell practice recording in th20**.
+th08 writes the card out in full in its USER section (`カード名\tNo. 87
+恋符「ノンディレクショナルレーザー」`), but **th20 stores the card's name nowhere in
+the file** — its USER section only names the stage the card belongs to (`Stage 6`),
+which makes a spell practice record indistinguishable from a stage practice one.
+The single spell practice replay available here has 0xfc = 99 and is No. 100
+(Lunatic 「不生不滅の石の女神」) in the game's own Spell Practice list, so **the
+number the game displays is 0xfc + 1**. All 94 other files had `0xffffffff`.
 
 ### 3.2 Stage record (fixed 0x2a0 bytes)
 
@@ -223,6 +233,18 @@ The `a1ef72c0` side (lives 3 with 1/3 fragments, bombs 7 with 0/3, power 4.00,
   the increase in this counter, which suggests **th20 has some way of spending
   lives other than dying** (what that is has not been identified). Deaths were not
   re-counted frame by frame.
+- **Mapping the spell card number to a card name is unresolved.** The number
+  itself is available (§3.1), but the name is not stored in plain text in the
+  replay or in the game executable (`th20.dat` is a THA1 archive, compressed and
+  encrypted), so a name table would have to come from somewhere else. thprac,
+  which ships in the same game folder, embeds th20's 50 card names as UTF-8 (37
+  for Easy/Normal plus 13 for Hard/Lunatic), and 「不生不滅の石の女神」 is the 49th
+  of those (index 48) — while the replay's number is 99, so **thprac's list index
+  is not the game's number** (presumably it grows because each card is listed once
+  per difficulty, but one spell practice replay is not enough to pin the rule
+  down). thprac is also GPL-3.0, whereas this package is published under MIT, so
+  importing its table is a licensing decision as well as a technical one. For now
+  `stage` carries the number only, e.g. `Stage 6 (Spell Practice No. 100)`.
 - **The stage number of a practice record can disagree with the game's own replay
   list.** The checked-in fixture `th20_07.rpy` (a practice clear of Hard stage 6
   only) is listed as "St5" in-game, but both the USER section and the stage record

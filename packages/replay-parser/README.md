@@ -92,7 +92,7 @@ they are distinguished by a version byte in the header.
 | --- | --- | --- |
 | `th06` | 東方紅魔郷 (EoSD) | Verified with checked-in replays + in-game screenshots in `test-fixtures/` |
 | `th07` | 東方妖々夢 (PCB) | Same as above |
-| `th08` | 東方永夜抄 (IN) | Same as above (includes Shift_JIS character names) |
+| `th08` | 東方永夜抄 (IN) | Same as above (includes Shift_JIS character names, and a spell practice replay) |
 | `th09` | 東方花映塚 (PoFV) | Verified with checked-in replays in `test-fixtures/` (covering Story/Extra/Match) + samples obtained from [Silent Selene](https://www.silentselene.net/) |
 | `th095` | 東方文花帖 (StB) | Same as above |
 | `th10` | 東方風神録 (MoF) | Verified with checked-in replays in `test-fixtures/` |
@@ -164,11 +164,24 @@ Two th20-specific quirks are worth knowing when reading `splits`:
   was confirmed against the per-異変敵 levels shown on the in-game stage result
   screen. `additional.stonesTotal` is their sum.
 
-One more thing to be aware of when reading a practice-mode th20 replay: the
-game's own replay list can label the stage differently from what the replay
-actually contains (`test-fixtures/th20/th20_07.rpy` is a Hard stage 6 practice
-clear that the in-game list shows as "St5"). Both the USER section and the stage
-record say stage 6 there, which is what matches the actual playback.
+Two more things to be aware of when reading a practice-mode th20 replay:
+
+- **Spell practice replays carry the card number, not the card name.** Where th08
+  writes the whole card out in its USER section (so `stage` comes out as
+  `"カード名\tNo. 87 恋符「ノンディレクショナルレーザー」"`), th20 stores no card
+  name anywhere in the file — its USER section just names the stage the card
+  belongs to, which would make a spell practice replay indistinguishable from a
+  stage practice one. The body header does hold the card index, so `stage` gets
+  the game's own Spell Practice number appended
+  (`"Stage 6 (Spell Practice No. 100)"`) and `splits[0].additional` gains a
+  `spellCardNumber`. Resolving that number to a name would need a lookup table
+  this package does not have — see
+  [`docs/research/th20-replay-format.md`](../../docs/research/th20-replay-format.md)
+  §5 for what stands in the way.
+- **The game's own replay list can label the stage differently from what the
+  replay actually contains.** `test-fixtures/th20/th20_07.rpy` is a Hard stage 6
+  practice clear that the in-game list shows as "St5"; both the USER section and
+  the stage record say stage 6, which is what matches the actual playback.
 
 ## Output data
 
