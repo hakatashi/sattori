@@ -12,6 +12,8 @@
 
 | 検証日 | 内容 | 結論 |
 | --- | --- | --- |
+| [2026-09-01](2026-09-01-th12-2xlarge-instance-group-verification.md) | th12のc7a.2xlarge・m7i.2xlargeをAWS実機検証(Issue #76フォローアップ) | 両方とも良好(記録スコア完全一致・理論尺どおりの尺)。m7i.2xlargeの重複フレーム率12.7%は30秒スポット計測の局所ノイズと判明(秒単位再解析で裏付け) |
+| [2026-09-01](2026-09-01-th12-local-recording-verification.md) | th12（東方星蓮船）録画対応(Issue #76)をsattori本体の`record_th12.py`でローカル実機検証 | フル尺録画(1回目の試行で成功、重複フレーム率0.1%)・ウィンドウ最小化バグ対策(force_window_map)・VsyncPatch注入・終了検知(画面静止)・スコア完全一致いずれも成功 |
 | [2026-08-29](2026-08-29-th10-local-recording-verification.md) | th10（東方風神録）録画対応(Issue #75)をsattori本体の`record_th10.py`でローカル実機検証 | フル尺録画・終了検知(絞り込みテンプレート照合)・スコア完全一致・「バグマリ」修正オプションいずれも成功 |
 | [2026-08-31](2026-08-31-recording-package-split-verification.md) | `recording/`パッケージ分割(Issue #201・#188)後の録画パイプラインをth10・th20低速録画で実機確認 | th10はフル尺録画・終了検知・スコア完全一致まで初回試行で成功。th20も低速スケーリング・thprac・画面外ウィンドウ移動まで分割前と同じ挙動 |
 | [2026-08-27](2026-08-27-wine-cleanup-hang-incident.md) | 自宅ワーカーホストのsystemdハングインシデントの原因調査(Issue #186) | `kill_wine_and_wait()`のタイムアウト未捕捉でwineserver/winedeviceがホストに取り残され、system D-Busのメッセージキューを枯渇させたことが一因。修正済み |

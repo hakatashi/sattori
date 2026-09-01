@@ -1,6 +1,6 @@
 ---
 name: build-mods
-description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th10・th11・th20）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th20 は `-static` が必須など、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
+description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th10・th11・th12・th20）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th20 は `-static` が必須など、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
 ---
 
 # MOD（`*_hook.dll`）・injector.exe のビルド
@@ -46,6 +46,19 @@ i686-w64-mingw32-g++ -shared -O2 -o build/th10_hook.dll \
 cd worker/mods/th11_replay_autoplay
 mkdir -p build
 i686-w64-mingw32-g++ -shared -O2 -o build/th11_hook.dll \
+  dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
+  ../common/logging.cpp ../common/fps_monitor.cpp ../common/score_monitor.cpp \
+  -luser32 -static-libgcc -static-libstdc++
+```
+
+## th12
+
+th12はth10と同じPressKey（DIK経由）を使う（`worker/docs/titles/th12.md`）。
+
+```bash
+cd worker/mods/th12_replay_autoplay
+mkdir -p build
+i686-w64-mingw32-g++ -shared -O2 -o build/th12_hook.dll \
   dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
   ../common/logging.cpp ../common/fps_monitor.cpp ../common/score_monitor.cpp \
   -luser32 -static-libgcc -static-libstdc++

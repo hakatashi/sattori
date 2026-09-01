@@ -254,6 +254,34 @@ describe("launchRecordingInstance", () => {
     }
   });
 
+  it("th12ジョブは.2xlarge帯の専用インスタンスタイプ(3タイプ)で起動する", async () => {
+    ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
+      LaunchTemplateVersion: { VersionNumber: 3 },
+    });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-0123456789abcdef0"] }],
+    });
+
+    await launchRecordingInstance(config, { ...job, game: "th12" }, "task-token-abc");
+
+    const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
+    const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    // th11と同じ3タイプ全てが実機検証済み（`.2xlarge`帯実機検証済みグループ、decisions/0042）
+    expect(overrides).toEqual(
+      expect.arrayContaining([
+        { SubnetId: "subnet-aaaa", InstanceType: "c7i.2xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "c7i.2xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "c7a.2xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "c7a.2xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "m7i.2xlarge" },
+      ]),
+    );
+    // th06/07/08向けの.xlarge帯は含まれない
+    for (const override of overrides) {
+      expect(override.InstanceType).not.toMatch(/\.xlarge$/);
+    }
+  });
+
   it("インスタンスが起動できなかった場合は Errors を含めて例外を投げる", async () => {
     ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
       LaunchTemplateVersion: { VersionNumber: 1 },

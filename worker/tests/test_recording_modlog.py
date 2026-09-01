@@ -6,6 +6,13 @@ from recording import modlog
 from recording_helpers import make_config
 
 
+def test_game_score_multipliers_includes_th12():
+    # th12はthprac_th12.cppのscore(内部値)が画面表示値の1/10(他タイトルと同じ×10系列)。
+    # 欠落するとcheck_replay_desync()が倍率1のまま比較し、録画自体は成功するのに
+    # デシンク判定が常に不一致(desyncDetected: true)になる静かな不具合になる。
+    assert modlog.GAME_SCORE_MULTIPLIERS["th12"] == 10
+
+
 def test_wait_for_log_marker_finds_existing_marker(tmp_path):
     log_path = tmp_path / "th08_autoplay.log"
     log_path.write_text("some other line\nWaitForStableWindow: stable\n")

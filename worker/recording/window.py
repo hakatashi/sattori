@@ -19,6 +19,12 @@ def find_window(config, env, pid):
     out = subprocess.run(
         ["xdotool", "search", "--pid", str(pid)], env=env, capture_output=True, text=True
     ).stdout.split()
+    if config.force_window_map:
+        # 最小化(Iconic)状態で生成されるゲーム(th12)向けの対策。IsViewable判定に
+        # 載せるため検出した全ウィンドウを強制的に可視化する。既にマップ済みの
+        # ウィンドウに対して呼んでも副作用は無い(touhou-recorder reports/61)。
+        for w in out:
+            subprocess.run(["xdotool", "windowmap", w], env=env)
     for w in out:
         info = subprocess.run(["xwininfo", "-id", w], env=env, capture_output=True, text=True).stdout
         if "IsViewable" not in info:
