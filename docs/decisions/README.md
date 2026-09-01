@@ -53,6 +53,7 @@
 | [0039](0039-end-template-freeze-timeout.md) | 2026-08-30 | worker | end_template方式のタイトルにも画面が5分静止したら強制打ち切りする早期検知を追加する | 有効 |
 | [0040](0040-home-worker-title-assets-cache.md) | 2026-08-30 | worker / home-worker | 自宅ワーカーのタイトル資産はETagキー付き世代ディレクトリでキャッシュする | 有効 |
 | [0041](0041-worker-recording-package-split.md) | 2026-08-31 | worker | 録画パイプラインを`recording/`パッケージへ分割し、`record_thNN.py`はタイトル固有値だけのシムにする | 有効 |
+| [0042](0042-2xlarge-instance-type-group-precedent.md) | 2026-09-01 | apps/api | `c7i`/`c7a`/`m7i`の`.2xlarge`帯を実機検証済みグループとして扱い、新規タイトルは1タイプの検証で残り2タイプも候補に加えてよい | 有効 |
 
 ## 書き方
 

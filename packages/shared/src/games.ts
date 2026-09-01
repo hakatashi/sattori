@@ -199,12 +199,16 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
  * 除外マスク等、touhou-recorder reports/35〜39）、th20（%APPDATA%配下のcfg/replay・
  * 1280x960ウィンドウ・Presentフックによるfps制御、touhou-recorder reports/44〜48、
  * Issue #87）、th10（DIK経由の入力注入・VsyncPatchによる「バグマリ」修正オプション・
- * 絞り込み領域でのテンプレート照合、touhou-recorder reports/56〜60、Issue #75）を
+ * 絞り込み領域でのテンプレート照合、touhou-recorder reports/56〜60、Issue #75）、
+ * th12（DIK経由の入力注入とth11型メニュー構造のハイブリッド仕様・ウィンドウ最小化
+ * バグ対策・VsyncPatch常時有効化、touhou-recorder reports/61〜67、Issue #76）を
  * 追加した。
- * PoC（touhou-recorder）で E2E 実証済みなのはこの6本のみで、他タイトルは
+ * PoC（touhou-recorder）で E2E 実証済みなのはこの7本のみで、他タイトルは
  * MOD 移植（録画対応）が未着手（AGENTS.md 参照）。
  */
-export const SUPPORTED_GAME_IDS: readonly GameId[] = ["th06", "th07", "th08", "th10", "th11", "th20"];
+export const SUPPORTED_GAME_IDS: readonly GameId[] = [
+  "th06", "th07", "th08", "th10", "th11", "th12", "th20",
+];
 
 export function isSupportedGame(game: GameId): boolean {
   return SUPPORTED_GAME_IDS.includes(game);

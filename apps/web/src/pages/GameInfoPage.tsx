@@ -24,6 +24,7 @@ const TITLE_INFO: TitleInfo[] = [
   { id: "th08", version: "ver 1.00d" },
   { id: "th10", version: "ver 1.00a", vpatchRev: 4, th10BugfixOption: true },
   { id: "th11", version: "ver 1.00a" },
+  { id: "th12", version: "ver 1.00b" },
   { id: "th20", version: "ver 1.00c", thpracVersion: "2.3.0.3" },
 ];
 

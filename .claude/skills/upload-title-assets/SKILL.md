@@ -1,6 +1,6 @@
 ---
 name: upload-title-assets
-description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th07/th08/th10/th11/th20）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
+description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th07/th08/th10/th11/th12/th20）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
 ---
 
 # タイトル資産（ゲームデータ）の S3 アップロード
@@ -126,6 +126,25 @@ aws s3 cp /tmp/th11-assets.tar.gz \
   "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th11/assets.tar.gz"
 ```
 
+### th12（東方星蓮船）
+
+`games/th12` は `touhou-recorder` の `games/th12` から `rsync` でコピーする。
+VsyncPatch本体（`vpatch.exe` / `vpatch.ini` / `vpatch_th12.dll`）を `games/th12` 直下に
+同梱すること（th10と同じ`extra_dlls`の仕組みで注入される）。**th12はVsyncPatchを常時
+有効化する固定仕様**（th10の`BugFixTh10Power3`のような切替オプションは無い、
+`worker/docs/titles/th12.md`参照）なので、同梱する`vpatch.ini`の内容自体はどちらでも
+よい——`extra_dlls`に指定するだけでVsyncPatch本体が常に注入される。
+
+```bash
+tar -czf /tmp/th12-assets.tar.gz \
+  games/th12 \
+  prefixes/th12-wined3d-gl \
+  mods/common/build/injector.exe \
+  mods/th12_replay_autoplay/build/th12_hook.dll
+aws s3 cp /tmp/th12-assets.tar.gz \
+  "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th12/assets.tar.gz"
+```
+
 ### th20（東方錦上京）
 
 `games/th20`・`prefixes/th20-wined3d-gl` は `touhou-recorder` の同名ディレクトリから
@@ -159,7 +178,7 @@ aws s3 cp /tmp/th20-assets.tar.gz \
 
 ## 3. WINEPREFIX の作成・更新（`setup_wineprefix.sh`）
 
-6タイトルとも同じ手順（`wineboot -u` 初期化 + MS Gothic / MS Mincho 配置・レジストリ登録）で
+7タイトルとも同じ手順（`wineboot -u` 初期化 + MS Gothic / MS Mincho 配置・レジストリ登録）で
 作成する。`WINEPREFIX` 引数は**絶対パス必須**のため `$(pwd)` で絶対パス化して渡す。
 
 ローカルに X server がない場合は `xvfb-run -a` を前置する（`wineboot` の
@@ -167,7 +186,7 @@ aws s3 cp /tmp/th20-assets.tar.gz \
 
 ```bash
 cd worker
-for t in th06 th07 th08 th10 th11 th20; do
+for t in th06 th07 th08 th10 th11 th12 th20; do
   xvfb-run -a ./setup_wineprefix.sh "$(pwd)/prefixes/${t}-wined3d-gl" \
     "$(pwd)/games/assets/msgothic.ttc" "$(pwd)/games/assets/msmincho.ttc"
 done
