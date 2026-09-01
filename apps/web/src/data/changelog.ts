@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-02",
+    ja: "東方錦上京 (th20) のリプレイの推定録画時間の算出とステージ別記録の解析に対応",
+    en: "Estimated recording duration and per-stage records are now available for Fossilized Wonders (th20) replays",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/176",
+  },
+  {
+    date: "2026-09-02",
     ja: "東方花映塚 (th09) のリプレイの推定録画時間の算出に対応",
     en: "Estimated recording duration is now shown for Phantasmagoria of Flower View (th09) replays",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/213",
