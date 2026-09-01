@@ -20,6 +20,7 @@ describe("GameInfoPage", () => {
     expect(
       screen.getByText("魔理沙Bのショット威力バグ修正オプションが利用可能 (BugFixTh10Power3)"),
     ).toBeTruthy();
+    expect(screen.getByText("スコア21億でのオーバーフローバグ修正適用済み")).toBeTruthy();
   });
 
   it("th20にthpracの適用バージョンを表示する", () => {
