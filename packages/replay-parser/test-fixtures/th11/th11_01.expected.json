@@ -4,6 +4,16 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "14/12/04 18:24",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 14,
+    "month": 12,
+    "date": 4,
+    "hours": 18,
+    "minutes": 24,
+    "seconds": null
+  },
+  "recordedAt": 1417685055,
   "character": "ReimuA",
   "characterNameJa": "霊夢A",
   "characterNameEn": "Reimu A (Yukari)",

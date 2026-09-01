@@ -4,6 +4,16 @@
   "formatVersion": 5,
   "player": "koyi",
   "date": "01/18",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": null,
+    "month": 1,
+    "date": 18,
+    "hours": null,
+    "minutes": null,
+    "seconds": null
+  },
+  "recordedAt": null,
   "character": "MarisaA",
   "characterNameJa": "魔符",
   "characterNameEn": "Marisa A",

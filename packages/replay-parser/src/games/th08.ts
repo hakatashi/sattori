@@ -3,6 +3,7 @@ import { localizeCharacterName } from "../character-names.js";
 import { ReplayCorruptError } from "../errors.js";
 import { additiveKeyDecode, decompress, readBufferedUint32LE } from "../lzss.js";
 import { jumpToUser, parseIntStrict } from "../userdata.js";
+import { DATE_TOKENS_FULL, parseDateComponents } from "../date-format.js";
 import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 
@@ -116,6 +117,8 @@ export function parseTh08(original: Uint8Array): ParsedReplay {
     formatVersion: null,
     player: normalizeText(name),
     date: normalizeText(date),
+    parsedDate: parseDateComponents(normalizeText(date), DATE_TOKENS_FULL),
+    recordedAt: null,
     character: characterName,
     characterNameJa,
     characterNameEn,

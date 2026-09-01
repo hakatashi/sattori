@@ -2,6 +2,7 @@ import { ByteReader } from "../byte-reader.js";
 import { localizeCharacterName } from "../character-names.js";
 import { readBufferedUint32LE } from "../lzss.js";
 import { readModernUserdata } from "../userdata.js";
+import { DATE_TOKENS_YMD_HM, parseDateComponents } from "../date-format.js";
 import { normalizeText, type ParsedReplay } from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
@@ -88,7 +89,12 @@ export function parseTh20(original: Uint8Array): ParsedReplay {
     gameTitle: REPLAY_GAME_TITLES.th20,
     formatVersion: null,
     player: normalizeText(userdata.name),
+    // th20's body header layout differs from th10-th18's (see
+    // TH20_HEADER_SIZE/SHOT_OFFSET above), so RECORDED_AT_OFFSET_* does not
+    // apply here; that title's equivalent field has not been located.
+    recordedAt: null,
     date: normalizeText(userdata.date),
+    parsedDate: parseDateComponents(normalizeText(userdata.date), DATE_TOKENS_YMD_HM),
     character,
     characterNameJa,
     characterNameEn,

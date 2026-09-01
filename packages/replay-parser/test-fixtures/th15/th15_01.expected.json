@@ -4,6 +4,16 @@
   "formatVersion": null,
   "player": null,
   "date": "25/10/22 02:23",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 25,
+    "month": 10,
+    "date": 22,
+    "hours": 2,
+    "minutes": 23,
+    "seconds": null
+  },
+  "recordedAt": 1761067429,
   "character": "Reimu",
   "characterNameJa": "霊夢",
   "characterNameEn": "Reimu",

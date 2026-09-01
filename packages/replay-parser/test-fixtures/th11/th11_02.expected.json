@@ -4,6 +4,16 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "14/12/09 21:26",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 14,
+    "month": 12,
+    "date": 9,
+    "hours": 21,
+    "minutes": 26,
+    "seconds": null
+  },
+  "recordedAt": 1418127974,
   "character": "MarisaC",
   "characterNameJa": "魔理沙C",
   "characterNameEn": "Marisa C (Nitori)",
