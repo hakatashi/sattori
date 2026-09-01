@@ -1,0 +1,189 @@
+{
+  "game": "th09",
+  "gameTitle": "東方花映塚 ～ Phantasmagoria of Flower View.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "26/01/31",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 1,
+    "date": 31,
+    "hours": null,
+    "minutes": null,
+    "seconds": null
+  },
+  "recordedAt": null,
+  "character": "Komachi",
+  "characterNameJa": "小町",
+  "characterNameEn": "Komachi",
+  "difficulty": "Extra",
+  "stage": "Extra",
+  "score": null,
+  "cleared": null,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 0,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Komachi",
+        "opponent": "Cirno"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 2,
+      "score": 2646580,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 0,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Komachi",
+        "opponent": "Reisen"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 3,
+      "score": 4564970,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 0,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Komachi",
+        "opponent": "Sakuya"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 4,
+      "score": 7942340,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 1,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Komachi",
+        "opponent": "Tewi"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 5,
+      "score": 10309750,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Komachi",
+        "opponent": "Youmu"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 6,
+      "score": 12702390,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Komachi",
+        "opponent": "Marisa"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 7,
+      "score": 16829750,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Komachi",
+        "opponent": "Yuuka"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 8,
+      "score": 23829620,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 4,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Komachi",
+        "opponent": "Reimu"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 9,
+      "score": 28311880,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 4,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Komachi",
+        "opponent": "Eiki"
+      },
+      "frameCount": null
+    }
+  ],
+  "frameCount": null
+}

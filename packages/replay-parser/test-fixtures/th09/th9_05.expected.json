@@ -1,0 +1,41 @@
+{
+  "game": "th09",
+  "gameTitle": "東方花映塚 ～ Phantasmagoria of Flower View.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "26/02/04",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 2,
+    "date": 4,
+    "hours": null,
+    "minutes": null,
+    "seconds": null
+  },
+  "recordedAt": null,
+  "character": "Reimu",
+  "characterNameJa": "霊夢",
+  "characterNameEn": "Reimu",
+  "difficulty": "Hard",
+  "stage": "Match 人 vs 式",
+  "score": null,
+  "cleared": null,
+  "splits": [
+    {
+      "stage": null,
+      "score": null,
+      "power": null,
+      "piv": null,
+      "lives": null,
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Reimu",
+        "opponent": "Yuuka"
+      },
+      "frameCount": null
+    }
+  ],
+  "frameCount": null
+}

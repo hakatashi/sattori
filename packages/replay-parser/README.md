@@ -93,7 +93,7 @@ they are distinguished by a version byte in the header.
 | `th06` | 東方紅魔郷 (EoSD) | Verified with checked-in replays + in-game screenshots in `test-fixtures/` |
 | `th07` | 東方妖々夢 (PCB) | Same as above |
 | `th08` | 東方永夜抄 (IN) | Same as above (includes Shift_JIS character names) |
-| `th09` | 東方花映塚 (PoFV) | Verified with real replays (samples obtained from [Silent Selene](https://www.silentselene.net/)) |
+| `th09` | 東方花映塚 (PoFV) | Verified with checked-in replays in `test-fixtures/` (covering Story/Extra/Match) + samples obtained from [Silent Selene](https://www.silentselene.net/) |
 | `th095` | 東方文花帖 (StB) | Same as above |
 | `th10` | 東方風神録 (MoF) | Verified with checked-in replays in `test-fixtures/` |
 | `th11` | 東方地霊殿 (SA) | Verified with `test-fixtures/` + screenshots |
