@@ -3,7 +3,7 @@
   "gameTitle": "東方錦上京 ～ Fossilized Wonders.",
   "formatVersion": null,
   "player": "koyi",
-  "recordedAt": null,
+  "recordedAt": 1762677680,
   "date": "25/11/09 17:41",
   "parsedDate": {
     "fullYear": null,
@@ -21,6 +21,175 @@
   "stage": "Stage All Clear",
   "score": 481237400,
   "cleared": true,
-  "splits": [],
-  "frameCount": null
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "1.00",
+      "piv": 0,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 0,
+      "additional": {
+        "stones": {
+          "red": 0,
+          "blue": 0,
+          "yellow": 0,
+          "green": 0
+        },
+        "stonesTotal": 0,
+        "misses": 0
+      },
+      "frameCount": 10787
+    },
+    {
+      "stage": 2,
+      "score": 10230980,
+      "power": "4.00",
+      "piv": 15101,
+      "lives": {
+        "count": 2,
+        "pieces": 1,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 4,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 329,
+      "additional": {
+        "stones": {
+          "red": 4,
+          "blue": 0,
+          "yellow": 1,
+          "green": 0
+        },
+        "stonesTotal": 5,
+        "misses": 0
+      },
+      "frameCount": 13227
+    },
+    {
+      "stage": 3,
+      "score": 41377430,
+      "power": "3.90",
+      "piv": 50394,
+      "lives": {
+        "count": 1,
+        "pieces": 2,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 833,
+      "additional": {
+        "stones": {
+          "red": 8,
+          "blue": 1,
+          "yellow": 2,
+          "green": 2
+        },
+        "stonesTotal": 13,
+        "misses": 1
+      },
+      "frameCount": 16419
+    },
+    {
+      "stage": 4,
+      "score": 91925170,
+      "power": "4.00",
+      "piv": 122869,
+      "lives": {
+        "count": 3,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 2,
+        "maxPieces": 3
+      },
+      "graze": 1233,
+      "additional": {
+        "stones": {
+          "red": 12,
+          "blue": 3,
+          "yellow": 3,
+          "green": 3
+        },
+        "stonesTotal": 21,
+        "misses": 3
+      },
+      "frameCount": 18735
+    },
+    {
+      "stage": 5,
+      "score": 255599310,
+      "power": "4.00",
+      "piv": 188990,
+      "lives": {
+        "count": 3,
+        "pieces": 1,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": 1,
+        "maxPieces": 3
+      },
+      "graze": 1939,
+      "additional": {
+        "stones": {
+          "red": 19,
+          "blue": 4,
+          "yellow": 5,
+          "green": 4
+        },
+        "stonesTotal": 32,
+        "misses": 4
+      },
+      "frameCount": 16162
+    },
+    {
+      "stage": 6,
+      "score": 442976170,
+      "power": "3.67",
+      "piv": 236567,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 1,
+        "maxPieces": 3
+      },
+      "graze": 2783,
+      "additional": {
+        "stones": {
+          "red": 25,
+          "blue": 5,
+          "yellow": 6,
+          "green": 6
+        },
+        "stonesTotal": 42,
+        "misses": 7
+      },
+      "frameCount": 22678
+    }
+  ],
+  "frameCount": 98008
 }
