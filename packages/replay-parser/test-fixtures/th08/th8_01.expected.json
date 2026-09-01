@@ -1,0 +1,50 @@
+{
+  "game": "th08",
+  "gameTitle": "東方永夜抄 ～ Imperishable Night.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "2026/09/02 16:45:28",
+  "parsedDate": {
+    "fullYear": 2026,
+    "shortYear": null,
+    "month": 9,
+    "date": 2,
+    "hours": 16,
+    "minutes": 45,
+    "seconds": 28
+  },
+  "recordedAt": null,
+  "character": "咲夜＆レミリア",
+  "characterNameJa": "紅魔組",
+  "characterNameEn": "Sakuya & Remilia",
+  "difficulty": "Normal",
+  "stage": "カード名\tNo. 87 恋符「ノンディレクショナルレーザー」",
+  "score": 15068010,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 4,
+      "score": 15068010,
+      "power": "128",
+      "piv": 100000,
+      "lives": {
+        "count": 8,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": 0,
+      "additional": {
+        "pointItems": 0,
+        "pointItemExtends": 0,
+        "route": "4B"
+      },
+      "frameCount": 1514
+    }
+  ],
+  "frameCount": 1514
+}
