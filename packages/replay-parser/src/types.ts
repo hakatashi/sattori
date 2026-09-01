@@ -23,6 +23,16 @@ export interface ReplayResourceCount {
 }
 
 /**
+ * A value inside `ReplayStageSplit.additional`. Most titles only need a
+ * scalar or a list (`{ ufoColors: ["Red", "None", "None"] }` for th12,
+ * `{ cards: [...] }` for th18), but a title may also use a flat record when
+ * the values are a fixed set of *named* slots rather than an ordered list —
+ * th20's `stones`, whose four entries are per-colour and whose order would
+ * otherwise have to be documented separately (see `src/games/th20.ts`).
+ */
+export type ReplayStageSplitExtra = number | string | (number | string)[] | Record<string, number>;
+
+/**
  * A per-stage record. Games track different fields, so fields not tracked by
  * a given game are null.
  */
@@ -52,7 +62,7 @@ export interface ReplayStageSplit {
    * names and value shapes differ by game (see the comments in each game's
    * decoder implementation). Null for games without such data.
    */
-  additional: Record<string, number | string | (number | string)[]> | null;
+  additional: Record<string, ReplayStageSplitExtra> | null;
   /**
    * Number of in-game frames played during this stage/segment (i.e. from
    * this checkpoint up to the next one, or to the end of the replay for the
@@ -92,10 +102,12 @@ export interface ParsedReplay {
   /**
    * The same recording moment as `date`, but as a raw Unix epoch (seconds,
    * UTC) read from a second, independent timestamp field embedded in the
-   * decompressed body — available only for th10-th18 (see
+   * decompressed body — available for th10-th18 (see
    * `RECORDED_AT_OFFSET_12BYTE_NAME`/`_16BYTE_NAME` in `games/modern-body.ts`
    * for offsets, field-width caveats, and cross-validation against real
-   * replays). Unlike `date`, this always carries the full 4-digit year and
+   * replays) and for th20 (`RECORDED_AT_OFFSET` in `games/th20.ts`, whose
+   * body header lays the surrounding fields out differently). Unlike `date`,
+   * this always carries the full 4-digit year and
    * (for these titles) second-level precision rather than `date`'s minute
    * resolution — but it is still just the recording PC's system clock, so
    * it carries the same "only as correct as that clock/timezone" caveat.
