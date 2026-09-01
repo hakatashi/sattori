@@ -21,16 +21,13 @@ import { decodeModernBody } from "./modern-body.js";
  */
 const TH20_HEADER_SIZE = 48;
 
-/**
- * Offsets within th20's decompressed body header. `SHOT_OFFSET`/`STONE0_OFFSET`
- * were confirmed against thscoreboard's `replays/kaitai_parsers/th20.py`
- * (`Th20.Header`); the rest were reverse-engineered by this package (Issue
- * #176) — see the comment on `TH20_STAGE_RECORD` below for how, and
- * `docs/research/th20-replay-format.md` for the full write-up.
- *
- * The body header is exactly `BODY_HEADER_SIZE` (0x100) bytes; the per-stage
- * records start immediately after it.
- */
+// Offsets within th20's decompressed body header. `SHOT_OFFSET`/`STONE0_OFFSET`
+// were confirmed against thscoreboard's `replays/kaitai_parsers/th20.py`
+// (`Th20.Header`); the rest were reverse-engineered by this package (Issue
+// #176) — see the comment on `TH20_STAGE_RECORD` below for how, and
+// `docs/research/th20-replay-format.md` for the full write-up. The header is
+// exactly `BODY_HEADER_SIZE` (0x100) bytes; the per-stage records start
+// immediately after it.
 /**
  * Unix epoch (seconds, UTC) of the recording, immediately after the 16-byte
  * fixed-width `name` field — the same shape th10-th18 use, which is why the
@@ -44,6 +41,22 @@ const RECORDED_AT_OFFSET = 0x10;
 const STAGE_COUNT_OFFSET = 0xd4;
 const SHOT_OFFSET = 0xd8;
 const STONE0_OFFSET = 0xdc;
+/**
+ * Zero-based index of the spell card, for a spell practice replay;
+ * `NOT_SPELL_PRACTICE` for every other kind of replay. Unlike th08 — whose
+ * USER section spells out `"カード名\tNo. 87 恋符「…」"` — th20 records nothing
+ * about the card in text form anywhere in the file (its USER section just says
+ * `Stage 6`, the stage the card belongs to), so this number is the only thing
+ * distinguishing a spell practice replay from a stage practice one.
+ *
+ * The number matches the "No." the game's own Spell Practice menu shows, plus
+ * one: the single spell practice replay available while this was worked out
+ * holds 99 here and is No. 100 (Lunatic 「不生不滅の石の女神」) in-game. The
+ * name itself is *not* resolved — see `docs/research/th20-replay-format.md` §5
+ * for why mapping the index to a card name is still an open question.
+ */
+const SPELL_CARD_OFFSET = 0xfc;
+const NOT_SPELL_PRACTICE = 0xffffffff;
 const BODY_HEADER_SIZE = 0x100;
 
 const SHOT_BASES = ["Reimu", "Marisa"];
@@ -64,11 +77,12 @@ const STONE_NAMES = ["Red", "Red2", "Blue", "Blue2", "Yellow", "Yellow2", "Green
  * following input log's length is `INPUT_SIZE`, which is what makes the chain
  * walkable.
  *
- * Verified on 90 real replays (61 sampled from Silent Selene across all
- * difficulties + Extra + stage practice, 25 from Sattori's own production jobs,
- * 4 checked-in fixtures): walking the chain lands *exactly* on the end of the
- * decompressed body in every case, and the record count always equals the
- * body header's `STAGE_COUNT_OFFSET` field. See `docs/research/th20-replay-format.md`.
+ * Verified on 88 distinct real replays / 420 stage records (sampled from Silent
+ * Selene across all difficulties plus Extra, from Sattori's own production jobs,
+ * and from the checked-in fixtures, which cover Extra, spell practice and stage
+ * practice too): walking the chain lands *exactly* on the end of the decompressed
+ * body in every case, and the record count always equals the body header's
+ * `STAGE_COUNT_OFFSET` field. See `docs/research/th20-replay-format.md`.
  */
 const TH20_STAGE_RECORD = {
   /** Fixed record size. The variable-length input log follows immediately after. */
@@ -87,7 +101,7 @@ const TH20_STAGE_RECORD = {
    * Byte length of the input log that follows this record. It is fully
    * determined by `FRAME_COUNT` as `6 * frames + ceil(frames / 30)` (6 bytes
    * of input state per frame plus a 1-byte marker per 30-frame block), which
-   * holds for all 447 stage records checked and is what `isPlausibleRecord`
+   * holds for all 420 stage records checked and is what `isPlausibleRecord`
    * uses as a structural sanity check.
    */
   INPUT_SIZE: 0x0c,
@@ -167,7 +181,19 @@ function isPlausibleRecord(body: Uint8Array, offset: number): boolean {
   return offset + TH20_STAGE_RECORD.SIZE + inputSize <= body.length;
 }
 
-function readStageRecords(body: Uint8Array): { splits: ReplayStageSplit[]; frameCount: number | null } {
+/**
+ * The Spell Practice card number the game itself displays (1-based), or `null`
+ * if this is not a spell practice replay. See `SPELL_CARD_OFFSET`.
+ */
+function readSpellCardNumber(body: Uint8Array): number | null {
+  const index = readBufferedUint32LE(body, SPELL_CARD_OFFSET);
+  return index === NOT_SPELL_PRACTICE ? null : index + 1;
+}
+
+function readStageRecords(
+  body: Uint8Array,
+  spellCardNumber: number | null,
+): { splits: ReplayStageSplit[]; frameCount: number | null } {
   const stageCount = Math.min(readBufferedUint32LE(body, STAGE_COUNT_OFFSET), MAX_STAGE_RECORDS);
   const splits: ReplayStageSplit[] = [];
   let frameCount = 0;
@@ -193,6 +219,7 @@ function readStageRecords(body: Uint8Array): { splits: ReplayStageSplit[]; frame
       stones,
       stonesTotal: field(TH20_STAGE_RECORD.STONES_TOTAL),
       misses: field(TH20_STAGE_RECORD.MISSES),
+      ...(spellCardNumber === null ? {} : { spellCardNumber }),
     };
     const stageFrameCount = field(TH20_STAGE_RECORD.FRAME_COUNT);
     split.frameCount = stageFrameCount;
@@ -230,6 +257,12 @@ function readStageRecords(body: Uint8Array): { splits: ReplayStageSplit[]; frame
  * th20's per-stage record (Issue #176, `docs/research/th20-replay-format.md`),
  * which no other project decodes.
  */
+function spellPracticeStage(stage: string | null, spellCardNumber: number | null): string | null {
+  if (spellCardNumber === null) return stage;
+  const suffix = `Spell Practice No. ${spellCardNumber}`;
+  return stage === null ? suffix : `${stage} (${suffix})`;
+}
+
 export function parseTh20(original: Uint8Array): ParsedReplay {
   const userdata = readModernUserdata(new ByteReader(original));
 
@@ -243,7 +276,8 @@ export function parseTh20(original: Uint8Array): ParsedReplay {
   const stoneName = STONE_NAMES[readBufferedUint32LE(decodedata, STONE0_OFFSET)] ?? null;
   const character = shotBase !== null && stoneName !== null ? `${shotBase}${stoneName}` : null;
   const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName("th20", character);
-  const { splits, frameCount } = readStageRecords(decodedata);
+  const spellCardNumber = readSpellCardNumber(decodedata);
+  const { splits, frameCount } = readStageRecords(decodedata, spellCardNumber);
 
   return {
     game: "th20",
@@ -262,7 +296,12 @@ export function parseTh20(original: Uint8Array): ParsedReplay {
     characterNameJa,
     characterNameEn,
     difficulty: normalizeText(userdata.difficulty),
-    stage: normalizeText(userdata.stage),
+    // A spell practice replay's USER section only names the stage the card
+    // belongs to, which makes it indistinguishable from a stage practice
+    // record of the same stage. th08 has no such problem because its own USER
+    // section spells the card out; for th20 the number has to be appended here
+    // (see `SPELL_CARD_OFFSET`).
+    stage: spellPracticeStage(normalizeText(userdata.stage), spellCardNumber),
     score: userdata.score,
     cleared: userdata.stage.includes("Clear"),
     splits,
