@@ -371,10 +371,24 @@ Currently populated for:
   `Fluorohydride/threp`'s own C++ implementation (which reads this field to
   reconstruct input logs for its own purposes) and independently against
   `yiyuezhuo/touhou-replay-decoder`.
+- **th09**: same reverse-engineering approach as th07/th08 (a fixed-size
+  per-checkpoint header followed by one fixed-width record per frame), with
+  its own independently derived constants (a 32-byte header, 2 bytes/frame).
+  th09 stores the self player's stage-by-stage log and the opponent's as two
+  separate concatenated blocks (`scoreOffsets[0..9]` and `[10..19]`), so the
+  self player's last stage/match doesn't run to the end of the decompressed
+  body — its true end is the first populated slot of `[10..19]`. Two more
+  blocks (`[20..29]`, `[30..39]`) mirror the same checkpoint spacing but are
+  not used for `frameCount`. Cross-validated against real in-game timer
+  readouts for all 9 stages of a checked-in fixture (`th9_07.rpy`): the
+  computed frame count consistently overshoots the timer-based lower bound by
+  an amount that scales with how many retries that stage had, rather than
+  being random noise — see the comments on `STAGE_CHECKPOINT_HEADER_SIZE` in
+  `src/games/th09.ts`.
 
-`null` for every other supported title (th09, th095, th125, th128,
-th143/th165, th20) — the per-frame input log location for those has not
-been reverse-engineered yet.
+`null` for every other supported title (th095, th125, th128, th143/th165,
+th20) — the per-frame input log location for those has not been
+reverse-engineered yet.
 
 `splits[].frameCount` breaks the same total down per stage/segment (frames
 played from that checkpoint up to the next one, or to the end of the replay
