@@ -1,0 +1,189 @@
+{
+  "game": "th09",
+  "gameTitle": "東方花映塚 ～ Phantasmagoria of Flower View.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "26/01/29",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 1,
+    "date": 29,
+    "hours": null,
+    "minutes": null,
+    "seconds": null
+  },
+  "recordedAt": null,
+  "character": "Aya",
+  "characterNameJa": "文",
+  "characterNameEn": "Aya",
+  "difficulty": "Normal",
+  "stage": "Story",
+  "score": null,
+  "cleared": null,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Aya",
+        "opponent": "Mystia"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 2,
+      "score": 1586830,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Aya",
+        "opponent": "Cirno"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 3,
+      "score": 4109140,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Aya",
+        "opponent": "Sakuya"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 4,
+      "score": 5792910,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Aya",
+        "opponent": "Reimu"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 5,
+      "score": 8268340,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Aya",
+        "opponent": "Reisen"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 6,
+      "score": 12102750,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Aya",
+        "opponent": "Marisa"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 7,
+      "score": 17919650,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Aya",
+        "opponent": "Medicine"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 8,
+      "score": 22622610,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Aya",
+        "opponent": "Komachi"
+      },
+      "frameCount": null
+    },
+    {
+      "stage": 9,
+      "score": 28408750,
+      "power": null,
+      "piv": null,
+      "lives": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": null,
+      "graze": null,
+      "additional": {
+        "self": "Aya",
+        "opponent": "Eiki"
+      },
+      "frameCount": null
+    }
+  ],
+  "frameCount": null
+}
