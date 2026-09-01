@@ -81,7 +81,7 @@ const gameTitles = [
     japanese: "東方星蓮船",
     english: "Undefined\nFantastic Object",
     shortName: "UFO",
-    supported: false,
+    supported: true,
     icon: 'th12.png',
   },
   {
