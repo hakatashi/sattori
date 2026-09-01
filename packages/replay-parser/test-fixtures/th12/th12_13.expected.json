@@ -1,0 +1,52 @@
+{
+  "game": "th12",
+  "gameTitle": "東方星蓮船 ～ Undefined Fantastic Object.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "15/02/22 02:35",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 15,
+    "month": 2,
+    "date": 22,
+    "hours": 2,
+    "minutes": 35,
+    "seconds": null
+  },
+  "recordedAt": 1424540105,
+  "character": "SanaeB",
+  "characterNameJa": "蛙符",
+  "characterNameEn": "Sanae B",
+  "difficulty": "Lunatic",
+  "stage": "Stage 6",
+  "score": 68174500,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 6,
+      "score": 0,
+      "power": "2.00",
+      "piv": 20000,
+      "lives": {
+        "count": 9,
+        "pieces": 0,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 0,
+      "additional": {
+        "ufoColors": [
+          "None",
+          "None",
+          "None"
+        ]
+      },
+      "frameCount": 16094
+    }
+  ],
+  "frameCount": 16094
+}

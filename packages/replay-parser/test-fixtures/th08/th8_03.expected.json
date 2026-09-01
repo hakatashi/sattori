@@ -4,6 +4,16 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "2026/01/24 16:18:16",
+  "parsedDate": {
+    "fullYear": 2026,
+    "shortYear": null,
+    "month": 1,
+    "date": 24,
+    "hours": 16,
+    "minutes": 18,
+    "seconds": 16
+  },
+  "recordedAt": null,
   "character": "博麗　霊夢",
   "characterNameJa": "霊夢",
   "characterNameEn": "Reimu",

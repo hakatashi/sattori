@@ -1,0 +1,52 @@
+{
+  "game": "th12",
+  "gameTitle": "東方星蓮船 ～ Undefined Fantastic Object.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "15/04/25 17:44",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 15,
+    "month": 4,
+    "date": 25,
+    "hours": 17,
+    "minutes": 44,
+    "seconds": null
+  },
+  "recordedAt": 1429951451,
+  "character": "ReimuA",
+  "characterNameJa": "夢符",
+  "characterNameEn": "Reimu A",
+  "difficulty": "Extra",
+  "stage": "Extra Stage Clear",
+  "score": 234405400,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 7,
+      "score": 0,
+      "power": "1.00",
+      "piv": 20000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 0,
+      "additional": {
+        "ufoColors": [
+          "None",
+          "None",
+          "None"
+        ]
+      },
+      "frameCount": 44070
+    }
+  ],
+  "frameCount": 44070
+}

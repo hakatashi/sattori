@@ -4,6 +4,16 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "11/11/03 03:04",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 11,
+    "month": 11,
+    "date": 3,
+    "hours": 3,
+    "minutes": 4,
+    "seconds": null
+  },
+  "recordedAt": 1320257078,
   "character": "ReimuB",
   "characterNameJa": "霊夢B",
   "characterNameEn": "Reimu B",

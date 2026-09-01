@@ -1,4 +1,7 @@
+import type { ParsedDate } from "./date-format.js";
 import type { ReplayGameId } from "./game-ids.js";
+
+export type { ParsedDate } from "./date-format.js";
 
 /**
  * A resource count made up of a "whole unit count" plus "fragments toward the
@@ -79,6 +82,26 @@ export interface ParsedReplay {
   player: string | null;
   /** Recording date/time, kept verbatim as it appears in the source data (e.g. "25/12/31"). */
   date: string | null;
+  /**
+   * `date` broken down into individual numeric components (year/month/day/
+   * time), so callers don't need to know each title's specific format (see
+   * `date-format.ts`) to interpret it. `null` when `date` itself is `null`
+   * or doesn't match that title's expected format.
+   */
+  parsedDate: ParsedDate | null;
+  /**
+   * The same recording moment as `date`, but as a raw Unix epoch (seconds,
+   * UTC) read from a second, independent timestamp field embedded in the
+   * decompressed body — available only for th10-th18 (see
+   * `RECORDED_AT_OFFSET_12BYTE_NAME`/`_16BYTE_NAME` in `games/modern-body.ts`
+   * for offsets, field-width caveats, and cross-validation against real
+   * replays). Unlike `date`, this always carries the full 4-digit year and
+   * (for these titles) second-level precision rather than `date`'s minute
+   * resolution — but it is still just the recording PC's system clock, so
+   * it carries the same "only as correct as that clock/timezone" caveat.
+   * `null` for every other title.
+   */
+  recordedAt: number | null;
   character: string | null;
   /**
    * Japanese display name for `character` (e.g. `character: "ReimuA"` →

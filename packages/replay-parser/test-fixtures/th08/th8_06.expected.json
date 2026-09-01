@@ -4,6 +4,16 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "2026/01/29 14:52:34",
+  "parsedDate": {
+    "fullYear": 2026,
+    "shortYear": null,
+    "month": 1,
+    "date": 29,
+    "hours": 14,
+    "minutes": 52,
+    "seconds": 34
+  },
+  "recordedAt": null,
   "character": "西行寺　幽々子",
   "characterNameJa": "幽々子",
   "characterNameEn": "Yuyuko",

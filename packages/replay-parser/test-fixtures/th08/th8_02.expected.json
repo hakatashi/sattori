@@ -4,6 +4,16 @@
   "formatVersion": null,
   "player": "koyi",
   "date": "2026/01/23 23:55:08",
+  "parsedDate": {
+    "fullYear": 2026,
+    "shortYear": null,
+    "month": 1,
+    "date": 23,
+    "hours": 23,
+    "minutes": 55,
+    "seconds": 8
+  },
+  "recordedAt": null,
   "character": "八雲　紫",
   "characterNameJa": "紫",
   "characterNameEn": "Yukari",

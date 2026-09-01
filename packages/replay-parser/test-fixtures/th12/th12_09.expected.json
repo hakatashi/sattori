@@ -1,0 +1,177 @@
+{
+  "game": "th12",
+  "gameTitle": "東方星蓮船 ～ Undefined Fantastic Object.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "15/02/14 11:43",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 15,
+    "month": 2,
+    "date": 14,
+    "hours": 11,
+    "minutes": 43,
+    "seconds": null
+  },
+  "recordedAt": 1423881836,
+  "character": "MarisaB",
+  "characterNameJa": "魔符",
+  "characterNameEn": "Marisa B",
+  "difficulty": "Hard",
+  "stage": "Stage 1 ～ 6",
+  "score": 199027800,
+  "cleared": false,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "1.00",
+      "piv": 15000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 0,
+      "additional": {
+        "ufoColors": [
+          "None",
+          "None",
+          "None"
+        ]
+      },
+      "frameCount": 10536
+    },
+    {
+      "stage": 2,
+      "score": 13193980,
+      "power": "2.81",
+      "piv": 15270,
+      "lives": {
+        "count": 4,
+        "pieces": 0,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 203,
+      "additional": {
+        "ufoColors": [
+          "Red",
+          "Green",
+          "None"
+        ]
+      },
+      "frameCount": 12930
+    },
+    {
+      "stage": 3,
+      "score": 23573850,
+      "power": "2.65",
+      "piv": 16130,
+      "lives": {
+        "count": 3,
+        "pieces": 1,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 854,
+      "additional": {
+        "ufoColors": [
+          "Red",
+          "None",
+          "None"
+        ]
+      },
+      "frameCount": 16687
+    },
+    {
+      "stage": 4,
+      "score": 55938600,
+      "power": "2.74",
+      "piv": 20330,
+      "lives": {
+        "count": 3,
+        "pieces": 1,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 2487,
+      "additional": {
+        "ufoColors": [
+          "Red",
+          "None",
+          "None"
+        ]
+      },
+      "frameCount": 19381
+    },
+    {
+      "stage": 5,
+      "score": 87017420,
+      "power": "3.57",
+      "piv": 24750,
+      "lives": {
+        "count": 4,
+        "pieces": 3,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 3699,
+      "additional": {
+        "ufoColors": [
+          "Red",
+          "Red",
+          "None"
+        ]
+      },
+      "frameCount": 19504
+    },
+    {
+      "stage": 6,
+      "score": 136991940,
+      "power": "2.03",
+      "piv": 27350,
+      "lives": {
+        "count": 1,
+        "pieces": 1,
+        "maxPieces": 4
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 5784,
+      "additional": {
+        "ufoColors": [
+          "Red",
+          "None",
+          "None"
+        ]
+      },
+      "frameCount": 8575
+    }
+  ],
+  "frameCount": 87613
+}

@@ -3,7 +3,17 @@
   "gameTitle": "東方錦上京 ～ Fossilized Wonders.",
   "formatVersion": null,
   "player": "koyi",
+  "recordedAt": null,
   "date": "25/09/10 13:18",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 25,
+    "month": 9,
+    "date": 10,
+    "hours": 13,
+    "minutes": 18,
+    "seconds": null
+  },
   "character": "ReimuYellow2",
   "characterNameJa": "霊夢 黄2",
   "characterNameEn": "Reimu Yellow2",
