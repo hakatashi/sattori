@@ -38,7 +38,7 @@
         "self": "Aya",
         "opponent": "Mystia"
       },
-      "frameCount": null
+      "frameCount": 3283
     },
     {
       "stage": 2,
@@ -56,7 +56,7 @@
         "self": "Aya",
         "opponent": "Cirno"
       },
-      "frameCount": null
+      "frameCount": 4224
     },
     {
       "stage": 3,
@@ -74,7 +74,7 @@
         "self": "Aya",
         "opponent": "Sakuya"
       },
-      "frameCount": null
+      "frameCount": 3194
     },
     {
       "stage": 4,
@@ -92,7 +92,7 @@
         "self": "Aya",
         "opponent": "Reimu"
       },
-      "frameCount": null
+      "frameCount": 3792
     },
     {
       "stage": 5,
@@ -110,7 +110,7 @@
         "self": "Aya",
         "opponent": "Reisen"
       },
-      "frameCount": null
+      "frameCount": 4459
     },
     {
       "stage": 6,
@@ -128,7 +128,7 @@
         "self": "Aya",
         "opponent": "Marisa"
       },
-      "frameCount": null
+      "frameCount": 7929
     },
     {
       "stage": 7,
@@ -146,7 +146,7 @@
         "self": "Aya",
         "opponent": "Medicine"
       },
-      "frameCount": null
+      "frameCount": 6339
     },
     {
       "stage": 8,
@@ -164,7 +164,7 @@
         "self": "Aya",
         "opponent": "Komachi"
       },
-      "frameCount": null
+      "frameCount": 8155
     },
     {
       "stage": 9,
@@ -182,8 +182,8 @@
         "self": "Aya",
         "opponent": "Eiki"
       },
-      "frameCount": null
+      "frameCount": 5498
     }
   ],
-  "frameCount": null
+  "frameCount": 46873
 }
