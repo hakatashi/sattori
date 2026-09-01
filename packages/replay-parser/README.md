@@ -108,7 +108,7 @@ they are distinguished by a version byte in the header.
 | `th165` | 秘封ナイトメアダイアリー (VD) | **Unverified** (ported from threplay only; no test data obtained yet) |
 | `th17` | 東方鬼形獣 (WBaWC) | Verified with Silent Selene samples |
 | `th18` | 東方虹龍洞 (UM) | Same as above |
-| `th20` | 東方錦上京 (FW) | Player name/date/difficulty/stage/score verified with `test-fixtures/` + screenshots; `character` verified against 16/16 distinct shot values from Silent Selene samples (see below).<br>**Per-stage breakdown (splits) is not supported** (see below) |
+| `th20` | 東方錦上京 (FW) | Player name/date/difficulty/stage/score verified with `test-fixtures/` (full clears, a game over, Extra, spell practice and stage practice) + screenshots; `character` verified against 16/16 distinct shot values from Silent Selene samples; `splits`/`frameCount`/`recordedAt` reverse-engineered by this package and verified against 88 real replays plus recorded video (see below) |
 
 th19 (東方獣王園, UDoALG) is excluded because the game itself has no
 replay-saving feature.
@@ -134,10 +134,41 @@ An earlier version of this file used the wrong (36-byte) header size, which
 made the length/decompressed-size fields read from the wrong offset and
 consistently produced a garbage, constant-size decompression output — at the
 time misdiagnosed as "th20 moved the per-stage breakdown data elsewhere"
-rather than corrupt input from a wrong header size. `splits` still returns an
-empty array, since thscoreboard's own th20 kaitai struct only defines this
-header, not a per-stage layout — meaning that part hasn't been
-reverse-engineered upstream either.
+rather than corrupt input from a wrong header size.
+
+`splits`, `frameCount` and `recordedAt` are this package's own reverse
+engineering of that decompressed body, done because no other project decodes
+them: threplay stops at th18, thscoreboard's th20 kaitai struct
+(`replays/kaitai_parsers/th20.py`) defines only the header and no per-stage
+layout, and Silent Selene consequently still renders "Stage split information
+is unavailable for this replay" for every th20 upload including the top-ranked
+ones. The body turned out to be a `0x100`-byte header followed by one
+`[0x2a0-byte fixed record][variable-length input log]` pair per stage, with the
+record holding the snapshot taken at the *start* of that stage. Verified on 88
+real replays / 420 stage records (walking the chain lands exactly on the end of
+the decompressed body every time, and the input log length is redundantly
+derivable from the frame count), and cross-checked against the recorded video
+and on-screen HUD of Sattori's own production jobs. The full write-up —
+including the offsets that are still unidentified — is in
+[`docs/research/th20-replay-format.md`](../../docs/research/th20-replay-format.md)
+([English](../../docs/research/th20-replay-format.en.md)); the offsets themselves
+are documented on `TH20_STAGE_RECORD` in `src/games/th20.ts`.
+
+Two th20-specific quirks are worth knowing when reading `splits`:
+
+- `piv` holds 異変値, th20's replacement for the PIV of earlier titles, in
+  units of 1/5000 — the in-game HUD shows this value divided by 5000 with two
+  decimals, and it saturates at 1,000,000 (displayed as "200.00").
+- `additional.stones` is the per-colour 石 (stone) level, as a
+  `{ red, blue, yellow, green }` object rather than an array — the colour order
+  was confirmed against the per-異変敵 levels shown on the in-game stage result
+  screen. `additional.stonesTotal` is their sum.
+
+One more thing to be aware of when reading a practice-mode th20 replay: the
+game's own replay list can label the stage differently from what the replay
+actually contains (`test-fixtures/th20/th20_07.rpy` is a Hard stage 6 practice
+clear that the in-game list shows as "St5"). Both the USER section and the stage
+record say stage 6 there, which is what matches the actual playback.
 
 ## Output data
 
@@ -177,7 +208,7 @@ The decoded replay metadata object (`result.replay`):
 | `player` | `string \| null` | Player name string (decoded from Shift_JIS with trailing padding trimmed). |
 | `date` | `string \| null` | Date/time string as recorded in the file (format varies by game, e.g. `"05/26/11"`, `"2026/01/24 16:18:16"`, `"25/11/09 17:41"`). |
 | `parsedDate` | [`ParsedDate`](#parseddate) \| `null` | `date` broken down into individual numeric components, so callers don't need to know each title's format to interpret it. `null` iff `date` is `null`. See below. |
-| `recordedAt` | `number \| null` | The same moment as `date`, as a raw Unix epoch (seconds, UTC) read from a second, independent timestamp field. Populated for th10-th18 only (`null` otherwise, including th20). See below. |
+| `recordedAt` | `number \| null` | The same moment as `date`, as a raw Unix epoch (seconds, UTC) read from a second, independent timestamp field. Populated for th10-th18 and th20 (`null` otherwise). See below. |
 | `character` | `string \| null` | Raw shot type or character string (e.g. `"ReimuA"`, `"ReimuRed"`, Japanese string `"博麗　霊夢"` for th08; `null` for th143/th165). |
 | `characterNameJa` | `string \| null` | Japanese display name for `character` (e.g. `"霊符"`, `"霊夢"`, `"霊夢A"`, `"霊夢 赤1"`). See below. |
 | `characterNameEn` | `string \| null` | English display name for `character` (e.g. `"Reimu A"`, `"Reimu"`, `"Reimu A (Yukari)"`, `"Reimu Red"`). See below. |
@@ -278,15 +309,18 @@ exception, where `count` holds a percentage and `maxPieces` is always 100 —
 see the comments in `src/games/th128.ts` for details). Likewise,
 `splits[].additional` returns game-specific extra info (UFO color, trance,
 season, spell cards, etc.) as an object with typed properties rather than
-strings (e.g. `{ ufoColors: ["Red", "None", "None"] }`).
+strings (e.g. `{ ufoColors: ["Red", "None", "None"] }`). Each value is a
+`ReplayStageSplitExtra`: a number, a string, a list of either, or — when the
+entries are a fixed set of *named* slots rather than an ordered list, as with
+th20's `{ stones: { red, blue, yellow, green } }` — a flat record of numbers.
 
 ### `recordedAt`
 
-For th10-th18 (`decodeModernBody`-family titles other than th20), the
-decompressed body opens with a fixed-width SJIS `name` field immediately
-followed by a raw Unix epoch timestamp — a *second*, independent recording
-of the same moment `date` represents, sourced from a different part of the
-file. `recordedAt` exposes it as a plain number (seconds since epoch, UTC).
+For th10-th18, the decompressed body opens with a fixed-width SJIS `name`
+field immediately followed by a raw Unix epoch timestamp — a *second*,
+independent recording of the same moment `date` represents, sourced from a
+different part of the file. `recordedAt` exposes it as a plain number
+(seconds since epoch, UTC).
 
 This was found by cross-referencing
 [n-rook/thscoreboard](https://github.com/n-rook/thscoreboard)'s per-title
@@ -310,10 +344,16 @@ decoding error (see the comments on `RECORDED_AT_OFFSET_12BYTE_NAME` in
 `src/games/modern-body.ts` for the full offset derivation, including why
 th17/th18 need a different offset than th10-th16).
 
-`null` for every other title, including th20 — its body header has an
-entirely different layout from th10-th18's shared one (see the `th20`
-notes above), and this field's equivalent location hasn't been
-reverse-engineered there.
+th20 keeps the same "fixed-width `name` followed by a Unix epoch" shape but
+lays the rest of its body header out differently, so the shared
+`RECORDED_AT_OFFSET_*` constants do not apply to it; its own offset
+(`RECORDED_AT_OFFSET` in `src/games/th20.ts`) was derived separately, and
+cross-checked against `date` on 86 real replays — every difference came out
+as a whole number of hours, distributed like real time zones (UTC+9 on 47,
+UTC+8 on 22, UTC+7 on 4, and so on), which is what you would expect if the
+field is a UTC epoch and `date` is local time.
+
+`null` for every other title.
 
 ### `frameCount`
 
@@ -385,10 +425,18 @@ Currently populated for:
   an amount that scales with how many retries that stage had, rather than
   being random noise — see the comments on `STAGE_CHECKPOINT_HEADER_SIZE` in
   `src/games/th09.ts`.
+- **th20**: reverse-engineered by this package (no other project decodes it,
+  see the th20 notes above). Each stage record carries an explicit frame
+  count, and the input log that follows it is exactly
+  `6 * frames + ceil(frames / 30)` bytes long — the two fields are redundant,
+  which both confirms the frame count and gives the walk a structural stop
+  condition. Cross-checked against the recorded video of Sattori's own
+  production jobs: for a six-stage Lunatic clear, all six per-stage durations
+  matched the video to within a few seconds.
 
-`null` for every other supported title (th095, th125, th128, th143/th165,
-th20) — the per-frame input log location for those has not been
-reverse-engineered yet.
+`null` for every other supported title (th095, th125, th128, th143/th165) —
+the per-frame input log location for those has not been reverse-engineered
+yet.
 
 `splits[].frameCount` breaks the same total down per stage/segment (frames
 played from that checkpoint up to the next one, or to the end of the replay
