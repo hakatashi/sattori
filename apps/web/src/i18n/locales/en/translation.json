@@ -98,6 +98,7 @@
     "vpatchApplied": "VsyncPatch rev{{rev}} applied",
     "cherryBugFix": "Cherry point display bug fix applied (BugFixCherry = 1)",
     "th10BugfixOption": "Marisa B's shot power bug fix option is available (BugFixTh10Power3)",
+    "th12ScoreOverflowFix": "Score overflow bug fix at 2.1 billion points applied",
     "thpracApplied": "thprac v{{version}} applied",
     "thpracPurpose": "Applied during recording to mitigate replay desync"
   },

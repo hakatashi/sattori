@@ -15,10 +15,12 @@ describe("GameInfoPage", () => {
     expect(screen.getByText("東方錦上京 ～ Fossilized Wonders.")).toBeTruthy();
     expect(screen.getByText("ver 1.00c")).toBeTruthy();
     expect(screen.getAllByText("vpatch rev4 適用済み")).toHaveLength(3);
+    expect(screen.getByText("vpatch rev7 適用済み")).toBeTruthy();
     expect(screen.getByText("桜点表示バグ修正適用済み (BugFixCherry = 1)")).toBeTruthy();
     expect(
       screen.getByText("魔理沙Bのショット威力バグ修正オプションが利用可能 (BugFixTh10Power3)"),
     ).toBeTruthy();
+    expect(screen.getByText("スコア21億でのオーバーフローバグ修正適用済み")).toBeTruthy();
   });
 
   it("th20にthpracの適用バージョンを表示する", () => {

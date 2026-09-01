@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-02",
+    ja: "東方星蓮船 (th12) の録画に対応",
+    en: "Added recording support for Undefined Fantastic Object (th12)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/207",
+    important: true,
+  },
+  {
     date: "2026-08-30",
     ja: "追加ワーカーで録画時の起動処理を高速化",
     en: "Sped up startup processing for recording on the additional worker",

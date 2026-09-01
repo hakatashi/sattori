@@ -223,24 +223,24 @@ describe("UploadForm", () => {
       ok: false,
       error: {
         code: "unsupported_game",
-        message: "東方星蓮船 ～ Undefined Fantastic Object. は現在録画に対応していません",
-        game: "th12",
+        message: "東方花映塚 ～ Phantasmagoria of Flower View. は現在録画に対応していません",
+        game: "th09",
       },
     });
 
     renderUploadForm();
-    selectFile("th12.rpy");
+    selectFile("th09.rpy");
 
     await waitFor(() =>
       expect(
-        screen.getByText("東方星蓮船 ～ Undefined Fantastic Object. は現在録画に対応していません"),
+        screen.getByText("東方花映塚 ～ Phantasmagoria of Flower View. は現在録画に対応していません"),
       ).toBeTruthy(),
     );
     fillEmail("user@example.com");
     expect(nextStepButton().disabled).toBe(true);
     expect(mockedClient.requestMagicLink).not.toHaveBeenCalled();
-    // パースエラーの発生率計測（Issue #142）。検出タイトルも一緒に送る。
-    expect(mockedAnalytics.trackParseError).toHaveBeenCalledWith("unsupported_game", "th12");
+    // パースエラーの発生率計測(Issue #142)。検出タイトルも一緒に送る。
+    expect(mockedAnalytics.trackParseError).toHaveBeenCalledWith("unsupported_game", "th09");
   });
 
   it("次のステップ押下でマジックリンク送信要求が行われ、送信完了画面に遷移する", async () => {
