@@ -125,34 +125,26 @@ replays were found where that field contains outright garbage (e.g. `"test"`,
 or a difficulty/stage word like `"Hard"`, apparently belonging to a different
 field), while the surrounding fields were consistently fine. Instead,
 `character` is derived from the numeric `shot`/`stones` fields in the
-decompressed per-stage-header body, the same approach
+decompressed body, the same approach
 [n-rook/thscoreboard](https://github.com/n-rook/thscoreboard)'s own th20
-parser uses (see "Related work" below) — this requires th20's own header size
-before that decompression (48 bytes, wider than th10-th18's shared 36-byte
-layout, matching thscoreboard's own separate th20 kaitai header definition).
-An earlier version of this file used the wrong (36-byte) header size, which
-made the length/decompressed-size fields read from the wrong offset and
-consistently produced a garbage, constant-size decompression output — at the
-time misdiagnosed as "th20 moved the per-stage breakdown data elsewhere"
-rather than corrupt input from a wrong header size.
+parser uses (see "Related work" below). That decompression needs th20's own
+header size (48 bytes, wider than th10-th18's shared 36-byte layout); see the
+comment on `TH20_HEADER_SIZE` in `src/games/th20.ts` for what goes wrong with
+the shared one.
 
 `splits`, `frameCount` and `recordedAt` are this package's own reverse
 engineering of that decompressed body, done because no other project decodes
-them: threplay stops at th18, thscoreboard's th20 kaitai struct
-(`replays/kaitai_parsers/th20.py`) defines only the header and no per-stage
-layout, and Silent Selene consequently still renders "Stage split information
-is unavailable for this replay" for every th20 upload including the top-ranked
-ones. The body turned out to be a `0x100`-byte header followed by one
-`[0x2a0-byte fixed record][variable-length input log]` pair per stage, with the
-record holding the snapshot taken at the *start* of that stage. Verified on 88
-real replays / 420 stage records (walking the chain lands exactly on the end of
-the decompressed body every time, and the input log length is redundantly
-derivable from the frame count), and cross-checked against the recorded video
-and on-screen HUD of Sattori's own production jobs. The full write-up —
-including the offsets that are still unidentified — is in
+them — thscoreboard's th20 kaitai struct defines only the header and no
+per-stage layout, so Silent Selene still renders "Stage split information is
+unavailable for this replay" for every th20 upload. The body is a `0x100`-byte
+header followed by one `[0x2a0-byte fixed record][variable-length input log]`
+pair per stage, the record being the snapshot taken at the *start* of that
+stage. Verified on 88 real replays / 420 stage records and cross-checked
+against the recorded video and on-screen HUD of Sattori's own production jobs;
+the full write-up, including the offsets that are still unidentified, is in
 [`docs/research/th20-replay-format.md`](../../docs/research/th20-replay-format.md)
-([English](../../docs/research/th20-replay-format.en.md)); the offsets themselves
-are documented on `TH20_STAGE_RECORD` in `src/games/th20.ts`.
+([English](../../docs/research/th20-replay-format.en.md)), and the offsets
+themselves are on `TH20_STAGE_RECORD` in `src/games/th20.ts`.
 
 Two th20-specific quirks are worth knowing when reading `splits`:
 
@@ -166,22 +158,19 @@ Two th20-specific quirks are worth knowing when reading `splits`:
 
 Two more things to be aware of when reading a practice-mode th20 replay:
 
-- **Spell practice replays carry the card number, not the card name.** Where th08
-  writes the whole card out in its USER section (so `stage` comes out as
-  `"カード名\tNo. 87 恋符「ノンディレクショナルレーザー」"`), th20 stores no card
-  name anywhere in the file — its USER section just names the stage the card
-  belongs to, which would make a spell practice replay indistinguishable from a
-  stage practice one. The body header does hold the card index, so `stage` gets
-  the game's own Spell Practice number appended
-  (`"Stage 6 (Spell Practice No. 100)"`) and `splits[0].additional` gains a
-  `spellCardNumber`. Resolving that number to a name would need a lookup table
-  this package does not have — see
-  [`docs/research/th20-replay-format.md`](../../docs/research/th20-replay-format.md)
-  §5 for what stands in the way.
+- **Spell practice replays carry the card number, not the card name.** th08
+  writes the whole card into its USER section (so `stage` comes out as
+  `"カード名\tNo. 87 恋符「ノンディレクショナルレーザー」"`); th20 stores no card
+  name anywhere in the file, and its USER section only names the stage the card
+  belongs to. The body header does hold the card index, so `stage` gets the
+  game's own Spell Practice number appended (`"Stage 6 (Spell Practice
+  No. 100)"`) and `splits[0].additional` gains a `spellCardNumber`. Resolving
+  that number to a name would need a lookup table this package does not have
+  (research doc §5).
 - **The game's own replay list can label the stage differently from what the
-  replay actually contains.** `test-fixtures/th20/th20_07.rpy` is a Hard stage 6
-  practice clear that the in-game list shows as "St5"; both the USER section and
-  the stage record say stage 6, which is what matches the actual playback.
+  replay contains.** `test-fixtures/th20/th20_07.rpy` is a Hard stage 6 practice
+  clear the in-game list shows as "St5"; both the USER section and the stage
+  record say stage 6, which is what the playback actually does.
 
 ## Output data
 
@@ -323,9 +312,8 @@ see the comments in `src/games/th128.ts` for details). Likewise,
 `splits[].additional` returns game-specific extra info (UFO color, trance,
 season, spell cards, etc.) as an object with typed properties rather than
 strings (e.g. `{ ufoColors: ["Red", "None", "None"] }`). Each value is a
-`ReplayStageSplitExtra`: a number, a string, a list of either, or — when the
-entries are a fixed set of *named* slots rather than an ordered list, as with
-th20's `{ stones: { red, blue, yellow, green } }` — a flat record of numbers.
+`ReplayStageSplitExtra`: a number, a string, a list of either, or a flat record
+of numbers for named slots (th20's `{ stones: { red, blue, yellow, green } }`).
 
 ### `recordedAt`
 
@@ -358,13 +346,10 @@ decoding error (see the comments on `RECORDED_AT_OFFSET_12BYTE_NAME` in
 th17/th18 need a different offset than th10-th16).
 
 th20 keeps the same "fixed-width `name` followed by a Unix epoch" shape but
-lays the rest of its body header out differently, so the shared
-`RECORDED_AT_OFFSET_*` constants do not apply to it; its own offset
-(`RECORDED_AT_OFFSET` in `src/games/th20.ts`) was derived separately, and
-cross-checked against `date` on 86 real replays — every difference came out
-as a whole number of hours, distributed like real time zones (UTC+9 on 47,
-UTC+8 on 22, UTC+7 on 4, and so on), which is what you would expect if the
-field is a UTC epoch and `date` is local time.
+lays the rest of its body header out differently, so its offset was derived
+separately (`RECORDED_AT_OFFSET` in `src/games/th20.ts`) and cross-checked
+against `date` on 86 real replays: every difference came out as a whole number
+of hours, distributed like real time zones.
 
 `null` for every other title.
 
@@ -438,14 +423,11 @@ Currently populated for:
   an amount that scales with how many retries that stage had, rather than
   being random noise — see the comments on `STAGE_CHECKPOINT_HEADER_SIZE` in
   `src/games/th09.ts`.
-- **th20**: reverse-engineered by this package (no other project decodes it,
-  see the th20 notes above). Each stage record carries an explicit frame
-  count, and the input log that follows it is exactly
-  `6 * frames + ceil(frames / 30)` bytes long — the two fields are redundant,
-  which both confirms the frame count and gives the walk a structural stop
-  condition. Cross-checked against the recorded video of Sattori's own
-  production jobs: for a six-stage Lunatic clear, all six per-stage durations
-  matched the video to within a few seconds.
+- **th20**: reverse-engineered by this package (see the th20 notes above). Each
+  stage record carries an explicit frame count, and the input log that follows
+  it is exactly `6 * frames + ceil(frames / 30)` bytes long — redundant fields
+  that both confirm the count and give the walk a stop condition. Cross-checked
+  against the recorded video of Sattori's own production jobs.
 
 `null` for every other supported title (th095, th125, th128, th143/th165) —
 the per-frame input log location for those has not been reverse-engineered
