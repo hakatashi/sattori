@@ -37,6 +37,13 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   キーにも含める専用の`CachePolicy`（`mediaCachePolicy`）を使う（含めないと720p/
   オリジナル解像度など異なるファイル名のリクエスト間でdispositionヘッダーの
   キャッシュが混線する。`apps/api/README.md`参照）。
+  Webホスティング用バケットへの配布（`BucketDeployment`）は`assets/`配下
+  （Viteのビルドハッシュ付きファイル名）とそれ以外を2つに分け、前者は`public,
+  max-age=31536000, immutable`、後者（`index.html`・アイコン・OGP画像等）は
+  `no-cache`をS3オブジェクトの`Cache-Control`として付与する（ブラウザキャッシュが
+  一切効いていなかった問題、Issue #210）。2つに分けているのは`cacheControl`が
+  `BucketDeployment`単位でしか指定できないためで、互いのファイルを消し合わないよう
+  両方とも`prune: false`にしてある。
   `WebCdn`には計測ビーコン（`POST /beacon`、Issue #142）用の追加ビヘイビアが1つ
   あり（`additionalBehaviors["/beacon"]`）、HTTP API（`httpApi`）へ転送する。
   他のAPIエンドポイントと違いこのパスだけCloudFrontを前段に置くのは、オリジン
