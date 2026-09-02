@@ -27,6 +27,11 @@ def build_parser():
         help="進捗スクリーンショット(frame.jpg)/状態(state.json)の書き出し先。未指定なら無効(ローカル単体実行との後方互換)",
     )
     parser.add_argument(
+        "--diagnostics-dir", default=None,
+        help="録画試行を破棄した際の最終フレーム(調査用の証跡、Issue #159)の書き出し先。"
+             "未指定なら無効(ローカル単体実行との後方互換)",
+    )
+    parser.add_argument(
         "--expected-duration-seconds", type=float, default=None,
         help="リプレイの推定再生時間(進捗率算出用の参考値、未指定なら進捗率は算出しない)",
     )
@@ -72,11 +77,14 @@ def run(game_id, build_config):
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
     if args.progress_dir:
         os.makedirs(args.progress_dir, exist_ok=True)
+    if args.diagnostics_dir:
+        os.makedirs(args.diagnostics_dir, exist_ok=True)
 
     config = build_config(args.pulse_sink or pulse.local_sink_name())
     success = record_with_retry(
         config, args.replay_path, args.output,
         progress_dir=args.progress_dir, expected_duration_seconds=args.expected_duration_seconds,
+        diagnostics_dir=args.diagnostics_dir,
         max_attempts=args.max_attempts, max_duplicate_rate=args.max_duplicate_rate,
         expected_score=args.expected_score, desync_result_path=args.desync_result_path,
         timeout_result_path=args.timeout_result_path,
