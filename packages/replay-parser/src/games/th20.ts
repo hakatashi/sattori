@@ -40,7 +40,26 @@ const RECORDED_AT_OFFSET = 0x10;
 /** Number of per-stage records that follow the header. */
 const STAGE_COUNT_OFFSET = 0xd4;
 const SHOT_OFFSET = 0xd8;
-const STONE0_OFFSET = 0xdc;
+/**
+ * Offsets of the 4-slot 石 equipment loadout the player picks before a run:
+ * メイン異変石 (main) / 拡散石 (diffusion) / 集中石 (focus) / 支援石
+ * (support), each a `u32` index into `STONE_NAMES` (or 8, for コモン魔石 /
+ * "no stone equipped", which falls outside that array). This package
+ * originally treated `MAIN` as the only field here; cross-referencing
+ * @iyuzzuko's (puresign-tokyo/l-uploader) `th20.ksy` — which reads all 4 as
+ * an array — against a replay whose in-game equipment screen was read by
+ * hand confirmed it really is 4 slots, not 1. `character` only depends on
+ * `MAIN` (the slot that sets the displayed colour suffix), so this
+ * correction doesn't change parsed output; `DIFFUSION`/`FOCUS`/`SUPPORT` are
+ * recorded here for future reference but not parsed. See
+ * docs/research/th20-replay-format.md §3.1.
+ */
+const STONE_SLOT_OFFSETS = {
+  MAIN: 0xdc,
+  DIFFUSION: 0xe0,
+  FOCUS: 0xe4,
+  SUPPORT: 0xe8,
+} as const;
 /**
  * Zero-based index of the spell card, for a spell practice replay;
  * `NOT_SPELL_PRACTICE` for every other kind of replay. Unlike th08 — whose
@@ -60,7 +79,18 @@ const NOT_SPELL_PRACTICE = 0xffffffff;
 const BODY_HEADER_SIZE = 0x100;
 
 const SHOT_BASES = ["Reimu", "Marisa"];
-/** See `_20SubshotToStone` in thscoreboard's `replays/replay_parsing.py`. */
+/**
+ * See `_20SubshotToStone` in thscoreboard's `replays/replay_parsing.py`. The
+ * official 石 names, in the same order (the in-game equipment-select list):
+ * スカーレットデビル / クリーチャーレッド / スノーブロッサム / ブルーシーズン
+ * / イエローサブタレイニアン / インペリシャブルムーン / ビーストハードネス /
+ * シントイズムウィンド. Index 8 (outside this array; `STONE_NAMES[8]` is
+ * `undefined`) is コモン魔石, the "no stone equipped" default. Indices 0/2/5/7
+ * are cross-checked against this package's own fixtures (their `MAIN` slot
+ * value matches the equipment those replays were recorded with); 1/3/4/6
+ * follow from the list's positional order but have no fixture exercising
+ * them yet. See docs/research/th20-replay-format.md §3.1.
+ */
 const STONE_NAMES = ["Red", "Red2", "Blue", "Blue2", "Yellow", "Yellow2", "Green", "Green2"];
 
 /**
@@ -119,6 +149,26 @@ const TH20_STAGE_RECORD = {
    * exact stage-boundary frames (124,837 -> "24.96", 1,000,000 -> "200.00").
    */
   ANOMALY: 0xb4,
+  /**
+   * Suspected 異変攻撃ゲージ (anomaly attack gauge) — the horizontal gauge
+   * shown bottom-left in-game, next to the vertical 異変敵ゲージ (see
+   * `ANOMALY_ENEMY_GAUGE`). 0 on every stage 1 record and varies
+   * non-monotonically thereafter, consistent with a live gauge rather than a
+   * cumulative stat. Byte offset and field name ("hyper") per @iyuzzuko's
+   * (puresign-tokyo/l-uploader) `th20.ksy`; the in-game gauge identification
+   * is this package's own guess and only moderately confident. Not parsed —
+   * see docs/research/th20-replay-format.md §3.2.
+   */
+  HYPER: 0xbc,
+  /**
+   * Suspected 異変敵ゲージ (anomaly enemy gauge), per stone colour, presumed
+   * in the same `STONE_COLORS` order as `STONES` below (not independently
+   * re-confirmed for this field). Previously documented only as "石の色別
+   * ゲージ" with no in-game name attached; reinterpreted per user domain
+   * knowledge — moderate confidence only, and not parsed. See
+   * docs/research/th20-replay-format.md §3.2.
+   */
+  ANOMALY_ENEMY_GAUGE: 0xd4,
   /**
    * Per-colour 石 (stone) level, in the order given by `STONE_COLORS`. These
    * are the same four numbers the in-game stage result screen shows as each
@@ -273,7 +323,7 @@ export function parseTh20(original: Uint8Array): ParsedReplay {
     TH20_HEADER_SIZE,
   );
   const shotBase = SHOT_BASES[readBufferedUint32LE(decodedata, SHOT_OFFSET)] ?? null;
-  const stoneName = STONE_NAMES[readBufferedUint32LE(decodedata, STONE0_OFFSET)] ?? null;
+  const stoneName = STONE_NAMES[readBufferedUint32LE(decodedata, STONE_SLOT_OFFSETS.MAIN)] ?? null;
   const character = shotBase !== null && stoneName !== null ? `${shotBase}${stoneName}` : null;
   const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName("th20", character);
   const spellCardNumber = readSpellCardNumber(decodedata);
