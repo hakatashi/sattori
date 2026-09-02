@@ -1189,7 +1189,7 @@ function handler(event) {
     // (Issue #210)。cacheControlはBucketDeployment単位でしか指定できないため2つに分け、
     // 互いのファイルを消し合わないよう`prune: false`にする(公式READMEの定石)。
     if (existsSync(WEB_DIST)) {
-      new s3deploy.BucketDeployment(this, "WebDeployAssets", {
+      const webDeployAssets = new s3deploy.BucketDeployment(this, "WebDeployAssets", {
         sources: [s3deploy.Source.asset(WEB_DIST, { exclude: ["*", "!assets", "!assets/**"] })],
         destinationBucket: webBucket,
         distribution: webDistribution,
@@ -1201,7 +1201,10 @@ function handler(event) {
         ],
         prune: false,
       });
-      new s3deploy.BucketDeployment(this, "WebDeploy", {
+      // `index.html`が参照する新ハッシュのJS/CSSより先にindex.html自体が公開されると、
+      // その一瞬だけ新HTML→未アップロードのハッシュ付きファイルという404の窓が開く
+      // ため、必ずassets/を先に完了させる。
+      const webDeploy = new s3deploy.BucketDeployment(this, "WebDeploy", {
         sources: [s3deploy.Source.asset(WEB_DIST, { exclude: ["assets/**"] })],
         destinationBucket: webBucket,
         distribution: webDistribution,
@@ -1209,6 +1212,7 @@ function handler(event) {
         cacheControl: [s3deploy.CacheControl.noCache()],
         prune: false,
       });
+      webDeploy.node.addDependency(webDeployAssets);
     }
 
     // --- 運用アラート(OPS-3, Issue #135) -------------------------------------
