@@ -4,6 +4,7 @@ import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import type { GetJobResponse, JobRecord, ReplayInfo } from "@sattori/shared";
+import { createJobRecord } from "../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -41,39 +42,17 @@ const REPLAY_INFO: ReplayInfo = {
   estimatedDurationSeconds: 847,
 };
 
-const doneJob: JobRecord = {
-  jobId: "job-1",
+const doneJob: JobRecord = createJobRecord({
   game: "th11",
-  replayKey: "replays/abc.rpy",
   status: "done",
-  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
   outputPath: "output/job-1/video.mp4",
   outputPath720p: "output/job-1/video-720p.mp4",
-  error: null,
-  errorCode: null,
-  createdAt: "2026-07-18T00:00:00.000Z",
-  updatedAt: "2026-07-18T00:00:00.000Z",
   doneAt: "2026-07-18T00:00:00.000Z",
-  email: "user@example.com",
   instanceId: "i-1234",
-  workerKind: null,
   instanceType: "c7i.2xlarge",
   availabilityZone: "us-east-1a",
-  spotPricePerHour: null,
-  launchedAt: null,
-  outputBytes: null,
-  outputBytes720p: null,
-  estimatedDurationSeconds: 900,
-  progress: null,
-  previewImagePath: null,
   replayInfo: REPLAY_INFO,
-  pendingExpiresAt: "2099-01-01T00:00:00.000Z",
-  retriedToJobId: null,
-  retriedFromJobId: null,
-  language: "ja",
-  desyncDetected: null,
-  timedOut: null,
-};
+});
 
 function makeEvent(jobId: string): APIGatewayProxyEventV2 {
   return { pathParameters: { jobId } } as unknown as APIGatewayProxyEventV2;

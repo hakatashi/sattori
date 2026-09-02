@@ -5,6 +5,7 @@ import { HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import type { AdminJobDetailResponse, JobRecord } from "@sattori/shared";
+import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -29,39 +30,17 @@ const REQUIRED_ENV: Record<string, string> = {
 const ddbMock = mockClient(DynamoDBDocumentClient);
 const s3Mock = mockClient(S3Client);
 
-const recordingJob: JobRecord = {
-  jobId: "job-1",
+const recordingJob: JobRecord = createJobRecord({
   game: "th11",
-  replayKey: "replays/abc.rpy",
   status: "recording",
-  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
   outputPath: "videos/job-1.mp4",
-  outputPath720p: null,
-  error: null,
-  errorCode: null,
-  createdAt: "2026-07-18T00:00:00.000Z",
-  updatedAt: "2026-07-18T00:00:00.000Z",
-  doneAt: null,
-  email: "user@example.com",
   instanceId: "i-1234",
-  workerKind: null,
   instanceType: "c7i.2xlarge",
   availabilityZone: "us-east-1a",
-  spotPricePerHour: null,
-  launchedAt: null,
-  outputBytes: null,
-  outputBytes720p: null,
-  estimatedDurationSeconds: 900,
   progress: 120,
   previewImagePath: "progress/job-1/1234.jpg",
-  replayInfo: null,
   pendingExpiresAt: null,
-  retriedToJobId: null,
-  retriedFromJobId: null,
-  language: "ja",
-  desyncDetected: null,
-  timedOut: null,
-};
+});
 
 function makeEvent(jobId: string): APIGatewayProxyEventV2 {
   return { pathParameters: { jobId } } as unknown as APIGatewayProxyEventV2;
