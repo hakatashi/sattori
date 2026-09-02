@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-03",
+    ja: "ヘッダーロゴの画像サイズを縮小してページの表示速度を改善。あわせてfaviconが最新デザインと異なっていた不具合を修正",
+    en: "Reduced the header logo image size to speed up page load, and fixed the favicon showing an outdated design",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/212",
+  },
+  {
+    date: "2026-09-03",
     ja: "録画が再試行の末に成功した場合、途中の失敗によるエラー表示が完了後も残ってしまう不具合を修正",
     en: "Fixed an issue where a leftover error from a failed attempt could still be shown after a recording later succeeded on retry",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/219",

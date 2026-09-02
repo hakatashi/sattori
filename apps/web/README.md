@@ -219,6 +219,15 @@ fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
   既定タイトルに戻る。`JobPage`はジョブ固有の情報を含まない汎用タイトルで`noindex: true`を
   渡す（上記のとおりrobots.txt側でも二重に止めている）。
 
+### 6.3 ヘッダーロゴアイコン（Issue #212）
+
+ヘッダーの`icon-transparent.png`は表示サイズ（72px、Retina考慮で216px）に合わせて縮小・
+最適化した実体を`public/`に置く（WebP版`icon-transparent.webp`も併置し、`<picture>`で
+`image/webp`を優先、非対応ブラウザは`.png`にフォールバック）。**元の512x512原本は`public/`
+に置かないこと** —— `public/`配下はそのまま静的配信されるため、原寸のまま置くと最適化の
+意味が無くなる。参照用の原本は非公開の`assets-src/icon-transparent-original.png`に置く。
+差し替える際はこの原本から作業し、書き出し後に`public/`側を再度最適化すること。
+
 ## 7. APIクライアント（`src/api/client.ts`）
 
 `VITE_API_BASE`（既定 `/api`）を基点に`fetch`でAPIを呼ぶ薄いラッパー。エラーレスポンス
