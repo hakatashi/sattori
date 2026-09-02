@@ -54,7 +54,10 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   // (posterImageUrlが無い場合の)プレビュープレイヤーの poster フォールバックとして
   // 使う。失敗後は表示しない。
   const previewImageUrl =
-    (job.status === "recording" || job.status === "converting" || job.status === "done") &&
+    (job.status === "recording" ||
+      job.status === "converting" ||
+      job.status === "uploading" ||
+      job.status === "done") &&
     job.previewImagePath
       ? buildCdnUrl(config.cdnDomain, job.previewImagePath)
       : null;

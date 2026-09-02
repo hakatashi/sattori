@@ -12,7 +12,8 @@ export const JOB_STATUSES = [
   "queued", // ジョブ登録済み・起動待ち
   "launching", // EC2 Spot インスタンス起動中
   "recording", // ゲーム起動〜リプレイ録画中
-  "converting", // 録画完了(生動画チェックポイントアップロード済み)〜720pアップスケール変換〜出力アップロード中
+  "converting", // 録画完了(生動画チェックポイントアップロード済み)〜720pアップスケール変換
+  "uploading", // 配信用変換の出力をS3へアップロード中（Issue #202。自宅ワーカーでは数分かかりうる）
   "done", // 完了（動画DL可能）
   "failed", // 失敗（要リトライ or エラー表示）
 ] as const;

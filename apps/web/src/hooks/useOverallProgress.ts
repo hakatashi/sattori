@@ -15,8 +15,9 @@ const STATUS_STEP: Record<JobStatus, number> = {
   launching: 1,
   recording: 2,
   converting: 3,
-  done: 4,
-  failed: 4,
+  uploading: 4,
+  done: 5,
+  failed: 5,
 };
 
 const TICK_INTERVAL_MS = 250;
@@ -83,6 +84,10 @@ function computeElapsedSeconds(params: {
       const ratio = Math.min(1, (phaseProgressSeconds ?? 0) / budgets.recordingContent);
       return budgets.launching + budgets.recording + ratio * budgets.converting;
     }
+    case "uploading":
+      // アップロード自体の悲観バジェットは持たない(Issue #202、jobProgressBudget.ts参照)。
+      // 変換完了時点(=budgets.total)で足踏みさせ、done到達で100%へ切り替わるようにする。
+      return budgets.total;
     case "done":
       return budgets.total;
   }
@@ -96,6 +101,8 @@ function budgetForStatus(status: JobStatus, budgets: PhaseBudgets): number | nul
       return budgets.recording;
     case "converting":
       return budgets.converting;
+    // uploadingは悲観バジェットを持たないため常にnull(＝リトライ疑いの超過判定Bの対象外。
+    // 固まった場合はsweepStalledJobsの安全網に委ねる)。
     default:
       return null;
   }

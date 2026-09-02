@@ -194,10 +194,11 @@
       "launching": "録画用サーバーを起動しています",
       "recording": "リプレイを録画しています",
       "converting": "動画を変換しています",
+      "uploading": "動画をアップロードしています",
       "done": "録画が完了しました",
       "failed": "録画に失敗しました"
     },
-    "steps": ["待機", "起動", "録画", "変換", "完了"],
+    "steps": ["待機", "起動", "録画", "変換", "アップロード", "完了"],
     "progressAriaLabel": "録画の進捗",
     "overallProgressAriaLabel": "全体の進捗",
     "previewAlt": "録画中のプレビュー",

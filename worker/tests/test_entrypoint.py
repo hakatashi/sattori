@@ -151,6 +151,31 @@ def test_a_failed_delete_does_not_fail_the_finished_job(entrypoint, monkeypatch)
     assert status_kwargs(entrypoint, "done")["output_path"] == entrypoint.OUTPUT_KEY_DELIVERY
 
 
+def test_transitions_to_uploading_before_uploading_the_delivery_video(entrypoint, monkeypatch):
+    """変換後のアップロードは独立したフェーズとして可視化する(Issue #202)。
+
+    ジョブページの進捗が「変換ほぼ完了」のまま止まって見える問題を防ぐため、
+    convert_for_delivery完了後・upload_video呼び出し前にstatusをuploadingへ更新する。
+    """
+    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (640, 480))
+    order = []
+    monkeypatch.setattr(
+        entrypoint, "update_status",
+        lambda *a, **k: order.append((f"status:{a[1]}", k)),
+    )
+
+    class OrderedS3(FakeS3):
+        def upload_file(self, path, bucket, key, ExtraArgs=None):  # noqa: N803 - boto3のAPI名
+            order.append(f"upload:{key}")
+            super().upload_file(path, bucket, key, ExtraArgs=ExtraArgs)
+
+    entrypoint.convert_and_upload(OrderedS3(), 1.0)
+
+    uploading_index = order.index(("status:uploading", {"reset_progress": True}))
+    upload_index = order.index(f"upload:{entrypoint.OUTPUT_KEY_DELIVERY}")
+    assert uploading_index < upload_index
+
+
 def test_restarts_the_progress_counter_before_converting(entrypoint, monkeypatch):
     """変換フェーズの進捗は0から数え直す(Issue #108)。
 

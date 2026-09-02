@@ -23,6 +23,12 @@ export const changelogEntries: ChangelogEntry[] = [
   },
   {
     date: "2026-09-03",
+    ja: "動画の変換完了後、アップロードが完了するまでの間もジョブページに進行状況を表示するよう修正",
+    en: "The job page now shows progress while the video is uploading after conversion finishes",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/202",
+  },
+  {
+    date: "2026-09-03",
     ja: "録画動画の再生開始が速くなるよう、配信前の変換処理を改善",
     en: "Improved video processing so recorded videos start playing faster",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/90",

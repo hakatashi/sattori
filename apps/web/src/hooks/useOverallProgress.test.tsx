@@ -156,6 +156,13 @@ describe("useOverallProgress", () => {
     expect(value).toBeCloseTo(OVERALL_PROGRESS_CAP_PERCENT, 0);
   });
 
+  it("uploading中はconverting完了点(99%キャップ)で足踏みする(Issue #202)", () => {
+    const job = buildJob({ status: "uploading", progress: null, updatedAt: new Date().toISOString() });
+    render(<Probe job={job} phaseProgressSeconds={null} />);
+    const value = Number(screen.getByTestId("percent").textContent);
+    expect(value).toBeCloseTo(OVERALL_PROGRESS_CAP_PERCENT, 0);
+  });
+
   it("converting中に実進捗が進んでいるだけではretrySuspectedにならない(進捗値とwall-clock経過時間の単位混同の回帰防止)", () => {
     // 変換済み700/800秒(87.5%)は、旧実装のバジェット比較(悲観バジェット266.67秒の1.5倍=400秒)
     // では超過扱いになってしまっていたが、convertingフェーズに入ってからの実経過時間はまだ

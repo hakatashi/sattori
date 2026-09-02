@@ -207,6 +207,18 @@ describe("GET /jobs/{jobId}", () => {
     expect(body.posterImageUrl).toBeNull();
   });
 
+  it("アップロード中(uploading)のジョブもプレビュー画像URLを返す(Issue #202)", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, status: "uploading", previewImagePath: "previews/job-1/latest.jpg" },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.previewImageUrl).toBe("https://cdn.example.net/previews/job-1/latest.jpg");
+  });
+
   it("失敗したジョブはプレビュー画像URLを返さない", async () => {
     ddbMock.on(GetCommand).resolves({
       Item: { ...doneJob, status: "failed", previewImagePath: "previews/job-1/latest.jpg" },
