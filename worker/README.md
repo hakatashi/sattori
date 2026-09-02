@@ -172,6 +172,13 @@
   残す(数千行を流すと管理画面のログビューアで他のログが埋もれるため。Issue #58)。
   `OutputBucket`内で3日のライフサイクルルールがあり、DynamoDBには保存しない
   (jobIdから決定的に導出可能、`apps/api/src/downloads.ts`の`buildFfmpegUpscaleLogKey`) |
+| `diagnostics/{jobId}/attempt{n}-{classification}.jpg` | 試行を破棄した際の最終フレーム
+  (`fps_runaway`/`timeout`/`duplicate_rate`のいずれか、Issue #159)。早期に打ち切られた
+  ジョブは`progress/`にスナップショットが1枚も残らず失敗時の画面を事後確認できないため、
+  `recording.artifacts.save_diagnostics_snapshot()`が試行ごとに1枚だけ書き出し、
+  `entrypoint.py`の`upload_diagnostics_snapshots_if_present()`がまとめてアップロードする。
+  `progress/`と違い決定的なキー(ジョブID+試行番号+分類)なのでDynamoDBには保存しない。
+  専用のライフサイクルルールは無く既定の`OUTPUT_RETENTION_DAYS`に乗る |
 
 動画のアップロード時には**そのバイト数も DynamoDB へ記録する**
 (`outputBytes`/`outputBytes720p`、Issue #60)。管理画面のコスト推定の入力で、動画サイズは

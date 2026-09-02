@@ -55,6 +55,28 @@ def grab_frame(config, env, x, y, w, h):
     return gray, color
 
 
+def grab_frame_from_video(video_path, at_sec):
+    """完成済み動画ファイルの指定秒時点のフレームを取り出す(Issue #159)。
+
+    重複フレーム率超過による破棄は`attempt_recording()`が戻った後
+    (`recording/pipeline.py`の`_record_with_retry()`)に判明するため、`grab_frame()`の
+    ライブキャプチャは使えない。ミュージ済みの出力ファイルそのものから取る。
+    失敗時はNoneを返す。"""
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-ss", str(at_sec), "-i", video_path,
+                "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-",
+            ],
+            capture_output=True, timeout=30,
+        )
+        if result.returncode != 0 or not result.stdout:
+            return None
+        return Image.open(io.BytesIO(result.stdout)).convert("RGB")
+    except (subprocess.SubprocessError, OSError):
+        return None
+
+
 def mad(a, b):
     return float(np.mean(np.abs(a - b)))
 
