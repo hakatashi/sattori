@@ -153,6 +153,9 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
         # ちょうど間引かれ**、等倍録画と同じ「60fps・全フレームユニーク」になる。
         cmd += ["-r", str(NATIVE_FRAME_RATE_HZ)]
     cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"]
+    # moov atomを先頭に移す(faststart)。無指定だと末尾に置かれ、ブラウザでの
+    # ストリーミング再生時に末尾へのRangeリクエストが追加で発生してしまう(Issue #90)。
+    cmd += ["-movflags", "+faststart"]
     cmd += [*audio_codec, output_path]
     return cmd
 
