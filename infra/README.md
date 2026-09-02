@@ -287,7 +287,7 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの 
    少ない現状で`p=quarantine`/`p=reject`にすると、正規メールの誤判定を受信者側で
    気づけないまま失う恐れがあるため）
 5. タイトル資産（ゲーム本体+WINEPREFIX+MOD）をS3へアップロードする
-   （`upload-title-assets` skill。アーカイブ構成は`worker/README.md` §8）
+   （`upload-title-assets` skill。アーカイブ構成は`worker/docs/title-assets.md`）
 6. （自宅ワーカーを使う場合のみ）`HomeWorkerRole`をassumeするIAMユーザーを手動で
    作成し、自宅サーバーの常駐デーモンを設定する（`docs/runbooks/home-worker-setup.md`参照。
    アクセスキーはCloudFormationで作るべきではないため手動運用）

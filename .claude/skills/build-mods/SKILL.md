@@ -121,4 +121,4 @@ th06/th07 は上記コマンドから `../common/fps_monitor.cpp` を除いた�
 ## 関連
 
 - ビルドした DLL の配布 → `upload-title-assets` skill
-- MOD の設計・各フックの役割 → `worker/README.md` §2、`worker/docs/titles/thNN.md`
+- MOD の設計・各フックの役割 → `worker/docs/mods.md`、`worker/docs/titles/thNN.md`

@@ -5,7 +5,10 @@
 `GameConfig` を触る前に、該当する1件だけを開くこと。**
 
 タイトル横断で効く判断（終了検知の方式・クロップ座標の確定・音声分離・低速録画）は
-[`docs/decisions/`](../../../docs/decisions/README.md) にある。
+[`docs/decisions/`](../../../docs/decisions/README.md) にある。タイトルを問わない参照仕様は
+[`recording-package.md`](../recording-package.md)（録画パイプラインのモジュール構成）・
+[`mods.md`](../mods.md)（フック DLL のソース構成）・
+[`title-assets.md`](../title-assets.md)（ゲームデータ等の資産アーカイブ）。
 
 ## 一覧
 
