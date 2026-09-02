@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-03",
+    ja: "東方紅魔郷 (th06) の追加ワーカーでの録画が失敗する不具合を修正",
+    en: "Fixed an issue where recording of Embodiment of Scarlet Devil (th06) on the additional worker was failing",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/221",
+  },
+  {
+    date: "2026-09-03",
     ja: "東方花映塚 (th09) の録画に対応",
     en: "Added recording support for Phantasmagoria of Flower View (th09)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/216",
