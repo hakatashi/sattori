@@ -53,8 +53,7 @@ const gameTitles = [
     japanese: "東方花映塚",
     english: "Phantasmagoria of\nFlower View",
     shortName: "PoFV",
-    // サイレントリリース中(E2Eテストのため一時的にUI非公開、後で戻す)。
-    supported: false,
+    supported: true,
     icon: 'th09.png',
   },
   {
