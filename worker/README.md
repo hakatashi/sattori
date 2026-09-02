@@ -3,8 +3,10 @@
 東方リプレイを Wine + Xvfb + ffmpeg でヘッドレス録画し、S3 へアップロードする Python
 ワーカー。AWS EC2 Spot インスタンス、または自宅サーバー(`home-worker/`)上で Docker
 コンテナとして実行される。**ここには「今どうなっているか」だけを書く** ——
-タイトル別の背景は [`docs/titles/`](docs/titles/README.md)、横断的な設計判断の根拠は
-[`docs/decisions/`](../docs/decisions/README.md) にある(§1)。
+タイトル別の背景は [`docs/titles/`](docs/titles/README.md)、録画パイプライン・MOD・タイトル資産の
+詳細は [`docs/recording-package.md`](docs/recording-package.md)・[`docs/mods.md`](docs/mods.md)・
+[`docs/title-assets.md`](docs/title-assets.md)、横断的な設計判断の根拠は
+[`docs/decisions/`](../docs/decisions/README.md) にある。
 
 ## 目次
 
@@ -46,18 +48,11 @@
 | `entrypoint.py` | ジョブ全体の制御。チェックポイント確認 → (再開でなければ)S3 DL → 録画 →
   生動画をS3へチェックポイントUP → 配信用変換 → S3 UP → DynamoDB/taskToken 通知。`GAME`
   環境変数で `record_thNN.py` を呼び分ける |
-| `recording/` | 全タイトル共通の録画パイプライン本体。責務ごとに11モジュールへ分割してある
-  (下表。分割の経緯は [`0041`](../docs/decisions/0041-worker-recording-package-split.md))。
-  Xvfb起動・クロップ座標の確定([`0012`](../docs/decisions/0012-crop-geometry-after-window-stabilizes.md))・録画・
-  終了検知([`0011`](../docs/decisions/0011-replay-end-template-matching.md))・fps暴走検知・
-  自動リトライ(既定3回)・映像/音声を別プロセスで録画し後でmuxする処理(reports/26)・
-  フックDLLより前の追加DLL注入(`GameConfig.extra_dlls`)・音声のジョブ専用sinkへの分離
-  ([`0013`](../docs/decisions/0013-per-job-pulseaudio-sink.md))を担う。処理落ちの早期検知
-  (stutter probe)は真陽性の実績が無く正常なリプレイも誤検知しうることが判明したため
-  削除済み([`0038`](../docs/decisions/0038-remove-stutter-early-detection.md))。代わりに、
-  終了判定に画面静止を使わないend_template方式のタイトルへは、画面が5分静止したら
-  タイムアウト扱いで強制停止する早期検知を追加してある
-  ([`0039`](../docs/decisions/0039-end-template-freeze-timeout.md)) |
+| `recording/` | 全タイトル共通の録画パイプライン本体。責務ごとに11モジュールへ分割してあり、
+  Xvfb起動・クロップ座標の確定・録画・終了検知・fps暴走検知・自動リトライ・映像と音声の
+  別プロセス録画・音声のジョブ専用sinkへの分離を担う。**モジュール一覧と、どの挙動がどの決定
+  記録に基づくかは [`docs/recording-package.md`](docs/recording-package.md)**(分割の経緯は
+  [`0041`](../docs/decisions/0041-worker-recording-package-split.md)) |
 | `pulse.py` | ジョブ専用のPulseAudio null-sinkの作成・破棄(Issue #48) |
 | `record_thNN.py` | **そのタイトルでしか成り立たない `GameConfig` の値だけ**を持つシム(25〜36行)。CLI と録画の呼び出しは `recording/cli.py` に集約してある。タイトル固有の背景は [`docs/titles/thNN.md`](docs/titles/README.md) |
 | `convert.py` | 録画結果を「ユーザーへ配信する1本」へ変換する後処理。**録画後の再エンコード
@@ -72,53 +67,9 @@
   自宅ワーカーの停電・回線断の検知だが、EC2でもハング時の失敗検知が90分→15分に縮まる |
 | `title_assets.py` | `GAME`環境変数に応じたタイトル固有アセットをS3からダウンロード・展開する(§8) |
 | `Dockerfile` | 実行イメージ定義 |
-| `mods/common/` | DLL インジェクタ(`injector.exe`。複数DLLの順次注入に対応)・共通フック処理・
-  fps計測スレッド(`fps_monitor.*`、fps暴走検知用、reports/22)のソース(C++) |
-| `mods/thNN_replay_autoplay/` | タイトルごとの自動再生フック DLL(`thNN_hook.dll`)のソース(C++)。
-  組み込むフックの違いは各タイトルの背景ファイル(§1)を参照 |
-| `mods/common/fps_limiter_hook.*` | `IDirect3DDevice9::Present`のvtableフックによるフレーム
-  レート制限(reports/46)。目標fpsは`FPS_LIMIT_TARGET_HZ`(既定60)。低速録画(§5)の実装基盤 |
-| `mods/common/fps_limiter_hook_d3d8.*` | 上記のDirect3D8版(`IDirect3DDevice8::Present`、
-  vtable番号はD3D9よりCreateDeviceが1つ・Presentが2つ小さい)。th09のMODに組み込み済みだが
-  `SLOW_MOTION_SUPPORTED_GAME_IDS`未登録のためユーザーには未公開(Issue #101で他タイトルへ
-  展開する際にそのまま使える、[titles/th09.md](docs/titles/th09.md)) |
-| `mods/common/dsound_hook.*` / `fps_display_hook.*` | 低速録画時に音声を同じ比率へスローダウン
-  させる(`SetFrequency`フック、reports/47)／画面に焼き付くfpsカウンター表示だけを等倍相当へ
-  補正する(reports/48) |
-| `mods/common/score_monitor.*` | ゲーム内スコア・ステージ番号・残機・グレイズの定期サンプリング
-  (reports/50、Issue #103)。`recording.modlog.check_replay_desync()`が録画成功直後にMODログの
-  スコア推移と`replayInfo.score`を突き合わせてリプレイずれ(デシンク)の疑いを判定する
-  (`JobRecord.desyncDetected`、自動リトライはしない)。RVAはタイトル毎に`dllmain.cpp`で指定
-  (baseRva+baseIsPointer+フィールドオフセット/幅の汎用設計)。th09を除く7タイトルで実機
-  動作確認済み
-  ([`docs/reports/2026-08-25-th07-score-monitor-fix.md`](../docs/reports/2026-08-25-th07-score-monitor-fix.md)、
-  `docs/known-limitations.md`参照。th07だけはSattoriが配布するth07.exeが当初の検証環境と
-  バイナリが異なりゲームデータのバージョン差でRVAの再特定を要した。th10はtouhou-recorder
-  reports/57、th12はtouhou-recorder reports/62で別途確認)。**th09だけはスコアのRVAが
-  未特定のため`scoreWidth=0`でスコア読み取りを無効化し、life(残機)のみ監視する**
-  ([titles/th09.md](docs/titles/th09.md)参照) |
-| `mods/common/score_probe_hook.*` / `stage_probe_hook.*` | RVA特定用の診断専用コード(本番ビルドには
-  含めない)。score_monitorのRVAが通用しないタイトル・ゲームバージョンが出た場合の再調査に使う |
-
-### `recording/` パッケージのモジュール
-
-**どこを触るか迷ったら、まずこの表で当たりを付けること。**
-
-| モジュール | 役割 |
-| --- | --- |
-| `config.py` | `GameConfig` とその既定値の導出(`for_game()`)。パス類は `WORKER_ROOT` 起点 |
-| `timing.py` | 低速録画(§5)の実時間スケーリングと、重複フレーム率の閾値換算 |
-| `instance.py` | Xvfb 起動・instance ディレクトリの複製・`vpatch.ini` の上書き・注入コマンド |
-| `process.py` | ゲームプロセスの探索・thprac のアタッチ・Wine の後片付け |
-| `window.py` | ウィンドウ検出とクロップ座標の確定 |
-| `modlog.py` | MOD が書き出すログの読み取り(マーカー待ち・fps暴走検知・スコア照合) |
-| `vision.py` | 画面キャプチャと画素比較。**画素比較の閾値はここ**(ポーリング回数は `pipeline.py`) |
-| `ffmpeg.py` | 録画・結合・重複フレーム率計測の ffmpeg/ffprobe 呼び出し |
-| `artifacts.py` | 進捗・デシンク検証結果・タイムアウト有無のファイル書き出し(別プロセスへの受け渡し) |
-| `pipeline.py` | 1回の録画試行(`attempt_recording()`)と自動リトライ(`record_with_retry()`)。**ポーリングの回数・秒数はここ** |
-| `cli.py` | `record_thNN.py` が共有する CLI(引数定義・ロガー) |
-
-`mods/` 配下はソースとビルドスクリプトのみ管理する(元は `touhou-recorder` の PoC 由来。ビルドは §9)。
+| `mods/` | ゲームプロセスへ注入するフック DLL(`thNN_hook.dll`)とインジェクタ(`injector.exe`)の
+  ソース(C++)。共通フック・タイトル別フック・低速録画(§5)のPresentフック・スコア監視(デシンクの
+  事後検知)の内訳は **[`docs/mods.md`](docs/mods.md)**。ビルドは §9 |
 
 ## 3. 実行時の環境変数
 
@@ -136,7 +87,7 @@
 | `TASK_TOKEN` | Step Functions の `waitForTaskToken` トークン(省略時は通知をスキップ、ローカル検証用) |
 | `EXPECTED_DURATION_SECONDS` | リプレイの推定再生時間(進捗率算出の参考値、省略可) |
 | `EXPECTED_SCORE` | リプレイファイルの記録スコア(画面表示値)。リプレイずれの事後検証(Issue #103、
-  §2の`score_monitor`)に使う。`replayInfo.score`が取得できていなければ省略される |
+  [`docs/mods.md`](docs/mods.md)の`score_monitor`)に使う。`replayInfo.score`が取得できていなければ省略される |
 | `FPS_LIMIT_TARGET_HZ` | 低速録画(§5)の目標fps。**省略時は等倍**(既定60)。自宅ワーカーへのオファー時のみ `30` が渡る |
 | `THPRAC_ATTACH_TIMEOUT_SEC` / `_CONFIRM_SEC` / `_ATTEMPTS` | th20 の thprac アタッチの予算([`titles/th20.md`](docs/titles/th20.md)) |
 | `TH10_BUGFIX_MARISA_B` | `1` で th10 の VsyncPatch(`vpatch.ini`の`BugFixTh10Power3`)を有効にして録画する
@@ -254,38 +205,9 @@ S3オブジェクトメタデータ(`sattori-time-scale`)として運ぶ。ま�
   (`games/{title}/`)・WINEPREFIX(`prefixes/{title}-*/`)・MODビルド成果物
   (`mods/**/build/*`)。ECRストレージコストがタイトル数に比例して増大するのを避けるため。
 
-> **アーカイブを作って流すコマンド(タイトルごとの同梱物・`tar`の注意点込み)は
-> `upload-title-assets` skill にある。** 以下は構成とワーカー側の展開の仕組みだけ。
-
-新タイトル追加時やゲーム本体・MOD更新時は、以下を1本の tar.gz にまとめて
-`s3://${TITLE_ASSETS_BUCKET}/titles/{title}/assets.tar.gz` へアップロードする
-(`TITLE_ASSETS_BUCKET` は `cdk deploy` 後の `TitleAssetsBucketName` 出力)。アーカイブ内のパスは
-`worker/` 配下への展開先と一致させること(`title_assets.py` が `/app` 直下へ相対パスのまま展開):
-
-```
-games/{title}/                                  # ゲーム本体一式(.cfg はウィンドウモード必須)
-prefixes/{title}-wined3d-gl/                    # 日本語ロケール初期化済み WINEPREFIX
-mods/common/build/injector.exe                  # DLL インジェクタ(共通)
-mods/{title}_replay_autoplay/build/{title}_hook.dll  # 自動再生 MOD(タイトル毎)
-```
-
-タイトルごとの同梱物の違い(th06 の実行ファイル名・th08 のゲームデータのバージョン・
-th20 の cfg と thprac など)は §1 の各背景ファイルに理由込みで書いてある。
-
-`title_assets.py` はインスタンス起動時に `worker/games/{title}/` が既に存在するかを確認し、
-無ければこのアーカイブをダウンロード・展開する(存在すればスキップ。Spot中断リトライ時の
-同一インスタンス再利用等を想定)。展開先は `/app` 直下で、`record_{game}.py` が既定で参照
-するパス(`/app/games/{game}`、`/app/prefixes/{game}-wined3d-gl` 等)と一致する。
-
-**自宅ワーカー(`home-worker/`)は `TITLE_ASSETS_CACHE_DIR` が渡された場合、直接ダウンロード
-する代わりにホスト側に永続化されたディレクトリをキャッシュとして使う**(Issue #104。
-自宅回線は往復距離が長くダウンロードに40秒前後かかるため、頻繁に変わらないタイトル資産を
-毎ジョブ取り直す無駄を無くす)。S3オブジェクトのETagをバージョンキーにした世代ディレクトリ
-(`{cache_dir}/{game}/v-{etag}/`)として持ち、リモートのアーカイブが更新されて ETag が変われば
-キャッシュミスとして扱い新しい世代を取得し直す。EC2 はこの環境変数を渡さないため常に
-従来どおりの直接ダウンロードになり、`title_assets.py` 自身は「自宅かEC2か」を分岐しない。
-**キャッシュの構造・世代削除の判断根拠を変える前に
-[`docs/decisions/0040`](../docs/decisions/0040-home-worker-title-assets-cache.md) を読むこと。**
+**後者のアーカイブの構成(何をどのパスで固めるか)・ワーカー側の展開・自宅ワーカーの
+`TITLE_ASSETS_CACHE_DIR` キャッシュは [`docs/title-assets.md`](docs/title-assets.md)**、
+アーカイブを作って流すコマンドは `upload-title-assets` skill。
 
 ## 9. MOD・WINEPREFIX
 
@@ -294,108 +216,65 @@ th20 の cfg と thprac など)は §1 の各背景ファイルに理由込み�
 `build-mods` skill、WINEPREFIX の作成・フォント修正(`setup_wineprefix.sh`)と資産アーカイブの
 作成は `upload-title-assets` skill。
 
-MOD が何をしているか(各フックの役割)は §2 の `mods/` の行と §1 の各背景ファイルを参照。
-**フォントの実体(`msgothic.ttc`・`msmincho.ttc`)は Windows のライセンスフォントであり、
+MOD が何をしているか(各フックの役割)は [`docs/mods.md`](docs/mods.md) と §1 の各背景ファイルを
+参照。**フォントの実体(`msgothic.ttc`・`msmincho.ttc`)は Windows のライセンスフォントであり、
 リポジトリにも S3 にも置いていない**ので別途用意すること。配置・レジストリ登録が要る理由は
 [`titles/th07.md`](docs/titles/th07.md)(MS ゴシック)・[`titles/th11.md`](docs/titles/th11.md)(MS 明朝)。
 
 ## 10. テスト(`tests/`)
 
-Wine/Xvfb/実ゲームに依存する録画本体(`recording.pipeline.attempt_recording()`)以外の、
-純粋なロジック部分(MAD計算・ffmpegコマンド組み立て・fps暴走/重複フレーム率の判定・
-配信用変換の解像度/フィルタ組み立て/進捗計算・DynamoDB更新式の組み立て・Spot中断/リバランス
-判定・進捗レポートの重複排除等)を pytest でユニットテストする。boto3 呼び出しは
-`unittest.mock` でモックし、実際の AWS リソースには接続しない(moto 等の追加依存は導入して
-いない)。GitHub Actions の `Test`(`.github/workflows/test.yml`)の `worker-test` ジョブで
-push・PR 毎に自動実行される。
-
-```bash
-pip install -r requirements-dev.txt && pytest
-```
-
-`recording/` パッケージのテストは `tests/test_recording_<モジュール名>.py` と1対1に対応させる
-(共有ヘルパは `tests/recording_helpers.py`)。パッケージ内は `from .process import
-kill_wine_and_wait` のように名前で import しているため、**monkeypatch は定義側ではなく
-「使う側」のモジュールに当てること**(`pipeline.kill_wine_and_wait` であって
-`process.kill_wine_and_wait` ではない)。
+Wine/Xvfb/実ゲームに依存する録画本体(`recording.pipeline.attempt_recording()`)以外の、純粋な
+ロジック部分を pytest でユニットテストする(boto3 呼び出しは `unittest.mock` でモックし、実際の
+AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/workflows/test.yml`)の
+`worker-test` ジョブで push・PR 毎に自動実行される。**走らせ方と、`recording/` のテストに効く
+規約(monkeypatch は定義側ではなく「使う側」のモジュールに当てる)は
+[`docs/runbooks/worker-local-recording.md`](../docs/runbooks/worker-local-recording.md) §1。**
 
 ## 11. ローカルでの実行(ネットワーク不要)
 
 ゲーム資産を配置済みなら S3/DynamoDB 無しで録画本体だけを試せる(低速録画の例は §5)。配信用
-変換だけなら ffmpeg/ffprobe があれば動く。
+変換だけなら ffmpeg/ffprobe があれば動く。**コマンドと並列実行時の音声分離の確認方法は
+[`docs/runbooks/worker-local-recording.md`](../docs/runbooks/worker-local-recording.md) §2。**
 
-```bash
-python3 record_th07.py --replay-path /path/to/any.rpy --output /tmp/out.mp4
-# 配信用変換のみ(等倍。低速録画の素材は time_scale=2.0 を渡すと等倍へ戻る)
-python3 -c "from convert import convert_for_delivery; convert_for_delivery('/tmp/out.mp4', '/tmp/out_delivery.mp4')"
-```
-
-音声の録音先となるPulseAudio sinkは`--pulse-sink`未指定ならプロセスIDから採番されるため、複数
-タイトルを同時に走らせても音声は混ざらない(ディスプレイ番号もタイトルごとに異なるため映像も
-干渉しない)。分離できているかは `pactl list sink-inputs` で各ゲームの接続先を見る
-([`reports/2026-08-08-parallel-audio-isolation.md`](../docs/reports/2026-08-08-parallel-audio-isolation.md))。
-
-**手動検証時はOSレベルの強制終了ラッパーを併用すること。** 既知の未修正バグ(th20の低速録画
-2並列がハングするIssue #179、その他未知のタイトル固有バグ)により、ゲームプロセスがGPU待ち等の
-D state(カーネルレベルで割り込み不可能)に陥り録画処理自体が完全にハングする可能性がある。
-`kill_wine_and_wait()`はこのケースをタイムアウト検知しWINEPREFIX配下の残存プロセスをSIGKILLする
-フォールバックを持つが(Issue #186)、内部のリトライ/クリーンアップが機能しない未知の経路まで
-保証するものではない。本番のDocker経路はジョブ完了後にコンテナごと破棄されるため実害が無いが、
-本節のようにホスト上で直接実行する場合はプロセスが確実に終了するよう外側から保険を掛ける:
-
-```bash
-timeout --kill-after=30s 600s python3 record_th20.py --replay-path /path/to/any.rpy --output /tmp/out.mp4
-```
-
-放置されたWineプロセス(`winedevice.exe`等)がsystem D-Busのシグナル購読を持ったまま残り続けると
-D-Busのメッセージキューが枯渇し、ホストのsystemdごとハングする事故が実際に起きている
-([`docs/reports/2026-08-27-wine-cleanup-hang-incident.md`](../docs/reports/2026-08-27-wine-cleanup-hang-incident.md))。
+> **そこに書いたOSレベルの強制終了ラッパー(`timeout`)を必ず併用すること。** 未修正のハング
+> バグ(Issue #179 ほか)でゲームプロセスが D state に陥ると録画処理ごとハングし、放置された
+> Wine プロセスがホストの systemd まで巻き込む事故が実際に起きている
+> ([`decisions/0035`](../docs/decisions/0035-outer-timeout-wrapper-for-bare-metal-runs.md)、
+> [`reports/2026-08-27-wine-cleanup-hang-incident.md`](../docs/reports/2026-08-27-wine-cleanup-hang-incident.md))。
 
 ## 12. ビルドとECRへのpush
 
 本番のECRリポジトリ名は`sattori-worker`(`infra/lib/sattori-stack.ts`が作成、本体スタックと
-同じくeu-south-2)。デプロイ手順全体は `deploy-sattori` skill(**push と deploy の順序を
-守ること**)。
-
-```bash
-docker build -t <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest worker/
-aws ecr get-login-password --region eu-south-2 \
-  | docker login --username AWS --password-stdin <account>.dkr.ecr.eu-south-2.amazonaws.com
-docker push <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest
-```
-
-`worker/assets/`は`.gitignore`対象なので、`docker build`前にビルドコンテキストへ配置すること(§8)。
+同じくeu-south-2)。`worker/assets/`は`.gitignore`対象なので、`docker build`前にビルド
+コンテキストへ配置すること(§8)。コマンドは
+[`docs/runbooks/worker-local-recording.md`](../docs/runbooks/worker-local-recording.md) §3、
+デプロイ手順全体は `deploy-sattori` skill(**push と deploy の順序を守ること**)。
 
 ## 13. 既知の制約
 
 一覧と詳細は [`docs/known-limitations.md`](../docs/known-limitations.md)。録画パイプラインに
-関わるものは次の4点。
+関わるのは次の5点で、**なぜその割り切りなのか・何が未解決かはリンク先にある**。
 
 - **デシンク(リプレイずれ)を録画時に予防する手段は無い**。th20 は thprac の導入で大半が
   解消したが([`titles/th20.md`](docs/titles/th20.md))、他タイトルには対処法がない。録画後の
-  スコア突き合わせによる事後検知(`JobRecord.desyncDetected`、Issue #103、§2の
-  `score_monitor`)はth09を除く7タイトルで実装済みだが、自動リトライはしない(警告表示のみ)。
-  th09はスコアのRVAが未特定のためこの検知自体が機能しない([titles/th09.md](docs/titles/th09.md))。
-  想定尺より大幅に早く終了した/タイムアウトへ近づいたジョブでは、検知ロジック側を疑う前に
-  **まず録画された映像を目視して**不自然な被弾・ゲームオーバーが無いか確認すること(閾値調整や
-  リトライでは解決しない —— 同一リプレイなら毎回同じ箇所で再現する)。
-- **タイムアウト打ち切り(検知方式がリプレイ終了検知ではなく録画時間の上限)は検知・
-  警告のみで、自動リトライはしない**(Issue #161)。`JobRecord.timedOut`に記録して
-  デシンクと同じ警告表示に乗せ、ワーカーのログにも`WARNING:`を残す。2026-08-24に
-  自宅ワーカーで観測したfps低下(録画全体が遅く進み上限まで回してもリプレイ終端に
-  届かない)はサーマルスロットリング(Issue #162)が原因と判明しクーラー換装で解消済み
-  (PR #180)だが、冷却以外の要因で同様の遅延が再発する可能性は排除できないため、
-  検知・警告の仕組み自体は残してある。
-- **重複フレーム率の自動チェックは録画開始15〜45秒の30秒スポットしか見ていない**
-  (Issue #93)。全編の代表値ではない。さらに、th12の実機検証(touhou-recorder
-  reports/67)で「重複フレーム率だけでは処理落ちを過小評価しうる」ことが判明した——
-  背景が常時アニメーションするタイトルでは、ゲーム進行全体が実時間に対して間延びする
-  タイプの処理落ちを重複フレーム率(フレーム内容が完全同一の連続キャプチャしか検出
-  できない)は見逃す。インスタンスタイプの実機検証では、重複フレーム率に加え
-  「リプレイのframeCount(60fps基準の理論尺)と実測プレイ時間の比較」も併用すること。
-- **対応タイトルは §1 の8本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
-  対応 —— MOD 移植・実機検証。Issue #13 配下)。
+  スコア突き合わせによる事後検知(`JobRecord.desyncDetected`、Issue #103、[`docs/mods.md`](docs/mods.md)
+  の`score_monitor`)はth09を除く7タイトルで実装済みだが、自動リトライはしない(警告表示のみ)。
+  th09はスコアのRVAが未特定でこの検知自体が機能しない
+  ([known-limitations §3](../docs/known-limitations.md#3-録画品質の検証にまつわる制約)、
+  [`titles/th09.md`](docs/titles/th09.md))。
+- **タイムアウト打ち切り(検知方式がリプレイ終了検知ではなく録画時間の上限)も検知・警告のみで、
+  自動リトライはしない**(Issue #161。`JobRecord.timedOut`に記録して同じ警告表示に乗せる。同 §3)。
+- **重複フレーム率の自動チェックは録画開始15〜45秒の30秒スポットしか見ていない**(Issue #93)。
+  全編の代表値ではなく、背景が常時アニメーションするタイトルでは処理落ちを過小評価しうるため、
+  リプレイのframeCount(60fps基準の理論尺)との比較も必ず併用すること(同 §3)。
 - **th10のVsyncPatch「バグマリ」修正(`BugFixTh10Power3`)は記録時の設定を録画前に自動判別
-  できない**。ページAの`th10BugfixMarisaB`オプション(既定false)で利用者の自己申告に頼っており、
-  誤った申告のリプレイはリプレイずれ(デシンク)を起こす([`titles/th10.md`](docs/titles/th10.md)、
-  reports/58)。
+  できない**。利用者の自己申告(`th10BugfixMarisaB`、既定false)に頼っており、誤った申告の
+  リプレイはデシンクする([known-limitations §1](../docs/known-limitations.md#1-対応タイトルの拡大)、
+  [`titles/th10.md`](docs/titles/th10.md))。
+- **対応タイトルは §1 の8本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
+  対応 —— MOD 移植・実機検証。Issue #13 配下。同 §1)。
+
+**想定尺より大幅に早く終了した/タイムアウトへ近づいたジョブでは、検知ロジック側を疑う前に
+まず録画された映像を目視して**不自然な被弾・ゲームオーバーが無いか確認すること(閾値調整や
+リトライでは解決しない —— 同一リプレイなら毎回同じ箇所で再現する。`apps/api` の
+`retryPolicy.ts`・`handleFailure.ts` はこの性質を前提にリトライ回数を決めている)。

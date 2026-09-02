@@ -4,8 +4,8 @@
 ECRのイメージストレージコストがタイトル数に比例して増大する問題への対応として、
 ワーカーイメージ自体はタイトル非依存の共通部分のみで構成し、タイトル固有の資産
 (games/{game}/, prefixes/{game}-*/, mods/**/build/*)は起動時にS3からアーカイブ
-1本をダウンロード・展開する。アーカイブの構成は worker/README.md §8、作成・アップロード
-手順は upload-title-assets skill を参照。
+1本をダウンロード・展開する。アーカイブの構成は worker/docs/title-assets.md、作成・
+アップロード手順は upload-title-assets skill を参照。
 
 自宅ワーカー(Issue #104)は `TITLE_ASSETS_CACHE_DIR` が渡されたときだけ、ホスト側で
 永続化されたディレクトリ(`docker run -v`でマウントされる)にアーカイブの展開結果を

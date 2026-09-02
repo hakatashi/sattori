@@ -7,7 +7,7 @@ description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をま�
 
 ワーカーは録画のたびに S3 の `TitleAssetsBucket` からタイトル資産（ゲーム本体・
 WINEPREFIX・MOD の DLL）を取得して展開する。アーカイブ構成と展開の仕組みは
-`worker/README.md` §8 を参照。
+`worker/docs/title-assets.md` を参照。
 
 ## 0. 環境値の解決
 
@@ -222,5 +222,5 @@ done
 
 - MOD（`*_hook.dll`）のビルド → `build-mods` skill
 - デプロイ全般 → `deploy-sattori` skill
-- アーカイブ構成・ワーカー側の展開処理 → `worker/README.md` §8
+- アーカイブ構成・ワーカー側の展開処理 → `worker/docs/title-assets.md`
 - タイトルごとの同梱物の理由 → `worker/docs/titles/thNN.md`
