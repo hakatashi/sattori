@@ -1,0 +1,55 @@
+{
+  "game": "th20",
+  "gameTitle": "東方錦上京 ～ Fossilized Wonders.",
+  "formatVersion": null,
+  "player": "koyi",
+  "recordedAt": 1756992358,
+  "date": "25/09/04 22:25",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 25,
+    "month": 9,
+    "date": 4,
+    "hours": 22,
+    "minutes": 25,
+    "seconds": null
+  },
+  "character": "ReimuGreen2",
+  "characterNameJa": "霊夢 緑2",
+  "characterNameEn": "Reimu Green2",
+  "difficulty": "Extra",
+  "stage": "Extra Stage Clear",
+  "score": 132255810,
+  "cleared": true,
+  "splits": [
+    {
+      "stage": 7,
+      "score": 0,
+      "power": "1.00",
+      "piv": 0,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 0,
+      "additional": {
+        "stones": {
+          "red": 0,
+          "blue": 0,
+          "yellow": 0,
+          "green": 0
+        },
+        "stonesTotal": 0,
+        "misses": 0
+      },
+      "frameCount": 46705
+    }
+  ],
+  "frameCount": 46705
+}
