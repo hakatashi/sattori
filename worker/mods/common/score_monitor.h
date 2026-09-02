@@ -44,6 +44,11 @@
 // reports/53_phase53_score_monitor_all_titles.md)。th10は別途RVAを特定し
 // 同様に完全一致を確認済み(reports/57、dllmain.cppのコメント参照)。ゲームデータの
 // バージョンが変われば無意味な値になりうる点には注意すること。
+//
+// th09はthprac(thprac_th09.cpp)にスコア表示/編集UIが無く、実機でのメモリ全域
+// スキャンでもスコアのRVAを特定できなかった(touhou-recorder reports/68)。
+// この場合`scoreWidth=0`を指定するとスコア読み取り自体をスキップし、
+// `baseResolved`のみをログ出力のゲートにしてlife等だけ監視できる。
 
 namespace autoplay {
 
@@ -55,9 +60,11 @@ struct ScoreMonitorConfig {
     // 構造体の基点として直接使う(th06/th11/th20)
     bool baseIsPointer = false;
 
-    // スコア(基点からのオフセット、符号なし整数として読む)
+    // スコア(基点からのオフセット、符号なし整数として読む)。
+    // widthが0なら記録しない(th09のようにスコアのRVAが未特定/存在しない場合向け)。
+    // この場合baseResolvedのみがログ出力のゲートになる。
     uint32_t scoreOffset = 0;
-    uint8_t scoreWidth = 4;       // 1/2/4/8バイト
+    uint8_t scoreWidth = 4;       // 1/2/4/8バイト、0で無効
 
     // ステージ番号(符号付き整数)。widthが0なら記録しない
     uint32_t stageOffset = 0;

@@ -125,7 +125,7 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
   この変換ロジックは replay-parser 側ではなく shared 側に置く（依存の向きは
   shared → replay-parser の一方向）。
 - `parseReplayInfo()`: バイト列から `ReplayInfo` を得るエントリポイント。フォーマット
-  解析エラーに加え、`SUPPORTED_GAME_IDS`（`games.ts`。現状 th06/07/08/10/11/12/20）に含まれない
+  解析エラーに加え、`SUPPORTED_GAME_IDS`（`games.ts`。現状 th06/07/08/09/10/11/12/20）に含まれない
   タイトルも `unsupported_game` エラーとして日本語メッセージ付きで返す。失敗時の
   `ReplayParseFailure.game` は `unsupported_game` の場合のみ検出タイトルを持つ
   （パースエラー計測、Issue #142。`apps/web/src/api/analytics.ts`）。

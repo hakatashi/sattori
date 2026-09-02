@@ -116,6 +116,7 @@ RECORDING_SCRIPTS = {
     "th06": "record_th06.py",
     "th07": "record_th07.py",
     "th08": "record_th08.py",
+    "th09": "record_th09.py",
     "th10": "record_th10.py",
     "th11": "record_th11.py",
     "th12": "record_th12.py",

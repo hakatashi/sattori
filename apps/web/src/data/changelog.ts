@@ -17,6 +17,13 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-02",
+    ja: "東方花映塚 (th09) の録画に対応",
+    en: "Added recording support for Phantasmagoria of Flower View (th09)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/PLACEHOLDER",
+    important: true,
+  },
+  {
+    date: "2026-09-02",
     ja: "東方錦上京 (th20) のスペルプラクティスのリプレイを判別し、スペルカード番号を表示するよう修正",
     en: "Fossilized Wonders (th20) spell practice replays are now identified, with the spell card number shown",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/176",
