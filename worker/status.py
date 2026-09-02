@@ -86,6 +86,13 @@ def update_status(
     条件が崩れた場合は例外にせずログだけ残して戻る。停止済みジョブへの書き込みが
     拒否されるのは想定内の正常系であり、ここで例外を投げると録画パイプラインが
     「失敗」として後始末を走らせてしまう。
+
+    `status="done"` かつ error/error_code を渡さない呼び出しでは、前回試行分の
+    `error`/`errorCode` を明示的に消す(Issue #219)。同一jobIdへ複数回試行する
+    リトライ機構(1回目が失敗して error を書いた後、2回目が成功して done になる
+    経路)と組み合わさると、他の引数と同じ「Noneは触れない」ルールのままでは
+    前回の失敗情報が成功後もユーザーに見え続けてしまうため、doneだけは例外的に
+    クリアする。
     """
     table_name = os.environ.get("JOBS_TABLE")
     if not table_name:
@@ -126,11 +133,19 @@ def update_status(
     if timed_out is not None:
         expr += ", timedOut = :to"
         values[":to"] = timed_out
+    remove_clauses = []
     if status == "done":
         # ダウンロード期限表示(ジョブ画面・完了メール)の起点。"done"への遷移は
         # ジョブの生涯で一度しか起こらないため、無条件にセットしてよい。
         expr += ", doneAt = :d"
         values[":d"] = now
+        if error is None:
+            names["#e"] = "error"
+            remove_clauses.append("#e")
+        if error_code is None:
+            remove_clauses.append("errorCode")
+    if remove_clauses:
+        expr += " REMOVE " + ", ".join(remove_clauses)
 
     try:
         table.update_item(
