@@ -58,7 +58,7 @@ const rules = [
     // npm 公開パッケージで、利用者向けAPIリファレンスを兼ねるため別枠（外部リンクで分割できない）。
     label: "npm公開パッケージのREADME",
     match: (file) => file === "packages/replay-parser/README.md",
-    maxLines: 500,
+    maxLines: 1000,
     hint: HINT_SPLIT,
   },
   {
