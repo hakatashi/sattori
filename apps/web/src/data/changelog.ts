@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-03",
+    ja: "画像・スタイルシート・スクリプトなどの静的ファイルにキャッシュ設定を追加し、ページの表示速度を改善",
+    en: "Added caching for static assets like images, stylesheets, and scripts to improve page load speed",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/223",
+  },
+  {
+    date: "2026-09-03",
     ja: "録画が再試行の末に成功した場合、途中の失敗によるエラー表示が完了後も残ってしまう不具合を修正",
     en: "Fixed an issue where a leftover error from a failed attempt could still be shown after a recording later succeeded on retry",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/219",
