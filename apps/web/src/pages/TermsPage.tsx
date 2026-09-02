@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { usePageMeta } from "../hooks/usePageMeta.ts";
 import staticStyles from "./StaticPage.module.css";
 
 interface Section {
@@ -11,6 +12,7 @@ interface Section {
 /** 利用規約ページ（`/terms`）。フッターからナビゲーションする。 */
 export function TermsPage() {
   const { t } = useTranslation();
+  usePageMeta({ title: t("terms.heading"), path: "/terms" });
   const intro = t("terms.intro", { returnObjects: true }) as string[];
   const sections = t("terms.sections", { returnObjects: true }) as Section[];
 

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  公開されている静的ページ（ジョブ個別ページ`/jobs/*`はjobIdが認可の秘密値なので含めない、
+  robots.txt側でクロール自体を止めている）。各ページについてja/en両方のURLを列挙し、
+  `xhtml:link`でhreflangの相互参照（x-default含む）を宣言する（Issue #214）。
+  ページを追加・削除したら`src/test/sitemap.test.ts`がApp.tsxのルート一覧との整合を検証する。
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://sattori.hakatashi.com/</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/" />
+  </url>
+  <url>
+    <loc>https://sattori.hakatashi.com/en</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/" />
+  </url>
+  <url>
+    <loc>https://sattori.hakatashi.com/about</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/about" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en/about" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/about" />
+  </url>
+  <url>
+    <loc>https://sattori.hakatashi.com/en/about</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/about" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en/about" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/about" />
+  </url>
+  <url>
+    <loc>https://sattori.hakatashi.com/info</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/info" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en/info" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/info" />
+  </url>
+  <url>
+    <loc>https://sattori.hakatashi.com/en/info</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/info" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en/info" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/info" />
+  </url>
+  <url>
+    <loc>https://sattori.hakatashi.com/terms</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/terms" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en/terms" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/terms" />
+  </url>
+  <url>
+    <loc>https://sattori.hakatashi.com/en/terms</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/terms" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en/terms" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/terms" />
+  </url>
+  <url>
+    <loc>https://sattori.hakatashi.com/changelog</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/changelog" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en/changelog" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/changelog" />
+  </url>
+  <url>
+    <loc>https://sattori.hakatashi.com/en/changelog</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/changelog" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en/changelog" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/changelog" />
+  </url>
+  <url>
+    <loc>https://sattori.hakatashi.com/replay-help</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/replay-help" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en/replay-help" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/replay-help" />
+  </url>
+  <url>
+    <loc>https://sattori.hakatashi.com/en/replay-help</loc>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://sattori.hakatashi.com/replay-help" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://sattori.hakatashi.com/en/replay-help" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sattori.hakatashi.com/replay-help" />
+  </url>
+</urlset>

@@ -1,10 +1,12 @@
 import { useTranslation } from "react-i18next";
+import { usePageMeta } from "../hooks/usePageMeta.ts";
 import staticStyles from "./StaticPage.module.css";
 import styles from "./AboutPage.module.css";
 
 /** サービス概要・作者紹介ページ（`/about`）。フッターからナビゲーションする。 */
 export function AboutPage() {
   const { t } = useTranslation();
+  usePageMeta({ title: t("about.heading"), path: "/about" });
   const intro = t("about.intro", { returnObjects: true }) as string[];
 
   return (
