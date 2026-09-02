@@ -203,7 +203,10 @@ fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
   ページ（`/`, `/about`, `/info`, `/terms`, `/changelog`, `/replay-help`）についてja/en
   それぞれのURLを列挙し、`xhtml:link`でhreflang（`ja`/`en`/`x-default`）を相互参照する。
   ページを追加・削除したら両ファイルと`src/test/sitemap.test.ts`（App.tsxのルート一覧との
-  整合を検証）を同時に直すこと。
+  整合を検証）を同時に直すこと。**`public/`配下はViteMinifyPlugin（§6.1、コメント除去は
+  `index.html`/`en/index.html`にしか効かない）の対象外でそのままコピーされるため、
+  この2ファイルにはXMLコメント等の内部事情を書かないこと**（Issue番号のような実装詳細を
+  書いても、`ViteMinifyPlugin`によるコメント除去は効かず一般公開されてしまう）。
 - `robots.txt`は`/admin/`・`/api/`・`/jobs/`・`/en/jobs/`のクロールを止める。`jobId`は
   認可の秘密値（[`docs/decisions/0004`](../../docs/decisions/0004-job-id-as-authorization-secret.md)）
   であり、そもそも外部にリンクされないURLなのでクロール自体を抑止する。
