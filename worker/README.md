@@ -29,6 +29,7 @@
 | th06 東方紅魔郷 | `record_th06.py` | [docs/titles/th06.md](docs/titles/th06.md) | テンプレート照合 | 640x480 |
 | th07 東方妖々夢 | `record_th07.py` | [docs/titles/th07.md](docs/titles/th07.md) | テンプレート照合 | 640x480 |
 | th08 東方永夜抄 | `record_th08.py` | [docs/titles/th08.md](docs/titles/th08.md) | テンプレート照合 | 640x480 |
+| th09 東方花映塚 | `record_th09.py` | [docs/titles/th09.md](docs/titles/th09.md) | テンプレート照合(絞り込み領域) | 640x480 |
 | th10 東方風神録 | `record_th10.py` | [docs/titles/th10.md](docs/titles/th10.md) | テンプレート照合(絞り込み領域) | 640x480 |
 | th11 東方地霊殿 | `record_th11.py` | [docs/titles/th11.md](docs/titles/th11.md) | 画面静止のみ | 640x480 |
 | th12 東方星蓮船 | `record_th12.py` | [docs/titles/th12.md](docs/titles/th12.md) | 画面静止のみ | 640x480 |
@@ -77,6 +78,10 @@
   組み込むフックの違いは各タイトルの背景ファイル(§1)を参照 |
 | `mods/common/fps_limiter_hook.*` | `IDirect3DDevice9::Present`のvtableフックによるフレーム
   レート制限(reports/46)。目標fpsは`FPS_LIMIT_TARGET_HZ`(既定60)。低速録画(§5)の実装基盤 |
+| `mods/common/fps_limiter_hook_d3d8.*` | 上記のDirect3D8版(`IDirect3DDevice8::Present`、
+  vtable番号はD3D9よりCreateDeviceが1つ・Presentが2つ小さい)。th09のMODに組み込み済みだが
+  `SLOW_MOTION_SUPPORTED_GAME_IDS`未登録のためユーザーには未公開(Issue #101で他タイトルへ
+  展開する際にそのまま使える、[titles/th09.md](docs/titles/th09.md)) |
 | `mods/common/dsound_hook.*` / `fps_display_hook.*` | 低速録画時に音声を同じ比率へスローダウン
   させる(`SetFrequency`フック、reports/47)／画面に焼き付くfpsカウンター表示だけを等倍相当へ
   補正する(reports/48) |
@@ -84,11 +89,14 @@
   (reports/50、Issue #103)。`recording.modlog.check_replay_desync()`が録画成功直後にMODログの
   スコア推移と`replayInfo.score`を突き合わせてリプレイずれ(デシンク)の疑いを判定する
   (`JobRecord.desyncDetected`、自動リトライはしない)。RVAはタイトル毎に`dllmain.cpp`で指定
-  (baseRva+baseIsPointer+フィールドオフセット/幅の汎用設計)。対応7タイトル全てで実機動作確認済み
+  (baseRva+baseIsPointer+フィールドオフセット/幅の汎用設計)。th09を除く7タイトルで実機
+  動作確認済み
   ([`docs/reports/2026-08-25-th07-score-monitor-fix.md`](../docs/reports/2026-08-25-th07-score-monitor-fix.md)、
   `docs/known-limitations.md`参照。th07だけはSattoriが配布するth07.exeが当初の検証環境と
   バイナリが異なりゲームデータのバージョン差でRVAの再特定を要した。th10はtouhou-recorder
-  reports/57、th12はtouhou-recorder reports/62で別途確認) |
+  reports/57、th12はtouhou-recorder reports/62で別途確認)。**th09だけはスコアのRVAが
+  未特定のため`scoreWidth=0`でスコア読み取りを無効化し、life(残機)のみ監視する**
+  ([titles/th09.md](docs/titles/th09.md)参照) |
 | `mods/common/score_probe_hook.*` / `stage_probe_hook.*` | RVA特定用の診断専用コード(本番ビルドには
   含めない)。score_monitorのRVAが通用しないタイトル・ゲームバージョンが出た場合の再調査に使う |
 
@@ -119,7 +127,7 @@
 | 変数 | 説明 |
 | --- | --- |
 | `JOB_ID` | ジョブ ID(DynamoDB キー・出力キーに使用) |
-| `GAME` | タイトル(`th06` / `th07` / `th08` / `th10` / `th11` / `th12` / `th20`) |
+| `GAME` | タイトル(`th06` / `th07` / `th08` / `th09` / `th10` / `th11` / `th12` / `th20`) |
 | `REPLAY_BUCKET` / `REPLAY_KEY` | アップロード済みリプレイの S3 位置 |
 | `OUTPUT_BUCKET` | 録画動画の出力先バケット(CloudFront オリジン) |
 | `TITLE_ASSETS_BUCKET` | タイトル固有アセットのバケット(§8) |
@@ -148,7 +156,7 @@
 
 | 録画 | 配信版 | 生データ(元解像度版) | 理由 |
 | --- | --- | --- | --- |
-| th06/07/08/10/11/12(640x480・等倍) | 960x720へ拡大 | **そのまま2本目として配信** | 生データが無加工で通用するので、再エンコードは配信版の1回だけで済む |
+| th06/07/08/09/10/11/12(640x480・等倍) | 960x720へ拡大 | **そのまま2本目として配信** | 生データが無加工で通用するので、再エンコードは配信版の1回だけで済む |
 | th20(1280x960・等倍) | 1280x960のまま | 出さない | 2本目はウォーターマークの有無しか違わず、S3保管料とCloudFront転送量が倍になるだけ |
 | th20(低速録画) | 1280x960のまま | 出さない | 生データが半分の速度でそのまま配信できない。別途出すには等倍化の再エンコードがもう1回要る |
 
@@ -239,7 +247,7 @@ S3オブジェクトメタデータ(`sattori-time-scale`)として運ぶ。ま�
 
 - **イメージに焼き込むもの**(`docker build` の前に `worker/` 配下へ配置する): ウォーター
   マーク素材 `assets/watermark/watermark-60fps.webm`(VP9アルファ)と、リプレイ終了検知用の
-  テンプレート `assets/replay_end_templates/{th06,th07,th08,th10}.png`
+  テンプレート `assets/replay_end_templates/{th06,th07,th08,th09,th10}.png`
   ([`decisions/0011`](../docs/decisions/0011-replay-end-template-matching.md))。いずれも
   タイトル固有アセットではなく録画パイプライン自体が使う共通素材のため。
 - **イメージには含めず、タイトル資産アーカイブとしてS3へ置くもの**: ゲーム本体
@@ -366,7 +374,8 @@ docker push <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest
 - **デシンク(リプレイずれ)を録画時に予防する手段は無い**。th20 は thprac の導入で大半が
   解消したが([`titles/th20.md`](docs/titles/th20.md))、他タイトルには対処法がない。録画後の
   スコア突き合わせによる事後検知(`JobRecord.desyncDetected`、Issue #103、§2の
-  `score_monitor`)は対応7タイトル全てで実装済みだが、自動リトライはしない(警告表示のみ)。
+  `score_monitor`)はth09を除く7タイトルで実装済みだが、自動リトライはしない(警告表示のみ)。
+  th09はスコアのRVAが未特定のためこの検知自体が機能しない([titles/th09.md](docs/titles/th09.md))。
   想定尺より大幅に早く終了した/タイムアウトへ近づいたジョブでは、検知ロジック側を疑う前に
   **まず録画された映像を目視して**不自然な被弾・ゲームオーバーが無いか確認すること(閾値調整や
   リトライでは解決しない —— 同一リプレイなら毎回同じ箇所で再現する)。
@@ -384,7 +393,7 @@ docker push <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest
   タイプの処理落ちを重複フレーム率(フレーム内容が完全同一の連続キャプチャしか検出
   できない)は見逃す。インスタンスタイプの実機検証では、重複フレーム率に加え
   「リプレイのframeCount(60fps基準の理論尺)と実測プレイ時間の比較」も併用すること。
-- **対応タイトルは §1 の7本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
+- **対応タイトルは §1 の8本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
   対応 —— MOD 移植・実機検証。Issue #13 配下)。
 - **th10のVsyncPatch「バグマリ」修正(`BugFixTh10Power3`)は記録時の設定を録画前に自動判別
   できない**。ページAの`th10BugfixMarisaB`オプション(既定false)で利用者の自己申告に頼っており、

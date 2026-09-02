@@ -131,7 +131,7 @@ claim が解除され、EC2 でリトライされる。
 | `HOME_WORKER_ROLE_ARN` | (なし) | CfnOutput `HomeWorkerRoleArn`。**本番では必ず指定する**（未指定だと環境の認証情報をそのままコンテナへ渡す） |
 | `HOME_WORKER_ID` | `home-1` | ワーカー識別子。複数台にするなら一意にすること |
 | `HOME_WORKER_MAX_CONCURRENCY` | `2` | 同時録画数の上限。**上げる前に「実機検証の記録」を読むこと** — 2並列でもCPU温度が上限に張り付くため、安全な並列度は冷却状態とホストの他負荷に依存する |
-| `HOME_WORKER_SUPPORTED_GAMES` | `th06,th07,th08,th11,th20` | 引き受けるタイトル |
+| `HOME_WORKER_SUPPORTED_GAMES` | `SUPPORTED_GAME_IDS`全部（現状th06/07/08/09/10/11/12/20） | 引き受けるタイトル。自宅マシンの都合で一部だけ受け持ちたい場合に上書きする |
 | `HOME_WORKER_CAPABILITIES` | `WORKER_CAPABILITIES` 全部（現状 `slow-motion-recording` のみ） | 追加能力（`packages/shared/src/worker.ts`）。低速録画（Issue #68）の実体は EC2 と共通のワーカーイメージ側にあり、デーモンは `homeWorkerEnv` をそのまま `docker run` へ渡すだけなので、自宅ワーカーは無条件に対応できる＝既定で全部宣言する。**「対応はできるが引き受けたくない」場合は空文字（`HOME_WORKER_CAPABILITIES=`）で降りられる**（変数ごと消すと既定に戻るので効かない） |
 | `HOME_WORKER_LOAD_THRESHOLD` | `0.7` | 1コアあたりのロードアベレージがこれを超えている間は新規 claim を止める |
 | `HOME_WORKER_POLL_INTERVAL_SEC` | `3` | オファー探索の間隔 |

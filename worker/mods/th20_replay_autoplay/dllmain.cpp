@@ -131,7 +131,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         // に連動して低い値を表示してしまう問題(reports/47の既知の制約)への対策。
         // 表示計算に使われていることを実証済みの特定コールサイトのみ時刻の
         // 進み方を補正し、等倍相当のfps値を表示させる(reports/48参照)。
-        InstallFpsDisplayCorrectionHook();
+        InstallFpsDisplayCorrectionHook(0x0001cb54);
         // リプレイずれ判定用に、ゲーム内スコア・ステージ番号・残機・グレイズを
         // 1秒間隔でMODログへ出力する(Issue #103、reports/50)。
         // RVAはthpracのthprac_th20.cpp(rel_addrs::GAME_SIDE0 = 0x1ba568 と

@@ -12,6 +12,7 @@
 
 | 検証日 | 内容 | 結論 |
 | --- | --- | --- |
+| [2026-09-02](2026-09-02-th09-local-recording-verification.md) | th09（東方花映塚）録画対応(Issue #73)をsattori本体の`record_th09.py`でローカル実機検証 | Match/Storyモード双方でフル尺録画・終了検知・残機(life)監視が成功。リプレイファイル名接頭辞が`th9_`(`th09_`ではない)である誤りを発見・修正 |
 | [2026-09-01](2026-09-01-th12-2xlarge-instance-group-verification.md) | th12のc7a.2xlarge・m7i.2xlargeをAWS実機検証(Issue #76フォローアップ) | 両方とも良好(記録スコア完全一致・理論尺どおりの尺)。m7i.2xlargeの重複フレーム率12.7%は30秒スポット計測の局所ノイズと判明(秒単位再解析で裏付け) |
 | [2026-09-01](2026-09-01-th12-local-recording-verification.md) | th12（東方星蓮船）録画対応(Issue #76)をsattori本体の`record_th12.py`でローカル実機検証 | フル尺録画(1回目の試行で成功、重複フレーム率0.1%)・ウィンドウ最小化バグ対策(force_window_map)・VsyncPatch注入・終了検知(画面静止)・スコア完全一致いずれも成功 |
 | [2026-08-29](2026-08-29-th10-local-recording-verification.md) | th10（東方風神録）録画対応(Issue #75)をsattori本体の`record_th10.py`でローカル実機検証 | フル尺録画・終了検知(絞り込みテンプレート照合)・スコア完全一致・「バグマリ」修正オプションいずれも成功 |

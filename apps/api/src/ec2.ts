@@ -24,8 +24,9 @@ export const JOB_ID_TAG_KEY = "sattori:jobId";
 const LIVE_INSTANCE_STATES = ["pending", "running", "stopping", "stopped"];
 
 /**
- * Spot Fleet に含める候補インスタンスタイプ（th11・th20以外の既定。th10もこちらに含まれる、
- * touhou-recorder reports/60でc7i.xlarge実測$0.033/hourの品質確認済み）。`c7i.xlarge` 単独だと、
+ * Spot Fleet に含める候補インスタンスタイプ（th11・th12・th20以外の既定。th09・th10もこちらに
+ * 含まれる、touhou-recorder reports/60・68でc7i.xlarge実測$0.033/hour前後の品質確認済み）。
+ * `c7i.xlarge` 単独だと、
  * そのハードウェアプールが時間帯によって枯渇した際に `InsufficientInstanceCapacity`
  * で録画ジョブの起動自体が失敗する（Issue #29）。インスタンスタイプごとに独立した
  * Spotキャパシティプールを持つため、AZ分散よりも大きな改善効果が見込める。
