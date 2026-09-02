@@ -72,13 +72,13 @@ describe("GET /admin/jobs", () => {
     expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(1);
   });
 
-  it("status未指定なら7ステータスぶんQueryする", async () => {
+  it("status未指定なら8ステータスぶんQueryする", async () => {
     ddbMock.on(QueryCommand).resolves({ Items: [] });
 
     const { handler } = await import("./listJobs.js");
     await handler(makeEvent({}), {} as never, () => {});
 
-    expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(7);
+    expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(8);
   });
 
   it("不正なstatusは400を返す", async () => {

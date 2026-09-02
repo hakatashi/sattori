@@ -26,6 +26,10 @@
   background: #7b1fa2;
 }
 
+.uploading {
+  background: #5e35b1;
+}
+
 .done {
   background: #43a047;
 }

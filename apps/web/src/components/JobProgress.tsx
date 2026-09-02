@@ -18,15 +18,16 @@ interface ViewProps {
   loadError: string | null;
 }
 
-/** 各ステータスのユーザー向け表示文言（jobProgress.status.*）と進捗段階（0..4）。 */
+/** 各ステータスのユーザー向け表示文言（jobProgress.status.*）と進捗段階（0..5）。 */
 const STATUS_STEP: Record<JobStatus, number> = {
   pending: 0,
   queued: 0,
   launching: 1,
   recording: 2,
   converting: 3,
-  done: 4,
-  failed: 4,
+  uploading: 4,
+  done: 5,
+  failed: 5,
 };
 
 /** 秒数を "m:ss" 形式に整形する。 */
@@ -177,7 +178,7 @@ export function JobProgressView({ job, loadError }: ViewProps) {
                     <p className={styles.logName}>{name}</p>
                     {showDetail && typeof progress === "number" && (
                       <div className={styles.logDetail}>
-                        {job.previewImageUrl && status !== "converting" && (
+                        {job.previewImageUrl && status !== "converting" && status !== "uploading" && (
                           <img
                             className={styles.logThumbnail}
                             src={job.previewImageUrl}

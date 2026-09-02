@@ -195,10 +195,11 @@
       "launching": "Starting the recording server",
       "recording": "Recording the replay",
       "converting": "Converting the video",
+      "uploading": "Uploading the video",
       "done": "Recording complete",
       "failed": "Recording failed"
     },
-    "steps": ["Waiting", "Starting", "Recording", "Converting", "Done"],
+    "steps": ["Waiting", "Starting", "Recording", "Converting", "Uploading", "Done"],
     "progressAriaLabel": "Recording progress",
     "overallProgressAriaLabel": "Overall progress",
     "previewAlt": "Preview while recording",

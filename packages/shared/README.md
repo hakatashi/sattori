@@ -39,14 +39,18 @@
 ## ジョブ状態機械（`src/job.ts`）
 
 ```
-pending → queued → launching → recording → converting → done | failed
+pending → queued → launching → recording → converting → uploading → done | failed
 ```
 
 - `pending`: マジックリンク送信済み・ジョブページへのアクセス（録画起動）待ち。
   24時間（bot/濫用対策としての期限。アップロード用S3の自動削除とは独立）以内に
   起動されなければ受付期限切れとして扱う（`JobRecord.pendingExpiresAt`）。
 - `queued` 以降はワーカー・Step Functionsが書き込む。`converting` は録画完了
-  （生動画チェックポイントアップロード済み）〜配信用変換〜出力アップロード完了までを指す。
+  （生動画チェックポイントアップロード済み）〜配信用変換までを指す。`uploading` は
+  変換済み動画のS3アップロード中（Issue #202）——EC2は同リージョンS3で一瞬なので
+  実質素通りするだけだが、自宅ワーカーは回線次第で数分かかりうるため独立したフェーズ
+  として可視化してある（ワーカー内で自宅/EC2を分岐させないため、遷移自体は常に共通、
+  `worker/entrypoint.py`）。
 - `isTerminalStatus()` が `done`/`failed` を終端状態として判定する（フロントエンドの
   ポーリング停止判定に使用）。
 

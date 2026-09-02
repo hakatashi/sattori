@@ -19,11 +19,12 @@ EC2 Fleet インスタンスの UserData から `docker run` で起動される�
      recording.modlog.check_replay_desync() / recording.pipeline.attempt_recording() 参照)
   4. 配信用変換(等倍への戻し・解像度合わせ・ウォーターマーク合成を1パスで。
      進捗%を10秒間隔程度で報告)
-  5. 変換後動画をS3へアップロード → 配信版動画の90%地点のフレームをposter画像として
-     切り出しS3へアップロード(Issue #171、`convert.extract_poster_frame()`。失敗しても
-     ジョブは失敗させず、プレビュープレイヤーのposterは従来どおり進捗中スクリーン
-     ショットへフォールバックする) → status を done に更新。出力が1本か2本かは
-     録画の内容で決まる(`convert.needs_separate_raw_output()`、下記 convert_and_upload)
+  5. status を uploading に更新(Issue #202) → 変換後動画をS3へアップロード →
+     配信版動画の90%地点のフレームをposter画像として切り出しS3へアップロード
+     (Issue #171、`convert.extract_poster_frame()`。失敗してもジョブは失敗させず、
+     プレビュープレイヤーのposterは従来どおり進捗中スクリーンショットへフォール
+     バックする) → status を done に更新。出力が1本か2本かは録画の内容で決まる
+     (`convert.needs_separate_raw_output()`、下記 convert_and_upload)
 
 バックグラウンドでは2つのスレッドが動く。TaskHeartbeat は Step Functions へ60秒間隔で
 `SendTaskHeartbeat` を送り、ワーカーが生きていることを知らせる(Issue #49。自宅ワーカーの
@@ -460,6 +461,12 @@ def convert_and_upload(s3, time_scale):
         # 変換の成否にかかわらずアップロードする(失敗時こそ診断に必要なため)。
         upload_ffmpeg_upscale_log_if_present(s3)
 
+    # 変換済み動画のアップロードだけを独立したフェーズとして可視化する(Issue #202)。
+    # EC2は同リージョンのS3へ一瞬でアップロードできるため実質素通りするだけだが、
+    # 自宅ワーカーは動画サイズ・回線次第で数分かかり、その間ジョブページの進捗が
+    # 「変換ほぼ完了」のまま止まって見えてしまう問題があった。ワーカー側で自宅/EC2を
+    # 分岐させない方針(AGENTS.md)のため、この遷移自体は常に共通で行う。
+    update_status(JOB_ID, "uploading", reset_progress=True)
     delivery_bytes = upload_video(s3, OUTPUT_VIDEO_DELIVERY, OUTPUT_KEY_DELIVERY)
     poster_key = upload_poster_if_extracted(s3)
     if separate_raw:

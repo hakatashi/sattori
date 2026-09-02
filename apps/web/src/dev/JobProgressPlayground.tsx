@@ -74,6 +74,10 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
     }),
   },
   {
+    title: "status: uploading（変換完了後のアップロード中、Issue #202。進捗はバジェット到達点で足踏み）",
+    job: buildJob({ status: "uploading" }),
+  },
+  {
     title: "status: done（720p・元解像度の両方あり、poster画像あり、Issue #171）",
     job: buildJob({
       status: "done",

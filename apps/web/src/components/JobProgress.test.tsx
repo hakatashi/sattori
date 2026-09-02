@@ -329,6 +329,20 @@ describe("JobProgressView の全体進捗バー", () => {
   });
 });
 
+describe("JobProgressView のアップロード中表示（Issue #202）", () => {
+  it("uploading中はステータス文言「動画をアップロードしています」を表示する", () => {
+    render(<JobProgressView job={buildRecordingJob({ status: "uploading", progress: null })} loadError={null} />);
+
+    expect(screen.getByText("動画をアップロードしています")).toBeTruthy();
+  });
+
+  it("uploading中は全体進捗バーを引き続き表示する（failedではないため）", () => {
+    render(<JobProgressView job={buildRecordingJob({ status: "uploading", progress: null })} loadError={null} />);
+
+    expect(screen.getByRole("progressbar", { name: "全体の進捗" })).toBeTruthy();
+  });
+});
+
 describe("JobProgressView のエラー表示", () => {
   it("errorCodeがあれば翻訳キー（errors.<code>）経由の文言を表示する", () => {
     render(
