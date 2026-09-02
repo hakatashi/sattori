@@ -1,0 +1,7 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /api/
+Disallow: /jobs/
+Disallow: /en/jobs/
+
+Sitemap: https://sattori.hakatashi.com/sitemap.xml

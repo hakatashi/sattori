@@ -187,6 +187,7 @@
     "back": "Back to upload"
   },
   "jobProgress": {
+    "pageTitle": "Recording Status",
     "loading": "Loading…",
     "status": {
       "pending": "Preparing to record",

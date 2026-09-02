@@ -15,6 +15,7 @@
 - [4. ダウンロード（`components/JobProgress.tsx`）](#4-ダウンロードcomponentsjobprogresstsx)
 - [5. 完了後のプレビュー再生（Issue #71）](#5-完了後のプレビュー再生componentsjobprogresstsxissue-71)
 - [6. 多言語対応（i18n、`src/i18n/`）](#6-多言語対応i18nsrci18n)
+  - [6.2 sitemap.xml・robots.txt・SPAページのメタ情報動的更新（Issue #214）](#62-sitemapxmlrobotstxtspaページのメタ情報動的更新issue-214)
 - [7. APIクライアント（`src/api/client.ts`）](#7-apiクライアントsrcapiclientts)
 - [8. 管理画面（`src/admin/`、Issue #51）](#8-管理画面srcadminissue-51)
 - [9. 計測（アナリティクス、Issue #142）](#9-計測アナリティクスissue-142)
@@ -195,6 +196,25 @@ fetch+Blob化やCORS許可は不要（`apps/api/README.md`参照）。
 - どのURLでどちらのHTMLが配られるかは本番ではCloudFront Functionが決める
   （`infra/README.md`参照）。開発サーバでも同じ振り分けになるよう、`vite.config.ts`の
   `sattori:en-locale-spa-fallback`プラグインが`/en`配下を`en/index.html`へ書き換える。
+
+### 6.2 sitemap.xml・robots.txt・SPAページのメタ情報動的更新（Issue #214）
+
+- `public/sitemap.xml`・`public/robots.txt`はそのまま静的配信される。sitemapは公開静的
+  ページ（`/`, `/about`, `/info`, `/terms`, `/changelog`, `/replay-help`）についてja/en
+  それぞれのURLを列挙し、`xhtml:link`でhreflang（`ja`/`en`/`x-default`）を相互参照する。
+  ページを追加・削除したら両ファイルと`src/test/sitemap.test.ts`（App.tsxのルート一覧との
+  整合を検証）を同時に直すこと。
+- `robots.txt`は`/admin/`・`/api/`・`/jobs/`・`/en/jobs/`のクロールを止める。`jobId`は
+  認可の秘密値（[`docs/decisions/0004`](../../docs/decisions/0004-job-id-as-authorization-secret.md)）
+  であり、そもそも外部にリンクされないURLなのでクロール自体を抑止する。
+- `<title>`・`<link rel="canonical">`はエントリHTMLがトップページの値を静的に持つのみで、
+  他のSPAページ（`/about`等）ではJS実行後にクライアント側で書き換える（静的HTML1枚で
+  全ルートを配るため）。`hooks/usePageMeta.ts`の`usePageMeta({ title, path, noindex })`が
+  各ページコンポーネントのマウント時に`document.title`・`link[rel="canonical"]`の`href`を
+  上書きし、`noindex: true`のときだけ`<meta name="robots" content="noindex">`を追加する
+  （既存のタグを使い回すので、ページ遷移のたびに増殖しない）。`title`省略時はトップページの
+  既定タイトルに戻る。`JobPage`はジョブ固有の情報を含まない汎用タイトルで`noindex: true`を
+  渡す（上記のとおりrobots.txt側でも二重に止めている）。
 
 ## 7. APIクライアント（`src/api/client.ts`）
 
