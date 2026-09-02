@@ -1,10 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  公開されている静的ページ（ジョブ個別ページ`/jobs/*`はjobIdが認可の秘密値なので含めない、
-  robots.txt側でクロール自体を止めている）。各ページについてja/en両方のURLを列挙し、
-  `xhtml:link`でhreflangの相互参照（x-default含む）を宣言する（Issue #214）。
-  ページを追加・削除したら`src/test/sitemap.test.ts`がApp.tsxのルート一覧との整合を検証する。
--->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://sattori.hakatashi.com/</loc>
