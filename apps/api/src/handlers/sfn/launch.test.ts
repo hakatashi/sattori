@@ -9,6 +9,7 @@ import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client
 import { DynamoDBDocumentClient, GetCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import type { JobRecord, WorkerHeartbeat } from "@sattori/shared";
+import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -33,39 +34,13 @@ const REQUIRED_ENV: Record<string, string> = {
 const ec2Mock = mockClient(EC2Client);
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
-const job: JobRecord = {
-  jobId: "job-1",
-  game: "th07",
-  replayKey: "replays/abc.rpy",
+const job: JobRecord = createJobRecord({
   status: "queued",
-  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
-  outputPath: null,
-  outputPath720p: null,
-  outputBytes: null,
-  outputBytes720p: null,
-  error: null,
-  errorCode: null,
   createdAt: "2026-07-17T00:00:00.000Z",
   updatedAt: "2026-07-17T00:00:00.000Z",
-  launchedAt: null,
-  doneAt: null,
   email: null,
-  instanceId: null,
-  workerKind: null,
-  instanceType: null,
-  availabilityZone: null,
-  spotPricePerHour: null,
-  estimatedDurationSeconds: 900,
-  progress: null,
-  previewImagePath: null,
-  replayInfo: null,
   pendingExpiresAt: null,
-  retriedToJobId: null,
-  retriedFromJobId: null,
-  language: "ja",
-  desyncDetected: null,
-  timedOut: null,
-};
+});
 
 /** 空き十分・対応タイトルありの自宅ワーカー（Issue #49）。 */
 function heartbeat(overrides: Partial<WorkerHeartbeat> = {}): WorkerHeartbeat {

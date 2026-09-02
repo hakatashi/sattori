@@ -4,6 +4,7 @@ import { marshall } from "@aws-sdk/util-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import type { AttributeValue, DynamoDBRecord, DynamoDBStreamEvent } from "aws-lambda";
 import type { JobRecord } from "@sattori/shared";
+import { createJobRecord } from "../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -28,40 +29,14 @@ const REQUIRED_ENV: Record<string, string> = {
 const sesMock = mockClient(SESv2Client);
 
 function baseJob(overrides: Partial<JobRecord>): JobRecord {
-  return {
-    jobId: "job-1",
-    game: "th07",
-    replayKey: "replays/abc.rpy",
+  return createJobRecord({
     status: "recording",
-    options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
-    outputPath: null,
-    outputPath720p: null,
-    error: null,
-    errorCode: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
-    doneAt: null,
-    email: "user@example.com",
-    instanceId: null,
-    workerKind: null,
-    instanceType: null,
-    availabilityZone: null,
-    spotPricePerHour: null,
-    launchedAt: null,
-    outputBytes: null,
-    outputBytes720p: null,
     estimatedDurationSeconds: null,
-    progress: null,
-    previewImagePath: null,
-    replayInfo: null,
     pendingExpiresAt: null,
-    retriedToJobId: null,
-    retriedFromJobId: null,
-    language: "ja",
-    desyncDetected: null,
-    timedOut: null,
     ...overrides,
-  };
+  });
 }
 
 function toStreamImage(job: JobRecord): Record<string, AttributeValue> {
