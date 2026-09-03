@@ -13,18 +13,18 @@
     "minutes": 45,
     "seconds": null
   },
-  "recordedAt": null,
+  "recordedAt": 1788500733,
   "character": null,
   "characterNameJa": null,
   "characterNameEn": null,
   "difficulty": "Lunatic",
   "stage": "RouteC-1",
   "score": 21080,
-  "cleared": null,
+  "cleared": false,
   "loadout": null,
   "splits": [
     {
-      "stage": null,
+      "stage": 11,
       "score": 0,
       "power": "1",
       "piv": null,
@@ -38,12 +38,12 @@
         "pieces": null,
         "maxPieces": 100
       },
-      "graze": null,
+      "graze": 0,
       "additional": {
         "freezeAreaPercent": 0
       },
-      "frameCount": null
+      "frameCount": 543
     }
   ],
-  "frameCount": null
+  "frameCount": 543
 }
