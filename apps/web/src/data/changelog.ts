@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-03",
+    ja: "録画が再試行の末に成功した場合、途中の失敗によるエラー表示が完了後も残ってしまう不具合を修正",
+    en: "Fixed an issue where a leftover error from a failed attempt could still be shown after a recording later succeeded on retry",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/219",
+  },
+  {
+    date: "2026-09-03",
     ja: "東方紅魔郷 (th06) の追加ワーカーでの録画が失敗する不具合を修正",
     en: "Fixed an issue where recording of Embodiment of Scarlet Devil (th06) on the additional worker was failing",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/221",
