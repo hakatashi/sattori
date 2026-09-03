@@ -9,6 +9,7 @@ import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-
 import { mockClient } from "aws-sdk-client-mock";
 import type { JobRecord } from "@sattori/shared";
 import { MAX_ATTEMPTS, MAX_ATTEMPTS_DETERMINISTIC } from "../../retryPolicy.js";
+import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -33,39 +34,17 @@ const REQUIRED_ENV: Record<string, string> = {
 const ec2Mock = mockClient(EC2Client);
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
-const baseJob: JobRecord = {
-  jobId: "job-1",
-  game: "th07",
-  replayKey: "replays/abc.rpy",
+const baseJob: JobRecord = createJobRecord({
   status: "launching",
-  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
-  outputPath: null,
-  outputPath720p: null,
-  error: null,
-  errorCode: null,
   createdAt: "2026-07-17T00:00:00.000Z",
   updatedAt: "2026-07-17T00:00:00.000Z",
-  doneAt: null,
   email: null,
   instanceId: "i-abc123",
-  workerKind: null,
   instanceType: "c7i.xlarge",
   availabilityZone: "us-east-1a",
-  spotPricePerHour: null,
-  launchedAt: null,
-  outputBytes: null,
-  outputBytes720p: null,
   estimatedDurationSeconds: null,
-  progress: null,
-  previewImagePath: null,
-  replayInfo: null,
   pendingExpiresAt: null,
-  retriedToJobId: null,
-  retriedFromJobId: null,
-  language: "ja",
-  desyncDetected: null,
-  timedOut: null,
-};
+});
 
 /** statusを書き換えるUpdateItem（`SET #s = ...`）だけを取り出す。 */
 function statusUpdates(mock: typeof ddbMock) {

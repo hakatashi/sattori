@@ -303,4 +303,7 @@ PK=eventDate/SK=eventId、TTL 180日）へ書き込む。国の取得・User-Age
 ## 14. テスト
 
 各ハンドラに対応する `*.test.ts` が同ディレクトリにある（vitest、AWS SDKクライアントは
-モック）。`pnpm --filter @sattori/api test` で実行。
+モック）。`pnpm --filter @sattori/api test` で実行。`JobRecord`のテスト用オブジェクトは
+`testSupport/jobRecord.ts`の`createJobRecord(overrides?)`で作る（Issue #188）。属性を追加する
+たびに各テストファイルの全項目リテラルを書き換えずに済むよう、デフォルト値はここへ一本化してあり、
+テストごとに異なる属性だけを引数で上書きする。

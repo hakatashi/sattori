@@ -11,6 +11,7 @@ import {
 import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import type { JobRecord } from "@sattori/shared";
+import { createJobRecord } from "../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
   UPLOAD_BUCKET: "up-bucket",
@@ -36,39 +37,7 @@ const REQUIRED_ENV: Record<string, string> = {
 const ddbMock = mockClient(DynamoDBDocumentClient);
 const sfnMock = mockClient(SFNClient);
 
-const pendingJob: JobRecord = {
-  jobId: "job-1",
-  game: "th07",
-  replayKey: "replays/abc.rpy",
-  status: "pending",
-  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
-  outputPath: null,
-  outputPath720p: null,
-  error: null,
-  errorCode: null,
-  createdAt: "2026-07-18T00:00:00.000Z",
-  updatedAt: "2026-07-18T00:00:00.000Z",
-  doneAt: null,
-  email: "user@example.com",
-  instanceId: null,
-  workerKind: null,
-  instanceType: null,
-  availabilityZone: null,
-  spotPricePerHour: null,
-  launchedAt: null,
-  outputBytes: null,
-  outputBytes720p: null,
-  estimatedDurationSeconds: 900,
-  progress: null,
-  previewImagePath: null,
-  replayInfo: null,
-  pendingExpiresAt: "2099-01-01T00:00:00.000Z",
-  retriedToJobId: null,
-  retriedFromJobId: null,
-  language: "ja",
-  desyncDetected: null,
-  timedOut: null,
-};
+const pendingJob: JobRecord = createJobRecord();
 
 function makeEvent(jobId: string): APIGatewayProxyEventV2 {
   return { pathParameters: { jobId } } as unknown as APIGatewayProxyEventV2;
