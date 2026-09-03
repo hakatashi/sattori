@@ -1,4 +1,5 @@
 import { UploadForm } from "../components/UploadForm.tsx";
+import { usePageMeta } from "../hooks/usePageMeta.ts";
 
 /**
  * ページA（`/`）。リプレイのアップロード〜マジックリンク送信要求まで。送信後の
@@ -7,5 +8,7 @@ import { UploadForm } from "../components/UploadForm.tsx";
  * 自身のstateとして内包する。
  */
 export function HomePage() {
+  // titleを省略するとエントリHTML（index.html/en/index.html）と同じ既定タイトルになる。
+  usePageMeta({ path: "/" });
   return <UploadForm />;
 }

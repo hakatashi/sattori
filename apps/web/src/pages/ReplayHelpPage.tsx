@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
 import { GAME_IDS, GAME_TITLES, type GameId } from "@sattori/shared";
+import { usePageMeta } from "../hooks/usePageMeta.ts";
 import staticStyles from "./StaticPage.module.css";
 import styles from "./ReplayHelpPage.module.css";
 
@@ -115,6 +116,7 @@ function CopyablePath({ path }: CopyablePathProps) {
 /** リプレイファイルの場所を案内するヘルプページ（`/replay-help`、Issue #55）。 */
 export function ReplayHelpPage() {
   const { t, i18n } = useTranslation();
+  usePageMeta({ title: t("replayHelp.heading"), path: "/replay-help" });
   const [installFolderSelected, setInstallFolderSelected] = useState<GameId>(INSTALL_FOLDER_HEADING_FIRST);
   const [appDataSelected, setAppDataSelected] = useState<GameId>("th20");
 

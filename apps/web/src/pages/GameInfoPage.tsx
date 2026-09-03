@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { GAME_TITLES, type GameId } from "@sattori/shared";
+import { usePageMeta } from "../hooks/usePageMeta.ts";
 import staticStyles from "./StaticPage.module.css";
 import styles from "./GameInfoPage.module.css";
 
@@ -34,6 +35,7 @@ const TITLE_INFO: TitleInfo[] = [
 /** 対応タイトルのバージョン・パッチ情報ページ（`/info`）。フッターからナビゲーションする。 */
 export function GameInfoPage() {
   const { t } = useTranslation();
+  usePageMeta({ title: t("gameInfo.heading"), path: "/info" });
 
   return (
     <section className={staticStyles.card}>

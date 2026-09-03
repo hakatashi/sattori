@@ -87,6 +87,11 @@ describe("エントリHTMLのメタ情報", () => {
     }
   });
 
+  it("自己参照のcanonicalを持つ", () => {
+    expect(ja.querySelector('link[rel="canonical"]')?.getAttribute("href")).toBe(`${SITE_ORIGIN}/`);
+    expect(en.querySelector('link[rel="canonical"]')?.getAttribute("href")).toBe(`${SITE_ORIGIN}/en`);
+  });
+
   it("hreflangが両言語+x-defaultを相互に指している", () => {
     for (const doc of [ja, en]) {
       const alternates = Object.fromEntries(
