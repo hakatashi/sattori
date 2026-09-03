@@ -177,6 +177,7 @@ export function parseTh09(original: Uint8Array): ParsedReplay {
     stage: normalizeText(stage),
     score: null,
     cleared: null,
+    loadout: null,
     splits,
     frameCount: splits.length === 0 ? null : frameCount,
   };

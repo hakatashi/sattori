@@ -40,6 +40,7 @@ export function parseTh143Family(original: Uint8Array, game: "th143" | "th165"):
     stage: normalizeText(`${stagePart1} ${stagePart2}`),
     score,
     cleared: null,
+    loadout: null,
     splits: [],
     frameCount: null,
   };

@@ -14,6 +14,7 @@ function baseParsedReplay(overrides: Partial<ParsedReplay> = {}): ParsedReplay {
     stage: null,
     score: 303766040,
     cleared: true,
+    loadout: null,
     splits: [],
     frameCount: 50812,
     ...overrides,

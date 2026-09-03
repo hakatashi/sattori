@@ -21,6 +21,28 @@
   "stage": "Stage 1 ～ 5",
   "score": 241993370,
   "cleared": false,
+  "loadout": [
+    {
+      "slot": "main",
+      "index": 2,
+      "name": "Blue"
+    },
+    {
+      "slot": "diffusion",
+      "index": 4,
+      "name": "Yellow"
+    },
+    {
+      "slot": "focus",
+      "index": 0,
+      "name": "Red"
+    },
+    {
+      "slot": "support",
+      "index": 0,
+      "name": "Red"
+    }
+  ],
   "splits": [
     {
       "stage": 1,
