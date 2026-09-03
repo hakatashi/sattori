@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-03",
+    ja: "ヘッダーロゴの画像サイズを縮小してページの表示速度を改善。あわせてfaviconが最新デザインと異なっていた不具合を修正",
+    en: "Reduced the header logo image size to speed up page load, and fixed the favicon showing an outdated design",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/212",
+  },
+  {
+    date: "2026-09-03",
     ja: "画像・スタイルシート・スクリプトなどの静的ファイルにキャッシュ設定を追加し、ページの表示速度を改善",
     en: "Added caching for static assets like images, stylesheets, and scripts to improve page load speed",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/223",
