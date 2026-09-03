@@ -21,7 +21,7 @@ Sattori の「まだできていないこと」「できているが条件付き
 
 ## 1. 対応タイトルの拡大
 
-現在の対応タイトルは th06・th07・th08・th10・th11・th12・th20 の7本。
+現在の対応タイトルは th06・th07・th08・th09・th10・th11・th12・th20 の8本。
 
 リプレイパーサー自体は th06〜th20 の大半に対応済みで、**残作業は録画対応**
 （Wine 上での MOD 移植・実機検証）である。タイトルごとの状況は
@@ -46,6 +46,18 @@ VsyncPatchで修正するかどうかは、記録リプレイと再生時で設�
 2倍速の動画になる**。ワーカーはこの食い違いを検知できないので、UI（グレーアウト）と
 API（`POST /magic-links` での握り潰し）の両方で入口を塞いでいる。**この判定をワーカー側へ
 移さないこと**（[`decisions/0010`](decisions/0010-slow-motion-no-worker-side-branching.md)）。
+
+**th09だけは低速録画フック（Direct3D8版Present間引き・fps表示補正）の実装・実機検証が
+済んでいる**が、ユーザー向けには非公開のまま（`SLOW_MOTION_SUPPORTED_GAME_IDS`未登録、
+Issue #101のスコープ）。Issue #101でth09を対応させる際はMOD側の追加実装は不要で、
+許可リストに加えるだけでよい（[`worker/docs/titles/th09.md`](../worker/docs/titles/th09.md)）。
+
+### th09はリプレイずれの事後検知が機能しない
+
+th09（東方花映塚）はスコアのRVAが未特定のため、他タイトルが使うスコア突き合わせによる
+デシンク事後検知（`JobRecord.desyncDetected`、§3参照）が動作しない。残機（life）の監視は
+機能しているが、デシンクの検知手段としては弱い
+（[`worker/docs/titles/th09.md`](../worker/docs/titles/th09.md)、touhou-recorder reports/68）。
 
 ## 2. th20 固有の制約
 
@@ -122,9 +134,16 @@ MODログには、グレイズも同時に壊れるゴミ値と、グレイズ�
 なお、当初は th07（Sattori が配布する `ver 1.00b` の th07.exe）だけ検証済みの RVA が
 通用せずスコア監視を無効化していたが、ゲームデータのバージョン差によるものと判明し、
 上記の修正で当時対応していた5タイトルとも動作確認済み。その後追加した th10・th12 も
-別途 RVA を特定し実機確認済みで、現在は対応7タイトルすべてで動作する
+別途 RVA を特定し実機確認済み
 （`worker/mods/th10_replay_autoplay/dllmain.cpp`・`worker/mods/th12_replay_autoplay/dllmain.cpp`、
 touhou-recorder reports/57・62）。
+
+**th09だけはこの事後検知が機能しない**。thprac(`thprac_th09.cpp`)にスコア表示/編集UIが
+無く、実機でのメモリ全域スキャンを尽くしてもスコアのRVAを特定できなかったため
+（touhou-recorder reports/68）、`ScoreMonitorConfig.scoreWidth=0`でスコア読み取り自体を
+無効化し、P1残機（life）のみを監視している（[`worker/docs/titles/th09.md`](../worker/docs/titles/th09.md)）。
+th09のジョブは`JobRecord.desyncDetected`が常にfalseになる（デシンクが実際に起きて
+いなくても検知できないだけで、安全側のfalseになる）。
 
 ### タイムアウト打ち切りは警告付き配信に留まる(Issue #161)
 

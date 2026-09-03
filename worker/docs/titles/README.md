@@ -5,7 +5,10 @@
 `GameConfig` を触る前に、該当する1件だけを開くこと。**
 
 タイトル横断で効く判断（終了検知の方式・クロップ座標の確定・音声分離・低速録画）は
-[`docs/decisions/`](../../../docs/decisions/README.md) にある。
+[`docs/decisions/`](../../../docs/decisions/README.md) にある。タイトルを問わない参照仕様は
+[`recording-package.md`](../recording-package.md)（録画パイプラインのモジュール構成）・
+[`mods.md`](../mods.md)（フック DLL のソース構成）・
+[`title-assets.md`](../title-assets.md)（ゲームデータ等の資産アーカイブ）。
 
 ## 一覧
 
@@ -14,6 +17,7 @@
 | th06 東方紅魔郷 | [th06.md](th06.md) | 実行ファイルを `th06.exe` へリネームしない（VsyncPatch） |
 | th07 東方妖々夢 | [th07.md](th07.md) | 日本語フォントの配置・レジストリ登録 |
 | th08 東方永夜抄 | [th08.md](th08.md) | ゲームデータは ver1.00d 相当（ver1.00a は fps 暴走） |
+| th09 東方花映塚 | [th09.md](th09.md) | 対戦形式(1P/2P)だが録画パイプラインには無関係・スコアRVA未特定でlifeのみ監視 |
 | th10 東方風神録 | [th10.md](th10.md) | 「バグマリ」修正オプションは記録時設定と要一致・終了検知は絞り込み領域 |
 | th11 東方地霊殿 | [th11.md](th11.md) | 入力は GetKeyboardState 経由・終了検知は画面静止のみ |
 | th12 東方星蓮船 | [th12.md](th12.md) | 入力はth10方式・メニュー構造はth11方式のハイブリッド・ウィンドウ最小化バグ対策必須 |
