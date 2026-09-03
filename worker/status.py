@@ -45,10 +45,17 @@ def update_status(
     job_id, status, *,
     output_path=None, output_path_720p=None,
     output_bytes=None, output_bytes_720p=None,
+    poster_image_path=None,
     error=None, error_code=None, reset_progress=False,
     desync_detected=None, timed_out=None,
 ):
     """ジョブの status(と任意で outputPath / outputPath720p / 出力サイズ / error)を更新する。
+
+    poster_image_path は配信版動画から切り出したposter画像のS3オブジェクトキー
+    (Issue #171、`convert.extract_poster_frame()`)。`status="done"`の更新でのみ渡される
+    想定で、抽出に失敗した場合は呼び出し側がこの引数自体を渡さない(=他のNone許容
+    引数と同じく「このフィールドには触れない」)。previewImagePathと違いdoneの
+    プレビュープレイヤーのposter専用で、録画・変換中の進捗表示には使わない。
 
     desync_detected は録画終了時のスコアがリプレイの記録スコアと一致しなかった疑い
     (Issue #103、`recording.modlog.check_replay_desync()`)。True/False を渡した場合のみ
@@ -117,6 +124,9 @@ def update_status(
     if output_bytes_720p is not None:
         expr += ", outputBytes720p = :ob720"
         values[":ob720"] = int(output_bytes_720p)
+    if poster_image_path is not None:
+        expr += ", posterImagePath = :pp"
+        values[":pp"] = poster_image_path
     if error is not None:
         expr += ", #e = :e"
         names["#e"] = "error"

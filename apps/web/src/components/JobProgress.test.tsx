@@ -44,6 +44,7 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     progress: null,
     previewVideoUrl: null,
     previewImageUrl: null,
+    posterImageUrl: null,
     replayInfo: REPLAY_INFO,
     slowMotion: false,
     desyncDetected: null,
@@ -202,6 +203,38 @@ describe("JobProgressView のプレビュー再生（Issue #71）", () => {
     expect(video.controls).toBe(true);
   });
 
+  it("posterImageUrlがあればpreviewImageUrlより優先してposterに使う(Issue #171)", () => {
+    render(
+      <JobProgressView
+        job={buildDoneJob({
+          previewVideoUrl: "https://media.example/720p.mp4",
+          previewImageUrl: "https://media.example/preview.jpg",
+          posterImageUrl: "https://media.example/poster.jpg",
+        })}
+        loadError={null}
+      />,
+    );
+
+    const video = screen.getByLabelText("録画した動画のプレビュー") as HTMLVideoElement;
+    expect(video.poster).toBe("https://media.example/poster.jpg");
+  });
+
+  it("posterImageUrlが無ければpreviewImageUrlへフォールバックする", () => {
+    render(
+      <JobProgressView
+        job={buildDoneJob({
+          previewVideoUrl: "https://media.example/720p.mp4",
+          previewImageUrl: "https://media.example/preview.jpg",
+          posterImageUrl: null,
+        })}
+        loadError={null}
+      />,
+    );
+
+    const video = screen.getByLabelText("録画した動画のプレビュー") as HTMLVideoElement;
+    expect(video.poster).toBe("https://media.example/preview.jpg");
+  });
+
   it("プレビューは preload=\"none\" で、再生ボタンを押すまで動画を取得しない", () => {
     // CloudFrontの配信量を増やさないための要（`docs/aws-region-cost-analysis.md` §6）。
     // 既定値(metadata)へ退行すると、ページを開いただけで全ジョブぶんの取得が走る。
@@ -249,6 +282,7 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     progress: 100,
     previewVideoUrl: null,
     previewImageUrl: null,
+    posterImageUrl: null,
     replayInfo: REPLAY_INFO,
     slowMotion: false,
     desyncDetected: null,

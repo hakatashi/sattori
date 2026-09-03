@@ -32,6 +32,7 @@ const DEFAULT_JOB_RECORD: JobRecord = {
   estimatedDurationSeconds: 900,
   progress: null,
   previewImagePath: null,
+  posterImagePath: null,
   replayInfo: null,
   retriedToJobId: null,
   retriedFromJobId: null,

@@ -204,6 +204,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     estimatedDurationSeconds,
     progress: null,
     previewImagePath: null,
+    posterImagePath: null,
     replayInfo,
     pendingExpiresAt: new Date(now.getTime() + PENDING_JOB_TTL_MS).toISOString(),
     retriedToJobId: null,

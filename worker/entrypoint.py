@@ -19,7 +19,10 @@ EC2 Fleet インスタンスの UserData から `docker run` で起動される�
      recording.modlog.check_replay_desync() / recording.pipeline.attempt_recording() 参照)
   4. 配信用変換(等倍への戻し・解像度合わせ・ウォーターマーク合成を1パスで。
      進捗%を10秒間隔程度で報告)
-  5. 変換後動画をS3へアップロード → status を done に更新。出力が1本か2本かは
+  5. 変換後動画をS3へアップロード → 配信版動画の90%地点のフレームをposter画像として
+     切り出しS3へアップロード(Issue #171、`convert.extract_poster_frame()`。失敗しても
+     ジョブは失敗させず、プレビュープレイヤーのposterは従来どおり進捗中スクリーン
+     ショットへフォールバックする) → status を done に更新。出力が1本か2本かは
      録画の内容で決まる(`convert.needs_separate_raw_output()`、下記 convert_and_upload)
 
 バックグラウンドでは2つのスレッドが動く。TaskHeartbeat は Step Functions へ60秒間隔で
@@ -50,7 +53,12 @@ import time
 import boto3
 
 import pulse
-from convert import convert_for_delivery, needs_separate_raw_output, probe_resolution
+from convert import (
+    convert_for_delivery,
+    extract_poster_frame,
+    needs_separate_raw_output,
+    probe_resolution,
+)
 from interruption_watcher import InterruptionWatcher
 from progress_reporter import ProgressReporter
 from recording import slow_motion_scale
@@ -81,6 +89,7 @@ WORK_DIR = f"/app/runs/{JOB_ID}"
 REPLAY_PATH = f"{WORK_DIR}/upload.rpy"
 OUTPUT_VIDEO = f"{WORK_DIR}/video.mp4"
 OUTPUT_VIDEO_DELIVERY = f"{WORK_DIR}/video_delivery.mp4"
+OUTPUT_POSTER = f"{WORK_DIR}/poster.jpg"
 PROGRESS_DIR = f"{WORK_DIR}/progress"
 # リプレイずれ検証(Issue #103)の結果。record_thNN.pyは別プロセスのため、戻り値を
 # ファイル経由で受け渡す(recording.artifacts.write_desync_result()が書く)。
@@ -94,6 +103,7 @@ TIMEOUT_RESULT_PATH = f"{WORK_DIR}/timeout_result.json"
 # (720pに満たない録画だけ引き上げ、th20の1280x960はそのまま。`convert.py`参照)。
 OUTPUT_KEY = f"videos/{JOB_ID}.mp4"
 OUTPUT_KEY_DELIVERY = f"videos/{JOB_ID}_720p.mp4"
+OUTPUT_KEY_POSTER = f"videos/{JOB_ID}_poster.jpg"
 # 生データのチェックポイントに添えるS3オブジェクトメタデータのキー。低速録画
 # (Issue #68)の生データは実時間が `time_scale` 倍に伸びており、等倍へ戻すには
 # その倍率が要る。**環境変数から取り直してはいけない**: 自宅ワーカーが低速で
@@ -210,6 +220,22 @@ def upload_video(s3, path, key, metadata=None):
         extra["Metadata"] = metadata
     s3.upload_file(path, OUTPUT_BUCKET, key, ExtraArgs=extra)
     return size
+
+
+def upload_poster_if_extracted(s3):
+    """配信版動画から切り出したposter画像(Issue #171)をS3へアップロードし、成功すれば
+    そのキーを返す。抽出自体に失敗した場合は None を返すだけで、呼び出し側は
+    `update_status` に poster_image_path を渡さず、posterを従来どおり進捗中の
+    スクリーンショットへフォールバックさせる(ジョブ全体は失敗させない)。
+    """
+    if not extract_poster_frame(OUTPUT_VIDEO_DELIVERY, OUTPUT_POSTER, log=log):
+        return None
+    log(f"poster画像をアップロード: s3://{OUTPUT_BUCKET}/{OUTPUT_KEY_POSTER}")
+    s3.upload_file(
+        OUTPUT_POSTER, OUTPUT_BUCKET, OUTPUT_KEY_POSTER,
+        ExtraArgs={"ContentType": "image/jpeg"},
+    )
+    return OUTPUT_KEY_POSTER
 
 
 def raw_checkpoint_exists(s3):
@@ -408,6 +434,7 @@ def convert_and_upload(s3, time_scale):
         upload_ffmpeg_upscale_log_if_present(s3)
 
     delivery_bytes = upload_video(s3, OUTPUT_VIDEO_DELIVERY, OUTPUT_KEY_DELIVERY)
+    poster_key = upload_poster_if_extracted(s3)
     if separate_raw:
         update_status(
             JOB_ID, "done",
@@ -417,6 +444,7 @@ def convert_and_upload(s3, time_scale):
             # record() 側の記録が走らないため。
             output_bytes=os.path.getsize(OUTPUT_VIDEO),
             output_bytes_720p=delivery_bytes,
+            poster_image_path=poster_key,
         )
         return
 
@@ -427,6 +455,7 @@ def convert_and_upload(s3, time_scale):
         JOB_ID, "done",
         output_path=OUTPUT_KEY_DELIVERY,
         output_bytes=delivery_bytes,
+        poster_image_path=poster_key,
     )
     # **`done` を確定させてから**生データを消す。順序を逆にすると、削除後・status更新前に
     # 落ちた場合に「outputPathの指すオブジェクトが無い」ジョブが残り、変換からの再開も
