@@ -90,7 +90,12 @@ DWORD WINAPI ScoreMonitorThread(LPVOID) {
         uintptr_t base = 0;
         if (ResolveBase(moduleBase, &base)) {
             uint64_t score = 0;
-            if (ReadUnsigned(base + g_config.scoreOffset, g_config.scoreWidth, &score)) {
+            // scoreWidth==0はスコアRVA未特定のタイトル向け(th09)。スコアを
+            // 読まずbaseResolvedのみをゲートにしてstage/lives/grazeだけ監視する。
+            bool scoreReadOk = (g_config.scoreWidth == 0)
+                ? true
+                : ReadUnsigned(base + g_config.scoreOffset, g_config.scoreWidth, &score);
+            if (scoreReadOk) {
                 int32_t stage = 0, lives = 0, graze = 0;
                 ReadSigned(base + g_config.stageOffset, g_config.stageWidth, false, &stage);
                 ReadSigned(base + g_config.livesOffset, g_config.livesWidth, g_config.livesIsFloat, &lives);

@@ -131,7 +131,7 @@ claim が解除され、EC2 でリトライされる。
 | `HOME_WORKER_ROLE_ARN` | (なし) | CfnOutput `HomeWorkerRoleArn`。**本番では必ず指定する**（未指定だと環境の認証情報をそのままコンテナへ渡す） |
 | `HOME_WORKER_ID` | `home-1` | ワーカー識別子。複数台にするなら一意にすること |
 | `HOME_WORKER_MAX_CONCURRENCY` | `2` | 同時録画数の上限。**上げる前に「実機検証の記録」を読むこと** — 2並列でもCPU温度が上限に張り付くため、安全な並列度は冷却状態とホストの他負荷に依存する |
-| `HOME_WORKER_SUPPORTED_GAMES` | `th06,th07,th08,th11,th20` | 引き受けるタイトル |
+| `HOME_WORKER_SUPPORTED_GAMES` | `SUPPORTED_GAME_IDS`全部（現状th06/07/08/09/10/11/12/20） | 引き受けるタイトル。自宅マシンの都合で一部だけ受け持ちたい場合に上書きする |
 | `HOME_WORKER_CAPABILITIES` | `WORKER_CAPABILITIES` 全部（現状 `slow-motion-recording` のみ） | 追加能力（`packages/shared/src/worker.ts`）。低速録画（Issue #68）の実体は EC2 と共通のワーカーイメージ側にあり、デーモンは `homeWorkerEnv` をそのまま `docker run` へ渡すだけなので、自宅ワーカーは無条件に対応できる＝既定で全部宣言する。**「対応はできるが引き受けたくない」場合は空文字（`HOME_WORKER_CAPABILITIES=`）で降りられる**（変数ごと消すと既定に戻るので効かない） |
 | `HOME_WORKER_LOAD_THRESHOLD` | `0.7` | 1コアあたりのロードアベレージがこれを超えている間は新規 claim を止める |
 | `HOME_WORKER_POLL_INTERVAL_SEC` | `3` | オファー探索の間隔 |
@@ -140,7 +140,7 @@ claim が解除され、EC2 でリトライされる。
 | `HOME_WORKER_DRAIN_TIMEOUT_SEC` | `9000` | 終了シグナル後、実行中ジョブの完走を待つ上限。低速録画（Issue #68）の録画タイムアウト（120分＝等倍60分の2倍）＋変換の余裕（30分）で、Step Functions 側の `taskTimeout`（150分）と揃えてある。**短くすると AWS 側がまだ待っているジョブをデーモンが先に打ち切ることになる** |
 | `WORKER_LOG_GROUP` | `/sattori/worker` | ログ転送先（EC2 ワーカーと同じ） |
 | `HOME_WORKER_NETWORK_CHECK_INTERVAL_SEC` | `60` | 新規claim前に、コンテナのネットワーク名前空間からAWSへ実際に到達できるかを確認する間隔。ホストは正常でもコンテナだけ通信不能という障害（[`decisions/0028`](../docs/decisions/0028-home-worker-container-network-check.md)）はホスト発のハートビートだけでは検知できないため、`docker run`で軽量イメージを実際に起動して確かめる |
-| `HOME_WORKER_TITLE_ASSETS_CACHE_DIR` | (なし) | タイトル資産（ゲーム本体・WINEPREFIX・MOD）のキャッシュに使うホスト側ディレクトリ（Issue #104）。設定するとこのディレクトリを`docker run -v`でコンテナへマウントし、`TITLE_ASSETS_CACHE_DIR`としてコンテナへ渡す（`runner.ts`）。自宅回線はタイトル資産のダウンロードに40秒前後かかり、これはジョブ毎に変わらないデータなので、事前にディレクトリを指定しておくと2回目以降のジョブでダウンロードを省略できる（キャッシュの仕組みは`worker/README.md`§8、[`decisions/0040`](../docs/decisions/0040-home-worker-title-assets-cache.md)）。**未指定なら従来どおり毎回ダウンロードする**（ディレクトリ自体は事前にホスト側で作成しておくこと。中身の管理はデーモンではなくワーカーコンテナが行う） |
+| `HOME_WORKER_TITLE_ASSETS_CACHE_DIR` | (なし) | タイトル資産（ゲーム本体・WINEPREFIX・MOD）のキャッシュに使うホスト側ディレクトリ（Issue #104）。設定するとこのディレクトリを`docker run -v`でコンテナへマウントし、`TITLE_ASSETS_CACHE_DIR`としてコンテナへ渡す（`runner.ts`）。自宅回線はタイトル資産のダウンロードに40秒前後かかり、これはジョブ毎に変わらないデータなので、事前にディレクトリを指定しておくと2回目以降のジョブでダウンロードを省略できる（キャッシュの仕組みは[`worker/docs/title-assets.md`](../worker/docs/title-assets.md) §3、[`decisions/0040`](../docs/decisions/0040-home-worker-title-assets-cache.md)）。**未指定なら従来どおり毎回ダウンロードする**（ディレクトリ自体は事前にホスト側で作成しておくこと。中身の管理はデーモンではなくワーカーコンテナが行う） |
 
 ### 4.2 モジュール構成
 

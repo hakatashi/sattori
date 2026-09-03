@@ -53,7 +53,7 @@ const gameTitles = [
     japanese: "東方花映塚",
     english: "Phantasmagoria of\nFlower View",
     shortName: "PoFV",
-    supported: false,
+    supported: true,
     icon: 'th09.png',
   },
   {
