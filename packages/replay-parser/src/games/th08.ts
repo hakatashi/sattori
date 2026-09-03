@@ -126,6 +126,7 @@ export function parseTh08(original: Uint8Array): ParsedReplay {
     stage: normalizeText(stage),
     score,
     cleared,
+    loadout: null,
     splits,
     frameCount: stageFrameCounts.length === 0 ? null : stageFrameCounts.reduce((a, b) => a + b, 0),
   };

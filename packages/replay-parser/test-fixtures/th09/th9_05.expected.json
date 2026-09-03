@@ -21,6 +21,7 @@
   "stage": "Match 人 vs 式",
   "score": null,
   "cleared": null,
+  "loadout": null,
   "splits": [
     {
       "stage": null,

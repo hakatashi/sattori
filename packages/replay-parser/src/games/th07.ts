@@ -150,6 +150,7 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
     stage: null,
     score,
     cleared: decodeData[CLEAR_FLAG_OFFSET] !== 0,
+    loadout: null,
     splits,
     frameCount: stageFrameCounts.length === 0 ? null : stageFrameCounts.reduce((a, b) => a + b, 0),
   };

@@ -108,7 +108,7 @@ they are distinguished by a version byte in the header.
 | `th165` | 秘封ナイトメアダイアリー (VD) | **Unverified** (ported from threplay only; no test data obtained yet) |
 | `th17` | 東方鬼形獣 (WBaWC) | Verified with Silent Selene samples |
 | `th18` | 東方虹龍洞 (UM) | Same as above |
-| `th20` | 東方錦上京 (FW) | Player name/date/difficulty/stage/score verified with `test-fixtures/` (full clears, a game over, Extra, spell practice and stage practice) + screenshots; `character` verified against 16/16 distinct shot values from Silent Selene samples; `splits`/`frameCount`/`recordedAt` reverse-engineered by this package and verified against 88 real replays plus recorded video (see below) |
+| `th20` | 東方錦上京 (FW) | Player name/date/difficulty/stage/score verified with `test-fixtures/` (full clears, a game over, Extra, spell practice and stage practice) + screenshots; `character` verified against 16/16 distinct shot values from Silent Selene samples; `splits`/`frameCount`/`recordedAt` reverse-engineered by this package and verified against 88 real replays plus recorded video (see below); `loadout`'s `main` slot shares that same verification, but the `diffusion`/`focus`/`support` slots (and stone indices 1/3/4/6) are unverified beyond the array's existence — see below |
 
 th19 (東方獣王園, UDoALG) is excluded because the game itself has no
 replay-saving feature.
@@ -154,7 +154,21 @@ Two th20-specific quirks are worth knowing when reading `splits`:
 - `additional.stones` is the per-colour 石 (stone) level, as a
   `{ red, blue, yellow, green }` object rather than an array — the colour order
   was confirmed against the per-異変敵 levels shown on the in-game stage result
-  screen. `additional.stonesTotal` is their sum.
+  screen. `additional.stonesTotal` is their sum. **Don't confuse this with
+  `loadout`** (below): `additional.stones` is per-stage progress gained
+  *during* the run (one number per colour), while `loadout` is the fixed
+  pre-run equipment *choice* (one named stone per slot) — same underlying
+  game mechanic (石), two unrelated numbers.
+
+`ParsedReplay.loadout` holds the 4-slot 石 equipment loadout chosen before the
+run starts (メイン異変石/拡散石/集中石/支援石, in that order), each slot
+resolved to one of the 9 named stones (or `null` for コモン魔石/unrecognized).
+`character` is derived only from the `main` slot; the other three
+(`diffusion`/`focus`/`support`) don't affect it but are otherwise-unused
+gameplay information now exposed for the first time. Indices 0/2/5/7 are
+cross-checked against real equipment screens; 1/3/4/6 follow the equipment
+list's positional order but have no fixture confirming them yet (research doc
+§3.1.1).
 
 Two more things to be aware of when reading a practice-mode th20 replay:
 
@@ -218,8 +232,28 @@ The decoded replay metadata object (`result.replay`):
 | `stage` | `string \| null` | Highest reached stage or scene string (e.g. `"Stage 6"`, `"Stage All Clear"`, `"2-4"`, `"Day 8 Scene 3"`; `null` for th06/th07). |
 | `score` | `number \| null` | Final total score. |
 | `cleared` | `boolean \| null` | `true` if cleared (Player Wins), `false` if failed/game over, `null` if determinable clear status is unavailable (e.g. th06). |
+| `loadout` | [`ReplayLoadoutSlot[]`](#replayloadoutslot) \| `null` | Pre-run equipment/loadout customization (e.g. th20's 4-slot 石 choice), as an ordered list of named slots. `null` for games with no such concept, or where this package does not yet know how to read it (currently populated only for th20). |
 | `splits` | [`ReplayStageSplit[]`](#replaystagesplit) | Per-stage/segment records (empty array if unavailable or unsupported). |
 | `frameCount` | `number \| null` | Total in-game playback frames. Divide by 60 for duration in seconds. See below. |
+
+#### `ReplayLoadoutSlot`
+
+A single named slot in `ParsedReplay.loadout`:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `slot` | `string` | Stable per-title identifier for the slot (e.g. `"main"`, `"diffusion"`, `"focus"`, `"support"` for th20). |
+| `index` | `number \| null` | Raw index/id as stored in the replay, if the game encodes the choice that way. |
+| `name` | `string \| null` | Resolved display name for the equipped item (e.g. `"Yellow2"`), or `null` if unrecognized or nothing is equipped. |
+
+This shape is deliberately title-agnostic rather than th20-specific: other
+titles let the player customize their starting loadout before a run too
+(弾幕アマノジャク's support cards, 東方虹龍洞's 換装 gadgets) and could
+populate the same shape once their own equipment-select data is
+reverse-engineered. A loadout slot is chosen once before the run and fixed
+for its whole duration — this is what distinguishes it from per-stage state
+that can change as the run progresses (e.g. th18's `splits[].additional.cards`),
+which stays on `ReplayStageSplit` instead.
 
 #### `ReplayStageSplit`
 

@@ -21,6 +21,7 @@
   "stage": "Extra",
   "score": null,
   "cleared": null,
+  "loadout": null,
   "splits": [
     {
       "stage": 1,

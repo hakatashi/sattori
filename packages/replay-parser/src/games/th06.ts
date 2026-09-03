@@ -136,6 +136,7 @@ export function parseTh06(original: Uint8Array): ParsedReplay {
     // the byte immediately after th06's score field, unlike th07's, isn't a
     // clean 0/1 value). Left null rather than guessing.
     cleared: null,
+    loadout: null,
     splits,
     frameCount: stageFrameCounts.length === 0 ? null : stageFrameCounts.reduce((a, b) => a + b, 0),
   };
