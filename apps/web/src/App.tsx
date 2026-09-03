@@ -74,15 +74,29 @@ function Layout({ lang }: LayoutProps) {
               <p className={styles.tagline}>{t("app.tagline")}</p>
             )}
             <p>
-              <img className={styles.icon} src="/icon-transparent.png" alt={t("app.logoAlt")} />
+              <picture>
+                <source srcSet="/icon-transparent.webp" type="image/webp" />
+                <img
+                  className={styles.icon}
+                  src="/icon-transparent.png"
+                  width={72}
+                  height={72}
+                  fetchPriority="high"
+                  alt={t("app.logoAlt")}
+                />
+              </picture>
               <img
                 className={clsx(styles.logo, styles.logoLight)}
                 src="/logo-black.svg"
+                width={545}
+                height={72}
                 alt={t("app.wordmarkAlt")}
               />
               <img
                 className={clsx(styles.logo, styles.logoDark)}
                 src="/logo-white.svg"
+                width={545}
+                height={72}
                 alt={t("app.wordmarkAlt")}
               />
             </p>
