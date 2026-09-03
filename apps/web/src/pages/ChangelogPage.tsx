@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { type ChangelogEntry, changelogEntries } from "../data/changelog.ts";
+import { usePageMeta } from "../hooks/usePageMeta.ts";
 import { useLocale } from "../i18n/LocaleContext.ts";
 import staticStyles from "./StaticPage.module.css";
 import styles from "./ChangelogPage.module.css";
@@ -26,6 +27,7 @@ export function groupByDate(entries: ChangelogEntry[]): ChangelogGroup[] {
 /** 更新履歴ページ（`/changelog`）。フッターからナビゲーションする。 */
 export function ChangelogPage() {
   const { t } = useTranslation();
+  usePageMeta({ title: t("changelog.heading"), path: "/changelog" });
   const lang = useLocale();
   const dateFormat = new Intl.DateTimeFormat(lang === "ja" ? "ja-JP" : "en-US", {
     year: "numeric",
