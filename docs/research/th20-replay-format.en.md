@@ -81,7 +81,7 @@ next record. The number of stages is at header offset 0xd4.
 | 0xd0 | f32 | Slowdown rate (%). Matches Silent Selene's "Slowdown" display |
 | 0xd4 | u32 | Number of stage records |
 | 0xd8 | u32 | Shot (0 = Reimu / 1 = Marisa). Already used before this investigation |
-| 0xdc | u32 | Stone (index into `STONE_NAMES`). Already used before this investigation |
+| 0xdc-0xe8 | u32×4 | **Equipped stones (4 slots)**. See the end of this section |
 | 0xfc | u32 | **Spell card index (zero-based) for a spell practice replay**; `0xffffffff` for every other kind of record |
 
 The timestamp at 0x10 was cross-checked against the USER section's `date` string
@@ -90,6 +90,52 @@ of hours**, and the distribution — UTC+9 on 47, UTC+8 on 22, UTC+7 on 4, and s
 on — looks like a real spread of time zones. The layout is the same "fixed-width
 `name` immediately followed by an epoch" shape th10-th18 use; the only difference
 is that `name` is 16 bytes here (the same width as th17/th18).
+
+### 3.1.1 Equipped stones (0xdc-0xe8)
+
+0xdc was initially treated as a single value (an index into `STONE_NAMES`); that
+was wrong. It is actually **an array of four consecutive `u32`s starting at
+0xdc**, one per equipment slot chosen before the run starts (メイン異変石 /
+main, 拡散石 / diffusion, 集中石 / focus, 支援石 / support, in that order). Each
+slot holds an index into the same 9-entry list the game's own equipment-select
+screen shows:
+
+| Index | Stone name | This package's name (`STONE_NAMES`) |
+| --- | --- | --- |
+| 0 | スカーレットデビル | `Red` |
+| 1 | クリーチャーレッド | `Red2` |
+| 2 | スノーブロッサム | `Blue` |
+| 3 | ブルーシーズン | `Blue2` |
+| 4 | イエローサブタレイニアン | `Yellow` |
+| 5 | インペリシャブルムーン | `Yellow2` |
+| 6 | ビーストハードネス | `Green` |
+| 7 | シントイズムウィンド | `Green2` |
+| 8 | コモン魔石 (default, "no stone equipped") | (outside `STONE_NAMES` → `null`) |
+
+Indices 0, 2, 5 and 7 are backed by two independent sources: the checked-in
+fixtures' `MAIN` (0xdc) value matches their `character` field (e.g.
+`th20_04.rpy` has `MAIN = 5` and `character: "ReimuYellow2"`), and a user
+manually read `th20_04.rpy`'s actual in-game equipment screen (main =
+インペリシャブルムーン, diffusion = スノーブロッサム, focus = スカーレットデビル,
+support = シントイズムウィンド — matching the recorded values `[5, 2, 0, 7]`).
+Indices 1, 3, 4, 6 and 8 follow from the list's positional order but have no
+replay exercising them yet.
+
+`character` (the `ReimuRed`-style colour suffix) is derived from `MAIN` (0xdc)
+only; `DIFFUSION`/`FOCUS`/`SUPPORT` (0xe0-0xe8) are not parsed (this was already
+true before the correction, since only one offset was ever read, so this fix does
+not change any existing output).
+
+This correction came from cross-referencing
+[`puresign-tokyo/l-uploader`'s `th20.ksy`](https://github.com/puresign-tokyo/l-uploader/blob/main/backend/src/parsers/threp-ksy/th20.ksy),
+published by [@iyuzzuko](https://x.com/iyuzzuko) (`stones` is defined there as a
+`repeat-expr: 4` array). That ksy is an independent reverse-engineering effort,
+and its offsets for the header and stage record's main fields (`timestamp`/
+`stage_count`/`shot`/`spell_practice_id`, and `score`/`power`/`piv`/`red,blue,
+yellow,green`/`total_stone_count`/`lives`/`life_pieces`/`bombs`/`bomb_pieces`/the
+0x2a0 record size) all match this document's own analysis — the two efforts
+mutually corroborate each other (context:
+[thscoreboard issue #586](https://github.com/n-rook/thscoreboard/issues/586)).
 
 0xfc is **the only thing that identifies a spell practice recording in th20**.
 th08 writes the card out in full in its USER section (`カード名\tNo. 87
@@ -123,7 +169,8 @@ with stage = 7; practice modes have just the one record for that stage), and
 | 0x0b0 | u32 | Always 10000 | not exposed |
 | 0x0b4 | u32 | **異変値 ×5000** (saturates at 1,000,000, i.e. "200.00" on screen) | `splits[].piv` |
 | 0x0b8 | u32 | Always 5000 (the display scale of 異変値) | not exposed |
-| 0x0d4-0x0e0 | u32×4 | Per-colour 石 (stone) gauge (0-1000) | not exposed |
+| 0x0bc | u32 | **Guess: 異変攻撃ゲージ** (anomaly attack gauge — the horizontal gauge shown bottom-left in-game, next to the anomaly enemy gauge) | not exposed |
+| 0x0d4-0x0e0 | u32×4 | **Guess: 異変敵ゲージ** (anomaly enemy gauge, per colour, 0-1000 — the vertical gauge shown bottom-left in-game) | not exposed |
 | 0x0e4-0x0f0 | u32×4 | Looks like per-colour stones currently held (0-4) | not exposed |
 | 0x0f4-0x100 | u32×4 | **Per-colour stone level, in the order red, blue, yellow, green** | `splits[].additional.stones` |
 | 0x104 | u32 | Total stone level; always equals the sum of the four above | `splits[].additional.stonesTotal` |
@@ -140,6 +187,16 @@ was pinned down by **comparing them against the per-anomaly-enemy levels printed
 on the in-game stage result screen**: the order is **red, blue, yellow, green**.
 The parser returns them as an object, `{ red, blue, yellow, green }`, rather than
 an array, so callers do not have to carry that ordering knowledge around.
+
+The 0xbc offset and the "hyper" name come from the `th20.ksy` mentioned in
+§3.1.1 — this document did not previously know this offset existed at all. It
+reads 0 on every stage 1 record and does not increase monotonically afterward,
+consistent with a live "how full is the gauge right now" snapshot rather than a
+cumulative stat. th20's HUD permanently shows two gauges bottom-left (a
+horizontal 異変攻撃ゲージ and a vertical 異変敵ゲージ), and 0xbc is presumed to be
+the former; the 0x0d4-0x0e0 "per-colour 石 gauge" is presumed to be the latter,
+now that its in-game name is known. **Neither guess is highly confident** — no
+direct comparison against the on-screen gauges was done.
 
 **Fields deliberately left unidentified:**
 
@@ -268,3 +325,8 @@ The `a1ef72c0` side (lives 3 with 1/3 fragments, bombs 7 with 0/3, power 4.00,
 - Package documentation:
   [`packages/replay-parser/README.md`](../../packages/replay-parser/README.md)
 - How the replays were fetched from Silent Selene: `.agents/skills/silent-selene/`
+- Independent analysis behind the §3.1.1/§3.2 corrections:
+  [@iyuzzuko](https://x.com/iyuzzuko)'s
+  [`th20.ksy` in `puresign-tokyo/l-uploader`](https://github.com/puresign-tokyo/l-uploader/blob/main/backend/src/parsers/threp-ksy/th20.ksy)
+  (originating from
+  [thscoreboard issue #586](https://github.com/n-rook/thscoreboard/issues/586))

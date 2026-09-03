@@ -486,6 +486,14 @@ files:
 - [n-rook/thscoreboard](https://github.com/n-rook/thscoreboard)
   (Python) — web application containing replay parsing implementations in its
   `project/thscoreboard/replays` directory.
+- [puresign-tokyo/l-uploader](https://github.com/puresign-tokyo/l-uploader)'s
+  [`th20.ksy`](https://github.com/puresign-tokyo/l-uploader/blob/main/backend/src/parsers/threp-ksy/th20.ksy)
+  (Kaitai Struct) — an independent reverse-engineering of th20's body, by
+  [@iyuzzuko](https://x.com/iyuzzuko); cross-checking it against this
+  package's own analysis both confirmed most offsets and corrected th20's
+  equipped-stone header field (see
+  [`docs/research/th20-replay-format.md`](../../docs/research/th20-replay-format.md)
+  §3.1.1).
 
 ## License
 
