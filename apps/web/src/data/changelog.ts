@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-03",
+    ja: "録画動画の再生開始が速くなるよう、配信前の変換処理を改善",
+    en: "Improved video processing so recorded videos start playing faster",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/90",
+  },
+  {
+    date: "2026-09-03",
     ja: "ヘッダーロゴの画像サイズを縮小してページの表示速度を改善。あわせてfaviconが最新デザインと異なっていた不具合を修正",
     en: "Reduced the header logo image size to speed up page load, and fixed the favicon showing an outdated design",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/212",

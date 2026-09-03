@@ -105,6 +105,14 @@ def test_forces_the_native_frame_rate_when_undoing_slow_motion():
     assert cmd[cmd.index("-r") + 1] == str(convert.NATIVE_FRAME_RATE_HZ)
 
 
+def test_moves_moov_atom_to_the_front_for_streaming_playback():
+    # faststart指定が無いとmoov atomが末尾に置かれ、ブラウザでのストリーミング
+    # 再生開始時に末尾へのRangeリクエストが追加で発生してしまう(Issue #90)。
+    cmd = convert.build_convert_cmd("in.mp4", "out.mp4", width=640, height=480)
+
+    assert cmd[cmd.index("-movflags") + 1] == "+faststart"
+
+
 def test_does_not_touch_frame_rate_or_audio_for_a_normal_speed_recording():
     cmd = convert.build_convert_cmd("in.mp4", "out.mp4", width=640, height=480)
 
