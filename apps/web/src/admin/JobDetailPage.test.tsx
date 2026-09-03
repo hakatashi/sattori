@@ -47,6 +47,7 @@ const job: AdminJobRecord = {
   estimatedDurationSeconds: 900,
   progress: 120,
   previewImagePath: "progress/job-1/1234.jpg",
+  posterImagePath: null,
   replayInfo: null,
   pendingExpiresAt: null,
   retriedToJobId: null,

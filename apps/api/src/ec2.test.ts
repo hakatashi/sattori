@@ -71,6 +71,7 @@ const job: JobRecord = {
   estimatedDurationSeconds: 900,
   progress: null,
   previewImagePath: null,
+  posterImagePath: null,
   replayInfo: null,
   pendingExpiresAt: null,
   retriedToJobId: null,

@@ -120,10 +120,19 @@ export interface GetJobResponse {
   /**
    * 録画中の画面プレビュー画像URL（CloudFront配信）。
    * status が recording/converting/done の間のみ値を持ち、失敗後は null。
-   * done での用途はプレビュープレイヤーの`poster`（`previewVideoUrl`参照）で、
-   * 進捗表示のサムネイルとしては使わない。
+   * 進捗表示のサムネイルに使う（`status !== "converting"`の間のみ表示）ほか、
+   * done かつ `posterImageUrl` が無い（poster抽出に失敗した・旧ジョブの）場合の
+   * プレビュープレイヤー`poster`のフォールバックにも使う。
    */
   previewImageUrl: string | null;
+  /**
+   * 完了後のプレビュープレイヤー`poster`専用のURL（CloudFront配信、Issue #171）。
+   * 配信版動画の90%地点のフレームを切り出したもので、`previewImageUrl`（録画中の
+   * スクリーンショット）よりも動画の内容を反映した画像になる。status が done かつ
+   * 抽出に成功したジョブでのみ値を持ち、それ以外は null（`previewImageUrl`
+   * へフォールバックする）。
+   */
+  posterImageUrl: string | null;
   /**
    * ページAで解析済みのリプレイ内容（STEP2と同じ表示に使う）。
    * `POST /magic-links` 時点で `replayInfo` が渡されていなかった旧ジョブでは null。

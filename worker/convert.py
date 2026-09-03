@@ -46,6 +46,10 @@ TARGET_HEIGHT = 720
 PROGRESS_REPORT_INTERVAL_SEC = 10.0
 # 低速録画を等倍へ戻すときに出力へ固定するフレームレート。
 NATIVE_FRAME_RATE_HZ = 60.0
+# poster画像を切り出す位置(動画全体に対する割合)。0.9=末尾から数えて全体の90%地点。
+# 終盤の弾幕が盛り上がったシーンを狙う(Issue #171、リプレイ再生終了後の何も無い
+# 背景や選択画面が写り込む末尾ぎりぎりは避ける)。
+POSTER_POSITION_RATIO = 0.9
 
 
 def probe_resolution(input_path):
@@ -71,6 +75,52 @@ def probe_audio_sample_rate(input_path):
         return int(out.stdout.strip())
     except (subprocess.SubprocessError, ValueError, OSError):
         return None
+
+
+def probe_duration(input_path):
+    """動画の総尺(秒)。取得できない場合は None。"""
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", input_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        return float(out.stdout.strip())
+    except (subprocess.SubprocessError, ValueError, OSError):
+        return None
+
+
+def extract_poster_frame(input_path, output_path, *, position_ratio=POSTER_POSITION_RATIO, log=print):
+    """配信版動画から `position_ratio` 地点の1フレームをJPEGとして切り出す(Issue #171)。
+
+    それまでプレビュープレイヤーの`poster`には録画中最後のスクリーンショットを
+    使い回していたが、それはリプレイ再生終了後の何も無い背景やリプレイ選択画面の
+    ことが多く味気なかった。配信版動画自体から終盤(既定90%地点)のフレームを
+    切り出すことで、弾幕が盛り上がっているシーンを狙う。
+
+    `-ss`を`-i`より前に置く高速シークを使う(キーフレーム単位のため厳密に
+    `position_ratio`ちょうどにはならないが、poster用途ではフレーム精度は不要で
+    変換コストを増やさないことを優先する)。
+
+    総尺の取得やffmpeg実行に失敗した場合は例外を投げず False を返す。呼び出し側は
+    poster無しで続行してよい(=フロントは従来どおり進捗中スクリーンショットへ
+    フォールバックするだけで、動画の再生自体には支障が無い)。
+    """
+    duration = probe_duration(input_path)
+    if duration is None:
+        log("WARNING: 動画の長さを取得できずposter画像の生成をスキップしました")
+        return False
+    seek_seconds = max(0.0, duration * position_ratio)
+    cmd = [
+        "ffmpeg", "-y", "-ss", str(seek_seconds), "-i", input_path,
+        "-frames:v", "1", "-q:v", "2", output_path,
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        return True
+    except subprocess.CalledProcessError as err:
+        log(f"WARNING: poster画像の生成に失敗しました: {err}")
+        return False
 
 
 def delivery_resolution(width, height):

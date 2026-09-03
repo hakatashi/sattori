@@ -185,6 +185,64 @@ def test_caps_watermark_width_at_half_the_target_width():
     assert f"scale={target_width // 2}:-1" in filter_of(cmd)
 
 
+# --- poster画像の切り出し(Issue #171) --------------------------------------
+
+
+def test_probe_duration_parses_ffprobe_output(monkeypatch):
+    monkeypatch.setattr(
+        convert.subprocess, "run", MagicMock(return_value=MagicMock(stdout="123.45\n"))
+    )
+
+    assert convert.probe_duration("in.mp4") == 123.45
+
+
+def test_probe_duration_returns_none_on_failure(monkeypatch):
+    monkeypatch.setattr(
+        convert.subprocess, "run", MagicMock(return_value=MagicMock(stdout="N/A\n"))
+    )
+
+    assert convert.probe_duration("in.mp4") is None
+
+
+def test_extracts_a_frame_at_90_percent_by_default(monkeypatch):
+    monkeypatch.setattr(convert, "probe_duration", lambda path: 100.0)
+    run = MagicMock()
+    monkeypatch.setattr(convert.subprocess, "run", run)
+
+    result = convert.extract_poster_frame("in.mp4", "out.jpg")
+
+    assert result is True
+    cmd = run.call_args[0][0]
+    assert cmd[cmd.index("-ss") + 1] == "90.0"
+    assert cmd[cmd.index("-i") + 1] == "in.mp4"
+    assert cmd[-1] == "out.jpg"
+    assert "-frames:v" in cmd
+
+
+def test_extract_poster_frame_returns_false_when_duration_unknown(monkeypatch):
+    monkeypatch.setattr(convert, "probe_duration", lambda path: None)
+    logged = []
+
+    result = convert.extract_poster_frame("in.mp4", "out.jpg", log=logged.append)
+
+    assert result is False
+    assert any("スキップ" in msg for msg in logged)
+
+
+def test_extract_poster_frame_returns_false_on_ffmpeg_failure(monkeypatch):
+    monkeypatch.setattr(convert, "probe_duration", lambda path: 100.0)
+    monkeypatch.setattr(
+        convert.subprocess, "run",
+        MagicMock(side_effect=convert.subprocess.CalledProcessError(1, ["ffmpeg"])),
+    )
+    logged = []
+
+    result = convert.extract_poster_frame("in.mp4", "out.jpg", log=logged.append)
+
+    assert result is False
+    assert any("失敗" in msg for msg in logged)
+
+
 # --- 進捗報告・失敗時のログ ------------------------------------------------
 
 

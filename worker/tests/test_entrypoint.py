@@ -50,7 +50,7 @@ def entrypoint(monkeypatch, tmp_path):
 
     # 本番の作業ディレクトリは`/app`固定なので、テストでは書ける場所へ差し替える。
     # 実ffmpeg・実S3・実DynamoDBにも触らせない。
-    for name in ("OUTPUT_VIDEO", "OUTPUT_VIDEO_DELIVERY"):
+    for name in ("OUTPUT_VIDEO", "OUTPUT_VIDEO_DELIVERY", "OUTPUT_POSTER"):
         path = str(tmp_path / f"{name.lower()}.mp4")
         with open(path, "wb") as f:
             f.write(b"x" * 10)
@@ -63,6 +63,9 @@ def entrypoint(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "update_progress", lambda *a, **k: None)
     monkeypatch.setattr(module, "upload_ffmpeg_upscale_log_if_present", lambda s3: None)
     monkeypatch.setattr(module, "convert_for_delivery", lambda *a, **k: None)
+    # posterの切り出し(Issue #171)は実ffmpegを呼ばせない。個別のテストで
+    # 上書きして失敗経路も検証する。
+    monkeypatch.setattr(module, "extract_poster_frame", lambda *a, **k: True)
     recorded_status = []
     module._recorded_status = recorded_status
     yield module
@@ -162,6 +165,34 @@ def test_restarts_the_progress_counter_before_converting(entrypoint, monkeypatch
     first_args, first_kwargs = entrypoint._recorded_status[0]
     assert first_args[1] == "converting"
     assert first_kwargs["reset_progress"] is True
+
+
+# --- poster画像の生成・アップロード(Issue #171) -----------------------------
+
+
+def test_uploads_the_poster_and_records_its_key_when_extraction_succeeds(entrypoint, monkeypatch):
+    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (640, 480))
+    s3 = FakeS3()
+
+    entrypoint.convert_and_upload(s3, 1.0)
+
+    assert any(u["key"] == entrypoint.OUTPUT_KEY_POSTER for u in s3.uploads)
+    kwargs = status_kwargs(entrypoint, "done")
+    assert kwargs["poster_image_path"] == entrypoint.OUTPUT_KEY_POSTER
+
+
+def test_does_not_upload_or_record_a_poster_when_extraction_fails(entrypoint, monkeypatch):
+    # 抽出失敗はジョブ全体を失敗させない。posterは従来どおり進捗中スクリーン
+    # ショット(previewImagePath)へフォールバックするだけでよい。
+    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (640, 480))
+    monkeypatch.setattr(entrypoint, "extract_poster_frame", lambda *a, **k: False)
+    s3 = FakeS3()
+
+    entrypoint.convert_and_upload(s3, 1.0)
+
+    assert not any(u["key"] == entrypoint.OUTPUT_KEY_POSTER for u in s3.uploads)
+    kwargs = status_kwargs(entrypoint, "done")
+    assert kwargs["poster_image_path"] is None
 
 
 # --- チェックポイントに添える実時間スケール -------------------------------
