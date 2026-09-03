@@ -268,6 +268,56 @@ def test_update_status_keeps_progress_by_default(monkeypatch):
     assert "progress" not in kwargs["UpdateExpression"]
 
 
+def test_update_status_clears_error_fields_on_done_by_default(monkeypatch):
+    # リトライで1回目が失敗しerror/errorCodeを書いた後、2回目が成功してdoneに
+    # なる経路(Issue #219)。error/error_codeを渡さないdoneへの遷移は、前回の
+    # 失敗情報を明示的に消す。
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "done", output_path="videos/job-1.mp4")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "REMOVE" in kwargs["UpdateExpression"]
+    assert "#e" in kwargs["UpdateExpression"].split("REMOVE")[1]
+    assert "errorCode" in kwargs["UpdateExpression"].split("REMOVE")[1]
+    assert kwargs["ExpressionAttributeNames"]["#e"] == "error"
+
+
+def test_update_status_keeps_error_fields_on_done_when_provided(monkeypatch):
+    # doneへの遷移でerror/error_codeを明示的に渡した場合は、そのままSETされる
+    # (REMOVEはしない)。現状の呼び出しにはこのパターンは無いが、将来doneでも
+    # 警告的なerror文言を残したい呼び出しが出てきた場合の取り違え防止。
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status(
+        "job-1",
+        "done",
+        output_path="videos/job-1.mp4",
+        error="部分的な警告",
+        error_code="partial_warning",
+    )
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "REMOVE" not in kwargs["UpdateExpression"]
+    assert kwargs["ExpressionAttributeValues"][":e"] == "部分的な警告"
+    assert kwargs["ExpressionAttributeValues"][":ec"] == "partial_warning"
+
+
+def test_update_status_does_not_touch_error_fields_for_non_done_status(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "converting")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "REMOVE" not in kwargs["UpdateExpression"]
+
+
 def test_update_progress_skips_without_table(monkeypatch):
     monkeypatch.delenv("JOBS_TABLE", raising=False)
     mock_resource = mock_dynamodb_resource(monkeypatch)
