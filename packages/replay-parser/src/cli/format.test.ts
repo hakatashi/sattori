@@ -26,6 +26,7 @@ describe("cli-format", () => {
     stage: "Stage All Clear",
     score: 1234567890,
     cleared: true,
+    loadout: null,
     frameCount: 51120,
     splits: [
       {

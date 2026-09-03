@@ -3,7 +3,14 @@ import { localizeCharacterName } from "../character-names.js";
 import { readBufferedUint32LE } from "../lzss.js";
 import { readModernUserdata } from "../userdata.js";
 import { DATE_TOKENS_YMD_HM, parseDateComponents } from "../date-format.js";
-import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
+import {
+  emptySplit,
+  normalizeText,
+  resourceCount,
+  type ParsedReplay,
+  type ReplayLoadoutSlot,
+  type ReplayStageSplit,
+} from "../types.js";
 import { REPLAY_GAME_TITLES } from "../game-ids.js";
 import { decodeModernBody } from "./modern-body.js";
 
@@ -21,7 +28,7 @@ import { decodeModernBody } from "./modern-body.js";
  */
 const TH20_HEADER_SIZE = 48;
 
-// Offsets within th20's decompressed body header. `SHOT_OFFSET`/`STONE0_OFFSET`
+// Offsets within th20's decompressed body header. `SHOT_OFFSET`/`STONE_SLOT_OFFSETS.main`
 // were confirmed against thscoreboard's `replays/kaitai_parsers/th20.py`
 // (`Th20.Header`); the rest were reverse-engineered by this package (Issue
 // #176) — see the comment on `TH20_STAGE_RECORD` below for how, and
@@ -41,25 +48,30 @@ const RECORDED_AT_OFFSET = 0x10;
 const STAGE_COUNT_OFFSET = 0xd4;
 const SHOT_OFFSET = 0xd8;
 /**
- * Offsets of the 4-slot 石 equipment loadout the player picks before a run:
- * メイン異変石 (main) / 拡散石 (diffusion) / 集中石 (focus) / 支援石
- * (support), each a `u32` index into `STONE_NAMES` (or 8, for コモン魔石 /
- * "no stone equipped", which falls outside that array). This package
- * originally treated `MAIN` as the only field here; cross-referencing
- * @iyuzzuko's (puresign-tokyo/l-uploader) `th20.ksy` — which reads all 4 as
- * an array — against a replay whose in-game equipment screen was read by
- * hand confirmed it really is 4 slots, not 1. `character` only depends on
- * `MAIN` (the slot that sets the displayed colour suffix), so this
- * correction doesn't change parsed output; `DIFFUSION`/`FOCUS`/`SUPPORT` are
- * recorded here for future reference but not parsed. See
- * docs/research/th20-replay-format.md §3.1.
+ * The 4-slot 石 equipment loadout the player picks before a run, in the order
+ * the in-game equipment-select screen shows them: メイン異変石 (main) / 拡散石
+ * (diffusion) / 集中石 (focus) / 支援石 (support). Exposed as
+ * `ParsedReplay.loadout`.
  */
-const STONE_SLOT_OFFSETS = {
-  MAIN: 0xdc,
-  DIFFUSION: 0xe0,
-  FOCUS: 0xe4,
-  SUPPORT: 0xe8,
-} as const;
+const STONE_LOADOUT_SLOTS = ["main", "diffusion", "focus", "support"] as const;
+/**
+ * Offsets of the 4-slot 石 equipment loadout (see `STONE_LOADOUT_SLOTS`), each
+ * a `u32` index into `STONE_NAMES` (or 8, for コモン魔石 / "no stone equipped",
+ * which falls outside that array). This package originally treated `main` as
+ * the only field here; cross-referencing @iyuzzuko's (puresign-tokyo/l-uploader)
+ * `th20.ksy` — which reads all 4 as an array — against a replay whose in-game
+ * equipment screen was read by hand confirmed it really is 4 slots, not 1.
+ * `character` only depends on `main` (the slot that sets the displayed colour
+ * suffix), so that correction didn't change parsed output; all 4 slots now
+ * feed `loadout` (see `readLoadout`). See docs/research/th20-replay-format.md
+ * §3.1.
+ */
+const STONE_SLOT_OFFSETS: Record<(typeof STONE_LOADOUT_SLOTS)[number], number> = {
+  main: 0xdc,
+  diffusion: 0xe0,
+  focus: 0xe4,
+  support: 0xe8,
+};
 /**
  * Zero-based index of the spell card, for a spell practice replay;
  * `NOT_SPELL_PRACTICE` for every other kind of replay. Unlike th08 — whose
@@ -240,6 +252,18 @@ function readSpellCardNumber(body: Uint8Array): number | null {
   return index === NOT_SPELL_PRACTICE ? null : index + 1;
 }
 
+/**
+ * Reads the 4-slot 石 loadout (see `STONE_LOADOUT_SLOTS`) into the
+ * title-agnostic `ReplayLoadoutSlot[]` shape. `name` is `null` for indices 8
+ * (コモン魔石, no stone equipped) and any other value outside `STONE_NAMES`.
+ */
+function readLoadout(body: Uint8Array): ReplayLoadoutSlot[] {
+  return STONE_LOADOUT_SLOTS.map((slot) => {
+    const index = readBufferedUint32LE(body, STONE_SLOT_OFFSETS[slot]);
+    return { slot, index, name: STONE_NAMES[index] ?? null };
+  });
+}
+
 function readStageRecords(
   body: Uint8Array,
   spellCardNumber: number | null,
@@ -301,11 +325,12 @@ function readStageRecords(
  * (`replays/replay_parsing.py`'s `_Parse20`) doesn't use this text field
  * either — it derives the shot purely from the numeric `shot`/`stones` fields
  * in the decompressed body, which this package now does too (see
- * `SHOT_OFFSET`/`STONE0_OFFSET` above).
+ * `SHOT_OFFSET`/`STONE_SLOT_OFFSETS` above).
  *
  * `splits`/`frameCount` come from this package's own reverse engineering of
  * th20's per-stage record (Issue #176, `docs/research/th20-replay-format.md`),
- * which no other project decodes.
+ * which no other project decodes. `loadout` (the 4-slot 石 choice — see
+ * `readLoadout`) comes from the same investigation's §3.1.1 correction.
  */
 function spellPracticeStage(stage: string | null, spellCardNumber: number | null): string | null {
   if (spellCardNumber === null) return stage;
@@ -323,7 +348,8 @@ export function parseTh20(original: Uint8Array): ParsedReplay {
     TH20_HEADER_SIZE,
   );
   const shotBase = SHOT_BASES[readBufferedUint32LE(decodedata, SHOT_OFFSET)] ?? null;
-  const stoneName = STONE_NAMES[readBufferedUint32LE(decodedata, STONE_SLOT_OFFSETS.MAIN)] ?? null;
+  const loadout = readLoadout(decodedata);
+  const stoneName = loadout[0]!.name;
   const character = shotBase !== null && stoneName !== null ? `${shotBase}${stoneName}` : null;
   const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName("th20", character);
   const spellCardNumber = readSpellCardNumber(decodedata);
@@ -354,6 +380,7 @@ export function parseTh20(original: Uint8Array): ParsedReplay {
     stage: spellPracticeStage(normalizeText(userdata.stage), spellCardNumber),
     score: userdata.score,
     cleared: userdata.stage.includes("Clear"),
+    loadout,
     splits,
     frameCount,
   };

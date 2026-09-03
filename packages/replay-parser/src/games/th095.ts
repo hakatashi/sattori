@@ -40,6 +40,7 @@ export function parseTh095(original: Uint8Array): ParsedReplay {
     stage: normalizeText(`${stagePart1} ${stagePart2}`),
     score,
     cleared: null,
+    loadout: null,
     splits: [],
     frameCount: null,
   };
