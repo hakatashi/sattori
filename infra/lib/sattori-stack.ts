@@ -1182,13 +1182,37 @@ function handler(event) {
     });
 
     // web のビルド成果物があればデプロイする(cdk deploy 前に pnpm --filter web build)。
+    // `assets/`配下はViteがビルドハッシュをファイル名に含めるため、内容が変われば
+    // URLも変わる=ブラウザに長期・immutableでキャッシュさせてよい。それ以外
+    // (`index.html`・`en/index.html`・アイコン・OGP画像・robots.txt・sitemap.xml等)は
+    // 同一URLのまま内容が変わりうるため`no-cache`(ETag等での再検証を毎回強制)にする
+    // (Issue #210)。cacheControlはBucketDeployment単位でしか指定できないため2つに分け、
+    // 互いのファイルを消し合わないよう`prune: false`にする(公式READMEの定石)。
     if (existsSync(WEB_DIST)) {
-      new s3deploy.BucketDeployment(this, "WebDeploy", {
-        sources: [s3deploy.Source.asset(WEB_DIST)],
+      const webDeployAssets = new s3deploy.BucketDeployment(this, "WebDeployAssets", {
+        sources: [s3deploy.Source.asset(WEB_DIST, { exclude: ["*", "!assets", "!assets/**"] })],
         destinationBucket: webBucket,
         distribution: webDistribution,
         distributionPaths: ["/*"],
+        cacheControl: [
+          s3deploy.CacheControl.setPublic(),
+          s3deploy.CacheControl.maxAge(Duration.days(365)),
+          s3deploy.CacheControl.immutable(),
+        ],
+        prune: false,
       });
+      // `index.html`が参照する新ハッシュのJS/CSSより先にindex.html自体が公開されると、
+      // その一瞬だけ新HTML→未アップロードのハッシュ付きファイルという404の窓が開く
+      // ため、必ずassets/を先に完了させる。
+      const webDeploy = new s3deploy.BucketDeployment(this, "WebDeploy", {
+        sources: [s3deploy.Source.asset(WEB_DIST, { exclude: ["assets/**"] })],
+        destinationBucket: webBucket,
+        distribution: webDistribution,
+        distributionPaths: ["/*"],
+        cacheControl: [s3deploy.CacheControl.noCache()],
+        prune: false,
+      });
+      webDeploy.node.addDependency(webDeployAssets);
     }
 
     // --- 運用アラート(OPS-3, Issue #135) -------------------------------------
