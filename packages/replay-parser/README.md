@@ -99,7 +99,7 @@ they are distinguished by a version byte in the header.
 | `th11` | 東方地霊殿 (SA) | Verified with `test-fixtures/` + screenshots |
 | `th12` | 東方星蓮船 (UFO) | Verified with checked-in replays in `test-fixtures/` (covering all six characters and Hard/Extra/Lunatic) + Silent Selene samples |
 | `th125` | ダブルスポイラー (DS) | Verified with checked-in replays in `test-fixtures/` |
-| `th128` | 妖精大戦争 (GFW) | Verified with checked-in replays in `test-fixtures/` (covering Route A/B/C and Hard/Lunatic) + Silent Selene samples |
+| `th128` | 妖精大戦争 (GFW) | Verified with checked-in replays in `test-fixtures/` (covering Route A/B/C and Hard/Lunatic) + Silent Selene samples; see "Notes on th128" below for fields this package reverse-engineered itself |
 | `th13` | 東方神霊廟 (TD) | Verified with `test-fixtures/` + screenshots |
 | `th14` | 東方輝針城 (DDC) | Same as above |
 | `th143` | 弾幕アマノジャク (ISC) | Verified with checked-in replays in `test-fixtures/` |
@@ -108,7 +108,7 @@ they are distinguished by a version byte in the header.
 | `th165` | 秘封ナイトメアダイアリー (VD) | **Unverified** (ported from threplay only; no test data obtained yet) |
 | `th17` | 東方鬼形獣 (WBaWC) | Verified with Silent Selene samples |
 | `th18` | 東方虹龍洞 (UM) | Same as above |
-| `th20` | 東方錦上京 (FW) | Player name/date/difficulty/stage/score verified with `test-fixtures/` (full clears, a game over, Extra, spell practice and stage practice) + screenshots; `character` verified against 16/16 distinct shot values from Silent Selene samples; `splits`/`frameCount`/`recordedAt` reverse-engineered by this package and verified against 88 real replays plus recorded video (see below); `loadout`'s `main` slot shares that same verification, but the `diffusion`/`focus`/`support` slots (and stone indices 1/3/4/6) are unverified beyond the array's existence — see below |
+| `th20` | 東方錦上京 (FW) | Verified with checked-in replays in `test-fixtures/` (full clears, a game over, Extra, spell practice and stage practice) + screenshots + Silent Selene samples; see "Notes on th20" below for fields this package reverse-engineered itself |
 
 th19 (東方獣王園, UDoALG) is excluded because the game itself has no
 replay-saving feature.
@@ -186,6 +186,56 @@ Two more things to be aware of when reading a practice-mode th20 replay:
   clear the in-game list shows as "St5"; both the USER section and the stage
   record say stage 6, which is what the playback actually does.
 
+### Notes on th128 (妖精大戦争 ～ 東方三月精, GFW)
+
+`cleared`, `recordedAt`, and the per-split `stage`/`graze`/`frameCount` (and
+the summed top-level `frameCount`) are this package's own reverse
+engineering of the decompressed body, cross-checked against two independent
+reverse-engineerings that agree exactly on field names/offsets —
+[n-rook/thscoreboard](https://github.com/n-rook/thscoreboard)'s
+`replays/kaitai_parsers/th128.py` and
+[puresign-tokyo/l-uploader](https://github.com/puresign-tokyo/l-uploader)'s
+[`th128.ksy`](https://github.com/puresign-tokyo/l-uploader/blob/main/backend/src/parsers/threp-ksy/th128.ksy)
+(see "Related work" below) — though neither project actually reads these
+fields into its own output, so their *meaning* is this package's own
+verification, done against the 4 checked-in `test-fixtures/th128/*.rpy`
+replays and real in-game observation of each (reached stage, clear/game over,
+and the sequence of stages passed through).
+
+- `cleared` is bit `0x10` of the header's `cleared` field (offset `0x68` in
+  the decompressed body); the low bits otherwise just duplicate the last
+  split's raw `stage` id, already exposed directly (see below). Confirmed
+  against all 4 fixtures: `3`/`4`/`11` (ended in game over) vs. `19 = 3 |
+  0x10` (the one fixture that reached "B1 All" and actually cleared).
+- `splits[].stage` is the raw in-game stage id, read as-is like every other
+  title's `stage` field (no string label resolution) — **not** a contiguous
+  1/2/3 counter, because th128's routing (Route A/A2/B/B2/C/C2, branching
+  after stage 1 and again after stage 2) means the id space isn't sequential
+  across a whole run. E.g. a Route A run that branches to A2 after clearing
+  stage 1 records ids `1` then `4`, not `1` then `2`; confirmed against real
+  in-game stage names for all 4 fixtures. This package does not resolve
+  these ids to route/stage name strings (unlike the header's own `stage`
+  text field, `ParsedReplay.stage`, which is read verbatim from the USER
+  section as with every other title).
+- `splits[].frameCount` (and the summed top-level `frameCount`) is read
+  directly from an explicit per-stage field in the body (no reverse-engineered
+  walk needed, unlike th06-th09/th20's input-log-based `frameCount`).
+- `splits[].graze` is weaker-confidence than the fields above: both external
+  kaitai definitions name this field "graze" (offset agreement only — neither
+  project actually reads it), and GFW does have a real grazing mechanic (each
+  grazed bullet recovers 1% of the 氷力/ice-power gauge per wikiwiki.jp/thk's
+  妖精大戦争/基本戦略, "カスリ：1.00%/1弾" — folded into that gauge rather than
+  shown as its own HUD counter, unlike mainline titles). But unlike
+  `stage`/`frameCount`/`cleared` above, the actual per-stage values have not
+  been cross-checked against a real grazed-bullet count from recorded
+  footage — only that they start at 0 and increase monotonically across the
+  4 checked-in fixtures.
+- `recordedAt` uses the same "12-byte SJIS name immediately followed by a raw
+  Unix epoch timestamp" shape as th10-th18 (only the low 32 bits are read,
+  same precedent as `RECORDED_AT_OFFSET_12BYTE_NAME` in
+  `games/modern-body.ts`), cross-validated against `date` for all 4 fixtures
+  (matches to the minute in JST).
+
 ## Output data
 
 `ParsedReplay` (`result.replay` when `result.ok === true`) carries richer
@@ -224,7 +274,7 @@ The decoded replay metadata object (`result.replay`):
 | `player` | `string \| null` | Player name string (decoded from Shift_JIS with trailing padding trimmed). |
 | `date` | `string \| null` | Date/time string as recorded in the file (format varies by game, e.g. `"05/26/11"`, `"2026/01/24 16:18:16"`, `"25/11/09 17:41"`). |
 | `parsedDate` | [`ParsedDate`](#parseddate) \| `null` | `date` broken down into individual numeric components, so callers don't need to know each title's format to interpret it. `null` iff `date` is `null`. See below. |
-| `recordedAt` | `number \| null` | The same moment as `date`, as a raw Unix epoch (seconds, UTC) read from a second, independent timestamp field. Populated for th10-th18 and th20 (`null` otherwise). See below. |
+| `recordedAt` | `number \| null` | The same moment as `date`, as a raw Unix epoch (seconds, UTC) read from a second, independent timestamp field. Populated for th10-th18, th20, and th128 (`null` otherwise). See below. |
 | `character` | `string \| null` | Raw shot type or character string (e.g. `"ReimuA"`, `"ReimuRed"`, Japanese string `"博麗　霊夢"` for th08; `null` for th143/th165). |
 | `characterNameJa` | `string \| null` | Japanese display name for `character` (e.g. `"霊符"`, `"霊夢"`, `"霊夢A"`, `"霊夢 赤1"`). See below. |
 | `characterNameEn` | `string \| null` | English display name for `character` (e.g. `"Reimu A"`, `"Reimu"`, `"Reimu A (Yukari)"`, `"Reimu Red"`). See below. |
@@ -385,6 +435,10 @@ separately (`RECORDED_AT_OFFSET` in `src/games/th20.ts`) and cross-checked
 against `date` on 86 real replays: every difference came out as a whole number
 of hours, distributed like real time zones.
 
+th128 also keeps the "12-byte name followed by a Unix epoch" shape (see the
+"Notes on th128" section above); cross-validated against `date` on the 4
+checked-in fixtures, matching to the minute in JST every time.
+
 `null` for every other title.
 
 ### `frameCount`
@@ -462,10 +516,13 @@ Currently populated for:
   it is exactly `6 * frames + ceil(frames / 30)` bytes long — redundant fields
   that both confirm the count and give the walk a stop condition. Cross-checked
   against the recorded video of Sattori's own production jobs.
+- **th128**: reverse-engineered by this package (see the "Notes on th128"
+  section above). Each stage record carries an explicit frame count, no
+  input-log walk needed. Cross-validated against real in-game observation
+  (reached stage, clear status) for all 4 checked-in fixtures.
 
-`null` for every other supported title (th095, th125, th128, th143/th165) —
-the per-frame input log location for those has not been reverse-engineered
-yet.
+`null` for every other supported title (th095, th125, th143/th165) — the
+per-frame input log location for those has not been reverse-engineered yet.
 
 `splits[].frameCount` breaks the same total down per stage/segment (frames
 played from that checkpoint up to the next one, or to the end of the replay
@@ -520,14 +577,10 @@ files:
 - [n-rook/thscoreboard](https://github.com/n-rook/thscoreboard)
   (Python) — web application containing replay parsing implementations in its
   `project/thscoreboard/replays` directory.
-- [puresign-tokyo/l-uploader](https://github.com/puresign-tokyo/l-uploader)'s
-  [`th20.ksy`](https://github.com/puresign-tokyo/l-uploader/blob/main/backend/src/parsers/threp-ksy/th20.ksy)
-  (Kaitai Struct) — an independent reverse-engineering of th20's body, by
-  [@iyuzzuko](https://x.com/iyuzzuko); cross-checking it against this
-  package's own analysis both confirmed most offsets and corrected th20's
-  equipped-stone header field (see
-  [`docs/research/th20-replay-format.md`](../../docs/research/th20-replay-format.md)
-  §3.1.1).
+- [puresign-tokyo/l-uploader](https://github.com/puresign-tokyo/l-uploader)
+  (TypeScript) — a replay uploader web application whose backend includes
+  Kaitai Struct definitions for several titles' replay bodies, independently
+  reverse-engineered by [@iyuzzuko](https://x.com/iyuzzuko).
 
 ## License
 
