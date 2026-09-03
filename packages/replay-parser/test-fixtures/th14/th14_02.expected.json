@@ -21,6 +21,7 @@
   "stage": "Stage 1 ～ 5",
   "score": 140806290,
   "cleared": false,
+  "loadout": null,
   "splits": [
     {
       "stage": 1,

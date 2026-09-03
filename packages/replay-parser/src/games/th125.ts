@@ -43,6 +43,7 @@ export function parseTh125(original: Uint8Array): ParsedReplay {
     stage: normalizeText(stage),
     score,
     cleared: null,
+    loadout: null,
     splits: [],
     frameCount: null,
   };

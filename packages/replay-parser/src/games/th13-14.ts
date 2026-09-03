@@ -120,6 +120,7 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
     stage: normalizeText(stage),
     score,
     cleared: stage.includes("Clear"),
+    loadout: null,
     splits,
     frameCount: stageCount > 0 ? frameCount : null,
   };

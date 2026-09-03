@@ -33,6 +33,27 @@ export interface ReplayResourceCount {
 export type ReplayStageSplitExtra = number | string | (number | string)[] | Record<string, number>;
 
 /**
+ * A single named slot in a game's pre-run equipment/loadout customization
+ * (e.g. th20's 4-slot 石 choice: main/diffusion/focus/support). This is
+ * deliberately generic rather than th20-specific: other titles let the player
+ * customize their starting loadout before a run too (弾幕アマノジャク's support
+ * cards, 東方虹龍洞's 換装 gadgets) and could populate the same shape once
+ * their own equipment-select data is reverse-engineered, without needing a
+ * new per-title type. A *loadout* slot is chosen once before the run and
+ * fixed for its whole duration — contrast with per-stage state that can
+ * change as the run progresses (e.g. th18's `additional.cards`), which
+ * belongs on `ReplayStageSplit` instead, not here.
+ */
+export interface ReplayLoadoutSlot {
+  /** Stable per-title identifier for the slot (e.g. `"main"`, `"diffusion"`). */
+  slot: string;
+  /** Raw index/id as stored in the replay, if the game encodes the choice that way. */
+  index: number | null;
+  /** Resolved display name for the equipped item, or null if unrecognized or nothing is equipped. */
+  name: string | null;
+}
+
+/**
  * A per-stage record. Games track different fields, so fields not tracked by
  * a given game are null.
  */
@@ -134,6 +155,13 @@ export interface ParsedReplay {
    * detected. Null for games/replay types with no way to determine this.
    */
   cleared: boolean | null;
+  /**
+   * Pre-run equipment/loadout customization, as an ordered list of named
+   * slots (see `ReplayLoadoutSlot`). `null` for games with no such concept,
+   * or where this package does not (yet) know how to read it. Currently
+   * populated only for th20 (its 4-slot 石 choice); see `games/th20.ts`.
+   */
+  loadout: ReplayLoadoutSlot[] | null;
   /** Per-stage records (empty array for games where this cannot be determined). */
   splits: ReplayStageSplit[];
   /**
