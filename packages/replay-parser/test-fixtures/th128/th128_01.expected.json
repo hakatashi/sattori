@@ -13,18 +13,18 @@
     "minutes": 7,
     "seconds": null
   },
-  "recordedAt": null,
+  "recordedAt": 1788498458,
   "character": null,
   "characterNameJa": null,
   "characterNameEn": null,
   "difficulty": "Hard",
   "stage": "RouteA-2",
   "score": 5715000,
-  "cleared": null,
+  "cleared": false,
   "loadout": null,
   "splits": [
     {
-      "stage": null,
+      "stage": 1,
       "score": 0,
       "power": "1",
       "piv": null,
@@ -38,14 +38,14 @@
         "pieces": null,
         "maxPieces": 100
       },
-      "graze": null,
+      "graze": 0,
       "additional": {
         "freezeAreaPercent": 0
       },
-      "frameCount": null
+      "frameCount": 12995
     },
     {
-      "stage": null,
+      "stage": 4,
       "score": 3144660,
       "power": "6",
       "piv": null,
@@ -59,12 +59,12 @@
         "pieces": null,
         "maxPieces": 100
       },
-      "graze": null,
+      "graze": 627,
       "additional": {
         "freezeAreaPercent": 655
       },
-      "frameCount": null
+      "frameCount": 12958
     }
   ],
-  "frameCount": null
+  "frameCount": 25953
 }
