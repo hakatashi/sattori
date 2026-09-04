@@ -38,7 +38,7 @@ describe("golden replay fixtures (test-fixtures/**)", () => {
     // Guards against the case where fixture collection itself fails and
     // returns 0 cases, which would silently make the subsequent it.each
     // empty and look like "everything passed."
-    expect(fixtures.length).toBe(47);
+    expect(fixtures.length).toBe(51);
   });
 
   it.each(fixtures)("$label: all properties (including splits breakdown) match the golden JSON", ({ rpyPath, expectedPath }) => {

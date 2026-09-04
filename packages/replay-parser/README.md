@@ -99,7 +99,7 @@ they are distinguished by a version byte in the header.
 | `th11` | 東方地霊殿 (SA) | Verified with `test-fixtures/` + screenshots |
 | `th12` | 東方星蓮船 (UFO) | Verified with checked-in replays in `test-fixtures/` (covering all six characters and Hard/Extra/Lunatic) + Silent Selene samples |
 | `th125` | ダブルスポイラー (DS) | Verified with checked-in replays in `test-fixtures/` |
-| `th128` | 妖精大戦争 (GFW) | Verified with Silent Selene samples |
+| `th128` | 妖精大戦争 (GFW) | Verified with checked-in replays in `test-fixtures/` (covering Route A/B/C and Hard/Lunatic) + Silent Selene samples |
 | `th13` | 東方神霊廟 (TD) | Verified with `test-fixtures/` + screenshots |
 | `th14` | 東方輝針城 (DDC) | Same as above |
 | `th143` | 弾幕アマノジャク (ISC) | Verified with checked-in replays in `test-fixtures/` |
