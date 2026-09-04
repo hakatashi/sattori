@@ -1,0 +1,91 @@
+{
+  "game": "th128",
+  "gameTitle": "妖精大戦争 ～ 東方三月精",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "26/09/04 14:27",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 9,
+    "date": 4,
+    "hours": 14,
+    "minutes": 27,
+    "seconds": null
+  },
+  "recordedAt": null,
+  "character": null,
+  "characterNameJa": null,
+  "characterNameEn": null,
+  "difficulty": "Hard",
+  "stage": "RouteB-1",
+  "score": 12609300,
+  "cleared": null,
+  "loadout": null,
+  "splits": [
+    {
+      "stage": null,
+      "score": 0,
+      "power": "1",
+      "piv": null,
+      "lives": {
+        "count": 200,
+        "pieces": null,
+        "maxPieces": 100
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": null,
+        "maxPieces": 100
+      },
+      "graze": null,
+      "additional": {
+        "freezeAreaPercent": 0
+      },
+      "frameCount": null
+    },
+    {
+      "stage": null,
+      "score": 3200750,
+      "power": "6",
+      "piv": null,
+      "lives": {
+        "count": 157,
+        "pieces": null,
+        "maxPieces": 100
+      },
+      "bombs": {
+        "count": 158,
+        "pieces": null,
+        "maxPieces": 100
+      },
+      "graze": null,
+      "additional": {
+        "freezeAreaPercent": 517
+      },
+      "frameCount": null
+    },
+    {
+      "stage": null,
+      "score": 10226330,
+      "power": "11",
+      "piv": null,
+      "lives": {
+        "count": 77,
+        "pieces": null,
+        "maxPieces": 100
+      },
+      "bombs": {
+        "count": 127,
+        "pieces": null,
+        "maxPieces": 100
+      },
+      "graze": null,
+      "additional": {
+        "freezeAreaPercent": 1630
+      },
+      "frameCount": null
+    }
+  ],
+  "frameCount": null
+}
