@@ -4,6 +4,7 @@
 必要な環境変数を差し込む。ffmpeg/S3/DynamoDB は差し替えて実際には触らない。
 """
 import importlib
+import os
 import sys
 
 import pytest
@@ -27,8 +28,12 @@ class FakeS3:
         self._metadata = metadata
         self._head_error = head_error
 
-    def upload_file(self, path, bucket, key, ExtraArgs=None):  # noqa: N803 - boto3のAPI名
+    def upload_file(self, path, bucket, key, ExtraArgs=None, Callback=None):  # noqa: N803 - boto3のAPI名
         self.uploads.append({"path": path, "key": key, "extra": ExtraArgs or {}})
+        if Callback is not None:
+            # 実boto3同様、転送済みバイト数を1回のコールバックで通知する
+            # (チャンク分割の再現までは不要、コールバックが呼ばれることの検証が目的)。
+            Callback(os.path.getsize(path))
 
     def delete_object(self, Bucket, Key):  # noqa: N803 - boto3のAPI名
         self.deleted.append(Key)
@@ -165,15 +170,37 @@ def test_transitions_to_uploading_before_uploading_the_delivery_video(entrypoint
     )
 
     class OrderedS3(FakeS3):
-        def upload_file(self, path, bucket, key, ExtraArgs=None):  # noqa: N803 - boto3のAPI名
+        def upload_file(self, path, bucket, key, ExtraArgs=None, Callback=None):  # noqa: N803 - boto3のAPI名
             order.append(f"upload:{key}")
-            super().upload_file(path, bucket, key, ExtraArgs=ExtraArgs)
+            super().upload_file(path, bucket, key, ExtraArgs=ExtraArgs, Callback=Callback)
 
     entrypoint.convert_and_upload(OrderedS3(), 1.0)
 
-    uploading_index = order.index(("status:uploading", {"reset_progress": True}))
+    delivery_size = os.path.getsize(entrypoint.OUTPUT_VIDEO_DELIVERY)
+    uploading_index = order.index(
+        ("status:uploading", {"reset_progress": True, "upload_total_bytes": delivery_size}),
+    )
     upload_index = order.index(f"upload:{entrypoint.OUTPUT_KEY_DELIVERY}")
     assert uploading_index < upload_index
+
+
+def test_reports_delivery_upload_progress_via_update_progress(entrypoint, monkeypatch):
+    """配信版動画の転送済みバイト数をupdate_progress経由でDynamoDBへ反映する。
+
+    フロント側の実進捗バー・残り時間推定(Issue #202フォローアップ、
+    apps/web/src/hooks/jobProgressBudget.ts)の入力になる。
+    """
+    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (640, 480))
+    reported = []
+    monkeypatch.setattr(
+        entrypoint, "update_progress",
+        lambda job_id, progress: reported.append((job_id, progress)),
+    )
+
+    entrypoint.convert_and_upload(FakeS3(), 1.0)
+
+    delivery_size = os.path.getsize(entrypoint.OUTPUT_VIDEO_DELIVERY)
+    assert (entrypoint.JOB_ID, delivery_size) in reported
 
 
 def test_restarts_the_progress_counter_before_converting(entrypoint, monkeypatch):
@@ -339,6 +366,36 @@ def test_upload_video_attaches_metadata_when_given(entrypoint):
 
     assert s3.uploads[0]["extra"]["Metadata"] == {"sattori-time-scale": "2.0"}
     assert s3.uploads[0]["extra"]["ContentType"] == "video/mp4"
+
+
+def test_upload_video_throttles_progress_callbacks_but_always_reports_the_final_chunk(entrypoint):
+    """boto3のCallbackはチャンク単位(既定8MiB)で呼ばれるため、DynamoDBへの書き込み
+    頻度を抑えるために時間ベースで間引く(Issue #202フォローアップ)。ただし最終チャンクは
+    間引かず必ず報告する——呼び出し側が100%到達を確実に観測できるようにするため。
+    """
+
+    class ChunkedS3(FakeS3):
+        def upload_file(self, path, bucket, key, ExtraArgs=None, Callback=None):  # noqa: N803
+            self.uploads.append({"path": path, "key": key, "extra": ExtraArgs or {}})
+            total = os.path.getsize(path)
+            chunk = total // 4
+            # 4チャンクに分けて立て続けに呼ぶ(間引きの時間窓内に収まる)。
+            for _ in range(3):
+                Callback(chunk)
+            Callback(total - chunk * 3)
+
+    reported = []
+    entrypoint.upload_video(
+        ChunkedS3(), entrypoint.OUTPUT_VIDEO, "videos/job-1.mp4",
+        on_progress=lambda transferred: reported.append(transferred),
+    )
+
+    total = os.path.getsize(entrypoint.OUTPUT_VIDEO)
+    chunk = total // 4
+    # 直近の報告が無い状態からの1回目は間引かれない(convert.pyのon_progress報告と同じ挙動、
+    # last_reportedの初期値0.0により初回は必ず経過時間が閾値を超えて扱われるため)。
+    # 続く2回は間引かれ、最終チャンクは間引き条件に関わらず必ず報告される。
+    assert reported == [chunk, total]
 
 
 # --- リプレイずれ検証結果の読み取り(Issue #103) -----------------------------

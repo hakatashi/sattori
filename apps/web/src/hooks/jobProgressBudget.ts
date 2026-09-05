@@ -18,6 +18,16 @@ export const FALLBACK_ESTIMATED_DURATION_SECONDS = 10 * 60;
  */
 export const MIN_CONVERTING_RATE = 3;
 
+/**
+ * uploading(配信用動画のアップロード、Issue #202フォローアップ)の悲観的下限速度
+ * (バイト/秒)。自宅ワーカー(HakataMatrix)の本番実測では大きめのファイルで概ね
+ * 10〜12MB/s(80〜99Mbps)に収束していたが(`docs/reports/2026-09-05-home-worker-upload-bandwidth.md`)、
+ * 実使用時は家庭内の他トラフィックとの競合で低下しうるため、実測の10パーセンタイル
+ * (9.83MB/s)よりさらに下にマージンを取る。useEstimatedProgress.ts のフェーズ内速度
+ * クランプの下限とも共有するためここに集約する(MIN_CONVERTING_RATEと同じ理由)。
+ */
+export const MIN_UPLOAD_BYTES_PER_SECOND = 5 * 1024 * 1024;
+
 /** done になるまで到達させない上限(%)。悲観バジェットぴったりで converting が終わっても、
  *  status がまだ converting のまま100%表示になって混乱を招くのを避けるため。 */
 export const OVERALL_PROGRESS_CAP_PERCENT = 99;
@@ -37,11 +47,19 @@ export interface PhaseBudgets {
    */
   recordingContent: number;
   converting: number;
+  /**
+   * uploading の悲観バジェット(秒)。`uploadTotalBytes`(アップロード開始時点で判明する
+   * 転送予定バイト数)が分かって初めて計算できるため、launching/recording/converting中は
+   * 常に0(=totalに寄与しない、従来どおりの挙動)。uploading到達後にtotalへ積み増され、
+   * 全体バーがそこから先も進み続けるようになる。
+   */
+  uploading: number;
   total: number;
 }
 
 /**
- * ジョブ全体(launching + recording + converting)の悲観的な合計所要時間(秒)を計算する。
+ * ジョブ全体(launching + recording + converting + uploading)の悲観的な合計所要時間(秒)を
+ * 計算する。
  *
  * recording はリプレイを再生しながら録画するので、通常はリプレイの再生時間そのもの
  * (等倍)。ただし低速録画(Issue #68)ではゲームを1/2倍速で走らせるため、同じ
@@ -53,20 +71,28 @@ export interface PhaseBudgets {
  * converting は録画結果(等倍に戻した後の動画)に対する処理なので、低速録画でも
  * 尺は変わらない——スケールしてはいけない。最悪ケースでも MIN_CONVERTING_RATE 倍速
  * (recordingの1/3の長さ)で終わることを仮定する。
+ *
+ * uploading(Issue #202フォローアップ)は `uploadTotalBytes` が判明するまで(=launching/
+ * recording/converting中)は0とする。転送予定バイト数を事前に見積もる根拠が無いため、
+ * 早い段階から憶測でバーに織り込むより「分かってから足す」方を選んでいる
+ * (EC2は同リージョンS3で実質一瞬なので、この方針でも実害は無い)。
  */
 export function computePhaseBudgets(
   estimatedDurationSeconds: number | null,
   slowMotion = false,
+  uploadTotalBytes: number | null = null,
 ): PhaseBudgets {
   const perPhase = estimatedDurationSeconds ?? FALLBACK_ESTIMATED_DURATION_SECONDS;
   const recording = perPhase * recordingWallClockScale(slowMotion);
   const converting = perPhase / MIN_CONVERTING_RATE;
+  const uploading = uploadTotalBytes !== null ? uploadTotalBytes / MIN_UPLOAD_BYTES_PER_SECOND : 0;
   return {
     launching: LAUNCHING_BUDGET_SECONDS,
     recording,
     recordingContent: perPhase,
     converting,
-    total: LAUNCHING_BUDGET_SECONDS + recording + converting,
+    uploading,
+    total: LAUNCHING_BUDGET_SECONDS + recording + converting + uploading,
   };
 }
 

@@ -23,8 +23,8 @@ export const changelogEntries: ChangelogEntry[] = [
   },
   {
     date: "2026-09-03",
-    ja: "動画の変換完了後、アップロードが完了するまでの間もジョブページに進行状況を表示するよう修正",
-    en: "The job page now shows progress while the video is uploading after conversion finishes",
+    ja: "動画の変換完了後、アップロードが完了するまでの間も転送済みバイト数に応じた進捗バー・残り時間の目安をジョブページに表示するよう修正",
+    en: "The job page now shows a real byte-based progress bar and estimated time remaining while the video is uploading after conversion finishes",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/202",
   },
   {

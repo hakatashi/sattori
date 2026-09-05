@@ -30,6 +30,7 @@ function makeJob(overrides: Partial<JobRecord> = {}): JobRecord {
     spotPricePerHour: 0.06,
     estimatedDurationSeconds: 900,
     progress: null,
+    uploadTotalBytes: null,
     previewImagePath: null,
     posterImagePath: null,
     replayInfo: null,
