@@ -16,7 +16,7 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
-    date: "2026-09-04",
+    date: "2026-09-05",
     ja: "録画完了後のプレビュー動画のサムネイルを、動画終盤のシーンから生成するよう改善",
     en: "Improved the completed recording preview thumbnail to be generated from a scene near the end of the video",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/171",
