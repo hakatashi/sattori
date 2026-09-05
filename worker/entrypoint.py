@@ -82,6 +82,11 @@ REPLAY_PATH = f"{WORK_DIR}/upload.rpy"
 OUTPUT_VIDEO = f"{WORK_DIR}/video.mp4"
 OUTPUT_VIDEO_DELIVERY = f"{WORK_DIR}/video_delivery.mp4"
 PROGRESS_DIR = f"{WORK_DIR}/progress"
+# 録画試行を破棄した際の最終フレーム(調査用の証跡、Issue #159)の書き出し先。
+# record_thNN.py(recording.artifacts.save_diagnostics_snapshot())が書き、progress/と
+# 違い頻繁な更新が無いため常駐スレッドは持たず、record()完了後にまとめてS3へ
+# アップロードする(upload_diagnostics_snapshots_if_present()参照)。
+DIAGNOSTICS_DIR = f"{WORK_DIR}/diagnostics"
 # リプレイずれ検証(Issue #103)の結果。record_thNN.pyは別プロセスのため、戻り値を
 # ファイル経由で受け渡す(recording.artifacts.write_desync_result()が書く)。
 DESYNC_RESULT_PATH = f"{WORK_DIR}/desync_result.json"
@@ -255,6 +260,25 @@ def read_checkpoint_time_scale(s3):
         return 1.0
 
 
+def upload_diagnostics_snapshots_if_present(s3):
+    """録画試行を破棄した際の最終フレーム(Issue #159)をS3へアップロードする(存在する
+    場合のみ)。ユーザー向けプレビュー(`progress/`)とは別の調査用の証跡なので、
+    別プレフィックス(`diagnostics/{jobId}/`)へ置く。record()が録画の成否を判定する前に
+    呼ぶこと(失敗時こそ診断に必要なため)。アップロード自体の失敗はジョブ全体を
+    失敗させない(upload_ffmpeg_upscale_log_if_present()と同じ方針)。
+    """
+    if not os.path.isdir(DIAGNOSTICS_DIR):
+        return
+    for filename in sorted(os.listdir(DIAGNOSTICS_DIR)):
+        path = f"{DIAGNOSTICS_DIR}/{filename}"
+        key = f"diagnostics/{JOB_ID}/{filename}"
+        log(f"診断用スクリーンショットをアップロード: s3://{OUTPUT_BUCKET}/{key}")
+        try:
+            s3.upload_file(path, OUTPUT_BUCKET, key, ExtraArgs={"ContentType": "image/jpeg"})
+        except Exception as err:  # noqa: BLE001 - 診断データのアップロード失敗でジョブ全体を失敗させない
+            log(f"診断用スクリーンショットのアップロードに失敗しました(継続): {err}")
+
+
 def upload_ffmpeg_upscale_log_if_present(s3):
     """720p変換のffmpeg生ログをS3へアップロードする(存在する場合のみ)。変換の
     成功/失敗どちらでも診断に使えるため、呼び出し側はconvert_for_delivery()の成否に
@@ -294,6 +318,7 @@ def record(s3):
             "--replay-path", REPLAY_PATH,
             "--output", OUTPUT_VIDEO,
             "--progress-dir", PROGRESS_DIR,
+            "--diagnostics-dir", DIAGNOSTICS_DIR,
             # 音声の録音先をこのジョブ専用のPulseAudio sinkに固定する(Issue #48)。
             # 1インスタンス=1ジョブのEC2 Fleetでは分離の必要はないが、コードパスを
             # 分岐させない方針のため常に渡す。
@@ -309,6 +334,8 @@ def record(s3):
         result = subprocess.run(cmd)
     finally:
         progress_reporter.stop()
+
+    upload_diagnostics_snapshots_if_present(s3)
 
     if result.returncode != 0 or not os.path.exists(OUTPUT_VIDEO):
         raise RuntimeError(f"録画に失敗しました (exit_code={result.returncode})")

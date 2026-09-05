@@ -1,10 +1,53 @@
 """画面キャプチャと画素比較。"""
 
+import io
+import subprocess
+
 import numpy as np
 import pytest
 from PIL import Image
 
 from recording import vision
+
+
+def _png_bytes(color=(1, 2, 3)):
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), color=color).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_grab_frame_from_video_returns_image_from_ffmpeg_stdout(monkeypatch):
+    png = _png_bytes()
+
+    def fake_run(cmd, **kwargs):
+        assert cmd[:3] == ["ffmpeg", "-y", "-ss"]
+        assert "15" in cmd
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=png, stderr=b"")
+
+    monkeypatch.setattr(vision.subprocess, "run", fake_run)
+
+    frame = vision.grab_frame_from_video("/out.mp4", 15)
+
+    assert frame is not None
+    assert frame.size == (4, 4)
+
+
+def test_grab_frame_from_video_returns_none_on_nonzero_exit(monkeypatch):
+    monkeypatch.setattr(
+        vision.subprocess, "run",
+        lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, returncode=1, stdout=b"", stderr=b"error"),
+    )
+
+    assert vision.grab_frame_from_video("/out.mp4", 15) is None
+
+
+def test_grab_frame_from_video_returns_none_on_subprocess_error(monkeypatch):
+    def raise_timeout(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, 30)
+
+    monkeypatch.setattr(vision.subprocess, "run", raise_timeout)
+
+    assert vision.grab_frame_from_video("/out.mp4", 15) is None
 
 
 def test_mad_zero_for_identical_frames():

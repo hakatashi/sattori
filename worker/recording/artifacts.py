@@ -26,6 +26,26 @@ def save_progress_snapshot(progress_dir, color_frame, elapsed_seconds, expected_
     os.replace(tmp_state_path, f"{progress_dir}/state.json")
 
 
+def save_diagnostics_snapshot(diagnostics_dir, color_frame, attempt, classification):
+    """試行を破棄した際の最終フレームを1枚だけ書き出す(Issue #159)。
+
+    録画が早期に打ち切られたジョブでは`progress_dir`(ProgressReporterのポーリング間隔
+    約10秒より先に録画が終わる)に進捗スクリーンショットが1枚も残らず、失敗時の画面を
+    事後確認できない。ユーザー向けプレビューの`progress_dir`とは別に、entrypoint.py側が
+    S3(`diagnostics/{jobId}/`)へアップロードする調査用の証跡として書き出す。
+    `diagnostics_dir`未指定、またはフレームが得られなかった(生成前に破棄された等)場合は
+    何もしない。
+    """
+    if not diagnostics_dir or color_frame is None:
+        return
+    thumb = color_frame.copy()
+    thumb.thumbnail((960, 960))
+    path = f"{diagnostics_dir}/attempt{attempt}-{classification}.jpg"
+    tmp_path = f"{path}.tmp"
+    thumb.save(tmp_path, "JPEG", quality=85)
+    os.replace(tmp_path, path)
+
+
 def write_desync_result(path, desync_detected):
     """リプレイずれ検証の結果をJSONへ書き出す。
 
