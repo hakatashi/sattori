@@ -45,7 +45,7 @@ def update_status(
     job_id, status, *,
     output_path=None, output_path_720p=None,
     output_bytes=None, output_bytes_720p=None,
-    poster_image_path=None,
+    poster_image_path=None, upload_total_bytes=None,
     error=None, error_code=None, reset_progress=False,
     desync_detected=None, timed_out=None,
 ):
@@ -72,6 +72,11 @@ def update_status(
     軸になる（Issue #138）。error を渡す呼び出しでは可能な限り併せて指定すること。
 
     output_bytes / output_bytes_720p は管理画面のコスト推定(Issue #60)の入力。
+
+    upload_total_bytes は配信用動画のアップロード開始時点(転送前)に分かっているアップロード
+    予定バイト数(Issue #202フォローアップ)。`status="uploading"`への遷移でのみ渡される想定で、
+    以降 `update_progress()` が報告する転送済みバイト数と組み合わせてフロント側が実進捗バー・
+    残り時間を計算する(`apps/web/src/hooks/jobProgressBudget.ts`)。
 
     reset_progress=True を渡すと progress を 0 に戻す。**フェーズを開始する書き込みでは
     必ず指定すること**(Issue #108)。progress は「現在のフェーズ内で処理が完了した時間」
@@ -127,6 +132,9 @@ def update_status(
     if poster_image_path is not None:
         expr += ", posterImagePath = :pp"
         values[":pp"] = poster_image_path
+    if upload_total_bytes is not None:
+        expr += ", uploadTotalBytes = :utb"
+        values[":utb"] = int(upload_total_bytes)
     if error is not None:
         expr += ", #e = :e"
         names["#e"] = "error"
@@ -178,10 +186,13 @@ def update_status(
 
 def update_progress(job_id, progress, preview_image_path=None):
     """status/outputPath 等には触れず、進捗(・プレビュー画像パス)だけを更新する
-    軽量な更新関数。録画・変換フェーズ中に10秒間隔程度の高頻度で呼ばれるため、
-    毎回 update_status の全項目を触らないよう分けている。
-    progress は全体の長さに対する割合ではなく、現在のフェーズ内で実際に処理が
-    完了した時間(秒)を渡す。
+    軽量な更新関数。録画・変換・アップロードの各フェーズ中に10秒間隔程度の高頻度で
+    呼ばれるため、毎回 update_status の全項目を触らないよう分けている。
+    progress の単位はフェーズによって異なる: 録画・変換フェーズでは全体の長さに
+    対する割合ではなく、現在のフェーズ内で実際に処理が完了した時間(秒)。
+    アップロードフェーズ(Issue #202フォローアップ)では転送済みバイト数
+    (`JobRecord.uploadTotalBytes`が分母)。呼び出し側(`worker/entrypoint.py`)が
+    フェーズに応じた単位で渡す。
     """
     table_name = os.environ.get("JOBS_TABLE")
     if not table_name:

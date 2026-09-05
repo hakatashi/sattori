@@ -83,6 +83,9 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     errorCode: job.errorCode ?? null,
     updatedAt: job.updatedAt,
     progress: job.progress,
+    // `errorCode`と同じ理由（Issue #202フォローアップ追加より前の旧ジョブでは
+    // 属性自体が無く`undefined`になりうる）。
+    uploadTotalBytes: job.uploadTotalBytes ?? null,
     previewVideoUrl,
     previewImageUrl,
     posterImageUrl,

@@ -38,6 +38,19 @@ function formatSeconds(totalSeconds: number): string {
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
+/**
+ * バイト数を MiB / GiB で読みやすく表示する（アップロード中の進捗表示、Issue #202
+ * フォローアップ）。`admin/costFormat.ts`と同じ丸め方だが、管理画面専用モジュールから
+ * 公開ページのコンポーネントへ依存させないためここに単独で持つ。
+ */
+function formatBytes(bytes: number): string {
+  const gib = bytes / 1024 ** 3;
+  if (gib >= 1) {
+    return `${gib.toFixed(2)} GiB`;
+  }
+  return `${(bytes / 1024 ** 2).toFixed(0)} MiB`;
+}
+
 /** ダウンロード期限（ISO 8601）を表示用の日時文字列に整形する。 */
 function formatExpiresAt(isoString: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(
@@ -186,7 +199,31 @@ export function JobProgressView({ job, loadError }: ViewProps) {
                           />
                         )}
                         <div className={styles.logProgressWrap}>
-                          {estimatedDurationSeconds === null ? (
+                          {status === "uploading" ? (
+                            job.uploadTotalBytes === null ? (
+                              // uploadTotalBytes未設定の旧ジョブ・EC2で最初の報告が
+                              // まだ届いていない間は、割合の分母が無いので転送済み
+                              // バイト数だけを表示する（recording/convertingの
+                              // estimatedDurationSeconds===nullケースと同じ扱い）。
+                              <p className={styles.logProgressText}>
+                                {t("jobProgress.uploaded", { bytes: formatBytes(progress) })}
+                              </p>
+                            ) : (
+                              <>
+                                <div className={styles.logProgressBar}>
+                                  <div
+                                    className={styles.logProgressFill}
+                                    style={{
+                                      width: `${Math.min(100, Math.max(0, (progress / job.uploadTotalBytes) * 100))}%`,
+                                    }}
+                                  />
+                                </div>
+                                <p className={styles.logProgressText}>
+                                  {formatBytes(progress)} / {formatBytes(job.uploadTotalBytes)}
+                                </p>
+                              </>
+                            )
+                          ) : estimatedDurationSeconds === null ? (
                             <p className={styles.logProgressText}>
                               {t("jobProgress.elapsed", { time: formatSeconds(progress) })}
                             </p>

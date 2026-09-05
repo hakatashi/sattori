@@ -24,6 +24,7 @@ const BASE: Omit<
   | "error"
   | "errorCode"
   | "progress"
+  | "uploadTotalBytes"
   | "previewVideoUrl"
   | "previewImageUrl"
   | "posterImageUrl"
@@ -46,6 +47,7 @@ function buildJob(overrides: Partial<GetJobResponse> & { status: JobStatus }): G
     error: null,
     errorCode: null,
     progress: null,
+    uploadTotalBytes: null,
     previewVideoUrl: null,
     previewImageUrl: null,
     posterImageUrl: null,
@@ -74,8 +76,16 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
     }),
   },
   {
-    title: "status: uploading（変換完了後のアップロード中、Issue #202。進捗はバジェット到達点で足踏み）",
-    job: buildJob({ status: "uploading" }),
+    title: "status: uploading（変換完了後のアップロード中、Issue #202フォローアップ。実バイト進捗・残り時間推定あり）",
+    job: buildJob({
+      status: "uploading",
+      progress: 320 * 1024 * 1024, // 320MiB転送済み
+      uploadTotalBytes: 850 * 1024 * 1024, // 850MiB中(約38%)
+    }),
+  },
+  {
+    title: "status: uploading（uploadTotalBytes未設定の旧ジョブ、バイト数のみ表示）",
+    job: buildJob({ status: "uploading", progress: 120 * 1024 * 1024 }),
   },
   {
     title: "status: done（720p・元解像度の両方あり、poster画像あり、Issue #171）",

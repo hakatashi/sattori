@@ -206,12 +206,25 @@ export interface JobRecord {
    */
   estimatedDurationSeconds: number | null;
   /**
-   * 現在のフェーズ（recording/converting）内で実際に処理が完了した時間（秒）。
-   * 全体の長さに対する割合ではなく、経過秒数そのものを持つ（フェーズ開始直後や
-   * 不明時は null）。全体の長さに対する割合として表示する場合は
-   * `replayInfo.estimatedDurationSeconds` を分母として呼び出し側で算出する。
+   * 現在のフェーズ内で実際に処理が完了した量。単位はフェーズによって異なる
+   * （フェーズ開始直後や不明時は null）:
+   * - recording/converting: 経過秒数（`replayInfo.estimatedDurationSeconds`を
+   *   分母として割合を算出する）。
+   * - uploading（Issue #202フォローアップ）: 転送済みバイト数（`uploadTotalBytes`を
+   *   分母として割合を算出する）。
+   *
+   * 全体の長さに対する割合ではなく、フェーズ内の絶対量そのものを持つ。
    */
   progress: number | null;
+  /**
+   * アップロードフェーズ（Issue #202フォローアップ）で転送予定の配信用動画の
+   * バイト数。`status`が`uploading`へ遷移する際、転送開始前（`os.path.getsize()`で
+   * 判明済み）に`progress`と同じ更新で書き込む（`worker/entrypoint.py`）。
+   * ジョブページの実進捗バー・残り時間推定（`apps/web/src/hooks/jobProgressBudget.ts`）が
+   * `progress`（転送済みバイト数）の分母として使う。uploading未到達・このフィールド
+   * 追加より前の旧ジョブでは null。
+   */
+  uploadTotalBytes: number | null;
   /**
    * 録画中の画面プレビュー画像の S3 オブジェクトキー（出力バケット内）。
    * スナップショット毎にユニークなキーを発行する（CloudFrontの長期キャッシュで

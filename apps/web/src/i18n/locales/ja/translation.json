@@ -203,6 +203,7 @@
     "overallProgressAriaLabel": "全体の進捗",
     "previewAlt": "録画中のプレビュー",
     "elapsed": "{{time}} 経過",
+    "uploaded": "{{bytes}} アップロード済み",
     "etaMinutes": "残り約{{minutes}}分",
     "retryHint": "通常より時間がかかっています。もうしばらくお待ちください。",
     "desyncWarning": "録画終了時のスコアが記録されたスコアと一致しませんでした。リプレイずれが発生した可能性があります。",

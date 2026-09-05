@@ -19,7 +19,9 @@ EC2 Fleet インスタンスの UserData から `docker run` で起動される�
      recording.modlog.check_replay_desync() / recording.pipeline.attempt_recording() 参照)
   4. 配信用変換(等倍への戻し・解像度合わせ・ウォーターマーク合成を1パスで。
      進捗%を10秒間隔程度で報告)
-  5. status を uploading に更新(Issue #202) → 変換後動画をS3へアップロード →
+  5. status を uploading に更新(アップロード予定バイト数 uploadTotalBytes を同時に
+     記録、Issue #202) → 変換後動画をS3へアップロード(転送済みバイト数を progress
+     として10秒間隔程度で報告、フロント側の実進捗バー・残り時間推定に使う) →
      配信版動画の90%地点のフレームをposter画像として切り出しS3へアップロード
      (Issue #171、`convert.extract_poster_frame()`。失敗してもジョブは失敗させず、
      プレビュープレイヤーのposterは従来どおり進捗中スクリーンショットへフォール
@@ -123,6 +125,9 @@ WATERMARK_ASSET = f"{REPO}/assets/watermark/watermark-60fps.webm"
 # にする(infra/lib/sattori-stack.tsで短めのライフサイクルルールを設定)。
 FFMPEG_UPSCALE_LOG = f"{WORK_DIR}/ffmpeg_upscale.log"
 FFMPEG_UPSCALE_LOG_KEY = f"worker-logs/{JOB_ID}/ffmpeg-upscale.log"
+# 配信用動画アップロード中のon_progressコールバックを呼ぶ最小間隔(秒)。DynamoDBへの
+# 書き込み頻度を抑える(convert.pyのPROGRESS_REPORT_INTERVAL_SECと同じ方針)。
+UPLOAD_PROGRESS_REPORT_INTERVAL_SEC = 10.0
 
 # GAME に応じたタイトル固有の録画スクリプト(Issue #13でth08、th06対応・th11対応で追加)。
 # 辞書で明示的に許可した値のみを使うことで、job.game由来のGAME環境変数から
@@ -211,20 +216,49 @@ def download_checkpoint_video(s3):
     s3.download_file(OUTPUT_BUCKET, OUTPUT_KEY, OUTPUT_VIDEO)
 
 
-def upload_video(s3, path, key, metadata=None):
+def upload_video(s3, path, key, metadata=None, on_progress=None):
     """動画をS3へアップロードし、そのバイト数を返す。
 
     サイズは管理画面のコスト推定(Issue #60、packages/shared/src/cost.ts)で
     S3保管料とCloudFront配信量の入力になる。動画サイズは本サービスのコスト構造で
     最大のレバレッジ(docs/research/aws-region-cost-analysis.md §6)なので、平均値で丸めず
     ジョブ単位の実測をDynamoDBへ残す。
+
+    on_progress が指定されていれば、転送済みバイト数の累計を
+    UPLOAD_PROGRESS_REPORT_INTERVAL_SEC 秒間隔程度で呼び出す(Issue #202フォローアップ、
+    アップロード中の実進捗表示・残り時間推定)。boto3の`Callback`はマルチパート
+    アップロードのスレッドプールから並行に呼ばれる(チャンク単位、既定8MiB)ため、
+    累計値の更新をロックで保護する。間引きはconvert.pyのffmpeg進捗報告と同じ方式で
+    時間ベースに行うが、DynamoDBへの書き込み(on_progress)自体はロックの外で呼ぶ
+    (ロック保持中にネットワークI/Oを挟むと他のアップロードスレッドを止めてしまうため)。
+    最終チャンク到達時(transferred >= size)は間引かず必ず呼ぶ——呼び出し側が
+    100%到達を確実に観測できるようにするため。EC2は同リージョンS3で転送が一瞬
+    なため、この最終呼び出し以外の中間報告が一度も起きなくても実害は無い。
     """
     size = os.path.getsize(path)
     log(f"動画をアップロード: s3://{OUTPUT_BUCKET}/{key} ({size}バイト)")
     extra = {"ContentType": "video/mp4"}
     if metadata:
         extra["Metadata"] = metadata
-    s3.upload_file(path, OUTPUT_BUCKET, key, ExtraArgs=extra)
+    callback = None
+    if on_progress is not None:
+        lock = threading.Lock()
+        state = {"transferred": 0, "last_reported": 0.0}
+
+        def callback(bytes_amount):
+            with lock:
+                state["transferred"] += bytes_amount
+                transferred = state["transferred"]
+                now = time.monotonic()
+                if transferred < size and now - state["last_reported"] < UPLOAD_PROGRESS_REPORT_INTERVAL_SEC:
+                    return
+                state["last_reported"] = now
+            on_progress(transferred)
+
+    upload_kwargs = {"ExtraArgs": extra}
+    if callback is not None:
+        upload_kwargs["Callback"] = callback
+    s3.upload_file(path, OUTPUT_BUCKET, key, **upload_kwargs)
     return size
 
 
@@ -466,8 +500,16 @@ def convert_and_upload(s3, time_scale):
     # 自宅ワーカーは動画サイズ・回線次第で数分かかり、その間ジョブページの進捗が
     # 「変換ほぼ完了」のまま止まって見えてしまう問題があった。ワーカー側で自宅/EC2を
     # 分岐させない方針(AGENTS.md)のため、この遷移自体は常に共通で行う。
-    update_status(JOB_ID, "uploading", reset_progress=True)
-    delivery_bytes = upload_video(s3, OUTPUT_VIDEO_DELIVERY, OUTPUT_KEY_DELIVERY)
+    # upload_total_bytes はアップロード開始前(=転送前)に分かる値なので、実際の
+    # バイト単位進捗(update_progress経由)が届く前からフロント側で残り時間を見積もれる
+    # (`apps/web/src/hooks/jobProgressBudget.ts`、実測した自宅回線の速度は
+    # docs/reports/2026-09-05-home-worker-upload-bandwidth.md)。
+    upload_total_bytes = os.path.getsize(OUTPUT_VIDEO_DELIVERY)
+    update_status(JOB_ID, "uploading", reset_progress=True, upload_total_bytes=upload_total_bytes)
+    delivery_bytes = upload_video(
+        s3, OUTPUT_VIDEO_DELIVERY, OUTPUT_KEY_DELIVERY,
+        on_progress=lambda transferred: update_progress(JOB_ID, transferred),
+    )
     poster_key = upload_poster_if_extracted(s3)
     if separate_raw:
         update_status(

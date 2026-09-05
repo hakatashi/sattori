@@ -70,6 +70,7 @@ const job: JobRecord = {
   outputBytes720p: null,
   estimatedDurationSeconds: 900,
   progress: null,
+  uploadTotalBytes: null,
   previewImagePath: null,
   posterImagePath: null,
   replayInfo: null,

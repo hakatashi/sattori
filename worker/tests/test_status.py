@@ -122,6 +122,30 @@ def test_update_status_omits_poster_image_path_when_not_extracted(monkeypatch):
     assert "posterImagePath" not in kwargs["UpdateExpression"]
 
 
+def test_update_status_includes_upload_total_bytes(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "uploading", reset_progress=True, upload_total_bytes=123456)
+
+    _, kwargs = mock_table.update_item.call_args
+    assert kwargs["ExpressionAttributeValues"][":utb"] == 123456
+    assert "uploadTotalBytes = :utb" in kwargs["UpdateExpression"]
+
+
+def test_update_status_omits_upload_total_bytes_by_default(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "done")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert ":utb" not in kwargs["ExpressionAttributeValues"]
+    assert "uploadTotalBytes" not in kwargs["UpdateExpression"]
+
+
 def test_update_status_includes_desync_detected(monkeypatch):
     monkeypatch.setenv("JOBS_TABLE", "jobs-table")
     mock_resource = mock_dynamodb_resource(monkeypatch)

@@ -35,6 +35,7 @@ function buildJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     errorCode: null,
     updatedAt: new Date().toISOString(),
     progress: 100,
+    uploadTotalBytes: null,
     previewVideoUrl: null,
     previewImageUrl: null,
     posterImageUrl: null,
@@ -156,10 +157,56 @@ describe("useOverallProgress", () => {
     expect(value).toBeCloseTo(OVERALL_PROGRESS_CAP_PERCENT, 0);
   });
 
-  it("uploading中はconverting完了点(99%キャップ)で足踏みする(Issue #202)", () => {
-    const job = buildJob({ status: "uploading", progress: null, updatedAt: new Date().toISOString() });
+  it("uploadTotalBytes未確定のuploadingはconverting完了点(99%キャップ)で足踏みする(Issue #202)", () => {
+    // 転送予定バイト数がまだ届いていない(旧ジョブ・EC2の最初の報告が来る前)間は
+    // budgets.uploadingが0のままなので、従来どおりconverting完了点で頭打ちになる。
+    const job = buildJob({
+      status: "uploading", progress: null, uploadTotalBytes: null, updatedAt: new Date().toISOString(),
+    });
     render(<Probe job={job} phaseProgressSeconds={null} />);
     const value = Number(screen.getByTestId("percent").textContent);
+    expect(value).toBeCloseTo(OVERALL_PROGRESS_CAP_PERCENT, 0);
+  });
+
+  it("uploadTotalBytes確定後は転送済みバイト数に応じて全体percentが伸び、converting完了点(旧仕様での99%張り付き点)より先へ進む(Issue #202フォローアップ)", () => {
+    // 大きめのファイル(2GiB)にして、uploading自体の悲観バジェットがtotalの中で
+    // 無視できない比率を占める状態を作る。これによりconverting完了時点でのpercentは
+    // 99%キャップよりはっきり低くなり、その後アップロードが進むにつれてpercentが
+    // 99%キャップにぶつからずに滑らかに伸びることを検証できる。
+    const uploadTotalBytes = 2 * 1024 * 1024 * 1024;
+    const totalBudget = computePhaseBudgets(REPLAY_INFO.estimatedDurationSeconds, false, uploadTotalBytes).total;
+    const convertingCompletePercent =
+      ((LAUNCHING_BUDGET_SECONDS + 800 + 800 / 3) / totalBudget) * 100;
+    expect(convertingCompletePercent).toBeLessThan(OVERALL_PROGRESS_CAP_PERCENT);
+
+    // 半分転送済み。
+    const job = buildJob({
+      status: "uploading",
+      progress: uploadTotalBytes / 2,
+      uploadTotalBytes,
+      updatedAt: new Date().toISOString(),
+    });
+    render(<Probe job={job} phaseProgressSeconds={uploadTotalBytes / 2} />);
+    const value = Number(screen.getByTestId("percent").textContent);
+    const expected =
+      ((LAUNCHING_BUDGET_SECONDS + 800 + 800 / 3 + 0.5 * (uploadTotalBytes / (5 * 1024 * 1024))) / totalBudget) * 100;
+    expect(value).toBeCloseTo(expected, 0);
+    expect(value).toBeGreaterThan(convertingCompletePercent);
+    expect(value).toBeLessThan(OVERALL_PROGRESS_CAP_PERCENT);
+  });
+
+  it("uploadTotalBytesの転送が完了(ratio=1)するとuploadingバジェットを使い切る(done未到達でも99%張り付き)", () => {
+    const uploadTotalBytes = 100 * 1024 * 1024;
+    const job = buildJob({
+      status: "uploading",
+      progress: uploadTotalBytes,
+      uploadTotalBytes,
+      updatedAt: new Date().toISOString(),
+    });
+    render(<Probe job={job} phaseProgressSeconds={uploadTotalBytes} />);
+    const value = Number(screen.getByTestId("percent").textContent);
+    // ratio=1でelapsedSeconds=budgets.totalに達するため、done未到達でも99%キャップに張り付く
+    // (computeOverallPercentのdone===falseケースと同じ天井)。
     expect(value).toBeCloseTo(OVERALL_PROGRESS_CAP_PERCENT, 0);
   });
 

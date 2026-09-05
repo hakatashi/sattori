@@ -206,6 +206,14 @@ S3オブジェクトメタデータ(`sattori-time-scale`)として運ぶ。ま�
   こと**を保証する作りになっている(`apps/web/src/hooks/useEstimatedProgress.ts`)ため、
   この一瞬の値を掴むと以降の進捗が表示に反映されない。
 
+`progress` の単位はフェーズごとに異なる(呼び出し側が単位を決める、`status.py`は関知しない):
+録画・変換フェーズは前述のとおり秒数だが、**アップロードフェーズ(Issue #202フォローアップ)
+だけは転送済みバイト数**を渡す。分母は同じ更新で書く `uploadTotalBytes`(`update_status()`の
+`upload_total_bytes`引数、アップロード開始前=転送前に`os.path.getsize()`で分かる値)。
+フロント側の実進捗バー・残り時間推定はこの2値の比で計算する
+(`apps/web/src/hooks/jobProgressBudget.ts`。自宅ワーカーの実測アップロード速度は
+[`docs/reports/2026-09-05-home-worker-upload-bandwidth.md`](../docs/reports/2026-09-05-home-worker-upload-bandwidth.md))。
+
 ## 8. リポジトリに含まれない資産とタイトル資産アーカイブ(Issue #22)
 
 ゲーム本体(著作権物)・ビルド成果物・素材はいずれも `.gitignore` 済みで、置き場所が2つある。
