@@ -13,7 +13,12 @@ from dataclasses import dataclass
 
 import pulse
 
-from .artifacts import save_progress_snapshot, write_desync_result, write_timeout_result
+from .artifacts import (
+    save_diagnostics_snapshot,
+    save_progress_snapshot,
+    write_desync_result,
+    write_timeout_result,
+)
 from .ffmpeg import (
     build_audio_ffmpeg_cmd,
     build_video_ffmpeg_cmd,
@@ -30,6 +35,7 @@ from .vision import (
     build_end_template_mask,
     build_still_mask,
     grab_frame,
+    grab_frame_from_video,
     load_end_template,
     mad_masked,
 )
@@ -241,8 +247,11 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                        progress_dir, expected_duration_seconds, seen_lines, log):
     """リプレイ終了(または異常)を検知するまでポーリングする。
 
-    戻り値: (detected, frozen, fps_runaway_hz)。**録画の停止はここではやらない**
-    (呼び出し側が `_stop_and_mux()` で止める)。
+    戻り値: (detected, frozen, fps_runaway_hz, last_color_frame)。**録画の停止は
+    ここではやらない**(呼び出し側が `_stop_and_mux()` で止める)。`last_color_frame`は
+    直近に取得したカラー画像で、試行が破棄された際の診断用証跡(Issue #159、
+    `save_diagnostics_snapshot()`)に使う。1回もフレームを取得できないまま終了した
+    場合(grace期間中のfps暴走・タイムアウト等)はNone。
 
     時間に関する定数はすべてここで `time_scale` 倍する。ポーリングは実時間駆動
     (`POLL_INTERVAL_SEC`)なので、回数を据え置くと**ゲーム内時間で必要な静止の長さが
@@ -278,6 +287,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     log(f"リプレイ再生開始とみなす時刻から監視開始(猶予{post_start_grace_sec:.1f}秒)")
 
     prev_frame = None
+    last_color_frame = None
     consecutive_still = 0
     end_template_consecutive = 0
     consecutive_freeze = 0
@@ -302,6 +312,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
             continue
 
         frame, color_frame = grab_frame(config, env, x, y, w, h)
+        last_color_frame = color_frame
         poll_count += 1
         if progress_dir and poll_count % PROGRESS_SNAPSHOT_EVERY_N_POLLS == 0:
             # 進捗は**実時間ではなくコンテンツ秒数**(＝完成品の動画で何秒ぶん進んだか)
@@ -365,7 +376,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                     break
             prev_frame = frame
         time.sleep(POLL_INTERVAL_SEC)
-    return detected, frozen, fps_runaway_hz
+    return detected, frozen, fps_runaway_hz, last_color_frame
 
 
 def _stop_and_mux(video, audio, output_path, env, log):
@@ -415,9 +426,13 @@ def _stop_and_mux(video, audio, output_path, env, log):
     return output_exists
 
 
-def attempt_recording(config, replay_path, output_path, progress_dir, expected_duration_seconds, log=print):
+def attempt_recording(config, replay_path, output_path, progress_dir, expected_duration_seconds,
+                       diagnostics_dir=None, attempt=1, log=print):
     """録画を1回試行する。戻り値: dict(output_exists, classification, fps_runaway_hz, total_record_sec)。
     classification は "good" / "fps_runaway" / "timeout" / "setup_error" のいずれか。
+
+    classification が "good" 以外(=この試行が破棄される)なら、直近のフレームを
+    診断用証跡として`diagnostics_dir`へ書き出す(Issue #159、`save_diagnostics_snapshot()`)。
     """
     env = config.build_env()
     # 低速録画(Issue #68)のスケール係数。等倍なら1.0で、時間依存パラメータは
@@ -476,7 +491,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     ), audio_target, audio_log_path, audio_log_file)
     record_start = time.time()
 
-    detected, frozen, fps_runaway_hz = _monitor_until_end(
+    detected, frozen, fps_runaway_hz, last_color_frame = _monitor_until_end(
         config, env, geometry, detection, time_scale=time_scale,
         progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
         seen_lines=seen_lines, log=log,
@@ -501,6 +516,9 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
 
     kill_wine_and_wait(config, env, config.process_name, log=log)
 
+    if classification != "good":
+        save_diagnostics_snapshot(diagnostics_dir, last_color_frame, attempt, classification)
+
     return {
         "output_exists": output_exists,
         "classification": classification,
@@ -514,7 +532,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
 
 
 def record_with_retry(config, replay_path, output_path, *,
-                       progress_dir=None, expected_duration_seconds=None,
+                       progress_dir=None, expected_duration_seconds=None, diagnostics_dir=None,
                        max_attempts=MAX_ATTEMPTS_DEFAULT, max_duplicate_rate=MAX_DUPLICATE_RATE_DEFAULT,
                        expected_score=None, desync_result_path=None, timeout_result_path=None,
                        log=print):
@@ -533,11 +551,14 @@ def record_with_retry(config, replay_path, output_path, *,
     timeout_result_path はリプレイ終了を検知できずタイムアウトで打ち切られたか
     (Issue #161)の記録先。desync_result_pathと同様、指定されていれば
     録画成功が確定した時点で結果をJSONへ書き出す。
+
+    diagnostics_dir は試行を破棄した際の最終フレーム(Issue #159)の書き出し先。
     """
     with pulse.job_sink(config.pulse_sink, log=log):
         return _record_with_retry(
             config, replay_path, output_path,
             progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
+            diagnostics_dir=diagnostics_dir,
             max_attempts=max_attempts, max_duplicate_rate=max_duplicate_rate,
             expected_score=expected_score, desync_result_path=desync_result_path,
             timeout_result_path=timeout_result_path, log=log,
@@ -545,14 +566,15 @@ def record_with_retry(config, replay_path, output_path, *,
 
 
 def _record_with_retry(config, replay_path, output_path, *,
-                       progress_dir, expected_duration_seconds,
+                       progress_dir, expected_duration_seconds, diagnostics_dir,
                        max_attempts, max_duplicate_rate,
                        expected_score, desync_result_path, timeout_result_path, log):
     for attempt in range(1, max_attempts + 1):
         log(f"=== 試行 {attempt}/{max_attempts} ===")
         try:
             result = attempt_recording(
-                config, replay_path, output_path, progress_dir, expected_duration_seconds, log=log,
+                config, replay_path, output_path, progress_dir, expected_duration_seconds,
+                diagnostics_dir=diagnostics_dir, attempt=attempt, log=log,
             )
         except Exception as err:  # noqa: BLE001 - この試行の後始末をしてリトライへ倒す
             # attempt_recording()は正常系・setup_error系のどちらの戻り道でも
@@ -587,6 +609,12 @@ def _record_with_retry(config, replay_path, output_path, *,
         )
         if dup_rate is not None and dup_rate > threshold:
             log(f"WARNING: 重複フレーム率({dup_rate}%)が閾値({threshold:.1f}%)を超えました。破棄してリトライします")
+            # ここでの破棄はattempt_recording()が戻った後に判明するため、ライブキャプチャ
+            # (last_color_frame)は使えず、ミュージ済みの出力ファイルから取り直す
+            # (Issue #159)。
+            save_diagnostics_snapshot(
+                diagnostics_dir, grab_frame_from_video(output_path, 15), attempt, "duplicate_rate",
+            )
             continue
 
         timed_out = result["classification"] == "timeout"
