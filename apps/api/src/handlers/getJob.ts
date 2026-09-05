@@ -50,12 +50,21 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const previewVideoUrl = previewOutputPath
     ? buildCdnUrl(config.cdnDomain, previewOutputPath)
     : null;
-  // プレビュー画像は録画・変換の進行中に加え、完了後はプレビュープレイヤーの
-  // poster として使う(再生前に真っ黒な矩形を出さないため)。失敗後は表示しない。
+  // プレビュー画像は録画・変換の進行中の進捗表示サムネイルに加え、完了後は
+  // (posterImageUrlが無い場合の)プレビュープレイヤーの poster フォールバックとして
+  // 使う。失敗後は表示しない。
   const previewImageUrl =
     (job.status === "recording" || job.status === "converting" || job.status === "done") &&
     job.previewImagePath
       ? buildCdnUrl(config.cdnDomain, job.previewImagePath)
+      : null;
+  // 完了後のプレビュープレイヤー専用のposter(Issue #171)。配信版動画の90%地点の
+  // フレームを切り出したもので、previewImageUrlより動画の内容を反映している。
+  // 抽出に失敗した・このフィールド追加より前の旧ジョブではnull(フロント側で
+  // previewImageUrlへフォールバック)。
+  const posterImageUrl =
+    job.status === "done" && job.posterImagePath
+      ? buildCdnUrl(config.cdnDomain, job.posterImagePath)
       : null;
 
   const response: GetJobResponse = {
@@ -73,6 +82,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     progress: job.progress,
     previewVideoUrl,
     previewImageUrl,
+    posterImageUrl,
     replayInfo: job.replayInfo ?? null,
     // ユーザーの希望（`options.slowMotion`）そのままではなく、EC2へフォールバック
     // したかどうかまで織り込んだ「実際に低速録画で走るか」を返す（Issue #68）。

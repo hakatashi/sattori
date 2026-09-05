@@ -218,6 +218,16 @@ export interface JobRecord {
    */
   previewImagePath: string | null;
   /**
+   * 完了後のプレビュープレイヤーの `poster` 専用の画像（S3オブジェクトキー、出力
+   * バケット内）。配信版動画の90%地点のフレームから切り出す（Issue #171、
+   * `worker/convert.py` の `extract_poster_frame()`）。`previewImagePath` は録画・
+   * 変換中の進捗表示が主目的で、それを流用すると done 後もリプレイ再生終了後の
+   * 何も無い背景や選択画面が写った最後のスクリーンショットのままになってしまう
+   * ため、doneのposter専用に別フィールドを持つ。抽出に失敗した場合・このフィールド
+   * 追加より前の旧ジョブでは null（フロントは `previewImagePath` へフォールバック）。
+   */
+  posterImagePath: string | null;
+  /**
    * ページAで解析済みの `ReplayInfo`（`POST /magic-links` の時点でそのまま転記）。
    * ページBで「今録画しているリプレイの内容」をSTEP2と同じ見た目で表示するために
    * 保持する（表示専用。ワーカーの進捗算出は引き続き `estimatedDurationSeconds`

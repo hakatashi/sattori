@@ -96,6 +96,32 @@ def test_update_status_includes_optional_fields(monkeypatch):
     assert "#e = :e" in kwargs["UpdateExpression"]
 
 
+def test_update_status_includes_poster_image_path(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "done", poster_image_path="videos/job-1_poster.jpg")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert kwargs["ExpressionAttributeValues"][":pp"] == "videos/job-1_poster.jpg"
+    assert "posterImagePath = :pp" in kwargs["UpdateExpression"]
+
+
+def test_update_status_omits_poster_image_path_when_not_extracted(monkeypatch):
+    # poster抽出に失敗した場合、呼び出し側はこの引数自体を渡さない
+    # (他のNone許容引数と同じく「このフィールドには触れない」)。
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "done", output_path="videos/job-1.mp4")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert ":pp" not in kwargs["ExpressionAttributeValues"]
+    assert "posterImagePath" not in kwargs["UpdateExpression"]
+
+
 def test_update_status_includes_desync_detected(monkeypatch):
     monkeypatch.setenv("JOBS_TABLE", "jobs-table")
     mock_resource = mock_dynamodb_resource(monkeypatch)

@@ -26,6 +26,7 @@ const BASE: Omit<
   | "progress"
   | "previewVideoUrl"
   | "previewImageUrl"
+  | "posterImageUrl"
 > = {
   jobId: "sample-job-id",
   game: "th07",
@@ -47,6 +48,7 @@ function buildJob(overrides: Partial<GetJobResponse> & { status: JobStatus }): G
     progress: null,
     previewVideoUrl: null,
     previewImageUrl: null,
+    posterImageUrl: null,
     ...overrides,
   };
 }
@@ -72,14 +74,27 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
     }),
   },
   {
-    title: "status: done（720p・元解像度の両方あり、プレビュー付き）",
+    title: "status: done（720p・元解像度の両方あり、poster画像あり、Issue #171）",
     job: buildJob({
       status: "done",
       downloadUrl: "https://example.com/sample.mp4",
       downloadUrl720p: "https://example.com/sample-720p.mp4",
       downloadExpiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
       // 実在しないURLだが、preload="none"のため再生ボタンを押すまで取得は走らず、
-      // posterだけが表示される（レイアウト確認にはこれで十分）。
+      // posterだけが表示される（レイアウト確認にはこれで十分）。posterImageUrlが
+      // あればpreviewImageUrl(録画中スクリーンショット)より優先される。
+      previewVideoUrl: "https://example.com/sample-720p.mp4",
+      previewImageUrl: "https://placehold.co/640x480/222/fff?text=Recording+Screenshot",
+      posterImageUrl: "https://placehold.co/640x480/222/fff?text=Poster+90%25",
+    }),
+  },
+  {
+    title: "status: done（poster抽出に失敗・録画中スクリーンショットへフォールバック）",
+    job: buildJob({
+      status: "done",
+      downloadUrl: "https://example.com/sample.mp4",
+      downloadUrl720p: "https://example.com/sample-720p.mp4",
+      downloadExpiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
       previewVideoUrl: "https://example.com/sample-720p.mp4",
       previewImageUrl: "https://placehold.co/640x480/222/fff?text=Preview",
     }),
