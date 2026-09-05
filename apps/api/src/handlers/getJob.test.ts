@@ -173,6 +173,40 @@ describe("GET /jobs/{jobId}", () => {
     expect(body.previewImageUrl).toBe("https://cdn.example.net/previews/job-1/latest.jpg");
   });
 
+  it("完了ジョブはposterImagePathからposterImageUrlを返す(Issue #171)", async () => {
+    ddbMock
+      .on(GetCommand)
+      .resolves({ Item: { ...doneJob, posterImagePath: "videos/job-1_poster.jpg" } });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.posterImageUrl).toBe("https://cdn.example.net/videos/job-1_poster.jpg");
+  });
+
+  it("poster抽出に失敗した(posterImagePathが無い)完了ジョブはposterImageUrl:nullを返す", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: doneJob });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.posterImageUrl).toBeNull();
+  });
+
+  it("録画中(done以外)のジョブはposterImagePathがあってもposterImageUrlを返さない", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, status: "converting", posterImagePath: "videos/job-1_poster.jpg" },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.posterImageUrl).toBeNull();
+  });
+
   it("失敗したジョブはプレビュー画像URLを返さない", async () => {
     ddbMock.on(GetCommand).resolves({
       Item: { ...doneJob, status: "failed", previewImagePath: "previews/job-1/latest.jpg" },

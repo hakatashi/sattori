@@ -232,8 +232,10 @@ export function JobProgressView({ job, loadError }: ViewProps) {
                 最優先にしている:
                 - `preload="none"`: 再生ボタンを押すまで1バイトも取得させない
                   （既定の`metadata`はページを開いただけでmoov atomの取得が走る）。
-                  再生前に真っ黒な矩形にならないよう、代わりに録画中スクリーンショットを
-                  `poster`（数十KB）として使う。
+                  再生前に真っ黒な矩形にならないよう、代わりに配信版動画の90%地点の
+                  フレーム（`posterImageUrl`、Issue #171）を`poster`（数十KB）として使う。
+                  抽出に失敗した旧ジョブ等では録画中スクリーンショット
+                  （`previewImageUrl`）へフォールバックする。
                 - 再生後はブラウザがRangeリクエストで必要な分だけ先読みし、十分
                   バッファできた時点で受信を止める（S3/CloudFrontともRange対応）。
                   途中まで見て閉じれば、その分の転送量しか発生しない。
@@ -242,7 +244,7 @@ export function JobProgressView({ job, loadError }: ViewProps) {
               <video
                 className={styles.previewVideo}
                 src={job.previewVideoUrl}
-                poster={job.previewImageUrl ?? undefined}
+                poster={job.posterImageUrl ?? job.previewImageUrl ?? undefined}
                 controls
                 preload="none"
                 playsInline
