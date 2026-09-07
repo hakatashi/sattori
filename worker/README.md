@@ -253,9 +253,8 @@ AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/work
 
 本番のECRリポジトリ名は`sattori-worker`(`infra/lib/sattori-stack.ts`が作成、本体スタックと
 同じくeu-south-2)。`worker/assets/`は`.gitignore`対象なので、`docker build`前にビルド
-コンテキストへ配置すること(§8)。コマンドは
-[`docs/runbooks/worker-local-recording.md`](../docs/runbooks/worker-local-recording.md) §3、
-デプロイ手順全体は `deploy-sattori` skill(**push と deploy の順序を守ること**)。
+コンテキストへ配置すること(§8)。ビルド・pushのコマンドとデプロイ手順全体は
+`deploy-sattori` skill(**push と deploy の順序を守ること**)。
 
 ## 13. 既知の制約
 
