@@ -54,6 +54,7 @@
 | [0040](0040-home-worker-title-assets-cache.md) | 2026-08-30 | worker / home-worker | 自宅ワーカーのタイトル資産はETagキー付き世代ディレクトリでキャッシュする | 有効 |
 | [0041](0041-worker-recording-package-split.md) | 2026-08-31 | worker | 録画パイプラインを`recording/`パッケージへ分割し、`record_thNN.py`はタイトル固有値だけのシムにする | 有効 |
 | [0042](0042-2xlarge-instance-type-group-precedent.md) | 2026-09-01 | apps/api | `c7i`/`c7a`/`m7i`の`.2xlarge`帯を実機検証済みグループとして扱い、新規タイトルは1タイプの検証で残り2タイプも候補に加えてよい | 有効 |
+| [0043](0043-remove-fps-runaway-detection.md) | 2026-09-08 | worker | fps暴走検知(`scan_fps_runaway()`)を削除する。真陽性の実績が無く、th08の会話イベント・th09のステージ間演出で誤検知した実績のみだったため | 有効 |
 
 ## 書き方
 

@@ -12,7 +12,7 @@
 ## 1. テスト(`tests/`)
 
 Wine/Xvfb/実ゲームに依存する録画本体(`recording.pipeline.attempt_recording()`)以外の、
-純粋なロジック部分(MAD計算・ffmpegコマンド組み立て・fps暴走/重複フレーム率の判定・
+純粋なロジック部分(MAD計算・ffmpegコマンド組み立て・重複フレーム率の判定・
 配信用変換の解像度/フィルタ組み立て/進捗計算・DynamoDB更新式の組み立て・Spot中断/リバランス
 判定・進捗レポートの重複排除等)を pytest でユニットテストする。boto3 呼び出しは
 `unittest.mock` でモックし、実際の AWS リソースには接続しない(moto 等の追加依存は導入して

@@ -1,31 +1,16 @@
 """MOD(`mods/`)が書き出すログの読み取り。
 
-シーケンス完了等のマーカー待ち・fps暴走の検知・ScoreMonitor によるリプレイずれ
-(デシンク)の事後検証(Issue #103)を担う。
+シーケンス完了等のマーカー待ち・ScoreMonitor によるリプレイずれ(デシンク)の
+事後検証(Issue #103)を担う。
+
+**fps暴走検知(旧`scan_fps_runaway()`)は削除済み**([`decisions/0043`](../../docs/decisions/0043-remove-fps-runaway-detection.md))。
+MOD側の`fps_monitor.cpp`(GetDeviceStateフックの呼び出し頻度を5秒毎にログ出力する
+スレッド)自体は残っているため、`FpsMonitor: N GetDeviceState calls in M ms (H.H Hz)`
+行はMODログに引き続き出力されるが、読み取って自動判定に使う経路は無い。
 """
 import os
 import re
 import time
-
-
-# mods/common/fps_monitor.cpp が5秒ごとにログ出力する
-# "FpsMonitor: N GetDeviceState calls in M ms (H.H Hz)" 行からHz値を読み取る。
-# 正常時は55〜65Hz程度(垂直同期相当)で安定するが、fps暴走時は実測で479〜2700Hzに
-# 達する(reports/22)。単発のノイズ(実測最大118Hz、直後に正常値へ復帰、reports/23)
-# を誤検知しないよう、閾値超過が2回連続(出力間隔5秒×2=約10秒間持続)した場合のみ
-# 異常とみなす。th07のMODはFpsMonitorを組み込んでいないため、このチェックは
-# th07では実質的に発火しない(ログに"FpsMonitor:"行が現れないため常にNoneを返す)。
-#
-# 会話イベント(ダイアログボックス表示中)は、実際のレンダリングfpsは60のまま
-# GetDeviceStateのポーリング頻度だけが一時的に約3倍(実測179.9Hz、通常60Hzの
-# ちょうど3倍)に上がる仕様であることが本番ジョブ64367b3c-64f5-47c4-be9d-
-# e0c4aa8a35d8の調査で判明した(旧閾値100Hzだとこれだけで誤って異常判定していた)。
-# この一時的な上昇は2回連続の判定窓(約10秒)以内に収まり、直後に60Hz程度へ復帰する。
-# 閾値はこの良性の上昇(実測上限179.9Hz)を確実に超えつつ、本物のfps暴走(実測下限
-# 479Hz)は引き続き検知できるよう、両者の中間である300Hzとする。
-FPS_MONITOR_HZ_RE = re.compile(r"FpsMonitor:.*\(([\d.]+) Hz\)")
-FPS_RUNAWAY_HZ_THRESHOLD = 300.0
-FPS_RUNAWAY_CONSECUTIVE_REQUIRED = 2
 
 
 # ---------------------------------------------------------------------------
@@ -79,22 +64,6 @@ def wait_for_log_marker(log_path, marker, timeout, poll_interval=0.1, log_all=Fa
                 if marker in line:
                     return time.time()
         time.sleep(poll_interval)
-    return None
-
-
-def scan_fps_runaway(log_path):
-    """log_path全体からFpsMonitorのHz値を読み取り、閾値超過が
-    FPS_RUNAWAY_CONSECUTIVE_REQUIRED回連続していればその最大値を返す(なければNone)。
-    ファイル全体を毎回読み直す(ログは小さいため負荷は無視できる)。"""
-    if not os.path.exists(log_path):
-        return None
-    with open(log_path) as f:
-        text = f.read()
-    hz_values = [float(v) for v in FPS_MONITOR_HZ_RE.findall(text)]
-    for i in range(len(hz_values) - FPS_RUNAWAY_CONSECUTIVE_REQUIRED + 1):
-        window = hz_values[i:i + FPS_RUNAWAY_CONSECUTIVE_REQUIRED]
-        if all(v > FPS_RUNAWAY_HZ_THRESHOLD for v in window):
-            return max(window)
     return None
 
 
