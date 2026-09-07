@@ -11,6 +11,8 @@
 #   SATTORI_REGION               本体スタックのリージョン(既定 eu-south-2)
 #   SATTORI_AWS_ACCOUNT_ID       sts get-caller-identity
 #   SATTORI_TITLE_ASSETS_BUCKET  SattoriStack の CfnOutput TitleAssetsBucketName
+#   SATTORI_UPLOAD_BUCKET        SattoriStack の CfnOutput UploadBucketName(リプレイのアップロード先)
+#   SATTORI_JOBS_TABLE           SattoriStack の CfnOutput JobsTableName(ジョブ状態の DynamoDB テーブル)
 #   SATTORI_ECR_REPO             ワーカーイメージの ECR リポジトリURI
 #
 # いずれも呼び出し側で環境変数として先に与えれば、そちらが優先される
@@ -39,6 +41,20 @@ if [ -z "${SATTORI_TITLE_ASSETS_BUCKET:-}" ]; then
     --output text)"
 fi
 
+if [ -z "${SATTORI_UPLOAD_BUCKET:-}" ]; then
+  SATTORI_UPLOAD_BUCKET="$(aws cloudformation describe-stacks \
+    --region "$SATTORI_REGION" --stack-name SattoriStack \
+    --query "Stacks[0].Outputs[?OutputKey=='UploadBucketName'].OutputValue" \
+    --output text)"
+fi
+
+if [ -z "${SATTORI_JOBS_TABLE:-}" ]; then
+  SATTORI_JOBS_TABLE="$(aws cloudformation describe-stacks \
+    --region "$SATTORI_REGION" --stack-name SattoriStack \
+    --query "Stacks[0].Outputs[?OutputKey=='JobsTableName'].OutputValue" \
+    --output text)"
+fi
+
 SATTORI_ECR_REPO="${SATTORI_AWS_ACCOUNT_ID}.dkr.ecr.${SATTORI_REGION}.amazonaws.com/sattori-worker"
 
 mkdir -p "$(dirname "$_sattori_cache")"
@@ -46,8 +62,11 @@ cat > "$_sattori_cache" <<EOF
 SATTORI_REGION=${SATTORI_REGION}
 SATTORI_AWS_ACCOUNT_ID=${SATTORI_AWS_ACCOUNT_ID}
 SATTORI_TITLE_ASSETS_BUCKET=${SATTORI_TITLE_ASSETS_BUCKET}
+SATTORI_UPLOAD_BUCKET=${SATTORI_UPLOAD_BUCKET}
+SATTORI_JOBS_TABLE=${SATTORI_JOBS_TABLE}
 EOF
 
-export SATTORI_REGION SATTORI_AWS_ACCOUNT_ID SATTORI_TITLE_ASSETS_BUCKET SATTORI_ECR_REPO
+export SATTORI_REGION SATTORI_AWS_ACCOUNT_ID SATTORI_TITLE_ASSETS_BUCKET \
+  SATTORI_UPLOAD_BUCKET SATTORI_JOBS_TABLE SATTORI_ECR_REPO
 
 unset _sattori_root _sattori_cache
