@@ -1,9 +1,11 @@
-# 録画ワーカーのローカル開発・検証・イメージ出荷
+# 録画ワーカーのローカル開発・検証
 
 `worker/` を手元で動かすときの手順。ユニットテストの走らせ方（§1）、AWS 無しでの録画・
-配信用変換の直接実行（§2、いわゆるベアメタル直接実行）、ECR へ push するイメージの
-ビルド（§3）を扱う。**何がどう動くか（① 参照仕様）は
-[`worker/README.md`](../../worker/README.md) にある**ので、初めて触るときは先にそちらを読むこと。
+配信用変換の直接実行（§2、いわゆるベアメタル直接実行）を扱う。**何がどう動くか
+（① 参照仕様）は [`worker/README.md`](../../worker/README.md) にある**ので、初めて
+触るときは先にそちらを読むこと。ECR へ push するイメージのビルドは `deploy-sattori`
+skill、本番ジョブの失敗を実際のワーカーイメージで再現検証する手順は
+`verify-recording-locally` skill（Docker経由、このマシン=自宅ワーカー機専用）を見ること。
 
 **§2 の直接実行は、本番の Docker 経路には無いホスト側のリスク（Wine プロセスの残存による
 ホスト systemd のハング）を伴う**。§2 の強制終了ラッパーの指示は必ず守ること
@@ -31,6 +33,14 @@ kill_wine_and_wait` のように名前で import しているため、**monkeypa
 [`worker/docs/recording-package.md`](../../worker/docs/recording-package.md)。
 
 ## 2. ローカルでの実行(ネットワーク不要)
+
+**用途は`recording/`パッケージのコードを編集しながらの素早い動作確認に限る**。
+ホストにインストール済みのPython・Wine・Xvfbをそのまま使うため、Dockerイメージの
+再ビルドを挟まずに1回の変更をすぐ試せるのが利点だが、その代わりコンテナ分離が無く
+下記のD state関連のリスクを直接受ける。**本番ジョブの失敗が実際にそのリプレイで
+再現するかを確かめたい場合は、この経路ではなく`verify-recording-locally` skillを
+使うこと**(本番と全く同じワーカーイメージ・全く同じ環境をDocker越しに使うため、
+コード変更で挙動が本番と乖離する心配が無く、`--rm`により後始末も確実)。
 
 ゲーム資産を配置済みなら S3/DynamoDB 無しで録画本体だけを試せる(低速録画の例は
 `worker/README.md` §5)。配信用変換だけなら ffmpeg/ffprobe があれば動く。
@@ -61,19 +71,3 @@ timeout --kill-after=30s 600s python3 record_th20.py --replay-path /path/to/any.
 放置されたWineプロセス(`winedevice.exe`等)がsystem D-Busのシグナル購読を持ったまま残り続けると
 D-Busのメッセージキューが枯渇し、ホストのsystemdごとハングする事故が実際に起きている
 ([`docs/reports/2026-08-27-wine-cleanup-hang-incident.md`](../reports/2026-08-27-wine-cleanup-hang-incident.md))。
-
-## 3. ビルドとECRへのpush
-
-本番のECRリポジトリ名は`sattori-worker`(`infra/lib/sattori-stack.ts`が作成、本体スタックと
-同じくeu-south-2)。デプロイ手順全体は `deploy-sattori` skill(**push と deploy の順序を
-守ること**)。
-
-```bash
-docker build -t <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest worker/
-aws ecr get-login-password --region eu-south-2 \
-  | docker login --username AWS --password-stdin <account>.dkr.ecr.eu-south-2.amazonaws.com
-docker push <account>.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest
-```
-
-`worker/assets/`は`.gitignore`対象なので、`docker build`前にビルドコンテキストへ配置すること
-(`worker/README.md` §8)。
