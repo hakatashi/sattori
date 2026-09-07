@@ -37,7 +37,7 @@ def fake_job_sink(monkeypatch):
 def test_record_with_retry_writes_desync_result_on_success(monkeypatch, tmp_path):
     config = make_config()
     monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
-        "output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0,
+        "output_exists": True, "classification": "good", "total_record_sec": 60.0,
     })
     monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
     monkeypatch.setattr(pipeline, "check_replay_desync", lambda *a, **k: True)
@@ -58,7 +58,7 @@ def test_record_with_retry_writes_timed_out_true_on_timeout_classification(monke
     # timedOut:true として記録され、フロントの警告表示に使われる。
     config = make_config()
     monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
-        "output_exists": True, "classification": "timeout", "fps_runaway_hz": None, "total_record_sec": 60.0,
+        "output_exists": True, "classification": "timeout", "total_record_sec": 60.0,
     })
     monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
     monkeypatch.setattr(pipeline, "check_replay_desync", lambda *a, **k: None)
@@ -77,7 +77,7 @@ def test_record_with_retry_writes_timed_out_true_on_timeout_classification(monke
 def test_record_with_retry_writes_timed_out_false_on_good_classification(monkeypatch, tmp_path):
     config = make_config()
     monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
-        "output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0,
+        "output_exists": True, "classification": "good", "total_record_sec": 60.0,
     })
     monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
     monkeypatch.setattr(pipeline, "check_replay_desync", lambda *a, **k: None)
@@ -96,7 +96,7 @@ def test_record_with_retry_writes_timed_out_false_on_good_classification(monkeyp
 def test_record_with_retry_logs_warning_on_timeout_classification(monkeypatch):
     config = make_config()
     monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
-        "output_exists": True, "classification": "timeout", "fps_runaway_hz": None, "total_record_sec": 60.0,
+        "output_exists": True, "classification": "timeout", "total_record_sec": 60.0,
     })
     monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
     monkeypatch.setattr(pipeline, "check_replay_desync", lambda *a, **k: None)
@@ -110,7 +110,7 @@ def test_record_with_retry_logs_warning_on_timeout_classification(monkeypatch):
 def test_record_with_retry_gives_up_after_max_attempts(monkeypatch):
     config = make_config()
     monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
-        "output_exists": False, "classification": "setup_error", "fps_runaway_hz": None, "total_record_sec": 0.0,
+        "output_exists": False, "classification": "setup_error", "total_record_sec": 0.0,
     })
 
     success = pipeline.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=2, log=lambda msg: None)
@@ -118,15 +118,15 @@ def test_record_with_retry_gives_up_after_max_attempts(monkeypatch):
     assert success is False
 
 
-def test_record_with_retry_retries_on_fps_runaway_then_succeeds(monkeypatch):
+def test_record_with_retry_retries_when_output_missing_then_succeeds(monkeypatch):
     config = make_config()
     calls = []
 
     def fake_attempt(*args, **kwargs):
         calls.append(1)
         if len(calls) == 1:
-            return {"output_exists": True, "classification": "fps_runaway", "fps_runaway_hz": 900.0, "total_record_sec": 5.0}
-        return {"output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0}
+            return {"output_exists": False, "classification": "setup_error", "total_record_sec": 5.0}
+        return {"output_exists": True, "classification": "good", "total_record_sec": 60.0}
 
     monkeypatch.setattr(pipeline, "attempt_recording", fake_attempt)
     monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
@@ -140,7 +140,7 @@ def test_record_with_retry_retries_on_fps_runaway_then_succeeds(monkeypatch):
 def test_record_with_retry_discards_output_above_max_duplicate_rate(monkeypatch):
     config = make_config()
     monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
-        "output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0,
+        "output_exists": True, "classification": "good", "total_record_sec": 60.0,
     })
     monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 90.0)
 
@@ -155,7 +155,7 @@ def test_record_with_retry_creates_and_destroys_job_sink(monkeypatch, fake_job_s
     # ジョブ専用sinkは録画開始時に作成し、終了時に必ず破棄する(Issue #48)。
     config = make_config(pulse_sink="sattori_job_abc")
     monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
-        "output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0,
+        "output_exists": True, "classification": "good", "total_record_sec": 60.0,
     })
     monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
 
@@ -170,7 +170,7 @@ def test_record_with_retry_destroys_job_sink_when_recording_fails(monkeypatch, f
     # なるため、成功・失敗を問わず破棄する。
     config = make_config(pulse_sink="sattori_job_abc")
     monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
-        "output_exists": False, "classification": "setup_error", "fps_runaway_hz": None, "total_record_sec": 0.0,
+        "output_exists": False, "classification": "setup_error", "total_record_sec": 0.0,
     })
 
     success = pipeline.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=2, log=lambda msg: None)
@@ -186,8 +186,8 @@ def test_record_with_retry_reuses_single_sink_across_attempts(monkeypatch, fake_
     def fake_attempt(*args, **kwargs):
         calls.append(1)
         if len(calls) == 1:
-            return {"output_exists": True, "classification": "fps_runaway", "fps_runaway_hz": 500.0, "total_record_sec": 5.0}
-        return {"output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0}
+            return {"output_exists": False, "classification": "setup_error", "total_record_sec": 5.0}
+        return {"output_exists": True, "classification": "good", "total_record_sec": 60.0}
 
     monkeypatch.setattr(pipeline, "attempt_recording", fake_attempt)
     monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
@@ -211,7 +211,7 @@ def test_record_with_retry_recovers_from_unexpected_exception_and_retries(monkey
         calls.append(1)
         if len(calls) == 1:
             raise subprocess.TimeoutExpired("wineserver", 60)
-        return {"output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0}
+        return {"output_exists": True, "classification": "good", "total_record_sec": 60.0}
 
     monkeypatch.setattr(pipeline, "attempt_recording", fake_attempt)
     monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
@@ -259,44 +259,40 @@ class _FakeClock:
         self.t += seconds
 
 
-def test_monitor_until_end_returns_last_captured_frame_on_fps_runaway(monkeypatch):
-    """fps暴走を検知して打ち切られても、直近にgrab_frame()で取得したカラー画像を
-    返すこと(Issue #159。診断スナップショットの元になる)。打ち切りが確定した瞬間には
-    新しいフレームを取得しないため、"最後に取得できていたフレーム"が使われる。"""
+def test_monitor_until_end_returns_last_captured_frame_on_freeze(monkeypatch):
+    """画面固着で打ち切られても、直近にgrab_frame()で取得したカラー画像を返すこと
+    (Issue #159。診断スナップショットの元になる)。"""
     config = make_config()
     env = config.build_env()
     clock = _FakeClock()
     monkeypatch.setattr(pipeline.time, "time", clock.time)
     monkeypatch.setattr(pipeline.time, "sleep", clock.sleep)
     monkeypatch.setattr(pipeline, "wait_for_log_marker", lambda *a, **k: 0.0)
+    monkeypatch.setattr(pipeline, "FREEZE_CONSECUTIVE_REQUIRED", 2)
 
     gray = np.zeros((120, 160), dtype=np.float32)
-    frames = [(gray, "color0"), (gray, "color1")]
+    frames = [(gray, "color0"), (gray, "color1"), (gray, "color2")]
     grab_calls = {"n": 0}
 
     def fake_grab_frame(*a, **k):
-        frame = frames[grab_calls["n"]]
+        frame = frames[min(grab_calls["n"], len(frames) - 1)]
         grab_calls["n"] += 1
         return frame
 
-    def fake_scan_fps_runaway(log_path):
-        return 900.0 if grab_calls["n"] >= 2 else None
-
     monkeypatch.setattr(pipeline, "grab_frame", fake_grab_frame)
-    monkeypatch.setattr(pipeline, "scan_fps_runaway", fake_scan_fps_runaway)
 
+    end_template = np.zeros((120, 160), dtype=np.float32)
     detection = pipeline._EndDetection(
-        template=None, template_mask=None, template_mad_threshold=0.0, still_mask=None,
+        template=end_template, template_mask=None, template_mad_threshold=0.0, still_mask=None,
     )
-    detected, frozen, fps_runaway_hz, last_color_frame = pipeline._monitor_until_end(
+    detected, frozen, last_color_frame = pipeline._monitor_until_end(
         config, env, (0, 0, 640, 480), detection, time_scale=1.0,
         progress_dir=None, expected_duration_seconds=None, seen_lines=set(), log=lambda msg: None,
     )
 
     assert detected is False
-    assert frozen is False
-    assert fps_runaway_hz == 900.0
-    assert last_color_frame == "color1"
+    assert frozen is True
+    assert last_color_frame == "color2"
 
 
 def test_attempt_recording_saves_diagnostics_snapshot_on_discarded_attempt(monkeypatch, tmp_path):
@@ -307,7 +303,7 @@ def test_attempt_recording_saves_diagnostics_snapshot_on_discarded_attempt(monke
     monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
     monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (False, False, 900.0, "the-last-frame"),
+        pipeline, "_monitor_until_end", lambda *a, **k: (False, True, "the-last-frame"),
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
@@ -326,8 +322,8 @@ def test_attempt_recording_saves_diagnostics_snapshot_on_discarded_attempt(monke
         diagnostics_dir="/diag", attempt=2, log=lambda msg: None,
     )
 
-    assert result["classification"] == "fps_runaway"
-    assert saved == [("/diag", "the-last-frame", 2, "fps_runaway")]
+    assert result["classification"] == "timeout"
+    assert saved == [("/diag", "the-last-frame", 2, "timeout")]
 
 
 def test_attempt_recording_does_not_save_diagnostics_snapshot_on_good_classification(monkeypatch, tmp_path):
@@ -338,7 +334,7 @@ def test_attempt_recording_does_not_save_diagnostics_snapshot_on_good_classifica
     monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
     monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (True, False, None, "the-last-frame"),
+        pipeline, "_monitor_until_end", lambda *a, **k: (True, False, "the-last-frame"),
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
@@ -366,8 +362,8 @@ def test_record_with_retry_passes_diagnostics_dir_and_increasing_attempt_number(
     def fake_attempt(*args, **kwargs):
         attempts_seen.append((kwargs.get("diagnostics_dir"), kwargs.get("attempt")))
         if len(attempts_seen) == 1:
-            return {"output_exists": True, "classification": "fps_runaway", "fps_runaway_hz": 500.0, "total_record_sec": 5.0}
-        return {"output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0}
+            return {"output_exists": False, "classification": "setup_error", "total_record_sec": 5.0}
+        return {"output_exists": True, "classification": "good", "total_record_sec": 60.0}
 
     monkeypatch.setattr(pipeline, "attempt_recording", fake_attempt)
     monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
@@ -383,7 +379,7 @@ def test_record_with_retry_passes_diagnostics_dir_and_increasing_attempt_number(
 def test_record_with_retry_saves_diagnostics_snapshot_on_duplicate_rate_discard(monkeypatch):
     config = make_config()
     monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
-        "output_exists": True, "classification": "good", "fps_runaway_hz": None, "total_record_sec": 60.0,
+        "output_exists": True, "classification": "good", "total_record_sec": 60.0,
     })
     monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 90.0)
     monkeypatch.setattr(pipeline, "grab_frame_from_video", lambda video_path, at_sec: f"frame:{video_path}:{at_sec}")
