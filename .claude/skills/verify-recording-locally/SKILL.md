@@ -37,7 +37,8 @@ systemctl is-active sattori-home-worker   # "inactive" であることを確認
 
 ```bash
 source scripts/sattori-env.sh
-# SATTORI_REGION / SATTORI_AWS_ACCOUNT_ID / SATTORI_TITLE_ASSETS_BUCKET が使えるようになる
+# SATTORI_REGION / SATTORI_AWS_ACCOUNT_ID / SATTORI_TITLE_ASSETS_BUCKET /
+# SATTORI_UPLOAD_BUCKET / SATTORI_JOBS_TABLE / SATTORI_ECR_REPO が使えるようになる
 ```
 
 ## 2. 検証対象リプレイの入手
@@ -48,10 +49,10 @@ source scripts/sattori-env.sh
 
 ```bash
 aws dynamodb get-item --region "$SATTORI_REGION" \
-  --table-name SattoriStack-JobsTable1970BC16-OO8B11Y7TX71 \
+  --table-name "$SATTORI_JOBS_TABLE" \
   --key '{"jobId": {"S": "<jobId>"}}'
 
-aws s3 cp "s3://sattoristack-uploadbucketd2c1da78-jl3ufleonxen/<replayKey>" /tmp/verify/replay.rpy \
+aws s3 cp "s3://${SATTORI_UPLOAD_BUCKET}/<replayKey>" /tmp/verify/replay.rpy \
   --region "$SATTORI_REGION"
 ```
 
@@ -61,9 +62,8 @@ aws s3 cp "s3://sattoristack-uploadbucketd2c1da78-jl3ufleonxen/<replayKey>" /tmp
 
 検証データ(録画動画・診断スナップショット・ログ)は `/mnt/cache3` 配下に保存する
 (ユーザーが視聴できるようにするため。`/` パーティションは空き容量が少ないので大きな
-mp4 を置かない)。**`/mnt/cache3` 直下は root 所有で書き込めない**ため、既存の
-`hakatashi` 所有ディレクトリ(例: `sattori-th09-verify/`)の配下にサブディレクトリを
-作るか、無ければユーザーに作成してよいか確認する。
+mp4 を置かない)。`/mnt/cache3` は `hakatashi` 所有なので、直下に検証用ディレクトリを
+そのまま作ってよい。
 
 ```bash
 mkdir -p /mnt/cache3/sattori-<game>-verify/repro-<jobId>
@@ -81,9 +81,12 @@ mkdir -p /mnt/cache3/sattori-<game>-verify/repro-<jobId>
 
 ```bash
 ls /home/hakatashi/.cache/sattori-home-worker/title-assets/<game>/   # 世代ディレクトリ名(v-...)を確認
-sudo cp -a /home/hakatashi/.cache/sattori-home-worker/title-assets/<game>/v-<hash> \
+cp -a /home/hakatashi/.cache/sattori-home-worker/title-assets/<game>/v-<hash> \
   /mnt/cache3/sattori-<game>-verify/repro-<jobId>/assets
 ```
+
+キャッシュの世代ディレクトリは`root`所有だが world-readable(755)なので `sudo` は不要
+(コピー先が`hakatashi`所有なので、コピー後のファイルは`hakatashi`所有になる)。
 
 対象タイトルのキャッシュが無い場合(自宅ワーカーがそのタイトルを一度も引き受けていない)は、
 `upload-title-assets` skill の手順で S3 から直接ダウンロードするか、`title_assets.py`の
@@ -117,7 +120,7 @@ docker run --rm --name sattori-repro-<game> \
   -e SATTORI_GAME_DIR=/mnt/<game>-assets/games/<game> \
   -e SATTORI_MOD_DIR=/mnt/<game>-assets/mods \
   --entrypoint bash \
-  945534687854.dkr.ecr.eu-south-2.amazonaws.com/sattori-worker:latest \
+  "${SATTORI_ECR_REPO}:latest" \
   -c '
     pulseaudio -D --exit-idle-time=-1 --disallow-exit
     sleep 1
