@@ -17,6 +17,13 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-09",
+    ja: "妖精大戦争 (th128) の録画に対応",
+    en: "Added recording support for Fairy Wars (th128)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/78",
+    important: true,
+  },
+  {
+    date: "2026-09-09",
     ja: "録画ジョブページに「アップロード」のステップを追加",
     en: "Added an 'Upload' step to the recording job page",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/202",

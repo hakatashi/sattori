@@ -118,6 +118,21 @@ const TH12_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
   "m7i.2xlarge", // Intel Sapphire Rapids(メモリ倍増版)。2026-09-01実機検証で重複フレーム率12.7%(局所ノイズ、秒単位再解析で良好と確認)
 ];
 
+/**
+ * th128専用の候補インスタンスタイプ（Issue #78）。`.xlarge`帯（4vCPU）ではExtraステージの
+ * 理論尺超過率が+4.16%（重複フレーム率5.5%）まで悪化した一方、`.2xlarge`帯（8vCPU、
+ * `c7i.2xlarge`）では+0.71%（1.4%）まで改善することを実機確認した（touhou-recorder
+ * reports/73）。th11・th12と同じくこの3タイプは異なる2タイトルでの実証実績に基づく
+ * 「`.2xlarge`帯実機検証済みグループ」（[`decisions/0042`](../../../docs/decisions/0042-2xlarge-instance-type-group-precedent.md)）
+ * として扱い、`c7i.2xlarge`1タイプの実機検証のみで残り2タイプも候補に追加した
+ * （推測で足したものではない）。
+ */
+const TH128_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
+  "c7i.2xlarge", // Intel Sapphire Rapids。reports/73実測で理論尺超過+0.71%、第一候補
+  "c7a.2xlarge", // AMD Genoa。th11・th12での実証実績に基づき追加（decisions/0042）
+  "m7i.2xlarge", // Intel Sapphire Rapids(メモリ倍増版)。th11・th12での実証実績に基づき追加（decisions/0042）
+];
+
 function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
   switch (game) {
     case "th11":
@@ -126,6 +141,8 @@ function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
       return TH12_CANDIDATE_INSTANCE_TYPES;
     case "th20":
       return TH20_CANDIDATE_INSTANCE_TYPES;
+    case "th128":
+      return TH128_CANDIDATE_INSTANCE_TYPES;
     default:
       return DEFAULT_CANDIDATE_INSTANCE_TYPES;
   }

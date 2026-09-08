@@ -23,12 +23,13 @@ describe("GameInfoPage", () => {
     expect(screen.getByText("スコア21億でのオーバーフローバグ修正適用済み")).toBeTruthy();
   });
 
-  it("th20にthpracの適用バージョンを表示する", () => {
+  it("th20・th128にthpracの適用バージョンを表示する", () => {
     // ワーカーがゲーム起動直後にアタッチしているthprac（Issue #105）。
-    // worker/games/th20/ に同梱している thprac.v2.3.0.3.exe と一致させること。
+    // worker/games/th20/・worker/games/th128/ に同梱している thprac.v2.3.0.3.exe と
+    // 一致させること。
     render(<GameInfoPage />);
 
-    expect(screen.getByText("thprac v2.3.0.3 適用済み")).toBeTruthy();
-    expect(screen.getByText("リプレイずれの軽減のため、録画時に適用しています")).toBeTruthy();
+    expect(screen.getAllByText("thprac v2.3.0.3 適用済み")).toHaveLength(2);
+    expect(screen.getAllByText("リプレイずれの軽減のため、録画時に適用しています")).toHaveLength(2);
   });
 });
