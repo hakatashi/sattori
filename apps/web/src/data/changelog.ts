@@ -16,6 +16,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-09",
+    ja: "動画の変換完了後、アップロードが完了するまでの間も転送済みバイト数に応じた進捗バー・残り時間の目安をジョブページに表示するよう修正",
+    en: "The job page now shows a real byte-based progress bar and estimated time remaining while the video is uploading after conversion finishes",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/202",
+  },
+  {
     date: "2026-09-08",
     ja: "正常なリプレイが誤って録画失敗と判定されることがある不具合を修正",
     en: "Fixed an issue where a normal replay could be incorrectly flagged as a recording failure",
@@ -26,12 +32,6 @@ export const changelogEntries: ChangelogEntry[] = [
     ja: "録画完了後のプレビュー動画のサムネイルを、動画終盤のシーンから生成するよう改善",
     en: "Improved the completed recording preview thumbnail to be generated from a scene near the end of the video",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/171",
-  },
-  {
-    date: "2026-09-03",
-    ja: "動画の変換完了後、アップロードが完了するまでの間も転送済みバイト数に応じた進捗バー・残り時間の目安をジョブページに表示するよう修正",
-    en: "The job page now shows a real byte-based progress bar and estimated time remaining while the video is uploading after conversion finishes",
-    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/202",
   },
   {
     date: "2026-09-03",
