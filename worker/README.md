@@ -48,18 +48,11 @@
 | `entrypoint.py` | ジョブ全体の制御。チェックポイント確認 → (再開でなければ)S3 DL → 録画 →
   生動画をS3へチェックポイントUP → 配信用変換 → (status: uploading、Issue #202) → S3 UP →
   DynamoDB/taskToken 通知。`GAME` 環境変数で `record_thNN.py` を呼び分ける |
-| `recording/` | 全タイトル共通の録画パイプライン本体。責務ごとに11モジュールへ分割してある
-  (下表。分割の経緯は [`0041`](../docs/decisions/0041-worker-recording-package-split.md))。
-  Xvfb起動・クロップ座標の確定([`0012`](../docs/decisions/0012-crop-geometry-after-window-stabilizes.md))・録画・
-  終了検知([`0011`](../docs/decisions/0011-replay-end-template-matching.md))・fps暴走検知・
-  自動リトライ(既定3回)・映像/音声を別プロセスで録画し後でmuxする処理(reports/26)・
-  フックDLLより前の追加DLL注入(`GameConfig.extra_dlls`)・音声のジョブ専用sinkへの分離
-  ([`0013`](../docs/decisions/0013-per-job-pulseaudio-sink.md))を担う。処理落ちの早期検知
-  (stutter probe)は真陽性の実績が無く正常なリプレイも誤検知しうることが判明したため
-  削除済み([`0038`](../docs/decisions/0038-remove-stutter-early-detection.md))。代わりに、
-  終了判定に画面静止を使わないend_template方式のタイトルへは、画面が5分静止したら
-  タイムアウト扱いで強制停止する早期検知を追加してある
-  ([`0039`](../docs/decisions/0039-end-template-freeze-timeout.md)) |
+| `recording/` | 全タイトル共通の録画パイプライン本体。責務ごとに11モジュールへ分割してあり、
+  Xvfb起動・クロップ座標の確定・録画・終了検知・自動リトライ・映像と音声の
+  別プロセス録画・音声のジョブ専用sinkへの分離を担う。**モジュール一覧と、どの挙動がどの決定
+  記録に基づくかは [`docs/recording-package.md`](docs/recording-package.md)**(分割の経緯は
+  [`0041`](../docs/decisions/0041-worker-recording-package-split.md)) |
 | `pulse.py` | ジョブ専用のPulseAudio null-sinkの作成・破棄(Issue #48) |
 | `record_thNN.py` | **そのタイトルでしか成り立たない `GameConfig` の値だけ**を持つシム(25〜36行)。CLI と録画の呼び出しは `recording/cli.py` に集約してある。タイトル固有の背景は [`docs/titles/thNN.md`](docs/titles/README.md) |
 | `convert.py` | 録画結果を「ユーザーへ配信する1本」へ変換する後処理。**録画後の再エンコード
@@ -139,7 +132,7 @@
   `OutputBucket`内で3日のライフサイクルルールがあり、DynamoDBには保存しない
   (jobIdから決定的に導出可能、`apps/api/src/downloads.ts`の`buildFfmpegUpscaleLogKey`) |
 | `diagnostics/{jobId}/attempt{n}-{classification}.jpg` | 試行を破棄した際の最終フレーム
-  (`fps_runaway`/`timeout`/`duplicate_rate`のいずれか、Issue #159)。早期に打ち切られた
+  (`timeout`/`duplicate_rate`のいずれか、Issue #159)。早期に打ち切られた
   ジョブは`progress/`にスナップショットが1枚も残らず失敗時の画面を事後確認できないため、
   `recording.artifacts.save_diagnostics_snapshot()`が試行ごとに1枚だけ書き出し、
   `entrypoint.py`の`upload_diagnostics_snapshots_if_present()`がまとめてアップロードする。
@@ -268,9 +261,8 @@ AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/work
 
 本番のECRリポジトリ名は`sattori-worker`(`infra/lib/sattori-stack.ts`が作成、本体スタックと
 同じくeu-south-2)。`worker/assets/`は`.gitignore`対象なので、`docker build`前にビルド
-コンテキストへ配置すること(§8)。コマンドは
-[`docs/runbooks/worker-local-recording.md`](../docs/runbooks/worker-local-recording.md) §3、
-デプロイ手順全体は `deploy-sattori` skill(**push と deploy の順序を守ること**)。
+コンテキストへ配置すること(§8)。ビルド・pushのコマンドとデプロイ手順全体は
+`deploy-sattori` skill(**push と deploy の順序を守ること**)。
 
 ## 13. 既知の制約
 
