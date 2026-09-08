@@ -16,6 +16,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-08",
+    ja: "正常なリプレイが誤って録画失敗と判定されることがある不具合を修正",
+    en: "Fixed an issue where a normal replay could be incorrectly flagged as a recording failure",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/233",
+  },
+  {
     date: "2026-09-05",
     ja: "録画完了後のプレビュー動画のサムネイルを、動画終盤のシーンから生成するよう改善",
     en: "Improved the completed recording preview thumbnail to be generated from a scene near the end of the video",

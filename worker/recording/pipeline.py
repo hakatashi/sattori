@@ -26,7 +26,7 @@ from .ffmpeg import (
     mux_audio_video,
 )
 from .instance import build_injector_cmd, ensure_xvfb, prepare_instance
-from .modlog import check_replay_desync, scan_fps_runaway, wait_for_log_marker
+from .modlog import check_replay_desync, wait_for_log_marker
 from .process import attach_thprac, find_live_game_pid, kill_wine_and_wait
 from .timing import duplicate_rate_threshold_for_raw, scaled_poll_count, slow_motion_scale
 from .vision import (
@@ -92,7 +92,6 @@ def _failure_result(config, env, log):
     return {
         "output_exists": False,
         "classification": "setup_error",
-        "fps_runaway_hz": None,
         "total_record_sec": 0.0,
         "time_scale": 1.0,
     }
@@ -247,11 +246,11 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                        progress_dir, expected_duration_seconds, seen_lines, log):
     """リプレイ終了(または異常)を検知するまでポーリングする。
 
-    戻り値: (detected, frozen, fps_runaway_hz, last_color_frame)。**録画の停止は
-    ここではやらない**(呼び出し側が `_stop_and_mux()` で止める)。`last_color_frame`は
-    直近に取得したカラー画像で、試行が破棄された際の診断用証跡(Issue #159、
+    戻り値: (detected, frozen, last_color_frame)。**録画の停止はここではやらない**
+    (呼び出し側が `_stop_and_mux()` で止める)。`last_color_frame`は直近に取得した
+    カラー画像で、試行が破棄された際の診断用証跡(Issue #159、
     `save_diagnostics_snapshot()`)に使う。1回もフレームを取得できないまま終了した
-    場合(grace期間中のfps暴走・タイムアウト等)はNone。
+    場合(grace期間中のタイムアウト等)はNone。
 
     時間に関する定数はすべてここで `time_scale` 倍する。ポーリングは実時間駆動
     (`POLL_INTERVAL_SEC`)なので、回数を据え置くと**ゲーム内時間で必要な静止の長さが
@@ -293,18 +292,11 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     consecutive_freeze = 0
     detected = False
     frozen = False
-    fps_runaway_hz = None
     poll_count = 0
     while True:
         elapsed = time.time() - gameplay_start
         if elapsed > timeout_sec:
             log(f"TIMEOUT: {timeout_sec:.0f}秒経過したため強制停止します")
-            break
-
-        runaway_hz = scan_fps_runaway(config.log_path)
-        if runaway_hz is not None:
-            log(f"WARNING: FpsMonitorログで異常な高fps({runaway_hz:.1f}Hz)を検知しました。早期終了します")
-            fps_runaway_hz = runaway_hz
             break
 
         if elapsed < post_start_grace_sec:
@@ -376,7 +368,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                     break
             prev_frame = frame
         time.sleep(POLL_INTERVAL_SEC)
-    return detected, frozen, fps_runaway_hz, last_color_frame
+    return detected, frozen, last_color_frame
 
 
 def _stop_and_mux(video, audio, output_path, env, log):
@@ -428,8 +420,8 @@ def _stop_and_mux(video, audio, output_path, env, log):
 
 def attempt_recording(config, replay_path, output_path, progress_dir, expected_duration_seconds,
                        diagnostics_dir=None, attempt=1, log=print):
-    """録画を1回試行する。戻り値: dict(output_exists, classification, fps_runaway_hz, total_record_sec)。
-    classification は "good" / "fps_runaway" / "timeout" / "setup_error" のいずれか。
+    """録画を1回試行する。戻り値: dict(output_exists, classification, total_record_sec)。
+    classification は "good" / "timeout" / "setup_error" のいずれか。
 
     classification が "good" 以外(=この試行が破棄される)なら、直近のフレームを
     診断用証跡として`diagnostics_dir`へ書き出す(Issue #159、`save_diagnostics_snapshot()`)。
@@ -491,7 +483,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     ), audio_target, audio_log_path, audio_log_file)
     record_start = time.time()
 
-    detected, frozen, fps_runaway_hz, last_color_frame = _monitor_until_end(
+    detected, frozen, last_color_frame = _monitor_until_end(
         config, env, geometry, detection, time_scale=time_scale,
         progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
         seen_lines=seen_lines, log=log,
@@ -500,10 +492,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     output_exists = _stop_and_mux(video, audio, output_path, env, log=log)
 
     total_record_sec = time.time() - record_start
-    if fps_runaway_hz is not None:
-        classification = "fps_runaway"
-        stop_reason = "fps暴走早期検知"
-    elif detected:
+    if detected:
         classification = "good"
         stop_reason = "画面静止検知"
     elif frozen:
@@ -522,7 +511,6 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     return {
         "output_exists": output_exists,
         "classification": classification,
-        "fps_runaway_hz": fps_runaway_hz,
         "total_record_sec": total_record_sec,
         # この試行の録画に適用されていた実時間スケール(等倍なら1.0)。出力は等倍へ
         # 戻す前の生データなので、重複フレーム率の判定にこの値が要る
@@ -536,9 +524,9 @@ def record_with_retry(config, replay_path, output_path, *,
                        max_attempts=MAX_ATTEMPTS_DEFAULT, max_duplicate_rate=MAX_DUPLICATE_RATE_DEFAULT,
                        expected_score=None, desync_result_path=None, timeout_result_path=None,
                        log=print):
-    """attempt_recording()を最大max_attempts回試行し、fps暴走・処理落ちの早期検知や
-    事後の重複フレーム率チェックに引っかかった場合は出力を破棄してリトライする。
-    正常な録画が得られればTrueを、max_attempts回失敗すればFalseを返す。
+    """attempt_recording()を最大max_attempts回試行し、事後の重複フレーム率チェックに
+    引っかかった場合は出力を破棄してリトライする。正常な録画が得られればTrueを、
+    max_attempts回失敗すればFalseを返す。
 
     このジョブ専用のPulseAudio null-sink(config.pulse_sink)はここで作成し、成功・失敗を
     問わず戻る際に破棄する(Issue #48)。全試行で同じsinkを使い回す(試行ごとにWineと
@@ -592,9 +580,6 @@ def _record_with_retry(config, replay_path, output_path, *,
             continue
         if not result["output_exists"]:
             log("WARNING: 出力ファイルが生成されなかったため、この試行は失敗として扱います")
-            continue
-        if result["classification"] == "fps_runaway":
-            log(f"WARNING: fps暴走({result['fps_runaway_hz']:.1f}Hz)を検知したため破棄してリトライします")
             continue
 
         # 判定対象は**等倍へ戻す前の生データ**なので、閾値の方をスケールに合わせて
