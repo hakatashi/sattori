@@ -14,7 +14,11 @@
 | ソース | 役割 |
 | --- | --- |
 | `mods/common/` | DLL インジェクタ(`injector.exe`。複数DLLの順次注入に対応)・共通フック処理・
-  fps計測スレッド(`fps_monitor.*`、fps暴走検知用、reports/22)のソース(C++) |
+  fps計測スレッド(`fps_monitor.*`)のソース(C++)。5秒毎に`FpsMonitor: N GetDeviceState
+  calls in M ms (H.H Hz)`をMODログへ出力し続けるが、これを読んで異常判定・自動リトライに
+  使うPython側のロジックは真陽性の実績が無く偽陽性のみだったため削除済み
+  ([`decisions/0043`](../../docs/decisions/0043-remove-fps-runaway-detection.md))。ログ出力
+  自体は将来の調査用診断情報として残してある |
 | `mods/thNN_replay_autoplay/` | タイトルごとの自動再生フック DLL(`thNN_hook.dll`)のソース(C++)。
   組み込むフックの違いは各タイトルの背景ファイル([`titles/`](titles/README.md))を参照 |
 

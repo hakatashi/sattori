@@ -49,7 +49,7 @@
   生動画をS3へチェックポイントUP → 配信用変換 → S3 UP → DynamoDB/taskToken 通知。`GAME`
   環境変数で `record_thNN.py` を呼び分ける |
 | `recording/` | 全タイトル共通の録画パイプライン本体。責務ごとに11モジュールへ分割してあり、
-  Xvfb起動・クロップ座標の確定・録画・終了検知・fps暴走検知・自動リトライ・映像と音声の
+  Xvfb起動・クロップ座標の確定・録画・終了検知・自動リトライ・映像と音声の
   別プロセス録画・音声のジョブ専用sinkへの分離を担う。**モジュール一覧と、どの挙動がどの決定
   記録に基づくかは [`docs/recording-package.md`](docs/recording-package.md)**(分割の経緯は
   [`0041`](../docs/decisions/0041-worker-recording-package-split.md)) |
@@ -132,7 +132,7 @@
   `OutputBucket`内で3日のライフサイクルルールがあり、DynamoDBには保存しない
   (jobIdから決定的に導出可能、`apps/api/src/downloads.ts`の`buildFfmpegUpscaleLogKey`) |
 | `diagnostics/{jobId}/attempt{n}-{classification}.jpg` | 試行を破棄した際の最終フレーム
-  (`fps_runaway`/`timeout`/`duplicate_rate`のいずれか、Issue #159)。早期に打ち切られた
+  (`timeout`/`duplicate_rate`のいずれか、Issue #159)。早期に打ち切られた
   ジョブは`progress/`にスナップショットが1枚も残らず失敗時の画面を事後確認できないため、
   `recording.artifacts.save_diagnostics_snapshot()`が試行ごとに1枚だけ書き出し、
   `entrypoint.py`の`upload_diagnostics_snapshots_if_present()`がまとめてアップロードする。
@@ -253,9 +253,8 @@ AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/work
 
 本番のECRリポジトリ名は`sattori-worker`(`infra/lib/sattori-stack.ts`が作成、本体スタックと
 同じくeu-south-2)。`worker/assets/`は`.gitignore`対象なので、`docker build`前にビルド
-コンテキストへ配置すること(§8)。コマンドは
-[`docs/runbooks/worker-local-recording.md`](../docs/runbooks/worker-local-recording.md) §3、
-デプロイ手順全体は `deploy-sattori` skill(**push と deploy の順序を守ること**)。
+コンテキストへ配置すること(§8)。ビルド・pushのコマンドとデプロイ手順全体は
+`deploy-sattori` skill(**push と deploy の順序を守ること**)。
 
 ## 13. 既知の制約
 

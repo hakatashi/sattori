@@ -1,6 +1,4 @@
-"""MOD が書き出すログの読み取り(マーカー待ち・fps暴走・スコア照合)。"""
-
-import pytest
+"""MOD が書き出すログの読み取り(マーカー待ち・スコア照合)。"""
 
 from recording import modlog
 from recording_helpers import make_config
@@ -37,44 +35,6 @@ def test_wait_for_log_marker_times_out_when_log_file_missing(tmp_path):
     )
 
     assert result is None
-
-
-def test_scan_fps_runaway_returns_none_when_log_missing(tmp_path):
-    assert modlog.scan_fps_runaway(str(tmp_path / "missing.log")) is None
-
-
-def test_scan_fps_runaway_ignores_values_at_or_below_threshold(tmp_path):
-    log_path = tmp_path / "th08_autoplay.log"
-    log_path.write_text(
-        "FpsMonitor: 300 GetDeviceState calls in 5006 ms (59.9 Hz)\n"
-        "FpsMonitor: 300 GetDeviceState calls in 5004 ms (60.0 Hz)\n"
-    )
-
-    assert modlog.scan_fps_runaway(str(log_path)) is None
-
-
-def test_scan_fps_runaway_ignores_single_spike_below_consecutive_requirement(tmp_path):
-    # reports/23: 単発のノイズ(実測最大118Hz、直後に正常値へ復帰)は誤検知しない。
-    log_path = tmp_path / "th08_autoplay.log"
-    log_path.write_text(
-        "FpsMonitor: 300 GetDeviceState calls in 5006 ms (59.9 Hz)\n"
-        "FpsMonitor: 300 GetDeviceState calls in 2500 ms (118.1 Hz)\n"
-        "FpsMonitor: 300 GetDeviceState calls in 5004 ms (60.1 Hz)\n"
-    )
-
-    assert modlog.scan_fps_runaway(str(log_path)) is None
-
-
-def test_scan_fps_runaway_detects_two_consecutive_spikes(tmp_path):
-    # reports/22: fps暴走は実測479〜2700Hzがリプレイ全編にわたり持続する。
-    log_path = tmp_path / "th08_autoplay.log"
-    log_path.write_text(
-        "FpsMonitor: 300 GetDeviceState calls in 5006 ms (59.9 Hz)\n"
-        "FpsMonitor: 300 GetDeviceState calls in 100 ms (900.0 Hz)\n"
-        "FpsMonitor: 300 GetDeviceState calls in 110 ms (850.0 Hz)\n"
-    )
-
-    assert modlog.scan_fps_runaway(str(log_path)) == pytest.approx(900.0)
 
 
 def test_read_verified_scores_returns_empty_list_when_log_missing(tmp_path):

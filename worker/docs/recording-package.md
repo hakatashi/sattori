@@ -10,13 +10,16 @@
 責務ごとに11モジュールへ分割してある(§2。分割の経緯は
 [`0041`](../../docs/decisions/0041-worker-recording-package-split.md))。
 Xvfb起動・クロップ座標の確定([`0012`](../../docs/decisions/0012-crop-geometry-after-window-stabilizes.md))・録画・
-終了検知([`0011`](../../docs/decisions/0011-replay-end-template-matching.md))・fps暴走検知・
+終了検知([`0011`](../../docs/decisions/0011-replay-end-template-matching.md))・
 自動リトライ(既定3回)・映像/音声を別プロセスで録画し後でmuxする処理(reports/26)・
 フックDLLより前の追加DLL注入(`GameConfig.extra_dlls`)・音声のジョブ専用sinkへの分離
 ([`0013`](../../docs/decisions/0013-per-job-pulseaudio-sink.md))を担う。
 
 処理落ちの早期検知(stutter probe)は真陽性の実績が無く正常なリプレイも誤検知しうることが
 判明したため削除済み([`0038`](../../docs/decisions/0038-remove-stutter-early-detection.md))。
+fps暴走検知(MODのGetDeviceState呼び出し頻度による早期打ち切り)も同様の理由(実際に発火した
+2件がいずれも偽陽性で真陽性の実績が無い)で削除済み
+([`0043`](../../docs/decisions/0043-remove-fps-runaway-detection.md))。
 代わりに、終了判定に画面静止を使わないend_template方式のタイトルへは、画面が5分静止したら
 タイムアウト扱いで強制停止する早期検知を追加してある
 ([`0039`](../../docs/decisions/0039-end-template-freeze-timeout.md))。
@@ -32,7 +35,7 @@ Xvfb起動・クロップ座標の確定([`0012`](../../docs/decisions/0012-crop
 | `instance.py` | Xvfb 起動・instance ディレクトリの複製・`vpatch.ini` の上書き・注入コマンド |
 | `process.py` | ゲームプロセスの探索・thprac のアタッチ・Wine の後片付け |
 | `window.py` | ウィンドウ検出とクロップ座標の確定 |
-| `modlog.py` | MOD が書き出すログの読み取り(マーカー待ち・fps暴走検知・スコア照合) |
+| `modlog.py` | MOD が書き出すログの読み取り(マーカー待ち・スコア照合) |
 | `vision.py` | 画面キャプチャと画素比較。**画素比較の閾値はここ**(ポーリング回数は `pipeline.py`) |
 | `ffmpeg.py` | 録画・結合・重複フレーム率計測の ffmpeg/ffprobe 呼び出し |
 | `artifacts.py` | 進捗・デシンク検証結果・タイムアウト有無のファイル書き出し(別プロセスへの受け渡し) |

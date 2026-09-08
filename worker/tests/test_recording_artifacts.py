@@ -22,10 +22,10 @@ def test_save_progress_snapshot_writes_frame_and_state_atomically(tmp_path):
 def test_save_diagnostics_snapshot_writes_jpg_named_by_attempt_and_classification(tmp_path):
     color = Image.new("RGB", (640, 480), color=(10, 20, 30))
 
-    artifacts.save_diagnostics_snapshot(str(tmp_path), color, attempt=2, classification="fps_runaway")
+    artifacts.save_diagnostics_snapshot(str(tmp_path), color, attempt=2, classification="duplicate_rate")
 
-    assert (tmp_path / "attempt2-fps_runaway.jpg").exists()
-    assert not (tmp_path / "attempt2-fps_runaway.jpg.tmp").exists()
+    assert (tmp_path / "attempt2-duplicate_rate.jpg").exists()
+    assert not (tmp_path / "attempt2-duplicate_rate.jpg.tmp").exists()
 
 
 def test_save_diagnostics_snapshot_skips_without_diagnostics_dir():
