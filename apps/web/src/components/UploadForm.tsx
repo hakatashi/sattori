@@ -95,7 +95,7 @@ const gameTitles = [
     japanese: "妖精大戦争",
     english: "Fairy Wars",
     shortName: "GFW",
-    supported: false,
+    supported: true,
     icon: 'th128.png',
   },
   {

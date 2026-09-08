@@ -12,6 +12,7 @@
 
 | 検証日 | 内容 | 結論 |
 | --- | --- | --- |
+| [2026-09-09](2026-09-09-th128-local-recording-verification.md) | th128（妖精大戦争）録画対応(Issue #78)をsattori本体の`record_th128.py`でローカル実機検証 | フル尺録画(1回目の試行で成功、重複フレーム率1.3%)・thprac必須運用・終了検知(画面静止)・スコア完全一致いずれも成功 |
 | [2026-09-05](2026-09-05-home-worker-upload-bandwidth.md) | 自宅ワーカーの配信用動画アップロード速度を本番CloudWatch Logs×DynamoDBの突き合わせで実測(Issue #202フォローアップ) | 100MB超のファイルでは10〜12MB/s(80〜99Mbps)に収束する安定した実測値。進捗バー・残り時間推定の悲観バジェットの根拠にした |
 | [2026-09-03](2026-09-03-convert-faststart-verification.md) | 配信用変換への`-movflags +faststart`追加(Issue #90)をローカルで検証 | moov atomは先頭へ移動、変換時間の増分は誤差範囲、映像・音声のデコード結果は完全一致(尺・A/V同期に影響なし) |
 | [2026-09-02](2026-09-02-th09-local-recording-verification.md) | th09（東方花映塚）録画対応(Issue #73)をsattori本体の`record_th09.py`でローカル実機検証 | Match/Storyモード双方でフル尺録画・終了検知・残機(life)監視が成功。リプレイファイル名接頭辞が`th9_`(`th09_`ではない)である誤りを発見・修正 |
