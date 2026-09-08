@@ -17,8 +17,8 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-09",
-    ja: "動画の変換完了後、アップロードが完了するまでの間も転送済みバイト数に応じた進捗バー・残り時間の目安をジョブページに表示するよう修正",
-    en: "The job page now shows a real byte-based progress bar and estimated time remaining while the video is uploading after conversion finishes",
+    ja: "録画ジョブページに「アップロード」のステップを追加",
+    en: "Added an 'Upload' step to the recording job page",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/202",
   },
   {
