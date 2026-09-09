@@ -12,11 +12,19 @@ import styles from "./ReplayHelpPage.module.css";
  * 録画対応タイトル（`SUPPORTED_GAME_IDS`）に限らず、東方の全ナンバリングタイトル
  * （th19除く。リプレイ保存機能が無いため`GAME_IDS`にも含まれない）を対象にした
  * 汎用ヘルプとして一覧する。新タイトルは`GAME_IDS`（`packages/shared/src/games.ts`）へ
- * 追加すればここは自動で追従する。
+ * 追加すればここは自動で追従する（例外は`REMAKE_GAME_IDS`）。
  */
-const APP_DATA_START_INDEX = GAME_IDS.indexOf("th125");
-const INSTALL_FOLDER_GAME_IDS: readonly GameId[] = GAME_IDS.slice(0, APP_DATA_START_INDEX);
-const APP_DATA_GAME_IDS: readonly GameId[] = GAME_IDS.slice(APP_DATA_START_INDEX);
+/**
+ * 2026年の紅魔郷リメイク2本（`GAME_IDS`にはリプレイ解析用に含まれる）はここでは扱わない。
+ * 保存先がSteamライブラリ配下のゲームディレクトリで、この2グループのどちらの説明にも
+ * 当てはまらないため。録画対応時に専用の案内を足すこと。
+ */
+const REMAKE_GAME_IDS: readonly GameId[] = ["th06c", "th06nc"];
+const HELP_GAME_IDS: readonly GameId[] = GAME_IDS.filter((id) => !REMAKE_GAME_IDS.includes(id));
+
+const APP_DATA_START_INDEX = HELP_GAME_IDS.indexOf("th125");
+const INSTALL_FOLDER_GAME_IDS: readonly GameId[] = HELP_GAME_IDS.slice(0, APP_DATA_START_INDEX);
+const APP_DATA_GAME_IDS: readonly GameId[] = HELP_GAME_IDS.slice(APP_DATA_START_INDEX);
 
 /** 見出しの範囲表示用（上の配列の始端・終端と対応させること）。 */
 const INSTALL_FOLDER_HEADING_FIRST: GameId = "th06";

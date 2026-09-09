@@ -1,0 +1,85 @@
+{
+  "game": "th06nc",
+  "gameTitle": "東方紅魔郷: New Classic ～ the Embodiment of Scarlet Devil.",
+  "formatVersion": 271,
+  "player": "koyi",
+  "date": "09/10/26",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 9,
+    "date": 10,
+    "hours": null,
+    "minutes": null,
+    "seconds": null
+  },
+  "recordedAt": null,
+  "character": "MarisaB",
+  "characterNameJa": "恋符",
+  "characterNameEn": "Marisa B",
+  "difficulty": "Hard",
+  "stage": null,
+  "score": 22647970,
+  "cleared": null,
+  "loadout": null,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 6906320,
+      "power": "0",
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": null,
+      "frameCount": 9009
+    },
+    {
+      "stage": 2,
+      "score": 22613090,
+      "power": "72",
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": null,
+      "frameCount": 11562
+    },
+    {
+      "stage": 3,
+      "score": 22647970,
+      "power": "128",
+      "piv": null,
+      "lives": {
+        "count": 4,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 4,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": null,
+      "frameCount": 1810
+    }
+  ],
+  "frameCount": 22381
+}

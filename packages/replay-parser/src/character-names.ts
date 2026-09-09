@@ -224,6 +224,10 @@ const TH125: CharacterTable = {
 
 const CHARACTER_TABLES: Partial<Record<ReplayGameId, CharacterTable>> = {
   th06: TH06_TH07_SHARED,
+  // Both 2026 remakes keep th06's four shot types, in the same order and with
+  // the same 符 names on the character select screen.
+  th06c: TH06_TH07_SHARED,
+  th06nc: TH06_TH07_SHARED,
   th07: { ...TH06_TH07_SHARED, SakuyaA: { ja: "幻符", en: "Sakuya A" }, SakuyaB: { ja: "時符", en: "Sakuya B" } },
   th08: TH08,
   th09: TH09,
