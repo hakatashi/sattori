@@ -5,10 +5,19 @@
  *
  * th13 (東方神霊廟, TD) and th14 (東方輝針城, DDC) share the same
  * magic bytes `t13r` and are distinguished by a version byte in the header
- * (inherited from threplay; see the in-code comments).
+ * (inherited from threplay; see the in-code comments). th06, th06c
+ * (東方紅魔郷: Classic) and th06nc (東方紅魔郷: New Classic) likewise share
+ * `T6RP` and are distinguished by their version word (see `games/th06.ts`).
  */
 export const REPLAY_GAME_IDS = [
   "th06",
+  // The two 2026 remakes of th06. They keep th06's `T6RP` magic and are told
+  // apart from it (and from each other) by the version word at 0x04 — see
+  // `VARIANTS_BY_VERSION` in `games/th06.ts`. They are separate ids rather than
+  // a th06 flavour because their replays are *not* interchangeable with the
+  // original game's: th06 1.02h refuses to even list a `th06c` file.
+  "th06c",
+  "th06nc",
   "th07",
   "th08",
   "th09",
@@ -35,6 +44,8 @@ export type ReplayGameId = (typeof REPLAY_GAME_IDS)[number];
 
 export const REPLAY_GAME_TITLES: Record<ReplayGameId, string> = {
   th06: "東方紅魔郷 ～ the Embodiment of Scarlet Devil.",
+  th06c: "東方紅魔郷: Classic",
+  th06nc: "東方紅魔郷: New Classic",
   th07: "東方妖々夢 ～ Perfect Cherry Blossom.",
   th08: "東方永夜抄 ～ Imperishable Night.",
   th09: "東方花映塚 ～ Phantasmagoria of Flower View.",
