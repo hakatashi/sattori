@@ -16,6 +16,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-10",
+    ja: "「東方紅魔郷: Classic」「東方紅魔郷: New Classic」のリプレイファイルを判別できるようになりました。この2作は録画に未対応のため、アップロードすると非対応タイトルとしてご案内します",
+    en: "Replay files from Embodiment of Scarlet Devil: Classic and New Classic are now recognized. Recording is not yet supported for these two titles, so uploading one reports it as an unsupported title",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/236",
+  },
+  {
     date: "2026-09-09",
     ja: "録画ジョブページに「アップロード」のステップを追加",
     en: "Added an 'Upload' step to the recording job page",
