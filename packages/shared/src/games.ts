@@ -53,7 +53,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
   },
   th06c: {
     id: "th06c",
-    fullName: "東方紅魔郷: Classic",
+    fullName: "東方紅魔郷: Classic ～ the Embodiment of Scarlet Devil.",
     japaneseName: "東方紅魔郷: Classic",
     englishName: "Embodiment of Scarlet Devil: Classic",
     japaneseShortName: "紅C",
@@ -61,7 +61,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
   },
   th06nc: {
     id: "th06nc",
-    fullName: "東方紅魔郷: New Classic",
+    fullName: "東方紅魔郷: New Classic ～ the Embodiment of Scarlet Devil.",
     japaneseName: "東方紅魔郷: New Classic",
     englishName: "Embodiment of Scarlet Devil: New Classic",
     japaneseShortName: "紅NC",
