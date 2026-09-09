@@ -34,6 +34,7 @@ function buildJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     errorCode: null,
     updatedAt: new Date().toISOString(),
     progress: 100,
+    uploadTotalBytes: null,
     previewVideoUrl: null,
     previewImageUrl: null,
     posterImageUrl: null,
@@ -276,5 +277,48 @@ describe("useEstimatedProgress", () => {
       vi.advanceTimersByTime(2500);
     });
     expect(currentProgress()).toBeCloseTo(87, 5);
+  });
+
+  it("uploadingフェーズで過去2回分のポーリング結果から転送速度を逆算し、既定値ではなく実測速度で補間する(Issue #202フォローアップ)", () => {
+    const MIB = 1024 * 1024;
+    vi.useFakeTimers();
+    const t0 = new Date("2026-01-01T00:00:00.000Z");
+    vi.setSystemTime(t0);
+    const job1 = buildJob({ status: "uploading", progress: 100 * MIB, updatedAt: t0.toISOString() });
+
+    const { rerender } = render(<Probe job={job1} />);
+
+    // 3秒間、実測データ無しの既定速度(9MiB/s)で補間される。
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    const beforeSecondPoll = currentProgress();
+    expect(beforeSecondPoll / MIB).toBeCloseTo(37, 5); // (100-10*9) + 9*3 = 37
+
+    // ここで届いた2回目のポーリング結果は実測速度15MiB/s相当(100→145MiB、3秒経過)。
+    const t1 = new Date(t0.getTime() + 3000);
+    vi.setSystemTime(t1);
+    const job2 = buildJob({ status: "uploading", progress: 145 * MIB, updatedAt: t1.toISOString() });
+    rerender(<Probe job={job2} />);
+    expect(currentProgress()).toBe(beforeSecondPoll);
+
+    // 以降は実測した15MiB/sを使って補間されるはず
+    // (既定の9MiB/sなら 37+2.5*max(9, (145-100... )/10)=... よりはっきり速く伸びる)。
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+    expect(currentProgress() / MIB).toBeCloseTo(74.5, 5);
+  });
+
+  it("uploadingフェーズはuploadTotalBytesを上限として伸びを止める", () => {
+    const MIB = 1024 * 1024;
+    const job = buildJob({
+      status: "uploading",
+      progress: 950 * MIB,
+      uploadTotalBytes: 1000 * MIB,
+      updatedAt: new Date().toISOString(),
+    });
+    render(<Probe job={job} />);
+    expect(currentProgress() / MIB).toBeLessThanOrEqual(1000);
   });
 });

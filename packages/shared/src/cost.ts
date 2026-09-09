@@ -324,6 +324,7 @@ function hasEverLaunched(job: JobCostInput): boolean {
     job.status === "launching" ||
     job.status === "recording" ||
     job.status === "converting" ||
+    job.status === "uploading" ||
     job.status === "done"
   );
 }

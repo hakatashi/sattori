@@ -117,6 +117,12 @@ describe("sweepStalledJobs handler", () => {
     const queriedStatuses = ddbMock
       .commandCalls(QueryCommand)
       .map((call) => call.args[0].input.ExpressionAttributeValues?.[":status"]);
-    expect(queriedStatuses.sort()).toEqual(["converting", "launching", "queued", "recording"]);
+    expect(queriedStatuses.sort()).toEqual([
+      "converting",
+      "launching",
+      "queued",
+      "recording",
+      "uploading",
+    ]);
   });
 });

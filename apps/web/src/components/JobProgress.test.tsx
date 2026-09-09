@@ -42,6 +42,7 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     errorCode: null,
     updatedAt: new Date().toISOString(),
     progress: null,
+    uploadTotalBytes: null,
     previewVideoUrl: null,
     previewImageUrl: null,
     posterImageUrl: null,
@@ -280,6 +281,7 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     errorCode: null,
     updatedAt: new Date().toISOString(),
     progress: 100,
+    uploadTotalBytes: null,
     previewVideoUrl: null,
     previewImageUrl: null,
     posterImageUrl: null,
@@ -326,6 +328,53 @@ describe("JobProgressView の全体進捗バー", () => {
     const bar = screen.getByRole("progressbar", { name: "全体の進捗" });
     expect(bar.getAttribute("aria-valuenow")).toBe("100");
     expect(screen.getByText("100%")).toBeTruthy();
+  });
+});
+
+describe("JobProgressView のアップロード中表示（Issue #202）", () => {
+  it("uploading中はステータス文言「動画をアップロードしています」を表示する", () => {
+    render(<JobProgressView job={buildRecordingJob({ status: "uploading", progress: null })} loadError={null} />);
+
+    expect(screen.getByText("動画をアップロードしています")).toBeTruthy();
+  });
+
+  it("uploading中は全体進捗バーを引き続き表示する（failedではないため）", () => {
+    render(<JobProgressView job={buildRecordingJob({ status: "uploading", progress: null })} loadError={null} />);
+
+    expect(screen.getByRole("progressbar", { name: "全体の進捗" })).toBeTruthy();
+  });
+
+  it("uploadTotalBytesがあれば転送済み/合計バイト数をMiB/GiB表示する(Issue #202フォローアップ)", () => {
+    // 表示値はポーリング遅延を補うバッファ分だけサーバー値より手前から始まる
+    // (useEstimatedProgress.ts、recording/convertingと共通の挙動)ため、
+    // 「/ 850 MiB」という分母側の表記だけを厳密に検証する。
+    render(
+      <JobProgressView
+        job={buildRecordingJob({
+          status: "uploading",
+          progress: 320 * 1024 * 1024,
+          uploadTotalBytes: 850 * 1024 * 1024,
+        })}
+        loadError={null}
+      />,
+    );
+
+    expect(screen.getByText(/^\d+ MiB \/ 850 MiB$/)).toBeTruthy();
+  });
+
+  it("uploadTotalBytesが無い旧ジョブは転送済みバイト数のみ表示する", () => {
+    render(
+      <JobProgressView
+        job={buildRecordingJob({
+          status: "uploading",
+          progress: 120 * 1024 * 1024,
+          uploadTotalBytes: null,
+        })}
+        loadError={null}
+      />,
+    );
+
+    expect(screen.getByText(/^\d+ MiB アップロード済み$/)).toBeTruthy();
   });
 });
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { recordingWallClockScale } from "@sattori/shared";
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
-import { MIN_CONVERTING_RATE } from "./jobProgressBudget.ts";
+import { MIN_CONVERTING_RATE, MIN_UPLOAD_BYTES_PER_SECOND } from "./jobProgressBudget.ts";
 
 /**
  * 録画フェーズはリプレイを再生しながら録画するため、進捗(コンテンツ秒数)の進む速度は
@@ -15,6 +15,16 @@ function recordingRate(slowMotion: boolean): number {
 }
 const DEFAULT_CONVERTING_RATE = 4;
 const MAX_CONVERTING_RATE = 8;
+
+/**
+ * アップロードフェーズ(バイト/秒、Issue #202フォローアップ)の初期速度。自宅ワーカーの
+ * 本番実測(`docs/reports/2026-09-05-home-worker-upload-bandwidth.md`)では大きめのファイルで
+ * 概ね10〜12MB/sだったが、その25パーセンタイル(10.57MB/s)よりやや下の値を初期値に
+ * 使い、以降は`convertingRateRef`と同じ方式で実測値に基づき補正する。EC2は同リージョン
+ * S3で転送が一瞬なため、この初期値がほぼ意味を持たないまま完了する。
+ */
+const DEFAULT_UPLOAD_RATE_BYTES_PER_SECOND = 9 * 1024 * 1024;
+const MAX_UPLOAD_RATE_BYTES_PER_SECOND = 25 * 1024 * 1024;
 
 /**
  * 変換フェーズの速度推定に使う最小経過秒数。ごく短い間隔の2点間で速度を計算すると、
@@ -87,6 +97,7 @@ export function useEstimatedProgress(job: GetJobResponse | null): number | null 
   const [now, setNow] = useState(() => Date.now());
   const phaseStartRef = useRef<PhaseStartSample | null>(null);
   const convertingRateRef = useRef(DEFAULT_CONVERTING_RATE);
+  const uploadRateRef = useRef(DEFAULT_UPLOAD_RATE_BYTES_PER_SECOND);
   const displayRef = useRef<DisplaySample | null>(null);
 
   useEffect(() => {
@@ -107,6 +118,9 @@ export function useEstimatedProgress(job: GetJobResponse | null): number | null 
       if (job.status === "converting") {
         convertingRateRef.current = DEFAULT_CONVERTING_RATE;
       }
+      if (job.status === "uploading") {
+        uploadRateRef.current = DEFAULT_UPLOAD_RATE_BYTES_PER_SECOND;
+      }
       return;
     }
 
@@ -120,6 +134,17 @@ export function useEstimatedProgress(job: GetJobResponse | null): number | null 
         );
       }
     }
+
+    if (job.status === "uploading") {
+      const elapsedSeconds = (updatedAtMs - start.startAt) / 1000;
+      if (elapsedSeconds >= MIN_RATE_SAMPLE_SECONDS && job.progress > start.startProgress) {
+        const observedRate = (job.progress - start.startProgress) / elapsedSeconds;
+        uploadRateRef.current = Math.min(
+          MAX_UPLOAD_RATE_BYTES_PER_SECOND,
+          Math.max(MIN_UPLOAD_BYTES_PER_SECOND, observedRate),
+        );
+      }
+    }
   }, [job?.jobId, job?.status, job?.progress, job?.updatedAt]);
 
   const rate = job
@@ -127,7 +152,9 @@ export function useEstimatedProgress(job: GetJobResponse | null): number | null 
       ? recordingRate(job.slowMotion)
       : job.status === "converting"
         ? convertingRateRef.current
-        : undefined
+        : job.status === "uploading"
+          ? uploadRateRef.current
+          : undefined
     : undefined;
   const active = job !== null && job.progress !== null && rate !== undefined;
 
@@ -140,17 +167,19 @@ export function useEstimatedProgress(job: GetJobResponse | null): number | null 
     return () => clearInterval(timer);
   }, [active, job?.updatedAt]);
 
-  // 進捗が意味を持つのは録画・変換フェーズだけ。それ以外の status で残っている
-  // progress は前のフェーズ・前の試行の置き土産なので、値があっても表示しない
-  // （例: リトライ後の `launching` で前回の録画進捗が「8:20 経過」と出て、録画が
-  // 始まった途端に 0:00 へ戻る、という巻き戻りを防ぐ。Issue #108）。
+  // 進捗が意味を持つのは録画・変換・アップロードフェーズだけ。それ以外の status で
+  // 残っている progress は前のフェーズ・前の試行の置き土産なので、値があっても
+  // 表示しない（例: リトライ後の `launching` で前回の録画進捗が「8:20 経過」と出て、
+  // 録画が始まった途端に 0:00 へ戻る、という巻き戻りを防ぐ。Issue #108）。
   if (!job || job.progress === null || rate === undefined) {
     return null;
   }
 
-  // 表示の上限。サーバー値がリプレイの長さを超えて報告された場合(録画が想定より
-  // 伸びた等)でも、目盛りの外へはみ出した時間は表示しない。
-  const cap = job.replayInfo?.estimatedDurationSeconds ?? null;
+  // 表示の上限。recording/convertingではリプレイの長さ(秒)、uploadingでは
+  // アップロード予定バイト数(uploadTotalBytes)。サーバー値がこれを超えて報告された
+  // 場合(録画が想定より伸びた・最終チャンクの丸め誤差等)でも、目盛りの外へ
+  // はみ出した値は表示しない。
+  const cap = job.status === "uploading" ? job.uploadTotalBytes : job.replayInfo?.estimatedDurationSeconds ?? null;
   const target = cap === null ? job.progress : Math.min(job.progress, cap);
 
   // 表示値の累積はレンダー中にrefで進める。返り値そのものがこの累積結果であり、

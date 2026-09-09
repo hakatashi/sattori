@@ -207,6 +207,41 @@ describe("GET /jobs/{jobId}", () => {
     expect(body.posterImageUrl).toBeNull();
   });
 
+  it("アップロード中(uploading)のジョブもプレビュー画像URLを返す(Issue #202)", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, status: "uploading", previewImagePath: "previews/job-1/latest.jpg" },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.previewImageUrl).toBe("https://cdn.example.net/previews/job-1/latest.jpg");
+  });
+
+  it("アップロード中(uploading)のジョブはuploadTotalBytesを返す(Issue #202フォローアップ)", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, status: "uploading", uploadTotalBytes: 123456789 },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.uploadTotalBytes).toBe(123456789);
+  });
+
+  it("uploadTotalBytes未設定の旧ジョブはnullを返す", async () => {
+    const { uploadTotalBytes: _omit, ...jobWithoutUploadTotalBytes } = doneJob;
+    ddbMock.on(GetCommand).resolves({ Item: jobWithoutUploadTotalBytes });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.uploadTotalBytes).toBeNull();
+  });
+
   it("失敗したジョブはプレビュー画像URLを返さない", async () => {
     ddbMock.on(GetCommand).resolves({
       Item: { ...doneJob, status: "failed", previewImagePath: "previews/job-1/latest.jpg" },

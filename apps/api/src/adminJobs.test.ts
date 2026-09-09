@@ -99,12 +99,12 @@ describe("listJobs", () => {
     });
   });
 
-  it("status未指定の場合は全ステータス(7個)ぶんQueryする", async () => {
+  it("status未指定の場合は全ステータス(8個)ぶんQueryする", async () => {
     ddbMock.on(QueryCommand).resolves({ Items: [] });
 
     await listJobs("jobs-table", { limit: 20 });
 
-    expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(7);
+    expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(8);
   });
 
   it("複数ステータスの結果をcreatedAt降順でマージする", async () => {

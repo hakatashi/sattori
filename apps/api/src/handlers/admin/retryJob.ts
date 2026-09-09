@@ -64,6 +64,7 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
     previewImagePath: null,
     posterImagePath: null,
     progress: null,
+    uploadTotalBytes: null,
     error: null,
     errorCode: null,
     launchedAt: null,

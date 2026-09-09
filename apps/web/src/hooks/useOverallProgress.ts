@@ -15,8 +15,9 @@ const STATUS_STEP: Record<JobStatus, number> = {
   launching: 1,
   recording: 2,
   converting: 3,
-  done: 4,
-  failed: 4,
+  uploading: 4,
+  done: 5,
+  failed: 5,
 };
 
 const TICK_INTERVAL_MS = 250;
@@ -49,10 +50,13 @@ interface RetrySuspectedSample {
 function computeElapsedSeconds(params: {
   status: JobStatus;
   phaseElapsedSeconds: number;
+  /** recording/convertingでは秒数、uploadingでは転送済みバイト数(単位はフェーズ依存)。 */
   phaseProgressSeconds: number | null;
+  /** uploadingの分母(転送予定バイト数)。他フェーズでは未使用。 */
+  uploadTotalBytes: number | null;
   budgets: PhaseBudgets;
 }): number {
-  const { status, phaseElapsedSeconds, phaseProgressSeconds, budgets } = params;
+  const { status, phaseElapsedSeconds, phaseProgressSeconds, uploadTotalBytes, budgets } = params;
   // 進捗(phaseProgressSeconds)はワーカーが報告する「コンテンツ秒数」で、バジェットは
   // 実時間。低速録画(Issue #68)ではこの2つの単位が2倍ずれるため、必ず換算してから
   // 突き合わせる(等倍録画では係数1で従来と同じ)。
@@ -83,6 +87,18 @@ function computeElapsedSeconds(params: {
       const ratio = Math.min(1, (phaseProgressSeconds ?? 0) / budgets.recordingContent);
       return budgets.launching + budgets.recording + ratio * budgets.converting;
     }
+    case "uploading": {
+      // phaseProgressSecondsはuploadingでは「転送済みバイト数」で、実バイトカウント
+      // (Issue #202フォローアップ、worker/entrypoint.pyのon_progressコールバック)。
+      // convertingと同じくratioベースにすることで、実際のアップロード完了と同時に
+      // このフェーズの持ち分(budgets.uploading)を使い切るようにする。uploadTotalBytes
+      // が未確定(旧ジョブ・reset_progress直後でまだ届いていない)間は0扱いにする。
+      if (uploadTotalBytes === null || uploadTotalBytes <= 0) {
+        return budgets.launching + budgets.recording + budgets.converting;
+      }
+      const ratio = Math.min(1, (phaseProgressSeconds ?? 0) / uploadTotalBytes);
+      return budgets.launching + budgets.recording + budgets.converting + ratio * budgets.uploading;
+    }
     case "done":
       return budgets.total;
   }
@@ -96,6 +112,11 @@ function budgetForStatus(status: JobStatus, budgets: PhaseBudgets): number | nul
       return budgets.recording;
     case "converting":
       return budgets.converting;
+    case "uploading":
+      // budgets.uploadingはuploadTotalBytes判明前は0になる(=budgetForPhaseがnullでない
+      // 0を返すと誤ってオーバーラン扱いされうるため、isPhaseOverrun側は「budgetForPhaseが
+      // 正の場合のみ」判定する前提。ここでは単純にbudgets.uploadingをそのまま返す)。
+      return budgets.uploading > 0 ? budgets.uploading : null;
     default:
       return null;
   }
@@ -188,6 +209,7 @@ export function useOverallProgress(
     // 低速録画(Issue #68)は録画フェーズに実時間で2倍かかる。これを渡さないと
     // 録画の途中でバジェットを使い切り、残り時間が消えたうえリトライ疑いを誤検知する。
     job.slowMotion,
+    job.uploadTotalBytes,
   );
   const phaseStart = phaseStartRef.current;
   const phaseElapsedSeconds =
@@ -199,6 +221,7 @@ export function useOverallProgress(
     status: job.status,
     phaseElapsedSeconds,
     phaseProgressSeconds,
+    uploadTotalBytes: job.uploadTotalBytes,
     budgets,
   });
 

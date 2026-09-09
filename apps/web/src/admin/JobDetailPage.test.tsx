@@ -46,6 +46,7 @@ const job: AdminJobRecord = {
   outputBytes720p: null,
   estimatedDurationSeconds: 900,
   progress: 120,
+  uploadTotalBytes: null,
   previewImagePath: "progress/job-1/1234.jpg",
   posterImagePath: null,
   replayInfo: null,

@@ -19,9 +19,10 @@
   実行を開始する。同一jobIdへの複数回呼び出しは最初の1回のみ起動し、以降は現在の状態を
   冪等に返す |
 | `GET /jobs/{jobId}` | ジョブ状態取得（ポーリング用）。完了時に CloudFront のDL URL、
-  進行中は現在フェーズ内で実際に処理が完了した秒数(`progress`。全体に対する割合では
-  ない)とプレビュー画像URL(`previewImageUrl`)も返す。低速録画で走るかどうか
-  (`slowMotion`)も返す（後述） |
+  進行中は現在フェーズ内で実際に処理が完了した量(`progress`。全体に対する割合では
+  なく、単位はフェーズ依存——recording/convertingは秒数、uploadingは転送済みバイト数
+  でIssue #202フォローアップ、分母は`uploadTotalBytes`)とプレビュー画像URL
+  (`previewImageUrl`)も返す。低速録画で走るかどうか(`slowMotion`)も返す（後述） |
 | `GET /worker-availability` | 常駐ワーカー（自宅ワーカー、Issue #49）の空き状況。
   ページAが詳細設定の「低速録画」を有効化してよいかの判定にだけ使う。**認証なしで
   公開されるため`workerId`・台数・負荷は返さない**（開発者の自宅環境の稼働状況を
@@ -39,14 +40,20 @@
 ## ジョブ状態機械（`src/job.ts`）
 
 ```
-pending → queued → launching → recording → converting → done | failed
+pending → queued → launching → recording → converting → uploading → done | failed
 ```
 
 - `pending`: マジックリンク送信済み・ジョブページへのアクセス（録画起動）待ち。
   24時間（bot/濫用対策としての期限。アップロード用S3の自動削除とは独立）以内に
   起動されなければ受付期限切れとして扱う（`JobRecord.pendingExpiresAt`）。
 - `queued` 以降はワーカー・Step Functionsが書き込む。`converting` は録画完了
-  （生動画チェックポイントアップロード済み）〜配信用変換〜出力アップロード完了までを指す。
+  （生動画チェックポイントアップロード済み）〜配信用変換までを指す。`uploading` は
+  変換済み動画のS3アップロード中（Issue #202）——EC2は同リージョンS3で一瞬なので
+  実質素通りするだけだが、自宅ワーカーは回線次第で数分かかりうるため独立したフェーズ
+  として可視化してある（ワーカー内で自宅/EC2を分岐させないため、遷移自体は常に共通、
+  `worker/entrypoint.py`）。遷移時に転送予定バイト数（`uploadTotalBytes`）を記録し、
+  以降`progress`で転送済みバイト数を報告する（Issue #202フォローアップ、
+  `apps/web/src/hooks/jobProgressBudget.ts`が実進捗バー・残り時間推定に使う）。
 - `isTerminalStatus()` が `done`/`failed` を終端状態として判定する（フロントエンドの
   ポーリング停止判定に使用）。
 

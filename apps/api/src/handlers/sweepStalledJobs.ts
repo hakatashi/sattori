@@ -20,7 +20,13 @@ const STATUS_CREATED_AT_INDEX = "StatusCreatedAtIndex";
  * ここで問い合わせの対象から外し、無駄なGSIクエリと`DescribeExecution`呼び出しを
  * 避ける（`pending`のジョブはStep Functions実行自体が存在しない）。
  */
-const TARGET_STATUSES: readonly JobStatus[] = ["queued", "launching", "recording", "converting"];
+const TARGET_STATUSES: readonly JobStatus[] = [
+  "queued",
+  "launching",
+  "recording",
+  "converting",
+  "uploading",
+];
 
 /** 1回の掃除の結果。CloudWatch Logsに残す運用把握用のサマリ。 */
 export interface StalledJobSweepResult {

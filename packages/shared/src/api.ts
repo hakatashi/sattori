@@ -104,11 +104,20 @@ export interface GetJobResponse {
   errorCode: string | null;
   updatedAt: string;
   /**
-   * 現在のフェーズ（recording/converting）内で実際に処理が完了した時間（秒）。
-   * 全体の長さに対する割合ではなく経過秒数そのもの（不明なら null）。割合として
-   * 表示する場合は `replayInfo.estimatedDurationSeconds` を分母として算出する。
+   * 現在のフェーズ内で実際に処理が完了した量（`JobRecord.progress`をそのまま転記）。
+   * 単位はフェーズによって異なる（不明なら null）:
+   * - recording/converting: 経過秒数。割合表示は`replayInfo.estimatedDurationSeconds`が分母。
+   * - uploading（Issue #202フォローアップ）: 転送済みバイト数。割合表示は
+   *   `uploadTotalBytes`が分母。
    */
   progress: number | null;
+  /**
+   * アップロードフェーズ（Issue #202フォローアップ）で転送予定の配信用動画のバイト数
+   * （`JobRecord.uploadTotalBytes`をそのまま転記）。`progress`の分母として使う
+   * （`apps/web/src/hooks/jobProgressBudget.ts`）。uploading未到達・このフィールド
+   * 追加より前の旧ジョブでは null。
+   */
+  uploadTotalBytes: number | null;
   /**
    * 完了時のプレビュー再生用URL（`<video>`の`src`、720p版。無ければ元解像度版）。
    * `downloadUrl720p`と実体は同じオブジェクトだが、こちらは
