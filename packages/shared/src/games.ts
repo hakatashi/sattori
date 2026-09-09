@@ -4,6 +4,12 @@
  */
 export const GAME_IDS = [
   "th06", // 東方紅魔郷
+  // 2026年の紅魔郷リメイク2本。リプレイのマジックバイトは th06 と同じ `T6RP` で、
+  // ヘッダのバージョン語で識別する（packages/replay-parser の `games/th06.ts`）。
+  // th06 とは互換性が無い（Classic のリプレイは 1.02h では読み込めない）ため、
+  // 別タイトルとして扱う。録画は未対応なので `SUPPORTED_GAME_IDS` には入れない。
+  "th06c", // 東方紅魔郷: Classic
+  "th06nc", // 東方紅魔郷: New Classic
   "th07", // 東方妖々夢
   "th08", // 東方永夜抄
   "th09", // 東方花映塚
@@ -44,6 +50,22 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Embodiment of Scarlet Devil",
     japaneseShortName: "紅",
     englishShortName: "EoSD",
+  },
+  th06c: {
+    id: "th06c",
+    fullName: "東方紅魔郷: Classic",
+    japaneseName: "東方紅魔郷: Classic",
+    englishName: "Embodiment of Scarlet Devil: Classic",
+    japaneseShortName: "紅C",
+    englishShortName: "EoSD:C",
+  },
+  th06nc: {
+    id: "th06nc",
+    fullName: "東方紅魔郷: New Classic",
+    japaneseName: "東方紅魔郷: New Classic",
+    englishName: "Embodiment of Scarlet Devil: New Classic",
+    japaneseShortName: "紅NC",
+    englishShortName: "EoSD:NC",
   },
   th07: {
     id: "th07",
