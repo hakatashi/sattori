@@ -203,6 +203,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     spotPricePerHour: null,
     estimatedDurationSeconds,
     progress: null,
+    uploadTotalBytes: null,
     previewImagePath: null,
     posterImagePath: null,
     replayInfo,

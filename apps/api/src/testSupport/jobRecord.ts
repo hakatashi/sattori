@@ -31,6 +31,7 @@ const DEFAULT_JOB_RECORD: JobRecord = {
   spotPricePerHour: null,
   estimatedDurationSeconds: 900,
   progress: null,
+  uploadTotalBytes: null,
   previewImagePath: null,
   posterImagePath: null,
   replayInfo: null,

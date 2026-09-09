@@ -16,6 +16,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-09",
+    ja: "録画ジョブページに「アップロード」のステップを追加",
+    en: "Added an 'Upload' step to the recording job page",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/202",
+  },
+  {
     date: "2026-09-08",
     ja: "正常なリプレイが誤って録画失敗と判定されることがある不具合を修正",
     en: "Fixed an issue where a normal replay could be incorrectly flagged as a recording failure",

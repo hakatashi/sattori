@@ -46,8 +46,8 @@
 | ファイル | 役割 |
 | --- | --- |
 | `entrypoint.py` | ジョブ全体の制御。チェックポイント確認 → (再開でなければ)S3 DL → 録画 →
-  生動画をS3へチェックポイントUP → 配信用変換 → S3 UP → DynamoDB/taskToken 通知。`GAME`
-  環境変数で `record_thNN.py` を呼び分ける |
+  生動画をS3へチェックポイントUP → 配信用変換 → (status: uploading、Issue #202) → S3 UP →
+  DynamoDB/taskToken 通知。`GAME` 環境変数で `record_thNN.py` を呼び分ける |
 | `recording/` | 全タイトル共通の録画パイプライン本体。責務ごとに11モジュールへ分割してあり、
   Xvfb起動・クロップ座標の確定・録画・終了検知・自動リトライ・映像と音声の
   別プロセス録画・音声のジョブ専用sinkへの分離を担う。**モジュール一覧と、どの挙動がどの決定
@@ -198,6 +198,14 @@ S3オブジェクトメタデータ(`sattori-time-scale`)として運ぶ。ま�
   末尾の進捗」というレコードがユーザーに見える。ジョブページの経過時間表示は**巻き戻らない
   こと**を保証する作りになっている(`apps/web/src/hooks/useEstimatedProgress.ts`)ため、
   この一瞬の値を掴むと以降の進捗が表示に反映されない。
+
+`progress` の単位はフェーズごとに異なる(呼び出し側が単位を決める、`status.py`は関知しない):
+録画・変換フェーズは前述のとおり秒数だが、**アップロードフェーズ(Issue #202フォローアップ)
+だけは転送済みバイト数**を渡す。分母は同じ更新で書く `uploadTotalBytes`(`update_status()`の
+`upload_total_bytes`引数、アップロード開始前=転送前に`os.path.getsize()`で分かる値)。
+フロント側の実進捗バー・残り時間推定はこの2値の比で計算する
+(`apps/web/src/hooks/jobProgressBudget.ts`。自宅ワーカーの実測アップロード速度は
+[`docs/reports/2026-09-05-home-worker-upload-bandwidth.md`](../docs/reports/2026-09-05-home-worker-upload-bandwidth.md))。
 
 ## 8. リポジトリに含まれない資産とタイトル資産アーカイブ(Issue #22)
 
