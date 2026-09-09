@@ -1,14 +1,14 @@
 {
-  "game": "th06",
-  "gameTitle": "東方紅魔郷 ～ the Embodiment of Scarlet Devil.",
-  "formatVersion": 258,
+  "game": "th06c",
+  "gameTitle": "東方紅魔郷: Classic ～ the Embodiment of Scarlet Devil.",
+  "formatVersion": 259,
   "player": "koyi",
-  "date": "05/26/11",
+  "date": "09/10/26",
   "parsedDate": {
     "fullYear": null,
-    "shortYear": 11,
-    "month": 5,
-    "date": 26,
+    "shortYear": 26,
+    "month": 9,
+    "date": 10,
     "hours": null,
     "minutes": null,
     "seconds": null
@@ -17,19 +17,19 @@
   "character": "ReimuA",
   "characterNameJa": "霊符",
   "characterNameEn": "Reimu A",
-  "difficulty": "Normal",
+  "difficulty": "Hard",
   "stage": null,
-  "score": 66329830,
+  "score": 114250700,
   "cleared": null,
   "loadout": null,
   "splits": [
     {
       "stage": 1,
-      "score": 5549530,
+      "score": 6097110,
       "power": "0",
       "piv": null,
       "lives": {
-        "count": 4,
+        "count": 2,
         "pieces": null,
         "maxPieces": null
       },
@@ -42,15 +42,15 @@
       "additional": {
         "rank": 16
       },
-      "frameCount": 8836
+      "frameCount": 9110
     },
     {
       "stage": 2,
-      "score": 11532120,
-      "power": "71",
+      "score": 15152180,
+      "power": "62",
       "piv": null,
       "lives": {
-        "count": 4,
+        "count": 2,
         "pieces": null,
         "maxPieces": null
       },
@@ -61,22 +61,22 @@
       },
       "graze": null,
       "additional": {
-        "rank": 31
+        "rank": 32
       },
-      "frameCount": 11525
+      "frameCount": 12156
     },
     {
       "stage": 3,
-      "score": 25876790,
+      "score": 32592600,
       "power": "128",
       "piv": null,
       "lives": {
-        "count": 5,
+        "count": 3,
         "pieces": null,
         "maxPieces": null
       },
       "bombs": {
-        "count": 2,
+        "count": 4,
         "pieces": null,
         "maxPieces": null
       },
@@ -84,15 +84,15 @@
       "additional": {
         "rank": 32
       },
-      "frameCount": 14215
+      "frameCount": 15128
     },
     {
       "stage": 4,
-      "score": 42862430,
+      "score": 62646390,
       "power": "128",
       "piv": null,
       "lives": {
-        "count": 7,
+        "count": 5,
         "pieces": null,
         "maxPieces": null
       },
@@ -105,12 +105,12 @@
       "additional": {
         "rank": 32
       },
-      "frameCount": 18471
+      "frameCount": 19951
     },
     {
       "stage": 5,
-      "score": 50588480,
-      "power": "123",
+      "score": 78943110,
+      "power": "128",
       "piv": null,
       "lives": {
         "count": 5,
@@ -118,23 +118,23 @@
         "maxPieces": null
       },
       "bombs": {
-        "count": 3,
+        "count": 0,
         "pieces": null,
         "maxPieces": null
       },
       "graze": null,
       "additional": {
-        "rank": 16
+        "rank": 32
       },
-      "frameCount": 16648
+      "frameCount": 18262
     },
     {
       "stage": 6,
-      "score": 66329830,
+      "score": 114250700,
       "power": "128",
       "piv": null,
       "lives": {
-        "count": 4,
+        "count": 3,
         "pieces": null,
         "maxPieces": null
       },
@@ -145,10 +145,10 @@
       },
       "graze": null,
       "additional": {
-        "rank": 11
+        "rank": 16
       },
-      "frameCount": 19298
+      "frameCount": 18796
     }
   ],
-  "frameCount": 88993
+  "frameCount": 93403
 }

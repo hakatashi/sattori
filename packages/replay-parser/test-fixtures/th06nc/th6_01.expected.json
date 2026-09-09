@@ -1,14 +1,14 @@
 {
-  "game": "th06",
-  "gameTitle": "東方紅魔郷 ～ the Embodiment of Scarlet Devil.",
-  "formatVersion": 258,
+  "game": "th06nc",
+  "gameTitle": "東方紅魔郷: New Classic ～ the Embodiment of Scarlet Devil.",
+  "formatVersion": 271,
   "player": "koyi",
-  "date": "05/26/11",
+  "date": "09/10/26",
   "parsedDate": {
     "fullYear": null,
-    "shortYear": 11,
-    "month": 5,
-    "date": 26,
+    "shortYear": 26,
+    "month": 9,
+    "date": 10,
     "hours": null,
     "minutes": null,
     "seconds": null
@@ -17,19 +17,19 @@
   "character": "ReimuA",
   "characterNameJa": "霊符",
   "characterNameEn": "Reimu A",
-  "difficulty": "Normal",
+  "difficulty": "Hard",
   "stage": null,
-  "score": 66329830,
+  "score": 91645280,
   "cleared": null,
   "loadout": null,
   "splits": [
     {
       "stage": 1,
-      "score": 5549530,
+      "score": 6994400,
       "power": "0",
       "piv": null,
       "lives": {
-        "count": 4,
+        "count": 2,
         "pieces": null,
         "maxPieces": null
       },
@@ -39,39 +39,16 @@
         "maxPieces": null
       },
       "graze": null,
-      "additional": {
-        "rank": 16
-      },
-      "frameCount": 8836
+      "additional": null,
+      "frameCount": 10790
     },
     {
       "stage": 2,
-      "score": 11532120,
-      "power": "71",
+      "score": 14488550,
+      "power": "54",
       "piv": null,
       "lives": {
-        "count": 4,
-        "pieces": null,
-        "maxPieces": null
-      },
-      "bombs": {
-        "count": 3,
-        "pieces": null,
-        "maxPieces": null
-      },
-      "graze": null,
-      "additional": {
-        "rank": 31
-      },
-      "frameCount": 11525
-    },
-    {
-      "stage": 3,
-      "score": 25876790,
-      "power": "128",
-      "piv": null,
-      "lives": {
-        "count": 5,
+        "count": 2,
         "pieces": null,
         "maxPieces": null
       },
@@ -81,60 +58,16 @@
         "maxPieces": null
       },
       "graze": null,
-      "additional": {
-        "rank": 32
-      },
-      "frameCount": 14215
+      "additional": null,
+      "frameCount": 14212
     },
     {
-      "stage": 4,
-      "score": 42862430,
+      "stage": 3,
+      "score": 27714740,
       "power": "128",
       "piv": null,
       "lives": {
-        "count": 7,
-        "pieces": null,
-        "maxPieces": null
-      },
-      "bombs": {
-        "count": 0,
-        "pieces": null,
-        "maxPieces": null
-      },
-      "graze": null,
-      "additional": {
-        "rank": 32
-      },
-      "frameCount": 18471
-    },
-    {
-      "stage": 5,
-      "score": 50588480,
-      "power": "123",
-      "piv": null,
-      "lives": {
-        "count": 5,
-        "pieces": null,
-        "maxPieces": null
-      },
-      "bombs": {
         "count": 3,
-        "pieces": null,
-        "maxPieces": null
-      },
-      "graze": null,
-      "additional": {
-        "rank": 16
-      },
-      "frameCount": 16648
-    },
-    {
-      "stage": 6,
-      "score": 66329830,
-      "power": "128",
-      "piv": null,
-      "lives": {
-        "count": 4,
         "pieces": null,
         "maxPieces": null
       },
@@ -144,11 +77,66 @@
         "maxPieces": null
       },
       "graze": null,
-      "additional": {
-        "rank": 11
+      "additional": null,
+      "frameCount": 17851
+    },
+    {
+      "stage": 4,
+      "score": 53848080,
+      "power": "122",
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
       },
-      "frameCount": 19298
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": null,
+      "frameCount": 22152
+    },
+    {
+      "stage": 5,
+      "score": 66473830,
+      "power": "128",
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": null,
+      "frameCount": 17795
+    },
+    {
+      "stage": 6,
+      "score": 91645280,
+      "power": "128",
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": null,
+      "frameCount": 22555
     }
   ],
-  "frameCount": 88993
+  "frameCount": 105355
 }

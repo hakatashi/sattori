@@ -1,31 +1,31 @@
 {
-  "game": "th06",
-  "gameTitle": "東方紅魔郷 ～ the Embodiment of Scarlet Devil.",
-  "formatVersion": 258,
+  "game": "th06c",
+  "gameTitle": "東方紅魔郷: Classic ～ the Embodiment of Scarlet Devil.",
+  "formatVersion": 259,
   "player": "koyi",
-  "date": "08/12/11",
+  "date": "09/10/26",
   "parsedDate": {
     "fullYear": null,
-    "shortYear": 11,
-    "month": 8,
-    "date": 12,
+    "shortYear": 26,
+    "month": 9,
+    "date": 10,
     "hours": null,
     "minutes": null,
     "seconds": null
   },
   "recordedAt": null,
-  "character": "ReimuA",
-  "characterNameJa": "霊符",
-  "characterNameEn": "Reimu A",
-  "difficulty": "Extra",
+  "character": "MarisaB",
+  "characterNameJa": "恋符",
+  "characterNameEn": "Marisa B",
+  "difficulty": "Hard",
   "stage": null,
-  "score": 38414340,
+  "score": 1332850,
   "cleared": null,
   "loadout": null,
   "splits": [
     {
-      "stage": 7,
-      "score": 38414340,
+      "stage": 1,
+      "score": 1332850,
       "power": "0",
       "piv": null,
       "lives": {
@@ -42,8 +42,8 @@
       "additional": {
         "rank": 16
       },
-      "frameCount": 22021
+      "frameCount": 2426
     }
   ],
-  "frameCount": 22021
+  "frameCount": 2426
 }

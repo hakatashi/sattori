@@ -1,0 +1,47 @@
+{
+  "game": "th06nc",
+  "gameTitle": "東方紅魔郷: New Classic ～ the Embodiment of Scarlet Devil.",
+  "formatVersion": 271,
+  "player": "koyi",
+  "date": "09/10/26",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 9,
+    "date": 10,
+    "hours": null,
+    "minutes": null,
+    "seconds": null
+  },
+  "recordedAt": null,
+  "character": "ReimuB",
+  "characterNameJa": "夢符",
+  "characterNameEn": "Reimu B",
+  "difficulty": null,
+  "stage": "Spell Practice No. 108",
+  "score": 5710640,
+  "cleared": null,
+  "loadout": null,
+  "splits": [
+    {
+      "stage": 6,
+      "score": 5710640,
+      "power": "128",
+      "piv": null,
+      "lives": {
+        "count": 0,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": null,
+      "frameCount": 1063
+    }
+  ],
+  "frameCount": 1063
+}
