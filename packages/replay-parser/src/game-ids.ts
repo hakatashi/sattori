@@ -44,8 +44,8 @@ export type ReplayGameId = (typeof REPLAY_GAME_IDS)[number];
 
 export const REPLAY_GAME_TITLES: Record<ReplayGameId, string> = {
   th06: "東方紅魔郷 ～ the Embodiment of Scarlet Devil.",
-  th06c: "東方紅魔郷: Classic",
-  th06nc: "東方紅魔郷: New Classic",
+  th06c: "東方紅魔郷: Classic ～ the Embodiment of Scarlet Devil.",
+  th06nc: "東方紅魔郷: New Classic ～ the Embodiment of Scarlet Devil.",
   th07: "東方妖々夢 ～ Perfect Cherry Blossom.",
   th08: "東方永夜抄 ～ Imperishable Night.",
   th09: "東方花映塚 ～ Phantasmagoria of Flower View.",
