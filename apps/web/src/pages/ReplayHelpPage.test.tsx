@@ -17,8 +17,15 @@ describe("ReplayHelpPage", () => {
     expect(screen.getByText(/「東方紅魔郷」をインストールしたフォルダ/)).toBeTruthy();
     expect(screen.getByText("C:\\Program Files (x86)\\東方紅魔郷\\replay")).toBeTruthy();
     expect(screen.getByText("%LOCALAPPDATA%\\VirtualStore\\Program Files (x86)\\東方紅魔郷\\replay")).toBeTruthy();
-    expect(screen.queryByText(/Steam\\steamapps/)).toBeNull();
+    expect(screen.queryByText("C:\\Program Files (x86)\\Steam\\steamapps\\common\\th06\\replay")).toBeNull();
     expect(screen.getByText("%APPDATA%\\ShanghaiAlice\\th20\\replay")).toBeTruthy();
+  });
+
+  it("th06c(紅魔郷リメイク)はSteamライブラリ配下のゲームディレクトリを案内する", () => {
+    render(<ReplayHelpPage />);
+
+    expect(screen.getByText(/「東方紅魔郷: Classic」はSteamでのみ配信/)).toBeTruthy();
+    expect(screen.getByText("C:\\Program Files (x86)\\Steam\\steamapps\\common\\th06c\\replay")).toBeTruthy();
   });
 
   it("録画非対応タイトル(東方風神録)もリストに表示し、選択するとSteamのパスも出す", () => {
