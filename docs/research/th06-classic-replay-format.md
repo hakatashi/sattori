@@ -2,6 +2,7 @@
 
 調査日: 2026-09-10 / 対象: 2026-09-10 発売の紅魔郷リメイク2作 /
 結果を実装した場所: `packages/replay-parser/src/games/th06.ts`
+/ English version: [`th06-classic-replay-format.en.md`](th06-classic-replay-format.en.md)
 
 **結論**: 両作とも th06（東方紅魔郷 1.02h）のリプレイ形式の直系の派生で、
 マジック `T6RP`・+7 加算鍵による難読化・「固定ヘッダ→7個のステージ別スナップショット→
