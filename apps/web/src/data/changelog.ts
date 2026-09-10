@@ -17,14 +17,14 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-11",
-    ja: "「東方錦上京」(th20) の低速録画をサーバーの混雑状況に関わらず常に利用できるよう改善",
-    en: "Slow-motion recording for \"Unfinished Dream of All Living Ghost\" (th20) is now available at all times regardless of server load",
+    ja: "東方錦上京 (th20) の低速録画をサーバーの混雑状況に関わらず常に利用できるよう改善",
+    en: "Slow-motion recording for Unfinished Dream of All Living Ghost (th20) is now available at all times regardless of server load",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/245",
   },
   {
     date: "2026-09-10",
-    ja: "「東方紅魔郷: Classic」(th06c) の録画に対応",
-    en: "Added recording support for \"the Embodiment of Scarlet Devil: Classic\" (th06c)",
+    ja: "東方紅魔郷: Classic (th06c) の録画に対応",
+    en: "Added recording support for the Embodiment of Scarlet Devil: Classic (th06c)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/240",
     important: true,
   },
