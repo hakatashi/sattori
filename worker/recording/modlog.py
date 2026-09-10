@@ -27,10 +27,13 @@ SCORE_MONITOR_RE = re.compile(
 
 # MOD内部のスコア生値を画面表示値(=リプレイファイルの記録スコアと同じ単位)へ
 # 換算する倍率。タイトルごとに実機で確認済みの値
-# (reports/53_phase53_score_monitor_all_titles.md)。th06のみ等倍で、他は
-# TH10以降のエンジンの慣習(内部値が表示値の1/10)を引き継いでいる。
+# (reports/53_phase53_score_monitor_all_titles.md)。th06・th06cは等倍(th06cは
+# オリジナルth06の完全な再実装だが、スコアの倍率はth06から変わっていない、
+# touhou-recorder reports/75)で、他はTH10以降のエンジンの慣習(内部値が表示値の
+# 1/10)を引き継いでいる。
 GAME_SCORE_MULTIPLIERS = {
     "th06": 1,
+    "th06c": 1,
     "th07": 10,
     "th08": 10,
     "th10": 10,
