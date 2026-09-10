@@ -121,7 +121,8 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 
 **低速録画の制御は起動側が渡す環境変数で表現する**（ワーカーコンテナ側は自分がどこで動いているかを
 知らず、`FPS_LIMIT_TARGET_HZ` の有無だけを見る。`apps/api/src/workerEnv.ts`、
-[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
+[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)・
+[`docs/decisions/0045`](../../docs/decisions/0045-ec2-slow-motion-for-th20.md)）。
 
 契約の詳細と運用は`apps/api/README.md`「自宅ワーカーへのジョブ割り当て」・
 `home-worker/README.md`を参照。
