@@ -22,7 +22,9 @@ echo "$SATTORI_TITLE_ASSETS_BUCKET"
 > （クリーンスレート方針、旧 us-east-1 バケットのデータは引き継いでいない）。上記の
 > 解決結果が常に正であり、ドキュメントに書かれた古いバケット名は使わないこと。
 
-## 1. `tar` に `-h`（`--dereference`）を付けないこと
+## 1. `tar` 作成時の注意点
+
+### 1.1 `-h`（`--dereference`）を付けないこと
 
 WINEPREFIX 配下には `dosdevices/z:` → `/` のような絶対パスへのシンボリックリンクが
 Wine のドライブマッピングとして正規に存在する。`-h` はアーカイブ対象ツリー内の
@@ -31,8 +33,24 @@ Wine のドライブマッピングとして正規に存在する。`-h` はア�
 肥大化した実例あり）。
 
 内部のシンボリックリンクはリンクのまま格納してよい。`worker/title_assets.py` の
-`tar.extractall(..., filter="fully_trusted")` により、展開時に絶対リンクとして正しく
-復元される。
+`tar.extractall` により、展開時に絶対リンクとして正しく復元される。
+
+### 1.2 セーブデータ（`score.dat`）やランタイム生成物（`log.txt`等）を同梱しないこと
+
+開発機やローカル検証でプレイ・録画した際のセーブデータ（`score.dat`）やランタイムログ
+（`log.txt`）、Steam Cloud メタデータ（`steam_autocloud.vdf`）、リプレイ残骸（`replay/`）が
+`games/{title}/` 配下に残っていると、アーカイブに同梱されて本番ワーカーへ展開されてしまう。
+録画ジョブは常にクリーンな状態で実行されるべきであるため、**`tar` 作成時に `--exclude` で
+除外するか、事前に削除すること**。
+
+```bash
+TAR_EXCLUDES=(
+  --exclude='score.dat'
+  --exclude='log.txt'
+  --exclude='steam_autocloud.vdf'
+  --exclude='games/*/replay/*'
+)
+```
 
 ## 2. タイトルごとの手順
 
@@ -50,6 +68,7 @@ Wine のドライブマッピングとして正規に存在する。`-h` はア�
 
 ```bash
 tar -czf /tmp/th06-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th06 \
   prefixes/th06-wined3d-gl \
   mods/common/build/injector.exe \
@@ -74,6 +93,7 @@ WINEPREFIXは`WINEARCH=win64`で作成する（§3参照、他タイトルの32b
 
 ```bash
 tar -czf /tmp/th06c-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th06c \
   prefixes/th06c-wined3d-gl \
   mods/common/build/injector64.exe \
@@ -91,6 +111,7 @@ aws s3 cp /tmp/th06c-assets.tar.gz \
 
 ```bash
 tar -czf /tmp/th07-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th07 \
   prefixes/th07-wined3d-gl \
   mods/common/build/injector.exe \
@@ -110,6 +131,7 @@ aws s3 cp /tmp/th07-assets.tar.gz \
 
 ```bash
 tar -czf /tmp/th08-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th08 \
   prefixes/th08-wined3d-gl \
   mods/common/build/injector.exe \
@@ -127,6 +149,7 @@ VsyncPatch本体（`vpatch.exe` / `vpatch.ini` / `vpatch_th09.dll`）は同梱�
 
 ```bash
 tar -czf /tmp/th09-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th09 \
   prefixes/th09-wined3d-gl \
   mods/common/build/injector.exe \
@@ -145,6 +168,7 @@ VsyncPatch本体（`vpatch.exe` / `vpatch.ini` / `vpatch_th10.dll`）を `games/
 
 ```bash
 tar -czf /tmp/th10-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th10 \
   prefixes/th10-wined3d-gl \
   mods/common/build/injector.exe \
@@ -164,6 +188,7 @@ MS明朝（`msmincho.ttc`、NPC 会話シーン等で必要、`worker/docs/title
 
 ```bash
 tar -czf /tmp/th11-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th11 \
   prefixes/th11-wined3d-gl \
   mods/common/build/injector.exe \
@@ -183,6 +208,7 @@ VsyncPatch本体（`vpatch.exe` / `vpatch.ini` / `vpatch_th12.dll`）を `games/
 
 ```bash
 tar -czf /tmp/th12-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th12 \
   prefixes/th12-wined3d-gl \
   mods/common/build/injector.exe \
@@ -209,6 +235,7 @@ aws s3 cp /tmp/th12-assets.tar.gz \
 
 ```bash
 tar -czf /tmp/th20-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th20 \
   prefixes/th20-wined3d-gl \
   mods/common/build/injector.exe \
