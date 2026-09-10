@@ -11,6 +11,8 @@
 運用に留める。Wine自体のsystem D-Bus接続無効化は影響範囲が広いため、この決定では採らず
 選択肢として記録するだけにする。
 
+> **注**: 本決定に記述されている `worker/recording_common.py`（`kill_wine_and_wait()` / `_record_with_retry()`）は、PR #206 / [`0041`](0041-worker-recording-package-split.md) により `worker/recording/` パッケージ（`recording.process`, `recording.pipeline`）へ分割されました。
+
 ## 背景
 
 2026-08-27、自宅ワーカーのホスト(HakataMatrix)でsystemdがハングし手動電源断からの復旧を

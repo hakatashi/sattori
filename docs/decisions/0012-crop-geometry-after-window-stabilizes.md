@@ -11,6 +11,8 @@
 なる。負荷の高い EC2 ほど踏みやすい。`recording_common.attempt_recording()` の座標確定
 まわりを触る前に読むこと。
 
+> **注**: 本決定に記述されている `worker/recording_common.py`（`attempt_recording()`・`wait_for_stable_geometry()`・`find_window()` 等）は、PR #206 / [`0041`](0041-worker-recording-package-split.md) により `worker/recording/` パッケージ（`recording.window`, `recording.pipeline`）へ分割されました。
+
 ## 背景
 
 - th11 は openbox の初期配置 `client=(159,119)`(=800x600に収まるようクランプされた位置)で

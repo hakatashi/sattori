@@ -10,6 +10,8 @@ th20 のデシンク（リプレイずれ）対策として有志製パッチ **
 さらに **`--attach` に PID を渡してはならない**（Wine 上ではハングする）。
 どちらも踏むと静かに壊れるので、`attach_thprac()` を触る前に必ず読むこと。
 
+> **注**: 本決定に記述されている `worker/recording_common.py`（`attach_thprac()`、`THPRAC_ATTACH_*`）は、PR #206 / [`0041`](0041-worker-recording-package-split.md) により `worker/recording/process.py`（`recording.process`）および `worker/recording/config.py` へ分割されました。
+
 ## 背景
 
 th20 のデシンクの主因は、ZUN 側のバグで挙動が非決定的になることにある。有志製パッチ

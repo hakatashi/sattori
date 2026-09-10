@@ -9,6 +9,8 @@
 
 ---
 
+> **注**: 本レポート内に言及がある `upscale.py` / `recording_common.py` は、その後のリファクタリングにより `convert.py` および `worker/recording/` パッケージ（PR #206 / [`0041`](../decisions/0041-worker-recording-package-split.md)）へ移行・再編されました。
+
 ## 追記（2026-08-03）: 移設を実施することにした
 
 本レポート §0・§8 は「移設は推奨しない」「`eu-south-2`は実質的に候補外」

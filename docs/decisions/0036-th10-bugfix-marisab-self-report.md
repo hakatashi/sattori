@@ -10,6 +10,8 @@ th10（東方風神録）録画対応の一部として、既知バグ「バグ�
 制御する必要がある。この設定はリプレイファイルに記録されないため、録画側では記録時の
 設定を自動判別できない。本決定は、この不確実性をどう扱うかについてのもの。
 
+> **注**: 本決定に記述されている `worker/recording_common.py`（`apply_vpatch_ini_overrides()` 等）は、PR #206 / [`0041`](0041-worker-recording-package-split.md) により `worker/recording/instance.py`（`recording.instance`）へ分割されました。
+
 ## 背景
 
 東方風神録には「バグマリ」——魔理沙Bのショット火力パワーが3.00〜3.95の間にあるとき
