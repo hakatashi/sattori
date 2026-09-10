@@ -177,7 +177,7 @@ Step Functions実行の生死（`getExecutionLiveness()`）・実行中ジョブ
 一元的に組み立て、**EC2（UserDataの`docker run -e`）と自宅ワーカー（オファーに添えて
 `JobRecord.homeWorkerEnv` に書き、デーモンがそのまま`docker run`へ渡す）で共有する**。
 
-低速録画（Issue #68。自宅ワーカーでのみ行う）のような環境差分も、ワーカーの`if`
+低速録画（Issue #68。自宅ワーカーまたはEC2対応タイトルで行う）のような環境差分も、ワーカーの`if`
 ではなく起動側がこの関数の出力に足すかどうかで表現する（理由は
 [`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
 

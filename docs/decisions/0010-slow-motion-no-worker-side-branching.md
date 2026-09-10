@@ -50,12 +50,14 @@ th20 は Xvfb + wined3d + llvmpipe のソフトウェアレンダリングに対
   同一性が崩れる。
 - **自宅ワーカー用に別イメージを作る**。ECR イメージ・ビルド・push の対象が2倍になり、
   片方だけ古いという事故が起きる。
-- **低速録画を EC2 でも使う**。録画時間が倍になり Spot 料金も倍になるため割に合わない。
-  代わりに EC2 では 4xlarge 級で等倍録画する（`home-worker/README.md` §7）。
+- **低速録画をすべてのタイトル・環境で無条件に使う**。録画時間が倍になり Spot 料金も倍になる。
+  （※当初はEC2での低速録画を一律無効としていたが、運用実績からth20の利用頻度が落ち着いており
+  コスト不安が無いことが判明したため、th20についてはEC2でも有効化し、`EC2_SLOW_MOTION_SUPPORTED_GAME_IDS`
+  でタイトルごとに素早く切り替えられる設計とした。Issue #245）
 
 ## 影響範囲
 
-- `packages/shared/src/slowMotion.ts`（`SLOW_MOTION_SUPPORTED_GAME_IDS`・`slowMotionScale`）
+- `packages/shared/src/slowMotion.ts`（`SLOW_MOTION_SUPPORTED_GAME_IDS`・`EC2_SLOW_MOTION_SUPPORTED_GAME_IDS`・`slowMotionScale`）
 - `apps/api/src/workerEnv.ts` / `workerRouting.ts`（誰に何を渡すか）
 - `worker/`（`FPS_LIMIT_TARGET_HZ` の有無だけを見る。`worker/README.md` §5。倍率をどこまで
   一貫して適用するかは [`0014`](0014-slow-motion-scaling-across-pipeline.md)）

@@ -11,9 +11,9 @@ import type { ApiConfig } from "./config.js";
 export interface WorkerEnvOptions {
   /**
    * この起動で低速録画（Issue #68）を行うか。**ジョブの `options.slowMotion` を
-   * そのまま渡してはいけない**——低速録画は自宅ワーカーへのオファーでのみ有効で、
-   * EC2 Fleet 起動時は常に false になる（録画に倍の実時間＝倍のコストがかかるため）。
-   * 呼び出し側（`handlers/sfn/launch.ts`）が割り当て先に応じて決める。
+   * そのまま渡してはいけない**——低速録画は自宅ワーカーへのオファー、または
+   * EC2低速録画対応タイトル（`supportsEc2SlowMotion()`）でのみ有効。
+   * 呼び出し側（`ec2.buildUserData`/`handlers/sfn/launch.ts`）が割り当て先に応じて決める。
    */
   slowMotion: boolean;
   /**

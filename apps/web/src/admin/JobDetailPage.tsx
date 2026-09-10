@@ -131,7 +131,7 @@ export function JobDetailPage() {
                 <dd>
                   {data.job.options.slowMotion ? "true" : "false"}
                   {data.job.options.slowMotion &&
-                    `（実際: ${isSlowMotionRecording(data.job.options, data.job.workerKind) ? "低速録画" : "等倍録画にフォールバック"}）`}
+                    `（実際: ${isSlowMotionRecording(data.job.options, data.job.workerKind, data.job.game) ? "低速録画" : "等倍録画にフォールバック"}）`}
                 </dd>
                 <dt>th10BugfixMarisaB</dt>
                 <dd>{data.job.options.th10BugfixMarisaB ? "true" : "false"}</dd>
