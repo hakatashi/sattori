@@ -10,6 +10,8 @@ th20 の cfg とリプレイは `%APPDATA%/ShanghaiAlice/th20/` から読まれ�
 （`recording_common.resolve_appdata_dir()`）。決め打ちに戻すと、root で動く本番コンテナが
 cfg を見失って録画に失敗する。
 
+> **注**: 本決定に記述されている `worker/recording_common.py`（`resolve_appdata_dir()` / `prepare_instance()`）は、PR #206 / [`0041`](0041-worker-recording-package-split.md) により `worker/recording/instance.py`（`recording.instance`）へ分割されました。
+
 ## 背景
 
 th20（東方錦上京）は TH125 以降のエンジンで、cfg とリプレイをゲーム本体ディレクトリ

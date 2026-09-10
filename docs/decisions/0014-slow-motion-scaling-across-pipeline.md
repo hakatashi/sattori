@@ -12,6 +12,8 @@
 換算されていることが前提**になっている。どれか1つを据え置くと、誤リトライ・誤終了検知・
 音ズレ・進捗の見た目の破綻のいずれかが起きる。低速録画まわりを触る前に読むこと。
 
+> **注**: 本決定に記述されている `worker/recording_common.py`（`slow_motion_scale()`・`scaled_poll_count()`・`duplicate_rate_threshold_for_raw()` 等）は、PR #206 / [`0041`](0041-worker-recording-package-split.md) により `worker/recording/timing.py`（`recording.timing`）へ分割されました。
+
 有効化の仕組み（`FPS_LIMIT_TARGET_HZ` の有無だけで決まり、ワーカー側に分岐が無いこと）は
 [`0010`](0010-slow-motion-no-worker-side-branching.md)。
 

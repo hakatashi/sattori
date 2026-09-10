@@ -10,6 +10,8 @@
 リザルト画面をリプレイ終了と誤判定して動画が途中で切れる**。この誤検知を、リプレイ選択
 画面の参照画像との照合に変えて解消した。終了検知の閾値・方式を触る前に読むこと。
 
+> **注**: 本決定に記述されている `worker/recording_common.py`（`load_end_template()`・`END_TEMPLATE_*`・`attempt_recording()` 等）は、PR #206 / [`0041`](0041-worker-recording-package-split.md) により `worker/recording/` パッケージ（`recording.vision`, `recording.pipeline`, `recording.config`）へ分割されました。
+
 ## 背景
 
 当初の方式(画面静止のMAD判定のみ)には構造的な弱点があった。実際にリプレイが

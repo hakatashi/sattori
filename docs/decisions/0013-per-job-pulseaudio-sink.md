@@ -10,6 +10,8 @@
 ジョブごとの null-sink と `PULSE_SINK` で解消した。EC2 Fleet(1インスタンス=1ジョブ)でも
 同じコードパスを通す。音声まわり(`pulse.py`・`GameConfig.build_env()`)を触る前に読むこと。
 
+> **注**: 本決定に記述されている `worker/recording_common.py`（`record_with_retry()`・`GameConfig` 等）は、PR #206 / [`0041`](0041-worker-recording-package-split.md) により `worker/recording/` パッケージ（`recording.pipeline`, `recording.config`）へ分割されました。
+
 ## 背景
 
 映像はXvfbのディスプレイ番号(`GameConfig.display`、タイトルごとに`:96`〜`:99`)で
