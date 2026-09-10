@@ -71,11 +71,7 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
   オファーを書き、デーモンが条件付き更新で原子的に claim する。
   [`0018`](docs/decisions/0018-home-worker-pull-assignment.md)）。**ワーカーの中に「自宅かEC2か」
   の分岐を作らないこと** —— 環境差分は起動側が渡す環境変数（`apps/api/src/workerEnv.ts`）で表す。
-- **低速録画（1/2倍速で録画し後処理で等倍へ戻す、Issue #68）は自宅ワーカー限定で、かつ対応タイトル
-  （`SLOW_MOTION_SUPPORTED_GAME_IDS`、現状 th20 のみ）でしか選べない**。**この制約もワーカー側の
-  分岐にはしない** —— 起動側が `FPS_LIMIT_TARGET_HZ` を渡すかで決まり、claim されなければ EC2 での
-  等倍録画へ静かにフォールバックする（[`decisions/0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
-  未対応タイトルで要求すると2倍速の動画ができワーカーは検知できない（`docs/known-limitations.md` §1）。
+- **低速録画（1/2倍速で録画し後処理で等倍へ戻す、Issue #68）は対応タイトル（`SLOW_MOTION_SUPPORTED_GAME_IDS`、現状 th20 のみ）で選べ、EC2でも設定（`EC2_SLOW_MOTION_SUPPORTED_GAME_IDS`）により有効化されている（Issue #245）**。**この制約もワーカー側の分岐にはしない** —— 起動側が `FPS_LIMIT_TARGET_HZ` を渡すかで決まり、EC2非対応タイトルがEC2へ落ちた場合は等倍録画へ静かにフォールバックする（[`decisions/0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。未対応タイトルで要求すると2倍速の動画ができワーカーは検知できない（`docs/known-limitations.md` §1）。
 - **録画ワーカー（`worker/`）だけ Python**。**この例外は録画パイプラインに限る** —— 自宅ワーカーの
   常駐デーモン（`home-worker/`）はコントロールプレーンしか担わないので TypeScript で書いている
   （[`decisions/0003`](docs/decisions/0003-worker-python-home-worker-typescript.md)）。

@@ -6,6 +6,7 @@ import {
   EMAIL_PATTERN,
   parseReplayInfo,
   SLOW_MOTION_CAPABILITY,
+  supportsEc2SlowMotion,
   supportsSlowMotion,
   supportsTh10BugfixMarisaB,
 } from "@sattori/shared";
@@ -229,14 +230,17 @@ export function UploadForm() {
 
   const busy = phase !== "idle" && phase !== "ready";
   const emailValid = EMAIL_PATTERN.test(email);
+  const game = preview?.game ?? null;
   // 低速録画に対応したタイトルか（Issue #101）。非対応タイトルで要求すると、ゲームは
   // 等倍で動くのに後処理だけが等倍化を行って2倍速の動画が出来上がるため、可否とは
   // 別にここで塞ぐ。タイトル未確定（解析前）も非対応として扱う。
-  const slowMotionSupported = supportsSlowMotion(preview?.game ?? null);
-  // 低速録画は「対応タイトル」かつ「自宅ワーカーが使える」場合に限り有効。可否が
-  // 変わった／別タイトルのリプレイに差し替えられた場合に、実際に送信される値が
+  const slowMotionSupported = supportsSlowMotion(game);
+  const ec2SlowMotionSupported = supportsEc2SlowMotion(game);
+  // 低速録画は「対応タイトル」かつ「自宅ワーカーまたはEC2で利用可能」な場合に有効（Issue #245）。
+  // 可否が変わった／別タイトルのリプレイに差し替えられた場合に、実際に送信される値が
   // 取り残されないよう、「チェック状態」ではなくこの導出値を唯一の真実として扱う。
-  const slowMotionSelectable = slowMotionAvailable && slowMotionSupported;
+  const isSlowMotionAvailable = slowMotionAvailable || ec2SlowMotionSupported;
+  const slowMotionSelectable = isSlowMotionAvailable && slowMotionSupported;
   const slowMotionChecked = slowMotionSelectable && slowMotion;
   // 選べない理由はユーザーから見て意味が違う（タイトル側の未対応は待っても変わらないが、
   // ワーカーの混雑は時間をおけば変わる）ので区別して出す。タイトルが未確定の間は
@@ -244,7 +248,7 @@ export function UploadForm() {
   const slowMotionHint =
     preview && !slowMotionSupported
       ? t("uploadForm.slowMotionUnsupportedGame")
-      : slowMotionAvailable
+      : isSlowMotionAvailable
         ? t("uploadForm.slowMotionHintLine2")
         : t("uploadForm.slowMotionUnavailable");
 

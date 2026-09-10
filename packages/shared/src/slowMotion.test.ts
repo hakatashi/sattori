@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SUPPORTED_GAME_IDS } from "./games.js";
 import {
   defaultSlowMotionFor,
+  EC2_SLOW_MOTION_SUPPORTED_GAME_IDS,
   isSlowMotionRecording,
   NATIVE_FRAME_RATE_HZ,
   recordingWallClockScale,
@@ -10,6 +11,7 @@ import {
   SLOW_MOTION_SUPPORTED_GAME_IDS,
   SLOW_MOTION_TARGET_HZ,
   SLOW_MOTION_TIME_SCALE,
+  supportsEc2SlowMotion,
   supportsSlowMotion,
 } from "./slowMotion.js";
 import { WORKER_CAPABILITIES } from "./worker.js";
@@ -35,6 +37,12 @@ describe("低速録画の定数", () => {
       expect(SLOW_MOTION_SUPPORTED_GAME_IDS).toContain(game);
     }
   });
+
+  it("EC2で有効化するタイトルは、低速録画に対応したタイトルの部分集合である", () => {
+    for (const game of EC2_SLOW_MOTION_SUPPORTED_GAME_IDS) {
+      expect(SLOW_MOTION_SUPPORTED_GAME_IDS).toContain(game);
+    }
+  });
 });
 
 describe("supportsSlowMotion", () => {
@@ -54,18 +62,35 @@ describe("supportsSlowMotion", () => {
   });
 });
 
+describe("supportsEc2SlowMotion", () => {
+  it("EC2低速録画対応タイトル(th20)は true", () => {
+    expect(supportsEc2SlowMotion("th20")).toBe(true);
+  });
+
+  it("EC2低速録画未対応タイトルは false", () => {
+    expect(supportsEc2SlowMotion("th06")).toBe(false);
+    expect(supportsEc2SlowMotion("th07")).toBe(false);
+    expect(supportsEc2SlowMotion("th08")).toBe(false);
+    expect(supportsEc2SlowMotion("th11")).toBe(false);
+  });
+
+  it("タイトル未確定(解析前)は false", () => {
+    expect(supportsEc2SlowMotion(null)).toBe(false);
+  });
+});
+
 describe("defaultSlowMotionFor", () => {
   it("自宅ワーカーが使えるなら th20 は既定オン", () => {
     expect(defaultSlowMotionFor("th20", true)).toBe(true);
   });
 
+  it("自宅ワーカーが使えなくても th20 はEC2で低速録画可能なため既定オン", () => {
+    expect(defaultSlowMotionFor("th20", false)).toBe(true);
+  });
+
   it("低速録画に未対応のタイトルは自宅ワーカーが使えても常にオフ", () => {
     expect(defaultSlowMotionFor("th11", true)).toBe(false);
     expect(defaultSlowMotionFor("th07", true)).toBe(false);
-  });
-
-  it("自宅ワーカーが使えなければ th20 でも常にオフ(そもそも選べない)", () => {
-    expect(defaultSlowMotionFor("th20", false)).toBe(false);
   });
 
   it("タイトル未確定(解析前)ならオフ", () => {
@@ -85,19 +110,25 @@ describe("recordingWallClockScale", () => {
 
 describe("isSlowMotionRecording", () => {
   it("希望していなければ、どのワーカーでも常に false", () => {
-    expect(isSlowMotionRecording({ slowMotion: false }, "home")).toBe(false);
-    expect(isSlowMotionRecording({ slowMotion: false }, null)).toBe(false);
+    expect(isSlowMotionRecording({ slowMotion: false }, "home", "th20")).toBe(false);
+    expect(isSlowMotionRecording({ slowMotion: false }, "ec2", "th20")).toBe(false);
+    expect(isSlowMotionRecording({ slowMotion: false }, null, "th20")).toBe(false);
   });
 
   it("自宅ワーカーが引き受けたなら true", () => {
-    expect(isSlowMotionRecording({ slowMotion: true }, "home")).toBe(true);
+    expect(isSlowMotionRecording({ slowMotion: true }, "home", "th20")).toBe(true);
   });
 
-  it("EC2へフォールバックしたら false(EC2では等倍で録画する)", () => {
-    expect(isSlowMotionRecording({ slowMotion: true }, "ec2")).toBe(false);
+  it("EC2低速録画対応タイトル(th20)なら EC2 でも true", () => {
+    expect(isSlowMotionRecording({ slowMotion: true }, "ec2", "th20")).toBe(true);
+  });
+
+  it("EC2低速録画非対応タイトルがEC2へフォールバックしたら false(EC2では等倍で録画する)", () => {
+    expect(isSlowMotionRecording({ slowMotion: true }, "ec2", "th06")).toBe(false);
+    expect(isSlowMotionRecording({ slowMotion: true }, "ec2", null)).toBe(false);
   });
 
   it("割り当て未確定の間は true(残り時間の見積もりが割り当て確定の瞬間に飛ばないように)", () => {
-    expect(isSlowMotionRecording({ slowMotion: true }, null)).toBe(true);
+    expect(isSlowMotionRecording({ slowMotion: true }, null, "th20")).toBe(true);
   });
 });
