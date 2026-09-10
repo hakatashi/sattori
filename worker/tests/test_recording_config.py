@@ -166,3 +166,19 @@ def test_for_game_passes_title_specific_overrides_through():
     assert cfg.process_name == "東方紅魔郷"
     assert cfg.extra_dlls == ("vpatch_th06.dll",)
 
+
+def test_for_game_allows_overriding_injector_path_and_injector():
+    """th06c.exeはPE32+(x86-64)のため、他タイトル共通の32bit injector.exeではなく
+    64bit版を明示的に指定する必要がある(docs/titles/th06c.md)。`overrides`は
+    `for_game()`が組み立てる`defaults`のキー(`injector_path`)も上書きできること。
+    """
+    cfg = GameConfig.for_game("th06c", "sattori_job_test", display=":102",
+                              canonical_slot="th6_01.rpy",
+                              injector="injector64.exe",
+                              injector_path=f"{WORKER_ROOT}/mods/common/build/injector64.exe")
+
+    assert cfg.injector == "injector64.exe"
+    assert cfg.injector_path == f"{WORKER_ROOT}/mods/common/build/injector64.exe"
+    # 上書きしていないhook_dll_pathは従来どおりgame_idから機械的に導出される。
+    assert cfg.hook_dll_path == f"{WORKER_ROOT}/mods/th06c_replay_autoplay/build/th06c_hook.dll"
+

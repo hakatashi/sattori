@@ -135,6 +135,7 @@ UPLOAD_PROGRESS_REPORT_INTERVAL_SEC = 10.0
 # 通過したものしかジョブ化されないが、念のための防御)。
 RECORDING_SCRIPTS = {
     "th06": "record_th06.py",
+    "th06c": "record_th06c.py",
     "th07": "record_th07.py",
     "th08": "record_th08.py",
     "th09": "record_th09.py",

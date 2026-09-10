@@ -23,6 +23,7 @@ interface TitleInfo {
 // CLAUDE.local.mdのデプロイ手順に記載の各タイトルの導入バージョン・パッチ適用状況と一致させる。
 const TITLE_INFO: TitleInfo[] = [
   { id: "th06", version: "ver 1.02h", vpatchRev: 4 },
+  { id: "th06c", version: "ver 1.03" },
   { id: "th07", version: "ver 1.00b", vpatchRev: 4, cherryBugFix: true },
   { id: "th08", version: "ver 1.00d" },
   { id: "th09", version: "ver 1.50a" },
