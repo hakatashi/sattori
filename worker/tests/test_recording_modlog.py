@@ -66,6 +66,18 @@ def test_read_verified_scores_th06_is_unscaled(tmp_path):
     assert modlog.read_verified_scores(str(log_path), "th06") == [925680]
 
 
+def test_read_verified_scores_th06c_is_unscaled(tmp_path):
+    # th06cはオリジナルth06の完全な再実装だが、スコアの倍率はth06から変わっていない
+    # (touhou-recorder reports/75)。ステージ番号・残機・グレイズのRVAは未特定のため、
+    # mods/common/score_monitor.hのwidth=0設定によりMODは常にgraze=0を出力する
+    # (0ではなく-1を出すtouhou-recorder側の実装とは異なる。graze<0の除外フィルタに
+    # 引っかからないことを確認する)。
+    log_path = tmp_path / "th06c_autoplay.log"
+    log_path.write_text("ScoreMonitor: score=114250700 stage=0 lives=0 graze=0 epoch_ms=1\n")
+
+    assert modlog.read_verified_scores(str(log_path), "th06c") == [114250700]
+
+
 def test_read_verified_scores_drops_garbage_graze_samples(tmp_path):
     # th07/th08はポインタ間接参照方式のため、状態構造体の解放直後に別用途で
     # 再利用されたメモリを読んでしまう「ゴミ値」が末尾に1回だけ記録されることがある

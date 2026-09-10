@@ -12,11 +12,31 @@ import styles from "./ReplayHelpPage.module.css";
  * 録画対応タイトル（`SUPPORTED_GAME_IDS`）に限らず、東方の全ナンバリングタイトル
  * （th19除く。リプレイ保存機能が無いため`GAME_IDS`にも含まれない）を対象にした
  * 汎用ヘルプとして一覧する。新タイトルは`GAME_IDS`（`packages/shared/src/games.ts`）へ
- * 追加すればここは自動で追従する。
+ * 追加すればここは自動で追従する（例外は`REMAKE_GAME_IDS`）。
  */
-const APP_DATA_START_INDEX = GAME_IDS.indexOf("th125");
-const INSTALL_FOLDER_GAME_IDS: readonly GameId[] = GAME_IDS.slice(0, APP_DATA_START_INDEX);
-const APP_DATA_GAME_IDS: readonly GameId[] = GAME_IDS.slice(APP_DATA_START_INDEX);
+/**
+ * th06nc（`GAME_IDS`にはリプレイ解析用に含まれるが録画は未対応）はここでは扱わない。
+ * 保存先がSteamライブラリ配下のゲームディレクトリで、既存の2グループのどちらの説明にも
+ * 当てはまらないため（録画対応時に専用の案内を足すこと。th06cは同型の保存先だが
+ * 録画対応済みなので`STEAM_LIBRARY_GAME_IDS`で専用案内を出す）。
+ */
+const REMAKE_GAME_IDS: readonly GameId[] = ["th06nc"];
+
+/**
+ * Steamライブラリ配下のゲームディレクトリ直下にreplayフォルダを持つタイトル
+ * （インストール先直下でも%APPDATA%でもない第三のパターン、Issue #240）。
+ * th06cは実機（Windows）で`C:\Program Files (x86)\Steam\steamapps\common\th06c\replay`
+ * と確認済み——Steamのインストールフォルダ名が`GameId`とそのまま一致する。
+ */
+const STEAM_LIBRARY_GAME_IDS: readonly GameId[] = ["th06c"];
+
+const HELP_GAME_IDS: readonly GameId[] = GAME_IDS.filter(
+  (id) => !REMAKE_GAME_IDS.includes(id) && !STEAM_LIBRARY_GAME_IDS.includes(id),
+);
+
+const APP_DATA_START_INDEX = HELP_GAME_IDS.indexOf("th125");
+const INSTALL_FOLDER_GAME_IDS: readonly GameId[] = HELP_GAME_IDS.slice(0, APP_DATA_START_INDEX);
+const APP_DATA_GAME_IDS: readonly GameId[] = HELP_GAME_IDS.slice(APP_DATA_START_INDEX);
 
 /** 見出しの範囲表示用（上の配列の始端・終端と対応させること）。 */
 const INSTALL_FOLDER_HEADING_FIRST: GameId = "th06";
@@ -119,6 +139,7 @@ export function ReplayHelpPage() {
   usePageMeta({ title: t("replayHelp.heading"), path: "/replay-help" });
   const [installFolderSelected, setInstallFolderSelected] = useState<GameId>(INSTALL_FOLDER_HEADING_FIRST);
   const [appDataSelected, setAppDataSelected] = useState<GameId>("th20");
+  const [steamLibrarySelected, setSteamLibrarySelected] = useState<GameId>("th06c");
 
   const isEnglish = i18n.language.startsWith("en");
   const installFolderTitle = shortTitle(installFolderSelected, false);
@@ -159,6 +180,21 @@ export function ReplayHelpPage() {
           />
         </>
       )}
+
+      <h2>{t("replayHelp.groups.steamLibrary.heading")}</h2>
+      <TitlePicker
+        titleIds={STEAM_LIBRARY_GAME_IDS}
+        selected={steamLibrarySelected}
+        onSelect={setSteamLibrarySelected}
+        isEnglish={isEnglish}
+      />
+      <p>
+        {t("replayHelp.groups.steamLibrary.description1", {
+          title: shortTitle(steamLibrarySelected, isEnglish),
+        })}
+      </p>
+      <p>{t("replayHelp.groups.steamLibrary.pathLabel")}</p>
+      <CopyablePath path={`C:\\Program Files (x86)\\Steam\\steamapps\\common\\${steamLibrarySelected}\\replay`} />
 
       <h2>{t("replayHelp.groups.appData.heading", { first: shortTitle(APP_DATA_HEADING_FIRST, isEnglish) })}</h2>
       <TitlePicker

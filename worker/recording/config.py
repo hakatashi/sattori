@@ -152,9 +152,15 @@ class GameConfig:
 
         `overrides` はそのまま `GameConfig` へ渡す。`display` だけは「タイトルごとの既定値を
         `SATTORI_DISPLAY` が上書きする」という関係なので、ここで解決する。
+
+        `overrides` は `defaults` のキー(`injector_path`等)も上書きできる——th06cが
+        32bit共通の`injector.exe`ではなく64bit版の`injector64.exe`を指定するために必要
+        (`record_th06c.py`)。`**defaults, **overrides`のように2つの辞書を直接
+        キーワード展開すると、キーが重複した場合にTypeErrorになるため、辞書の
+        マージ(`overrides`を後勝ちにする`update()`)を経由する。
         """
         mod_dir = os.environ.get("SATTORI_MOD_DIR", f"{WORKER_ROOT}/mods")
-        defaults = {
+        merged = {
             "instance_dir": os.environ.get(
                 "SATTORI_INSTANCE_DIR", f"{WORKER_ROOT}/instances/{game_id}-recording"),
             "game_dir_src": os.environ.get("SATTORI_GAME_DIR", f"{WORKER_ROOT}/games/{game_id}"),
@@ -163,8 +169,8 @@ class GameConfig:
             "hook_dll_path": f"{mod_dir}/{game_id}_replay_autoplay/build/{game_id}_hook.dll",
         }
         display = os.environ.get("SATTORI_DISPLAY", overrides.pop("display"))
-        return cls(game_id=game_id, pulse_sink=pulse_sink, display=display,
-                   **defaults, **overrides)
+        merged.update(overrides)
+        return cls(game_id=game_id, pulse_sink=pulse_sink, display=display, **merged)
 
     def build_env(self):
         env = os.environ.copy()

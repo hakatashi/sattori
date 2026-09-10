@@ -36,6 +36,13 @@ const gameTitles = [
     icon: 'th06.png',
   },
   {
+    japanese: "東方紅魔郷: Classic",
+    english: "Embodiment of\nScarlet Devil: Classic",
+    shortName: "EoSD:C",
+    supported: true,
+    icon: 'th06c.png',
+  },
+  {
     japanese: "東方妖々夢",
     english: "Perfect Cherry\nBlossom",
     shortName: "PCB",

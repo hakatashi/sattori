@@ -246,11 +246,17 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                        progress_dir, expected_duration_seconds, seen_lines, log):
     """リプレイ終了(または異常)を検知するまでポーリングする。
 
-    戻り値: (detected, frozen, last_color_frame)。**録画の停止はここではやらない**
-    (呼び出し側が `_stop_and_mux()` で止める)。`last_color_frame`は直近に取得した
-    カラー画像で、試行が破棄された際の診断用証跡(Issue #159、
-    `save_diagnostics_snapshot()`)に使う。1回もフレームを取得できないまま終了した
-    場合(grace期間中のタイムアウト等)はNone。
+    戻り値: (detected, detected_by, frozen, last_color_frame)。**録画の停止はここでは
+    やらない**(呼び出し側が `_stop_and_mux()` で止める)。`detected_by`は`detected`が
+    Trueだった場合の検知方式("template" / "still")で、呼び出し側がログのサマリー行に
+    正しい方式を表示するために使う(未検知/frozen/timeoutの場合はNone。以前は`detected`
+    フラグだけを見て`elif detected:`で常に「画面静止検知」に固定していたため、
+    テンプレート照合で検知した場合もログのサマリーだけ誤って表示されるバグがあった
+    ——判定結果(classification)自体は正しかったため実害は表示のみ、
+    touhou-recorder reports/76でth06c対応中に発見、th06/07/08/09/10のログ全てに影響)。
+    `last_color_frame`は直近に取得したカラー画像で、試行が破棄された際の診断用証跡
+    (Issue #159、`save_diagnostics_snapshot()`)に使う。1回もフレームを取得できないまま
+    終了した場合(grace期間中のタイムアウト等)はNone。
 
     時間に関する定数はすべてここで `time_scale` 倍する。ポーリングは実時間駆動
     (`POLL_INTERVAL_SEC`)なので、回数を据え置くと**ゲーム内時間で必要な静止の長さが
@@ -291,6 +297,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     end_template_consecutive = 0
     consecutive_freeze = 0
     detected = False
+    detected_by = None
     frozen = False
     poll_count = 0
     while True:
@@ -334,6 +341,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
             if end_template_consecutive >= end_template_consecutive_required:
                 log("リプレイ選択画面と連続して一致したためリプレイ終了と判定しました")
                 detected = True
+                detected_by = "template"
                 break
             # end_template方式は終了判定に画面静止を使わないため、本編が完全に固まった
             # (デシンク・非再生等)場合を別途検知する必要がある(FREEZE_CONSECUTIVE_REQUIRED
@@ -365,10 +373,11 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                 if consecutive_still >= still_consecutive_required:
                     log("画面が一定時間変化しなくなったためリプレイ終了と判定しました")
                     detected = True
+                    detected_by = "still"
                     break
             prev_frame = frame
         time.sleep(POLL_INTERVAL_SEC)
-    return detected, frozen, last_color_frame
+    return detected, detected_by, frozen, last_color_frame
 
 
 def _stop_and_mux(video, audio, output_path, env, log):
@@ -483,7 +492,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     ), audio_target, audio_log_path, audio_log_file)
     record_start = time.time()
 
-    detected, frozen, last_color_frame = _monitor_until_end(
+    detected, detected_by, frozen, last_color_frame = _monitor_until_end(
         config, env, geometry, detection, time_scale=time_scale,
         progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
         seen_lines=seen_lines, log=log,
@@ -494,7 +503,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     total_record_sec = time.time() - record_start
     if detected:
         classification = "good"
-        stop_reason = "画面静止検知"
+        stop_reason = "リプレイ選択画面テンプレート照合" if detected_by == "template" else "画面静止検知"
     elif frozen:
         classification = "timeout"
         stop_reason = "画面固着の早期検知(タイムアウト相当)"

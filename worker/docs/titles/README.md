@@ -15,6 +15,7 @@
 | タイトル | 背景 | 特に外しやすい点 |
 | --- | --- | --- |
 | th06 東方紅魔郷 | [th06.md](th06.md) | 実行ファイルを `th06.exe` へリネームしない（VsyncPatch） |
+| th06c 東方紅魔郷: Classic | [th06c.md](th06c.md) | 64bit・Steamworks APIスタブ必須・入力はGetProcAddressフック経由 |
 | th07 東方妖々夢 | [th07.md](th07.md) | 日本語フォントの配置・レジストリ登録 |
 | th08 東方永夜抄 | [th08.md](th08.md) | ゲームデータは ver1.00d 相当（ver1.00a は fps 暴走） |
 | th09 東方花映塚 | [th09.md](th09.md) | 対戦形式(1P/2P)だが録画パイプラインには無関係・スコアRVA未特定でlifeのみ監視 |

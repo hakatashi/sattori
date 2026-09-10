@@ -285,12 +285,13 @@ def test_monitor_until_end_returns_last_captured_frame_on_freeze(monkeypatch):
     detection = pipeline._EndDetection(
         template=end_template, template_mask=None, template_mad_threshold=0.0, still_mask=None,
     )
-    detected, frozen, last_color_frame = pipeline._monitor_until_end(
+    detected, detected_by, frozen, last_color_frame = pipeline._monitor_until_end(
         config, env, (0, 0, 640, 480), detection, time_scale=1.0,
         progress_dir=None, expected_duration_seconds=None, seen_lines=set(), log=lambda msg: None,
     )
 
     assert detected is False
+    assert detected_by is None
     assert frozen is True
     assert last_color_frame == "color2"
 
@@ -303,7 +304,7 @@ def test_attempt_recording_saves_diagnostics_snapshot_on_discarded_attempt(monke
     monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
     monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (False, True, "the-last-frame"),
+        pipeline, "_monitor_until_end", lambda *a, **k: (False, None, True, "the-last-frame"),
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
@@ -334,7 +335,7 @@ def test_attempt_recording_does_not_save_diagnostics_snapshot_on_good_classifica
     monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
     monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (True, False, "the-last-frame"),
+        pipeline, "_monitor_until_end", lambda *a, **k: (True, "still", False, "the-last-frame"),
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
@@ -353,6 +354,35 @@ def test_attempt_recording_does_not_save_diagnostics_snapshot_on_good_classifica
 
     assert result["classification"] == "good"
     assert saved == []
+
+
+def test_attempt_recording_logs_template_match_as_the_detection_reason(monkeypatch, tmp_path):
+    """`detected_by="template"`の場合、サマリー行に「画面静止検知」ではなく
+    テンプレート照合であることを表示すること(touhou-recorder reports/76でth06c対応中に
+    発見したバグの回帰防止。修正前は`detected`フラグだけを見て常に「画面静止検知」に
+    固定されていた)。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "load_end_template", lambda path: None)
+    monkeypatch.setattr(pipeline, "_launch_game", lambda *a, **k: 1234)
+    monkeypatch.setattr(pipeline, "_settle_crop_geometry", lambda *a, **k: (0, 0, 640, 480))
+    monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
+    monkeypatch.setattr(
+        pipeline, "_monitor_until_end", lambda *a, **k: (True, "template", False, "the-last-frame"),
+    )
+    monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
+    monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
+
+    logs = []
+    result = pipeline.attempt_recording(
+        config, "/replay.rpy", str(tmp_path / "out.mp4"), None, None,
+        diagnostics_dir="/diag", attempt=1, log=logs.append,
+    )
+
+    assert result["classification"] == "good"
+    assert any("検知方式: リプレイ選択画面テンプレート照合" in line for line in logs)
+    assert not any("検知方式: 画面静止検知" in line for line in logs)
 
 
 def test_record_with_retry_passes_diagnostics_dir_and_increasing_attempt_number(monkeypatch):

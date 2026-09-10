@@ -86,11 +86,15 @@ cat th7_01.rpy | threp -j
 
 Titles are identified by the 4-byte magic at the start of the file. th13
 (東方神霊廟, TD) and th14 (東方輝針城, DDC) share the same magic `t13r`, so
-they are distinguished by a version byte in the header.
+they are distinguished by a version byte in the header. th06 and its two 2026
+remakes (`th06c`, `th06nc`) likewise all use `T6RP` and are told apart by the
+version word at offset 0x04.
 
 | Game ID | Title | Verification status |
 | --- | --- | --- |
 | `th06` | 東方紅魔郷 (EoSD) | Verified with checked-in replays + in-game screenshots in `test-fixtures/` |
+| `th06c` | 東方紅魔郷: Classic | Verified with checked-in replays in `test-fixtures/` (all five difficulties incl. Extra, full clears and game overs); see "Notes on the th06 remakes" below |
+| `th06nc` | 東方紅魔郷: New Classic | Verified with checked-in replays in `test-fixtures/` (Standard/Challenge/Spell Practice, Easy through Lunatic and Extra); see "Notes on the th06 remakes" below |
 | `th07` | 東方妖々夢 (PCB) | Same as above |
 | `th08` | 東方永夜抄 (IN) | Same as above (includes Shift_JIS character names, and a spell practice replay) |
 | `th09` | 東方花映塚 (PoFV) | Verified with checked-in replays in `test-fixtures/` (covering Story/Extra/Match) + samples obtained from [Silent Selene](https://www.silentselene.net/) |
@@ -112,6 +116,30 @@ they are distinguished by a version byte in the header.
 
 th19 (東方獣王園, UDoALG) is excluded because the game itself has no
 replay-saving feature.
+
+### Notes on the th06 remakes (東方紅魔郷: Classic / New Classic)
+
+Both were released on 2026-09-10 and neither format was publicly documented,
+so both are implemented from this package's own investigation — written up in
+full, including the fields that are *not* recoverable, in
+[`docs/research/th06-classic-replay-format.md`](https://github.com/hakatashi/sattori/blob/main/docs/research/th06-classic-replay-format.md).
+In short:
+
+- Both keep `T6RP`, the +7 additive-key header obfuscation and th06's
+  "fixed header → 7 per-stage snapshots → sparse input-change log" shape.
+  `formatVersion` is `0x0103` for Classic and `0x010f` for New Classic
+  (`0x0102` is th06 1.02h).
+- Both are 64-bit rebuilds, so the stage offset array widened to `u64`, the
+  per-stage snapshot grew from 0x10 to 0x20 bytes and an input record grew
+  from 8 to 12 bytes (`{ inputKey; previousInputKey; frameNum }` — note
+  `frameNum` moved to the *end* of the record).
+- New Classic additionally added a game mode byte at 0x06, widened the
+  difficulty field to 4 bytes and widened the score to `u64`, shifting
+  everything after it. Its mode is reported through `stage`
+  (`"Challenge"`, `"Spell Practice No. 108"`; `null` for Standard).
+- Known gaps: `cleared` is `null` for all three variants, and a New Classic
+  Spell Practice replay reports `difficulty: null` because the difficulty
+  slot is reused for the spell card index.
 
 ### Notes on th20 (東方錦上京, FW)
 
@@ -270,7 +298,7 @@ The decoded replay metadata object (`result.replay`):
 | --- | --- | --- |
 | `game` | `ReplayGameId` | Short game identifier (e.g. `"th06"`, `"th07"`, `"th10"`, `"th20"`). |
 | `gameTitle` | `string` | Full official title with subtitle (e.g. `"東方紅魔郷 ～ the Embodiment of Scarlet Devil."`). |
-| `formatVersion` | `number \| null` | Raw version/format byte from the header. Meaning varies by game (e.g. `5` for th07, `144` for th13; `null` for th06/th08). |
+| `formatVersion` | `number \| null` | Raw version/format byte from the header. Meaning varies by game (e.g. `5` for th07, `144` for th13, and the version word `0x0102`/`0x0103`/`0x010f` distinguishing th06 from its two remakes; `null` for th08). |
 | `player` | `string \| null` | Player name string (decoded from Shift_JIS with trailing padding trimmed). |
 | `date` | `string \| null` | Date/time string as recorded in the file (format varies by game, e.g. `"05/26/11"`, `"2026/01/24 16:18:16"`, `"25/11/09 17:41"`). |
 | `parsedDate` | [`ParsedDate`](#parseddate) \| `null` | `date` broken down into individual numeric components, so callers don't need to know each title's format to interpret it. `null` iff `date` is `null`. See below. |
@@ -279,9 +307,9 @@ The decoded replay metadata object (`result.replay`):
 | `characterNameJa` | `string \| null` | Japanese display name for `character` (e.g. `"霊符"`, `"霊夢"`, `"霊夢A"`, `"霊夢 赤1"`). See below. |
 | `characterNameEn` | `string \| null` | English display name for `character` (e.g. `"Reimu A"`, `"Reimu"`, `"Reimu A (Yukari)"`, `"Reimu Red"`). See below. |
 | `difficulty` | `string \| null` | Difficulty string (e.g. `"Easy"`, `"Normal"`, `"Hard"`, `"Lunatic"`, `"Extra"`; `null` for scene-based titles like th125/th143). |
-| `stage` | `string \| null` | Highest reached stage or scene string (e.g. `"Stage 6"`, `"Stage All Clear"`, `"2-4"`, `"Day 8 Scene 3"`; `null` for th06/th07). |
+| `stage` | `string \| null` | Highest reached stage or scene string (e.g. `"Stage 6"`, `"Stage All Clear"`, `"2-4"`, `"Day 8 Scene 3"`; `null` for th06/th06c/th07, and for th06nc's Standard mode). |
 | `score` | `number \| null` | Final total score. |
-| `cleared` | `boolean \| null` | `true` if cleared (Player Wins), `false` if failed/game over, `null` if determinable clear status is unavailable (e.g. th06). |
+| `cleared` | `boolean \| null` | `true` if cleared (Player Wins), `false` if failed/game over, `null` if determinable clear status is unavailable (e.g. th06 and both of its remakes). |
 | `loadout` | [`ReplayLoadoutSlot[]`](#replayloadoutslot) \| `null` | Pre-run equipment/loadout customization (e.g. th20's 4-slot 石 choice), as an ordered list of named slots. `null` for games with no such concept, or where this package does not yet know how to read it (currently populated only for th20). |
 | `splits` | [`ReplayStageSplit[]`](#replaystagesplit) | Per-stage/segment records (empty array if unavailable or unsupported). |
 | `frameCount` | `number \| null` | Total in-game playback frames. Divide by 60 for duration in seconds. See below. |
@@ -339,7 +367,7 @@ Per-stage breakdown records in `ParsedReplay.splits`:
 
 | Titles | `date` format | Example |
 | --- | --- | --- |
-| th06 | `MM/DD/YY` | `"05/26/11"` |
+| th06, th06c, th06nc | `MM/DD/YY` | `"05/26/11"` |
 | th07 | `MM/DD` (no year — genuinely absent from the file) | `"01/18"` |
 | th08 | `YYYY/MM/DD HH:mm:ss` | `"2026/01/24 16:18:16"` |
 | th09 | `YY/MM/DD` (no time) | `"26/01/23"` |
@@ -452,6 +480,13 @@ detection lag, etc.) layered on top by a consumer such as Sattori's worker.
 
 Currently populated for:
 
+- **th06c / th06nc**: same scheme as th06 below, with a 12-byte input record
+  whose `frameNum` sits at the end rather than the front, and a 0x20/0x24-byte
+  per-stage header. Cross-checked against 13 checked-in fixtures whose
+  per-stage scores, characters, difficulties and modes were all read off the
+  games' own replay-selection screens; the computed durations line up with
+  what each run was (e.g. New Classic's single-spell Spell Practice replay
+  computes to 17.7s).
 - **th06**: unlike th07/th08 (see below), th06's replay body is
   uncompressed and stores a *sparse input-change-event log* rather than one
   fixed-width record per frame: `ReplayDataInput { frameNum: i32; inputKey:

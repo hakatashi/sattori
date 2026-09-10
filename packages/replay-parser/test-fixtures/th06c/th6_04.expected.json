@@ -1,0 +1,49 @@
+{
+  "game": "th06c",
+  "gameTitle": "東方紅魔郷: Classic ～ the Embodiment of Scarlet Devil.",
+  "formatVersion": 259,
+  "player": "koyi",
+  "date": "09/10/26",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 9,
+    "date": 10,
+    "hours": null,
+    "minutes": null,
+    "seconds": null
+  },
+  "recordedAt": null,
+  "character": "ReimuA",
+  "characterNameJa": "霊符",
+  "characterNameEn": "Reimu A",
+  "difficulty": "Extra",
+  "stage": null,
+  "score": 84613650,
+  "cleared": null,
+  "loadout": null,
+  "splits": [
+    {
+      "stage": 7,
+      "score": 84613650,
+      "power": "0",
+      "piv": null,
+      "lives": {
+        "count": 2,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": null,
+        "maxPieces": null
+      },
+      "graze": null,
+      "additional": {
+        "rank": 16
+      },
+      "frameCount": 36849
+    }
+  ],
+  "frameCount": 36849
+}
