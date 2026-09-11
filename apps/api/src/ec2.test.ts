@@ -155,6 +155,30 @@ describe("buildUserData", () => {
     expect(decoded).toContain(`TASK_TOKEN='abc'\\''; echo pwned; '\\'''`);
     expect(() => execFileSync("bash", ["-n"], { input: decoded })).not.toThrow();
   });
+
+  it("EC2低速録画対応タイトル(th20)で slowMotion:true の場合は FPS_LIMIT_TARGET_HZ を付与する（Issue #245）", () => {
+    const decoded = Buffer.from(
+      buildUserData(
+        config,
+        { ...job, game: "th20", options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false } },
+        "task-token-abc",
+      ),
+      "base64",
+    ).toString("utf-8");
+    expect(decoded).toContain("FPS_LIMIT_TARGET_HZ='30'");
+  });
+
+  it("EC2低速録画未対応タイトルでは slowMotion:true であっても FPS_LIMIT_TARGET_HZ を付与しない", () => {
+    const decoded = Buffer.from(
+      buildUserData(
+        config,
+        { ...job, game: "th06", options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false } },
+        "task-token-abc",
+      ),
+      "base64",
+    ).toString("utf-8");
+    expect(decoded).not.toContain("FPS_LIMIT_TARGET_HZ");
+  });
 });
 
 describe("launchRecordingInstance", () => {

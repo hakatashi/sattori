@@ -177,9 +177,10 @@ Step Functions実行の生死（`getExecutionLiveness()`）・実行中ジョブ
 一元的に組み立て、**EC2（UserDataの`docker run -e`）と自宅ワーカー（オファーに添えて
 `JobRecord.homeWorkerEnv` に書き、デーモンがそのまま`docker run`へ渡す）で共有する**。
 
-低速録画（Issue #68。自宅ワーカーでのみ行う）のような環境差分も、ワーカーの`if`
+低速録画（Issue #68。自宅ワーカーまたはEC2対応タイトルで行う）のような環境差分も、ワーカーの`if`
 ではなく起動側がこの関数の出力に足すかどうかで表現する（理由は
-[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
+[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)・
+[`docs/decisions/0045`](../../docs/decisions/0045-ec2-slow-motion-for-th20.md)）。
 
 `TASK_TOKEN`（Step Functionsの実行を任意に成功/失敗させられるベアラ）を含むため、
 ログや外部への出力では必ず `redactWorkerEnv()` を通すこと。**この約束は型で強制して
