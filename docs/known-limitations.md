@@ -21,7 +21,7 @@ Sattori の「まだできていないこと」「できているが条件付き
 
 ## 1. 対応タイトルの拡大
 
-現在の対応タイトルは th06・th07・th08・th09・th10・th11・th12・th20 の8本。
+現在の対応タイトルは th06・th06c・th07・th08・th09・th10・th11・th12・th20 の9本。
 
 リプレイパーサー自体は th06〜th20 の大半に対応済みで、**残作業は録画対応**
 （Wine 上での MOD 移植・実機検証）である。タイトルごとの状況は
@@ -52,18 +52,22 @@ API（`POST /magic-links` での握り潰し）の両方で入口を塞いでい
 Issue #101のスコープ）。Issue #101でth09を対応させる際はMOD側の追加実装は不要で、
 許可リストに加えるだけでよい（[`worker/docs/titles/th09.md`](../worker/docs/titles/th09.md)）。
 
-### 紅魔郷リメイク2作（th06c / th06nc）はパースのみ対応で録画は未対応
+### th06nc（東方紅魔郷: New Classic）はパースのみ対応で録画は未対応
 
-2026-09-10 発売の「東方紅魔郷: Classic」「東方紅魔郷: New Classic」は、リプレイの
-フォーマット解析とパースだけ済んでいる
-（[`docs/research/th06-classic-replay-format.md`](research/th06-classic-replay-format.md)、
+2026-09-10 発売の「東方紅魔郷: New Classic」は、リプレイのフォーマット解析とパースだけ
+済んでいる（[`docs/research/th06-classic-replay-format.md`](research/th06-classic-replay-format.md)、
 `packages/replay-parser/src/games/th06.ts`）。録画は未対応のため
-`SUPPORTED_GAME_IDS` には入れておらず、アップロードすると非対応タイトルとして弾かれる。
+`SUPPORTED_GAME_IDS` には入れておらず、アップロードすると非対応タイトルとして弾かれる
+（録画対応は別Issue）。
 
-**この2作を th06 として受け付けてはならない。** Classic のリプレイ（ver. 1.03）は
-th06 1.02h ではファイルとして認識されず、録画が必ず失敗する（逆方向、すなわち
-1.02h のリプレイを 1.03 で再生することは可能）。マジックバイトは th06 と同じ `T6RP` の
-ままなので、バージョン語（0x04）を見ない実装は誤って th06 として扱ってしまう。
+同時発売の「東方紅魔郷: Classic」（th06c）は録画対応済み（Issue #240、
+[`worker/docs/titles/th06c.md`](../worker/docs/titles/th06c.md)）。
+
+**th06nc を th06 として受け付けてはならない。** マジックバイトは th06 と同じ `T6RP` の
+ままなので、バージョン語（0x04）を見ない実装は誤って th06 として扱ってしまう
+（th06c も同様の非互換だったが、既に別`GameId`として扱われているため対応済み。
+Classic系のリプレイ（ver. 1.03系）は th06 1.02h ではファイルとして認識されず、
+録画が必ず失敗する。逆方向、すなわち 1.02h のリプレイを 1.03 で再生することは可能）。
 
 解析上の未確定事項（クリア判定フラグ、New Classic のスペルプラクティスの難易度、
 モード値 2 の意味）はレポートの §6 に、追加で必要なリプレイの種類とあわせて挙げてある。

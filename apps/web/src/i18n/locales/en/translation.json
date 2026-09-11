@@ -155,6 +155,11 @@
         "heading": "{{first}} onward",
         "description1": "{{title}} stores data such as your scores and replay files in your %APPDATA% folder.",
         "pathLabel": "By default, your replay files are saved here."
+      },
+      "steamLibrary": {
+        "heading": "Embodiment of Scarlet Devil remakes",
+        "description1": "{{title}} is only distributed on Steam. A \"replay\" folder is created automatically right inside your Steam library's install folder, and your replay files are saved there after you play.",
+        "pathLabel": "By default, it's saved here (you can also open it from your Steam library: right-click the game → Manage → Browse local files)."
       }
     },
     "copy": "Copy",

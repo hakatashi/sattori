@@ -1,6 +1,6 @@
 ---
 name: upload-title-assets
-description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th07/th08/th09/th10/th11/th12/th20）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
+description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th06c/th07/th08/th09/th10/th11/th12/th20）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
 ---
 
 # タイトル資産（ゲームデータ）の S3 アップロード
@@ -57,6 +57,35 @@ tar -czf /tmp/th06-assets.tar.gz \
 aws s3 cp /tmp/th06-assets.tar.gz \
   "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th06/assets.tar.gz"
 ```
+
+### th06c（東方紅魔郷: Classic）
+
+`games/th06c`は`touhou-recorder`の`games/th06c`から`rsync`でコピーする(Steam版、
+`worker/docs/titles/th06c.md`参照)。他タイトルと異なり同梱物が2点ある。
+
+1. **正規の`steam_api64.dll`をSteamworks APIスタブで上書きすること**。スタブが無いと
+   Xvfb環境でSteamクライアント常駐を要求され`exit(255)`で即終了する
+   （`mods/th06c_steam_stub/build/steam_api64.dll`、`build-mods` skill参照）。
+2. **injectorは32bit版ではなく64bit版（`injector64.exe`）を同梱すること**。
+   th06c.exeがPE32+(x86-64)のため。
+
+WINEPREFIXは`WINEARCH=win64`で作成する（§3参照、他タイトルの32bitプレフィックスとは
+別物）。
+
+```bash
+tar -czf /tmp/th06c-assets.tar.gz \
+  games/th06c \
+  prefixes/th06c-wined3d-gl \
+  mods/common/build/injector64.exe \
+  mods/th06c_replay_autoplay/build/th06c_hook.dll
+aws s3 cp /tmp/th06c-assets.tar.gz \
+  "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th06c/assets.tar.gz"
+```
+
+> `games/th06c/steam_api64.dll`は`rsync`前に`mods/th06c_steam_stub/build/steam_api64.dll`
+> で上書きしてからtarに固めること（`cp mods/th06c_steam_stub/build/steam_api64.dll
+> games/th06c/steam_api64.dll`）。忘れると本番でSteamクライアント常駐要求により
+> 即終了する。
 
 ### th07（東方妖々夢）
 
@@ -195,8 +224,9 @@ aws s3 cp /tmp/th20-assets.tar.gz \
 
 ## 3. WINEPREFIX の作成・更新（`setup_wineprefix.sh`）
 
-8タイトルとも同じ手順（`wineboot -u` 初期化 + MS Gothic / MS Mincho 配置・レジストリ登録）で
-作成する。`WINEPREFIX` 引数は**絶対パス必須**のため `$(pwd)` で絶対パス化して渡す。
+8タイトル（th06〜th20の32bitタイトル）は同じ手順（`wineboot -u` 初期化 + MS Gothic /
+MS Mincho 配置・レジストリ登録）で作成する。`WINEPREFIX` 引数は**絶対パス必須**のため
+`$(pwd)` で絶対パス化して渡す。
 
 ローカルに X server がない場合は `xvfb-run -a` を前置する（`wineboot` の
 `err:winediag:nodrv_CreateWindow` 等の警告を避けられるが、無くても実害はない）。
@@ -210,6 +240,26 @@ done
 ```
 
 ディレクトリが既に存在すれば `wineboot` 初期化はスキップされ、フォント修正だけが適用される。
+
+### th06c（64bitプレフィックス）
+
+`setup_wineprefix.sh`は新規作成時に`WINEARCH=win32`を強制するため、**th06c.exe
+（PE32+/x86-64）はそのままでは動かない**。先に自分で64bitプレフィックスを作ってから
+同スクリプトを呼ぶ（既存ディレクトリがあればスクリプトは初期化をスキップし
+フォント登録だけ行う、という仕組みを利用する）。
+
+```bash
+cd worker
+WINEARCH=win64 WINEPREFIX="$(pwd)/prefixes/th06c-wined3d-gl" xvfb-run -a wineboot -u
+WINEPREFIX="$(pwd)/prefixes/th06c-wined3d-gl" wineserver -w
+xvfb-run -a ./setup_wineprefix.sh "$(pwd)/prefixes/th06c-wined3d-gl" \
+  "$(pwd)/games/assets/msgothic.ttc" "$(pwd)/games/assets/msmincho.ttc"
+
+# クラッシュ時にwinedbgのGUIがXvfb上に居座りウィンドウ検出を狂わせるのを防ぐ
+# (touhou-recorder reports/74)。
+WINEPREFIX="$(pwd)/prefixes/th06c-wined3d-gl" wine reg add \
+  'HKCU\Software\Wine\WineDbg' /v ShowCrashDialog /t REG_DWORD /d 0 /f
+```
 
 **このスクリプトが再現するのは touhou-recorder のレポートで実際に文書化・検証された範囲
 （プレフィックス初期化 + フォント修正）だけ**なので、それ以外に WINEPREFIX へ手作業で加えた
