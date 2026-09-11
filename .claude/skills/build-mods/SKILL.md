@@ -1,6 +1,6 @@
 ---
 name: build-mods
-description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th09・th10・th11・th12・th20）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th20 は `-static` が必須など、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
+description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th06c・th09・th10・th11・th12・th20）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th20 は `-static` が必須、th06c は64bitクロスビルドとSteamworks APIスタブが必要など、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
 ---
 
 # MOD（`*_hook.dll`）・injector.exe のビルド
@@ -24,6 +24,40 @@ cd worker/mods/common
 mkdir -p build
 i686-w64-mingw32-g++ -O2 -o build/injector.exe injector.cpp \
   -static-libgcc -static-libstdc++
+```
+
+## th06c
+
+th06cは他タイトルと異なり **th06c.exeがPE32+(x86-64)** なので、injector・MOD・
+Steamworks APIスタブのすべてを `x86_64-w64-mingw32-g++` でクロスビルドする
+（`-static`必須。付けないとwine実行時にlibgcc_s/libstdc++が見つからずDLL注入が
+失敗する、th20と同じ理由。`worker/docs/titles/th06c.md`参照）。入力はDirectInputでは
+なくGetProcAddressフック方式のため、`dinput_hook.cpp`・`window_wait.cpp`は使わない
+（起動ダイアログの除外ロジックがth06c専用に`dllmain.cpp`内へ実装済み）。
+
+```bash
+# 64bit版injector(他タイトルの32bit injector.exeとは別物、同じディレクトリに共存させる)
+cd worker/mods/common
+mkdir -p build
+x86_64-w64-mingw32-g++ -O2 -static -static-libgcc -static-libstdc++ \
+  -o build/injector64.exe injector.cpp
+
+# th06c_hook.dll
+cd ../th06c_replay_autoplay
+mkdir -p build
+x86_64-w64-mingw32-g++ -shared -O2 -static -static-libgcc -static-libstdc++ \
+  -finput-charset=UTF-8 -fexec-charset=UTF-8 -fwide-exec-charset=UTF-16LE \
+  -o build/th06c_hook.dll \
+  dllmain.cpp ../common/logging.cpp ../common/score_monitor.cpp \
+  -luser32
+
+# Steamworks APIスタブ(steam_api64.dll)。Steamクライアント常駐無しで起動させるための
+# 必須コンポーネント(worker/docs/titles/th06c.md)。games/th06c/直下へ正規のsteam_api64.dll
+# の代わりに同梱する(upload-title-assets skill)。
+cd ../th06c_steam_stub
+mkdir -p build
+x86_64-w64-mingw32-g++ -shared -O2 -static -static-libgcc -static-libstdc++ \
+  -o build/steam_api64.dll steam_api_stub.cpp
 ```
 
 ## th09

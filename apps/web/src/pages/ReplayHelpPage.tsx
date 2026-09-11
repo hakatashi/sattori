@@ -15,12 +15,24 @@ import styles from "./ReplayHelpPage.module.css";
  * 追加すればここは自動で追従する（例外は`REMAKE_GAME_IDS`）。
  */
 /**
- * 2026年の紅魔郷リメイク2本（`GAME_IDS`にはリプレイ解析用に含まれる）はここでは扱わない。
- * 保存先がSteamライブラリ配下のゲームディレクトリで、この2グループのどちらの説明にも
- * 当てはまらないため。録画対応時に専用の案内を足すこと。
+ * th06nc（`GAME_IDS`にはリプレイ解析用に含まれるが録画は未対応）はここでは扱わない。
+ * 保存先がSteamライブラリ配下のゲームディレクトリで、既存の2グループのどちらの説明にも
+ * 当てはまらないため（録画対応時に専用の案内を足すこと。th06cは同型の保存先だが
+ * 録画対応済みなので`STEAM_LIBRARY_GAME_IDS`で専用案内を出す）。
  */
-const REMAKE_GAME_IDS: readonly GameId[] = ["th06c", "th06nc"];
-const HELP_GAME_IDS: readonly GameId[] = GAME_IDS.filter((id) => !REMAKE_GAME_IDS.includes(id));
+const REMAKE_GAME_IDS: readonly GameId[] = ["th06nc"];
+
+/**
+ * Steamライブラリ配下のゲームディレクトリ直下にreplayフォルダを持つタイトル
+ * （インストール先直下でも%APPDATA%でもない第三のパターン、Issue #240）。
+ * th06cは実機（Windows）で`C:\Program Files (x86)\Steam\steamapps\common\th06c\replay`
+ * と確認済み——Steamのインストールフォルダ名が`GameId`とそのまま一致する。
+ */
+const STEAM_LIBRARY_GAME_IDS: readonly GameId[] = ["th06c"];
+
+const HELP_GAME_IDS: readonly GameId[] = GAME_IDS.filter(
+  (id) => !REMAKE_GAME_IDS.includes(id) && !STEAM_LIBRARY_GAME_IDS.includes(id),
+);
 
 const APP_DATA_START_INDEX = HELP_GAME_IDS.indexOf("th125");
 const INSTALL_FOLDER_GAME_IDS: readonly GameId[] = HELP_GAME_IDS.slice(0, APP_DATA_START_INDEX);
@@ -127,6 +139,7 @@ export function ReplayHelpPage() {
   usePageMeta({ title: t("replayHelp.heading"), path: "/replay-help" });
   const [installFolderSelected, setInstallFolderSelected] = useState<GameId>(INSTALL_FOLDER_HEADING_FIRST);
   const [appDataSelected, setAppDataSelected] = useState<GameId>("th20");
+  const [steamLibrarySelected, setSteamLibrarySelected] = useState<GameId>("th06c");
 
   const isEnglish = i18n.language.startsWith("en");
   const installFolderTitle = shortTitle(installFolderSelected, false);
@@ -167,6 +180,21 @@ export function ReplayHelpPage() {
           />
         </>
       )}
+
+      <h2>{t("replayHelp.groups.steamLibrary.heading")}</h2>
+      <TitlePicker
+        titleIds={STEAM_LIBRARY_GAME_IDS}
+        selected={steamLibrarySelected}
+        onSelect={setSteamLibrarySelected}
+        isEnglish={isEnglish}
+      />
+      <p>
+        {t("replayHelp.groups.steamLibrary.description1", {
+          title: shortTitle(steamLibrarySelected, isEnglish),
+        })}
+      </p>
+      <p>{t("replayHelp.groups.steamLibrary.pathLabel")}</p>
+      <CopyablePath path={`C:\\Program Files (x86)\\Steam\\steamapps\\common\\${steamLibrarySelected}\\replay`} />
 
       <h2>{t("replayHelp.groups.appData.heading", { first: shortTitle(APP_DATA_HEADING_FIRST, isEnglish) })}</h2>
       <TitlePicker

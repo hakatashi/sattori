@@ -29,6 +29,7 @@
 | タイトル | 録画スクリプト | 技術的背景 | 終了検知 | 解像度 |
 | --- | --- | --- | --- | --- |
 | th06 東方紅魔郷 | `record_th06.py` | [docs/titles/th06.md](docs/titles/th06.md) | テンプレート照合 | 640x480 |
+| th06c 東方紅魔郷: Classic | `record_th06c.py` | [docs/titles/th06c.md](docs/titles/th06c.md) | テンプレート照合(絞り込み領域) | 640x480 |
 | th07 東方妖々夢 | `record_th07.py` | [docs/titles/th07.md](docs/titles/th07.md) | テンプレート照合 | 640x480 |
 | th08 東方永夜抄 | `record_th08.py` | [docs/titles/th08.md](docs/titles/th08.md) | テンプレート照合 | 640x480 |
 | th09 東方花映塚 | `record_th09.py` | [docs/titles/th09.md](docs/titles/th09.md) | テンプレート照合(絞り込み領域) | 640x480 |
@@ -78,7 +79,7 @@
 | 変数 | 説明 |
 | --- | --- |
 | `JOB_ID` | ジョブ ID(DynamoDB キー・出力キーに使用) |
-| `GAME` | タイトル(`th06` / `th07` / `th08` / `th09` / `th10` / `th11` / `th12` / `th20`) |
+| `GAME` | タイトル(`th06` / `th06c` / `th07` / `th08` / `th09` / `th10` / `th11` / `th12` / `th20`) |
 | `REPLAY_BUCKET` / `REPLAY_KEY` | アップロード済みリプレイの S3 位置 |
 | `OUTPUT_BUCKET` | 録画動画の出力先バケット(CloudFront オリジン) |
 | `TITLE_ASSETS_BUCKET` | タイトル固有アセットのバケット(§8) |
@@ -107,7 +108,7 @@
 
 | 録画 | 配信版 | 生データ(元解像度版) | 理由 |
 | --- | --- | --- | --- |
-| th06/07/08/09/10/11/12(640x480・等倍) | 960x720へ拡大 | **そのまま2本目として配信** | 生データが無加工で通用するので、再エンコードは配信版の1回だけで済む |
+| th06/06c/07/08/09/10/11/12(640x480・等倍) | 960x720へ拡大 | **そのまま2本目として配信** | 生データが無加工で通用するので、再エンコードは配信版の1回だけで済む |
 | th20(1280x960・等倍) | 1280x960のまま | 出さない | 2本目はウォーターマークの有無しか違わず、S3保管料とCloudFront転送量が倍になるだけ |
 | th20(低速録画) | 1280x960のまま | 出さない | 生データが半分の速度でそのまま配信できない。別途出すには等倍化の再エンコードがもう1回要る |
 
@@ -213,7 +214,7 @@ S3オブジェクトメタデータ(`sattori-time-scale`)として運ぶ。ま�
 
 - **イメージに焼き込むもの**(`docker build` の前に `worker/` 配下へ配置する): ウォーター
   マーク素材 `assets/watermark/watermark-60fps.webm`(VP9アルファ)と、リプレイ終了検知用の
-  テンプレート `assets/replay_end_templates/{th06,th07,th08,th09,th10}.png`
+  テンプレート `assets/replay_end_templates/{th06,th06c,th07,th08,th09,th10}.png`
   ([`decisions/0011`](../docs/decisions/0011-replay-end-template-matching.md))。いずれも
   タイトル固有アセットではなく録画パイプライン自体が使う共通素材のため。
 - **イメージには含めず、タイトル資産アーカイブとしてS3へ置くもの**: ゲーム本体
@@ -272,7 +273,7 @@ AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/work
 - **デシンク(リプレイずれ)を録画時に予防する手段は無い**。th20 は thprac の導入で大半が
   解消したが([`titles/th20.md`](docs/titles/th20.md))、他タイトルには対処法がない。録画後の
   スコア突き合わせによる事後検知(`JobRecord.desyncDetected`、Issue #103、[`docs/mods.md`](docs/mods.md)
-  の`score_monitor`)はth09を除く7タイトルで実装済みだが、自動リトライはしない(警告表示のみ)。
+  の`score_monitor`)はth09を除く8タイトルで実装済みだが、自動リトライはしない(警告表示のみ)。
   th09はスコアのRVAが未特定でこの検知自体が機能しない
   ([known-limitations §3](../docs/known-limitations.md#3-録画品質の検証にまつわる制約)、
   [`titles/th09.md`](docs/titles/th09.md))。
@@ -285,7 +286,7 @@ AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/work
   できない**。利用者の自己申告(`th10BugfixMarisaB`、既定false)に頼っており、誤った申告の
   リプレイはデシンクする([known-limitations §1](../docs/known-limitations.md#1-対応タイトルの拡大)、
   [`titles/th10.md`](docs/titles/th10.md))。
-- **対応タイトルは §1 の8本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
+- **対応タイトルは §1 の9本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
   対応 —— MOD 移植・実機検証。Issue #13 配下。同 §1)。
 
 **想定尺より大幅に早く終了した/タイムアウトへ近づいたジョブでは、検知ロジック側を疑う前に
