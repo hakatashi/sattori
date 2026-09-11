@@ -299,23 +299,23 @@ describe("UploadForm", () => {
  * 既定オン」「選べないならグレーアウト」。
  */
 describe("UploadForm の低速録画オプション", () => {
-  function slowMotionCheckbox(): HTMLInputElement {
-    const label = screen
-      .getAllByText(/低速録画で品質を優先する|Prioritize quality/)
-      .at(0)
-      ?.closest("label");
-    return label?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+  function slowMotionCheckbox(): HTMLInputElement | null {
+    const labels = screen
+      .queryAllByText(/低速録画で品質を優先する|Prioritize quality/)
+      .map((el) => el.closest("label"))
+      .filter((label): label is HTMLLabelElement => label !== null);
+    const label = labels[0];
+    return (label?.querySelector('input[type="checkbox"]') as HTMLInputElement) ?? null;
   }
 
-  it("自宅ワーカーが使えなければグレーアウトし、チェックできない", async () => {
+  it("自宅ワーカーが使えなくても、EC2低速録画対応タイトル(th20)なら選択でき、既定でオンになる（Issue #245）", async () => {
     mockedClient.getWorkerAvailability.mockResolvedValue({ available: false, capabilities: [] });
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
     renderUploadForm();
     selectFile("th20_ud0000.rpy");
 
-    await waitFor(() => expect(slowMotionCheckbox()).toBeTruthy());
-    expect(slowMotionCheckbox().disabled).toBe(true);
-    expect(slowMotionCheckbox().checked).toBe(false);
+    await waitFor(() => expect(slowMotionCheckbox()?.checked).toBe(true));
+    expect(slowMotionCheckbox()?.disabled).toBe(false);
   });
 
   it("自宅ワーカーが低速録画に対応していれば、th20は既定でオンになる", async () => {
@@ -328,7 +328,7 @@ describe("UploadForm の低速録画オプション", () => {
     selectFile("th20_ud0000.rpy");
 
     await waitFor(() => expect(slowMotionCheckbox()?.checked).toBe(true));
-    expect(slowMotionCheckbox().disabled).toBe(false);
+    expect(slowMotionCheckbox()?.disabled).toBe(false);
   });
 
   it("低速録画に未対応のタイトルは、自宅ワーカーが使えてもグレーアウトする（Issue #101）", async () => {
@@ -341,8 +341,8 @@ describe("UploadForm の低速録画オプション", () => {
     selectFile("th7_07.rpy");
 
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
-    expect(slowMotionCheckbox().checked).toBe(false);
-    expect(slowMotionCheckbox().disabled).toBe(true);
+    expect(slowMotionCheckbox()?.checked).toBe(false);
+    expect(slowMotionCheckbox()?.disabled).toBe(true);
     expect(screen.getByText(/まだ低速録画に対応していない/)).toBeTruthy();
   });
 
@@ -354,13 +354,13 @@ describe("UploadForm の低速録画オプション", () => {
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
     renderUploadForm();
     selectFile("th20_ud0000.rpy");
-    await waitFor(() => expect(slowMotionCheckbox().checked).toBe(true));
+    await waitFor(() => expect(slowMotionCheckbox()?.checked).toBe(true));
 
     // th20（既定オン）から th07（未対応）へ差し替える。
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
     selectFile("th7_07.rpy");
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
-    expect(slowMotionCheckbox().checked).toBe(false);
+    expect(slowMotionCheckbox()?.checked).toBe(false);
 
     mockedClient.requestMagicLink.mockResolvedValue({});
     fillEmail("koishi@example.com");
@@ -384,9 +384,8 @@ describe("UploadForm の低速録画オプション", () => {
     selectFile("th20_ud0000.rpy");
 
     await waitFor(() => expect(screen.getByText(/リプレイずれ/)).toBeTruthy());
-    // 低速録画が選べない状況なので、低速録画で改善できる旨の案内も併せて出る。
+    // 処理落ちの注意自体は常に出る。
     expect(screen.getByText(/描画が重く/)).toBeTruthy();
-    expect(screen.getByText(/ある程度の改善/)).toBeTruthy();
   });
 
   it("低速録画が有効なら、低速録画をすすめる案内は出さない", async () => {
@@ -400,11 +399,32 @@ describe("UploadForm の低速録画オプション", () => {
 
     // 注意書き自体はリプレイの解析直後（＝自宅ワーカーの空き状況を引く前）に出るので、
     // 低速録画が実際にオンになるまで待ってから案内の有無を見る。
-    await waitFor(() => expect(slowMotionCheckbox().checked).toBe(true));
+    await waitFor(() => expect(slowMotionCheckbox()?.checked).toBe(true));
     expect(screen.getByText(/リプレイずれ/)).toBeTruthy();
     // 処理落ちの注意自体は常に出すが、低速録画をすすめる一文だけを落とす。
     expect(screen.getByText(/描画が重く/)).toBeTruthy();
     expect(screen.queryByText(/ある程度の改善/)).toBeNull();
+  });
+
+  it("低速録画のチェックを外した場合は、低速録画をすすめる案内を表示する", async () => {
+    mockedClient.getWorkerAvailability.mockResolvedValue({ available: false, capabilities: [] });
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th20_ud0000.rpy");
+
+    await waitFor(() => {
+      const cb = slowMotionCheckbox();
+      expect(cb).not.toBeNull();
+      expect(cb?.disabled).toBe(false);
+      expect(cb?.checked).toBe(true);
+    });
+
+    // チェックを外す
+    fireEvent.click(slowMotionCheckbox()!);
+    expect(slowMotionCheckbox()?.checked).toBe(false);
+
+    // 低速録画がオフなので、低速録画で改善できる旨の案内が出る。
+    expect(screen.getByText(/ある程度の改善/)).toBeTruthy();
   });
 });
 

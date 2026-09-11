@@ -21,7 +21,7 @@
 | [0007](0007-no-ip-rate-limit-no-recaptcha.md) | 2026-07 | apps/api | IP 単位のレート制限・reCAPTCHA を見送る | 有効 |
 | [0008](0008-th20-appdata-resolved-from-unix-user.md) | 2026-08 | worker | th20 の `%APPDATA%` 配置先を実行中の UNIX ユーザーから解決する | 有効 |
 | [0009](0009-thprac-post-attach.md) | 2026-08 | worker / apps/web | th20 のデシンク対策に thprac を「後付けアタッチ」で適用する | 有効 |
-| [0010](0010-slow-motion-no-worker-side-branching.md) | 2026-08 | worker / apps/api | 低速録画をワーカー側の分岐にせず、起動側が渡す環境変数だけで表す | 有効 |
+| [0010](0010-slow-motion-no-worker-side-branching.md) | 2026-08 | worker / apps/api | 低速録画をワーカー側の分岐にせず、起動側が渡す環境変数だけで表す | [0045](0045-ec2-slow-motion-for-th20.md) によって一部置き換え済み |
 | [0011](0011-replay-end-template-matching.md) | 2026-07 | worker | リプレイの終了検知を画面静止ではなくリプレイ選択画面テンプレートとの照合で行う | 有効 |
 | [0012](0012-crop-geometry-after-window-stabilizes.md) | 2026-08 | worker | x11grab のクロップ座標はウィンドウ発見時ではなく座標が安定してから確定する | 有効 |
 | [0013](0013-per-job-pulseaudio-sink.md) | 2026-08 | worker | 並列録画の音声混成をジョブ専用の PulseAudio sink で防ぐ | 有効 |
@@ -56,6 +56,7 @@
 | [0042](0042-2xlarge-instance-type-group-precedent.md) | 2026-09-01 | apps/api | `c7i`/`c7a`/`m7i`の`.2xlarge`帯を実機検証済みグループとして扱い、新規タイトルは1タイプの検証で残り2タイプも候補に加えてよい | 有効 |
 | [0043](0043-remove-fps-runaway-detection.md) | 2026-09-08 | worker | fps暴走検知(`scan_fps_runaway()`)を削除する。真陽性の実績が無く、th08の会話イベント・th09のステージ間演出で誤検知した実績のみだったため | 有効 |
 | [0044](0044-th06c-steam-drm-stub-and-64bit-title.md) | 2026-09-10 | worker | th06cのSteamworks API初期化要求は最小限のスタブDLLで回避し、64bit専用の録画経路(`GameConfig.for_game()`のoverridesでinjectorを差し替え)を別途用意する | 有効 |
+| [0045](0045-ec2-slow-motion-for-th20.md) | 2026-09-11 | packages/shared / apps/api / apps/web / docs | EC2環境でのth20低速録画を有効化し、対応タイトルをコード内定数で管理する | 有効 |
 
 ## 書き方
 

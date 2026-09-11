@@ -1,6 +1,6 @@
 # 0010. 低速録画をワーカー側の分岐にせず、起動側が渡す環境変数だけで表す
 
-- **状態**: 有効
+- **状態**: `0045` によって一部置き換え済み（EC2でのth20低速録画有効化）
 - **決定日**: 2026-08
 - **対象**: worker / apps/api / home-worker / packages/shared
 - **関連**: Issue #68、Issue #49、touhou-recorder reports/45・46・47・48、
