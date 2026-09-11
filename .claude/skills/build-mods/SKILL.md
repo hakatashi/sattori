@@ -5,8 +5,9 @@ description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w6
 
 # MOD（`*_hook.dll`）・injector.exe のビルド
 
-`i686-w64-mingw32-g++` によるクロスビルドが正式なビルド経路（実機注入テストで意図通りに
-動作することを確認済み、touhou-recorder reports/25）。かつて存在した MSVC 経路
+`worker/mods/Makefile` によるクロスビルドが正式なビルド経路（実機注入テストで意図通りに
+動作することを確認済み、touhou-recorder reports/25）。コンパイラとして `mingw-w64`
+（`i686-w64-mingw32-g++` / `x86_64-w64-mingw32-g++`）を使用する。かつて存在した MSVC 経路
 （`build.bat`、Windows + Visual Studio 前提）は、このマシンに Windows/MSVC 環境が無く
 実際には使われないまま実装から乖離していたため廃止した（Issue #102）。
 
@@ -14,19 +15,38 @@ description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w6
 同梱して配布する（`upload-title-assets` skill）。**MOD を再ビルドしたら、必ず
 タイトル資産も再アップロードすること**。しないと本番は古い DLL のまま動く。
 
-## injector.exe（共通）
+## 一括ビルド
 
-複数 DLL の順次注入に対応した共通インジェクタ（タイトル非依存。th06 の VsyncPatch と
-MOD 本体の共存にも使う）。ビルドは1回で全タイトル分を兼ねる。
+全タイトル分の hook DLL、injector、Steamworks API スタブを一括ビルドする:
 
 ```bash
-cd worker/mods/common
-mkdir -p build
-i686-w64-mingw32-g++ -O2 -o build/injector.exe injector.cpp \
-  -static-libgcc -static-libstdc++
+make -C worker/mods -j$(nproc) all
 ```
 
-## th06c
+ビルド成果物を削除してクリーンビルドする場合:
+
+```bash
+make -C worker/mods clean && make -C worker/mods -j$(nproc) all
+```
+
+---
+
+## 各タイトルの個別ビルドと注意点
+
+### injector.exe / injector64.exe（共通）
+
+複数 DLL の順次注入に対応した共通インジェクタ（タイトル非依存。th06 の VsyncPatch と
+MOD 本体の共存にも使う）。
+
+```bash
+# 32bit版 injector.exe
+make -C worker/mods injector
+
+# 64bit版 injector64.exe (th06c用)
+make -C worker/mods injector64
+```
+
+### th06c
 
 th06cは他タイトルと異なり **th06c.exeがPE32+(x86-64)** なので、injector・MOD・
 Steamworks APIスタブのすべてを `x86_64-w64-mingw32-g++` でクロスビルドする
@@ -36,31 +56,16 @@ Steamworks APIスタブのすべてを `x86_64-w64-mingw32-g++` でクロスビ�
 （起動ダイアログの除外ロジックがth06c専用に`dllmain.cpp`内へ実装済み）。
 
 ```bash
-# 64bit版injector(他タイトルの32bit injector.exeとは別物、同じディレクトリに共存させる)
-cd worker/mods/common
-mkdir -p build
-x86_64-w64-mingw32-g++ -O2 -static -static-libgcc -static-libstdc++ \
-  -o build/injector64.exe injector.cpp
-
 # th06c_hook.dll
-cd ../th06c_replay_autoplay
-mkdir -p build
-x86_64-w64-mingw32-g++ -shared -O2 -static -static-libgcc -static-libstdc++ \
-  -finput-charset=UTF-8 -fexec-charset=UTF-8 -fwide-exec-charset=UTF-16LE \
-  -o build/th06c_hook.dll \
-  dllmain.cpp ../common/logging.cpp ../common/score_monitor.cpp \
-  -luser32
+make -C worker/mods th06c
 
 # Steamworks APIスタブ(steam_api64.dll)。Steamクライアント常駐無しで起動させるための
 # 必須コンポーネント(worker/docs/titles/th06c.md)。games/th06c/直下へ正規のsteam_api64.dll
 # の代わりに同梱する(upload-title-assets skill)。
-cd ../th06c_steam_stub
-mkdir -p build
-x86_64-w64-mingw32-g++ -shared -O2 -static -static-libgcc -static-libstdc++ \
-  -o build/steam_api64.dll steam_api_stub.cpp
+make -C worker/mods steam_api64
 ```
 
-## th09
+### th09
 
 th09はth06/07/08/10/12と同じPressKey（DIK経由）を使う。低速録画フック（D3D8版
 Present間引き・DirectSound周波数スケーリング・fps表示補正）を実装済みだが
@@ -69,54 +74,21 @@ Present間引き・DirectSound周波数スケーリング・fps表示補正）�
 `dsound_hook.cpp`・`fps_display_hook.cpp`を含める必要がある（th20と異なり`-static`は不要）。
 
 ```bash
-cd worker/mods/th09_replay_autoplay
-mkdir -p build
-i686-w64-mingw32-g++ -shared -O2 -o build/th09_hook.dll \
-  dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
-  ../common/logging.cpp ../common/fps_monitor.cpp ../common/fps_limiter_hook_d3d8.cpp \
-  ../common/dsound_hook.cpp ../common/fps_display_hook.cpp ../common/score_monitor.cpp \
-  -luser32 -static-libgcc -static-libstdc++
+make -C worker/mods th09
 ```
 
-## th10
+### th10 / th11 / th12
 
-th10はth06/07/08と同じPressKey（DIK経由）を使うため、`InstallKeyboardStateHook`は
+th10/th12はth06/07/08と同じPressKey（DIK経由）を使うため、`InstallKeyboardStateHook`は
 不要（`th11・th20と異なる`、詳細は`worker/docs/titles/th10.md`）。
 
 ```bash
-cd worker/mods/th10_replay_autoplay
-mkdir -p build
-i686-w64-mingw32-g++ -shared -O2 -o build/th10_hook.dll \
-  dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
-  ../common/logging.cpp ../common/fps_monitor.cpp ../common/score_monitor.cpp \
-  -luser32 -static-libgcc -static-libstdc++
+make -C worker/mods th10
+make -C worker/mods th11
+make -C worker/mods th12
 ```
 
-## th11
-
-```bash
-cd worker/mods/th11_replay_autoplay
-mkdir -p build
-i686-w64-mingw32-g++ -shared -O2 -o build/th11_hook.dll \
-  dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
-  ../common/logging.cpp ../common/fps_monitor.cpp ../common/score_monitor.cpp \
-  -luser32 -static-libgcc -static-libstdc++
-```
-
-## th12
-
-th12はth10と同じPressKey（DIK経由）を使う（`worker/docs/titles/th12.md`）。
-
-```bash
-cd worker/mods/th12_replay_autoplay
-mkdir -p build
-i686-w64-mingw32-g++ -shared -O2 -o build/th12_hook.dll \
-  dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
-  ../common/logging.cpp ../common/fps_monitor.cpp ../common/score_monitor.cpp \
-  -luser32 -static-libgcc -static-libstdc++
-```
-
-## th20
+### th20
 
 th20 はフック3つ（Present 制御・DirectSound 周波数・fps 表示補正）が追加で要る。
 
@@ -125,34 +97,23 @@ th20 はフック3つ（Present 制御・DirectSound 周波数・fps 表示補�
 touhou-recorder reports/44）。
 
 ```bash
-cd worker/mods/th20_replay_autoplay
-mkdir -p build
-i686-w64-mingw32-g++ -shared -O2 -o build/th20_hook.dll \
-  dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
-  ../common/logging.cpp ../common/fps_monitor.cpp ../common/fps_limiter_hook.cpp \
-  ../common/dsound_hook.cpp ../common/fps_display_hook.cpp ../common/score_monitor.cpp \
-  -luser32 -static-libgcc -static-libstdc++ -static
+make -C worker/mods th20
 ```
 
-## th06 / th07 / th08（mingw-w64）
+### th06 / th07 / th08
 
 `fps_monitor.cpp` を含めるかどうかだけが違う。th06/th07 は含めず、th08 は含める
 （fps 暴走検知用、touhou-recorder reports/22）。`score_monitor.cpp`（リプレイずれ
 判定用のスコア監視、Issue #103）は3タイトルとも共通で含める。
 
 ```bash
-cd worker/mods/th08_replay_autoplay
-mkdir -p build
-i686-w64-mingw32-g++ -shared -O2 -o build/th08_hook.dll \
-  dllmain.cpp ../common/dinput_hook.cpp ../common/window_wait.cpp \
-  ../common/logging.cpp ../common/fps_monitor.cpp ../common/score_monitor.cpp \
-  -luser32 -static-libgcc -static-libstdc++
+make -C worker/mods th06
+make -C worker/mods th07
+make -C worker/mods th08
 ```
-
-th06/th07 は上記コマンドから `../common/fps_monitor.cpp` を除いたもの（`dllmain.cpp`
-を各ディレクトリのものに差し替える）。
 
 ## 関連
 
 - ビルドした DLL の配布 → `upload-title-assets` skill
 - MOD の設計・各フックの役割 → `worker/docs/mods.md`、`worker/docs/titles/thNN.md`
+- ビルド定義 → `worker/mods/Makefile`
