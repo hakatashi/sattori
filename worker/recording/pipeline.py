@@ -4,6 +4,7 @@
 `recording/vision.py` にある(連続回数は `POLL_INTERVAL_SEC` との積で意味が決まるため、
 ループを回すこちら側に置いている)。
 """
+import glob
 import os
 import signal
 import subprocess
@@ -85,7 +86,7 @@ MAX_DUPLICATE_RATE_DEFAULT = 30.0
 
 
 def _log_failure_diagnostics(config, log):
-    """起動失敗時・ウィンドウ検出失敗時の診断のため、wine.log と mod.log の末尾を出力する。"""
+    """起動失敗時・ウィンドウ検出失敗時の診断のため、wine.log / mod.log / DXVK log の末尾を出力する。"""
     wine_log = f"{config.instance_dir}/wine.log"
     if os.path.exists(wine_log):
         try:
@@ -102,6 +103,16 @@ def _log_failure_diagnostics(config, log):
                 content = f.read()
             if content.strip():
                 log(f"--- mod.log (末尾2000文字) ---\n{content[-2000:]}")
+        except Exception:
+            pass
+
+    # DXVK ログ (th06nc_d3d11.log, th06nc_dxgi.log 等)
+    for dxvk_log in glob.glob(f"{config.instance_dir}/*_d3d11.log") + glob.glob(f"{config.instance_dir}/*_dxgi.log"):
+        try:
+            with open(dxvk_log, "r", errors="replace") as f:
+                content = f.read()
+            if content.strip():
+                log(f"--- {os.path.basename(dxvk_log)} (末尾2000文字) ---\n{content[-2000:]}")
         except Exception:
             pass
 

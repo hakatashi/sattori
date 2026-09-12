@@ -216,10 +216,10 @@ systemctl disable --now ecs >/dev/null 2>&1 || true`;
 
   // GPU用カスタムAMIはnvidia-container-toolkit導入済み前提で、コンテナへGPUを
   // 渡すために`--gpus all`が必要（CPU系では付けない）。
-  // またホスト側のXorg NVIDIAドライバ(/usr/lib/xorg/modules)をコンテナへマウントし、
-  // X11共有メモリ・PulseAudioのために--ipc=hostを付与する。
+  // またホスト側のXorg NVIDIAドライバ(/usr/lib/xorg/modules)およびVulkan ICD設定を
+  // コンテナへマウントし、X11共有メモリ・PulseAudioのために--ipc=hostを付与する。
   const dockerRunFlags = isGpuJob
-    ? "--rm --gpus all --ipc=host -v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro -v /tmp/.X11-unix:/tmp/.X11-unix"
+    ? "--rm --gpus all --ipc=host -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=all -e VK_LOADER_DEBUG=all -v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro -v /tmp/.X11-unix:/tmp/.X11-unix -v /etc/vulkan/icd.d:/etc/vulkan/icd.d:ro"
     : "--rm";
 
   // trap EXIT で必ず shutdown する（Spot 終了 = 課金停止）。ECR ログインや
