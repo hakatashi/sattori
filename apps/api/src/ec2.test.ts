@@ -330,7 +330,7 @@ describe("launchRecordingInstance", () => {
     }
   });
 
-  it("th06ncジョブはGPU専用Launch Template・g6f.xlargeで起動する（Issue #241）", async () => {
+  it("th06ncジョブはGPU専用Launch Template・GPU系インスタンスタイプ（g6f.xlarge/g6f.2xlarge）で起動する（Issue #241）", async () => {
     ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
       LaunchTemplateVersion: { VersionNumber: 5 },
     });
@@ -361,6 +361,8 @@ describe("launchRecordingInstance", () => {
       expect.arrayContaining([
         { SubnetId: "subnet-aaaa", InstanceType: "g6f.xlarge" },
         { SubnetId: "subnet-bbbb", InstanceType: "g6f.xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "g6f.2xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "g6f.2xlarge" },
       ]),
     );
     // CPU系Launch Templateは一切参照しない

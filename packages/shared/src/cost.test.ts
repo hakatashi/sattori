@@ -162,14 +162,22 @@ describe("estimateJobCost", () => {
     expect(estimate.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
   });
 
-  it("GPU系(g6f.xlarge)をCPU系.xlarge帯へ混同しない（Issue #241）", () => {
-    const estimate = estimateJobCost(
+  it("GPU系(g6f.xlarge/g6f.2xlarge)をCPU系.xlarge/.2xlarge帯へ混同しない（Issue #241）", () => {
+    const estimateXlarge = estimateJobCost(
       makeJob({ spotPricePerHour: null, instanceType: "g6f.xlarge" }),
       new Date("2026-08-02T00:00:00.000Z"),
     );
 
-    expect(estimate.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
-    expect(estimate.spotPricePerHour).not.toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.xlarge);
+    expect(estimateXlarge.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
+    expect(estimateXlarge.spotPricePerHour).not.toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.xlarge);
+
+    const estimate2xlarge = estimateJobCost(
+      makeJob({ spotPricePerHour: null, instanceType: "g6f.2xlarge" }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+
+    expect(estimate2xlarge.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
+    expect(estimate2xlarge.spotPricePerHour).not.toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
   });
 
   it("インスタンスタイプも不明ならゲームからサイズ帯を推定する（th11・th12は.2xlarge帯）", () => {

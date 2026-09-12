@@ -36,8 +36,9 @@ GPU描画にはNVIDIA GRIDドライバ（vGPU用、通常のデータセンタ�
 
 ## 決定
 
-- 候補インスタンスタイプに`g6f.xlarge`を新設する（`apps/api/src/ec2.ts`の
-  `GPU_CANDIDATE_INSTANCE_TYPES`）。720p・1080pどちらの録画もこの1タイプで行う。
+- 候補インスタンスタイプに`g6f.xlarge`および`g6f.2xlarge`を新設する（`apps/api/src/ec2.ts`の
+  `GPU_CANDIDATE_INSTANCE_TYPES`）。第一候補は`g6f.xlarge`だが、Spot枯渇耐性
+  （Issue #29）および1080p録画品質のために`g6f.2xlarge`も候補に含める。
 - **GPU描画必須タイトル向けのAMIは、CPU系ワーカー（SSMパラメータでECS最適化
   AL2023を動的解決）とは異なり、事前に1回手動構築したカスタムAMI
   （NVIDIA GRIDドライバ・nvidia-container-toolkit導入済み）を固定参照する**
@@ -51,12 +52,12 @@ GPU描画にはNVIDIA GRIDドライバ（vGPU用、通常のデータセンタ�
   NVIDIAドライバ本体を含めない。
 - AMI構築手順は`build-gpu-worker-ami` skillに切り出す（低頻度の運用作業のため、
   通常のデプロイフロー`deploy-sattori` skillとは分離）。
-- **1080p録画オプションもg6f.xlargeのまま提供する**（`packages/shared/src/
+- **1080p録画オプションもGPU系候補インスタンスタイプのまま提供する**（`packages/shared/src/
   highResolutionRecording.ts`）。touhou-recorder reports/81 §9.9.3の実測では
   1080pは本来g6f.2xlarge（8vCPU）が推奨——g6f.xlarge（4vCPU）では実効fpsが
   54.87まで悪化し重複フレーム率が7.9%まで増える——だが、eu-south-2のG系スポット
   クォータが現状8vCPU（g6f.xlarge換算で2台分の並列運用余地）であることを踏まえ、
-  並列運用の余地を残す意味でユーザー判断でg6f.xlargeのまま提供する。
+  `g6f.xlarge`も候補に残してSpot Fleet（`price-capacity-optimized`）に選択を委ねる。
 
 ## 根拠
 
@@ -64,6 +65,10 @@ GPU描画にはNVIDIA GRIDドライバ（vGPU用、通常のデータセンタ�
 - ローカルGPU（amdgpu）でのハング問題とAWS実機移行の判断根拠: reports/79・80 §4。
 - g6f.xlargeでの720p/1080p実測（重複フレーム率、実効fps、A/V同期）: reports/81
   §8・§9.8・§9.9.3。
+- **g6f.2xlarge候補追加の根拠**: eu-south-2におけるSpot価格の実測値（`g6f.xlarge`が
+  $0.0575〜0.0612/時に対し`g6f.2xlarge`が$0.0597〜0.0708/時）により、両インスタンスタイプの
+  価格差が極めて小さい（ほぼ同額）ことを確認した。コスト増を招くことなくSpot在庫枯渇への耐性
+  （Issue #29）を高められる。
 - 都度UserDataインストール vs 事前構築AMIのコスト比較: ユーザーへのコスト試算
   提示（録画1本あたり10〜15分の追加起動時間 vs AMI保管コスト月1〜2ドル）を経て
   カスタムAMI方式で確定。
@@ -76,10 +81,10 @@ GPU描画にはNVIDIA GRIDドライバ（vGPU用、通常のデータセンタ�
 - **ローカルのAMD GPU（amdgpu）を本番で使う**: プロセス終了時のGPU VM破棄が
   恒久的にハングする問題があり、本番サービスでこのリスクを負うのは不適切と
   判断した（reports/79・80）。
-- **g6f.2xlarge（8vCPU）を既定インスタンスにする**: 1080p録画の品質は
-  g6f.xlargeより良いが、eu-south-2のG系スポットクォータ8vCPUの下では並列
-  1台しか運用できなくなる。720p/1080pどちらもg6f.xlargeに統一することで
-  並列2台の運用余地を残した。
+- **g6f.2xlarge（8vCPU）単独に固定する**: 1080p録画の品質はg6f.xlargeより良いが、
+  eu-south-2のG系スポットクォータ8vCPUの下では常時並列1台しか運用できなくなる。
+  `g6f.xlarge`と`g6f.2xlarge`の両方を候補に含め`price-capacity-optimized`で配分する
+  ことで、並列2台の余地を残しつつSpot枯渇耐性を確保した。
 
 ## 影響範囲
 
