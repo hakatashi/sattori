@@ -12,7 +12,7 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
 説明を最小限に、操作を単純にする。想定利用規模は**月間最大1000回**の録画で、コストとオペレー
 ションの最小化を最優先に設計判断を行っている。主要機能（アップロード→解析プレビュー→マジック
 リンク認証→録画→ポーリング→DL→完了メール）は実装済みで、2026-08-22に初回リリース済み。
-対応タイトルは th06・th06c・th07・th08・th09・th10・th11・th12・th20 の9本。未実装・未検証の事項は
+対応タイトルは th06・th06c・th06nc・th07・th08・th09・th10・th11・th12・th20 の10本。未実装・未検証の事項は
 [`docs/known-limitations.md`](docs/known-limitations.md) に一覧してある。実機検証レポート群は別
 リポジトリ `touhou-recorder`（PoC）にあり、各所の `reports/NN` はその番号。
 
@@ -67,7 +67,10 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
   （[`decisions/0006`](docs/decisions/0006-progress-polling-not-websocket.md)）。
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。永年無料枠で egress を実質ゼロにできる。
 - **録画ワーカーは EC2 Fleet と自宅サーバーの2種類あり、どちらも同じ ECR イメージ・同じ taskToken
-  契約で動く**（Issue #49）。自宅マシンは NAT 配下で到達できないため割り当ては**Pull 型**（AWS が
+  契約で動く**（Issue #49、GPU描画必須タイトルは自宅ワーカーへ常に来ないため例外
+  ——別ECRイメージ・別インスタンスタイプ、[`0046`](docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)〜
+  [`0048`](docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)）。自宅マシンは NAT 配下で
+  到達できないため割り当ては**Pull 型**（AWS が
   オファーを書き、デーモンが条件付き更新で原子的に claim する。
   [`0018`](docs/decisions/0018-home-worker-pull-assignment.md)）。**ワーカーの中に「自宅かEC2か」
   の分岐を作らないこと** —— 環境差分は起動側が渡す環境変数（`apps/api/src/workerEnv.ts`）で表す。

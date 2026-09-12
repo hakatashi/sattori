@@ -259,6 +259,45 @@ class _FakeClock:
         self.t += seconds
 
 
+def test_settle_crop_geometry_moves_window_when_position_is_negative(monkeypatch):
+    """ウィンドウマネージャが左上の外側(負座標)にウィンドウを配置した場合も
+    画面外とみなしてwindowmoveする。従来は右・下へのはみ出し
+    (x + w > screen_w等)しか見ておらず、負座標配置を「画面内」と誤判定して
+    空の録画がそのまま正常扱いになっていた(GPU描画のXorg+nvidia環境で実際に
+    発生、touhou-recorder reports/81 §9.9.5、Issue #241)。"""
+    config = make_config()  # xvfb_screen既定 "800x600x24"
+    calls = []
+    monkeypatch.setattr(pipeline, "find_window", lambda *a, **k: (-3, -16, 640, 480, "0x1"))
+    monkeypatch.setattr(pipeline, "attach_thprac", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "wait_for_log_marker", lambda *a, **k: 1.0)
+    geometries = iter([
+        (-3, -16, 640, 480, "0x1"),  # 確定直後の座標(画面外)
+        (0, 0, 640, 480, "0x1"),  # windowmove後の座標
+    ])
+    monkeypatch.setattr(pipeline, "wait_for_stable_geometry", lambda *a, **k: next(geometries))
+    monkeypatch.setattr(pipeline.subprocess, "run", lambda cmd, **k: calls.append(list(cmd)))
+
+    result = pipeline._settle_crop_geometry(config, {}, 123, set(), log=lambda _m: None)
+
+    assert result == (0, 0, 640, 480)
+    assert any(c[:2] == ["xdotool", "windowmove"] for c in calls)
+
+
+def test_settle_crop_geometry_skips_move_when_within_bounds(monkeypatch):
+    config = make_config()
+    calls = []
+    monkeypatch.setattr(pipeline, "find_window", lambda *a, **k: (10, 10, 640, 480, "0x1"))
+    monkeypatch.setattr(pipeline, "attach_thprac", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "wait_for_log_marker", lambda *a, **k: 1.0)
+    monkeypatch.setattr(pipeline, "wait_for_stable_geometry", lambda *a, **k: (10, 10, 640, 480, "0x1"))
+    monkeypatch.setattr(pipeline.subprocess, "run", lambda cmd, **k: calls.append(list(cmd)))
+
+    result = pipeline._settle_crop_geometry(config, {}, 123, set(), log=lambda _m: None)
+
+    assert result == (10, 10, 640, 480)
+    assert calls == []
+
+
 def test_monitor_until_end_returns_last_captured_frame_on_freeze(monkeypatch):
     """画面固着で打ち切られても、直近にgrab_frame()で取得したカラー画像を返すこと
     (Issue #159。診断スナップショットの元になる)。"""
@@ -294,6 +333,75 @@ def test_monitor_until_end_returns_last_captured_frame_on_freeze(monkeypatch):
     assert detected_by is None
     assert frozen is True
     assert last_color_frame == "color2"
+
+
+def test_monitor_until_end_uses_side_stream_when_configured(monkeypatch):
+    """poll_side_stream使用時はgrab_frame()(別プロセスのx11grab)ではなく
+    read_side_stream_frame()を使う(GPU実行時のキャプチャ競合対策、Issue #241)。"""
+    config = make_config(poll_side_stream=True)
+    env = config.build_env()
+    clock = _FakeClock()
+    monkeypatch.setattr(pipeline.time, "time", clock.time)
+    monkeypatch.setattr(pipeline.time, "sleep", clock.sleep)
+    monkeypatch.setattr(pipeline, "wait_for_log_marker", lambda *a, **k: 0.0)
+    monkeypatch.setattr(pipeline, "FREEZE_CONSECUTIVE_REQUIRED", 2)
+
+    def fail_grab_frame(*a, **k):
+        raise AssertionError("poll_side_stream時はgrab_frame()を呼んではならない")
+
+    monkeypatch.setattr(pipeline, "grab_frame", fail_grab_frame)
+
+    gray = np.zeros((120, 160), dtype=np.float32)
+    side_calls = {"n": 0}
+
+    def fake_read_side_stream_frame(path, last_mtime=None):
+        side_calls["n"] += 1
+        assert path == "/side.jpg"
+        return gray, f"color{side_calls['n']}", float(side_calls["n"])
+
+    monkeypatch.setattr(pipeline, "read_side_stream_frame", fake_read_side_stream_frame)
+
+    end_template = np.zeros((120, 160), dtype=np.float32)
+    detection = pipeline._EndDetection(
+        template=end_template, template_mask=None, template_mad_threshold=0.0, still_mask=None,
+    )
+    detected, detected_by, frozen, last_color_frame = pipeline._monitor_until_end(
+        config, env, (0, 0, 640, 480), detection, time_scale=1.0,
+        progress_dir=None, expected_duration_seconds=None, seen_lines=set(), log=lambda msg: None,
+        side_stream_path="/side.jpg",
+    )
+
+    assert frozen is True
+    assert side_calls["n"] > 0
+    assert last_color_frame == f"color{side_calls['n']}"
+
+
+def test_monitor_until_end_skips_poll_when_side_stream_frame_unchanged(monkeypatch):
+    """フレーム未更新(None)が返された場合はポーリングをスキップして次周期を待つだけで、
+    静止・タイムアウト判定を進めない(同一フレームを誤って静止と数えない)。"""
+    config = make_config(poll_side_stream=True)
+    env = config.build_env()
+    clock = _FakeClock()
+    monkeypatch.setattr(pipeline.time, "time", clock.time)
+    monkeypatch.setattr(pipeline.time, "sleep", clock.sleep)
+    monkeypatch.setattr(pipeline, "wait_for_log_marker", lambda *a, **k: 0.0)
+    monkeypatch.setattr(pipeline, "TIMEOUT_SEC", 20)
+
+    monkeypatch.setattr(pipeline, "read_side_stream_frame", lambda *a, **k: (None, None, None))
+
+    end_template = np.zeros((120, 160), dtype=np.float32)
+    detection = pipeline._EndDetection(
+        template=end_template, template_mask=None, template_mad_threshold=0.0, still_mask=None,
+    )
+    detected, detected_by, frozen, last_color_frame = pipeline._monitor_until_end(
+        config, env, (0, 0, 640, 480), detection, time_scale=1.0,
+        progress_dir=None, expected_duration_seconds=None, seen_lines=set(), log=lambda msg: None,
+        side_stream_path="/side.jpg",
+    )
+
+    assert last_color_frame is None
+    assert frozen is False
+    assert detected is False
 
 
 def test_attempt_recording_saves_diagnostics_snapshot_on_discarded_attempt(monkeypatch, tmp_path):

@@ -284,6 +284,19 @@ export class SattoriStack extends Stack {
       lifecycleRules: [{ maxImageCount: 2 }],
     });
 
+    // GPU描画必須タイトル(th06nc等、Issue #241)専用のワーカーイメージ。CPU系
+    // (`workerRepo`)とはベースイメージ・依存パッケージが異なる別Dockerfile
+    // (`worker/Dockerfile.gpu`)からビルドするため、リポジトリを分けてある
+    // （`docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md`）。今回はth06ncのみを
+    // 収録するが、将来th20等をGPU化する際の受け皿としても使える構造（GPU化しない限り
+    // 空のまま、既存th20の録画経路自体は今回変更しない）。
+    const workerGpuRepo = new ecr.Repository(this, "WorkerGpuRepo", {
+      repositoryName: "sattori-worker-gpu",
+      removalPolicy: RemovalPolicy.DESTROY,
+      emptyOnDelete: true,
+      lifecycleRules: [{ maxImageCount: 2 }],
+    });
+
     // タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD、`titles/{game}/assets.tar.gz`)を
     // 保管するバケット。ECRストレージコストがタイトル数に比例して増大する問題への対応
     // として、これらをワーカーイメージから分離しS3へ移した(Issue #22、S3StandardはECR
@@ -354,6 +367,9 @@ export class SattoriStack extends Stack {
     titleAssetsBucket.grantRead(workerRole);
     jobsTable.grantReadWriteData(workerRole);
     workerRepo.grantPull(workerRole);
+    // GPU用Launch Templateも同じworkerRoleを共用する（権限セットに差が無いため、
+    // Issue #241）。CPU系ワーカーにもGPUリポジトリのpull権限が付くが実害はない。
+    workerGpuRepo.grantPull(workerRole);
     // awslogs ドライバはストリーム作成とイベント送出を行う。
     workerLogGroup.grantWrite(workerRole);
     // taskToken 経由で Step Functions へ成功/失敗(Spot中断の早期通知含む)を通知する。
@@ -399,6 +415,10 @@ export class SattoriStack extends Stack {
     // 自分のハートビートを書く。他ワーカーの行を消せる必要は無いのでDeleteは与えない。
     workersTable.grant(homeWorkerRole, "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem");
     workerRepo.grantPull(homeWorkerRole);
+    // workerGpuRepo(GPU描画必須タイトル専用)のpull権限は意図的に付与しない。自宅
+    // ワーカーはGPUを搭載していない前提で常にth06nc等をオファーされないが
+    // (`apps/api/src/workerRouting.ts`のoffer制御)、pull権限すら渡さないことも
+    // 多層防御の1つになる(Issue #241、`docs/decisions/0047`)。
     // EC2ワーカーはdockerのawslogsドライバがログを送るが、自宅ではdockerデーモンに
     // AWS認証情報を持たせたくないため、デーモン自身がコンテナ出力を読んで
     // 同じロググループ・同じストリーム名(=jobId)へ転送する。これにより管理画面の
@@ -433,6 +453,34 @@ export class SattoriStack extends Stack {
       },
     });
 
+    // GPU描画必須タイトル(th06nc等、Issue #241)専用のLaunch Template。CPU系と異なり
+    // AMIをSSMパラメータで動的解決せず、事前に1回手動構築したカスタムAMI
+    // （NVIDIA GRIDドライバ・nvidia-container-toolkit導入済み、`build-gpu-worker-ami`
+    // skill）を固定参照する。GRIDドライバの導入はS3からの取得＋再起動を要する重い
+    // 処理で、ジョブ起動のたびに行うと起動時間・信頼性の両面で不利なため
+    // （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
+    // AMI IDはCDKコンテキスト値として与える(cdk.jsonにコミットし、更新をgit履歴で
+    // 追跡できるようにする)。未設定のままsynthすると気づけるよう例外を投げる——
+    // うっかりCPU系AMIのままGPU系を起動する事故を防ぐため。
+    const gpuWorkerAmiId = this.node.tryGetContext("gpuWorkerAmiId") as string | undefined;
+    if (!gpuWorkerAmiId) {
+      throw new Error(
+        "gpuWorkerAmiId コンテキスト値が未設定です。cdk.json の context に" +
+          " GPU用カスタムAMI ID を設定するか、`cdk deploy -c gpuWorkerAmiId=ami-xxxx`" +
+          " で指定してください（`build-gpu-worker-ami` skill参照）。",
+      );
+    }
+    const gpuWorkerLaunchTemplate = new ec2.CfnLaunchTemplate(this, "GpuWorkerLaunchTemplate", {
+      launchTemplateData: {
+        imageId: gpuWorkerAmiId,
+        instanceType: "g6f.xlarge",
+        iamInstanceProfile: { arn: workerInstanceProfile.instanceProfileArn },
+        securityGroupIds: [workerSg.securityGroupId],
+        instanceInitiatedShutdownBehavior: "terminate",
+        userData: Buffer.from("#!/bin/bash\nexit 0\n", "utf-8").toString("base64"),
+      },
+    });
+
     // --- API(Lambda + HTTP API) -------------------------------------------
 
     // 全AZのサブネットをそのままEC2 Fleetの起動先候補にする。us-east-1運用時は
@@ -446,10 +494,12 @@ export class SattoriStack extends Stack {
       CDN_DOMAIN: mediaDistribution.distributionDomainName,
       JOBS_TABLE: jobsTable.tableName,
       WORKER_IMAGE: `${workerRepo.repositoryUri}:latest`,
+      WORKER_GPU_IMAGE: `${workerGpuRepo.repositoryUri}:latest`,
       TITLE_ASSETS_BUCKET: titleAssetsBucket.bucketName,
       WORKER_LOG_GROUP: workerLogGroup.logGroupName,
       WORKER_SUBNET_IDS: workerSubnets.map((subnet) => subnet.subnetId).join(","),
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
+      GPU_WORKER_LAUNCH_TEMPLATE_ID: gpuWorkerLaunchTemplate.ref,
       EMAIL_RATE_LIMIT_TABLE: emailRateLimitTable.tableName,
       SETTINGS_TABLE: settingsTable.tableName,
       WORKERS_TABLE: workersTable.tableName,
@@ -1309,6 +1359,7 @@ function handler(event) {
     new CfnOutput(this, "WebCdnDomain", { value: webDistribution.distributionDomainName });
     new CfnOutput(this, "MediaCdnDomain", { value: mediaDistribution.distributionDomainName });
     new CfnOutput(this, "WorkerRepoUri", { value: workerRepo.repositoryUri });
+    new CfnOutput(this, "WorkerGpuRepoUri", { value: workerGpuRepo.repositoryUri });
     // タイトル資産アップロード先(worker/README.md §8 参照)。
     new CfnOutput(this, "TitleAssetsBucketName", { value: titleAssetsBucket.bucketName });
     // 自宅ワーカー(Issue #49)の設定に必要な値。`home-worker/README.md`参照。

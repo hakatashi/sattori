@@ -70,6 +70,26 @@ docker push "${SATTORI_ECR_REPO}:latest"
 > 2026-08 の eu-south-2 移設に伴い、ECR リポジトリも eu-south-2 側。旧 us-east-1 の
 > イメージは参照されない。
 
+### GPU描画必須タイトル(th06nc等)専用イメージ(`worker-gpu`)
+
+**§1と同様、`pnpm run deploy`より先に実行すること。** CPU系イメージとは別Dockerfile
+（`Dockerfile.gpu`）・別ECRリポジトリで、th06nc(Issue #241)を変更した場合のみ再ビルド・
+push すればよい（CPU系9タイトルの変更では不要）。
+
+```bash
+source scripts/sattori-env.sh
+docker build -f worker/Dockerfile.gpu -t "${SATTORI_ECR_GPU_REPO}:latest" worker/
+aws ecr get-login-password --region "$SATTORI_REGION" \
+  | docker login --username AWS --password-stdin \
+      "${SATTORI_AWS_ACCOUNT_ID}.dkr.ecr.${SATTORI_REGION}.amazonaws.com"
+docker push "${SATTORI_ECR_GPU_REPO}:latest"
+```
+
+**GPU用カスタムAMI（`build-gpu-worker-ami` skill）を更新した場合は、このイメージの
+再ビルド・再pushもセットで行うこと。** AMI側のNVIDIA GRIDドライバのバージョンと
+コンテナが期待するユーザースペースライブラリのバージョンが食い違うと、Xorg/DXVKの
+起動に失敗する可能性がある（`worker/docs/titles/th06nc.md`参照）。
+
 ## 3. 管理画面（`/admin`）トークンの投入・ローテーション
 
 管理画面は SSM Parameter Store（SecureString）に置いた共有トークンで認証する（Issue #51）。
@@ -97,4 +117,5 @@ aws ssm get-parameter --region "$SATTORI_REGION" --name /sattori/admin/token \
 
 - タイトル資産（ゲームデータ）の S3 アップロード → `upload-title-assets` skill
 - MOD（`*_hook.dll`）のビルド → `build-mods` skill
+- GPU用カスタムAMI（th06nc等、Issue #241）の構築 → `build-gpu-worker-ami` skill
 - スタック構成・CDK の詳細 → `infra/README.md`

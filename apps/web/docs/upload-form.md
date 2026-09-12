@@ -70,3 +70,23 @@ thprac では直せないずれがある」にある。
 したがってこの注意書きは、①ユーザーに録画依頼前の期待値を持ってもらう（予期しない
 リプレイずれへの不満の緩和）ことに加えて、②**今後保存するリプレイを汚染させない
 唯一の手段をユーザーに伝える**という、サーバー側では代替できない役割を持つ。
+
+## 3. th06ncの1080p録画オプション（Issue #241）
+
+th06nc（東方紅魔郷: New Classic、GPU描画必須タイトル）限定で、既定の720pに代えて
+1080pで録画するオプションを選べる。低速録画と異なり**ワーカーの空き状況には依存
+しない**——th06ncは自宅ワーカーへ絶対にオファーされず（GPU非搭載のため）、常に
+EC2（GPU系インスタンス`g6f.xlarge`）で録画されるため、720p/1080pどちらを選んでも
+使用インスタンスは変わらない。
+
+- 対応タイトルは`supportsHighResolutionRecording(game)`（`@sattori/shared`、
+  現状th06ncのみ）で判定する。非対応タイトルではグレーアウトし、
+  `POST /magic-links`も同じ判定で握り潰す。
+- 既定はfalse（720p）固定。th10BugfixMarisaBと同じパターンで、`preview?.game`が
+  変わった際の自動追従（`useEffect`によるリセット）は無い——チェック状態は
+  `th06ncHighResolutionSelectable && th06ncHighResolution`という導出値で
+  「選択不可なら常にfalseとして送信される」ことが保証されるため、明示的な
+  リセット処理は不要（`th10BugfixMarisaB`と同型）。
+- **1080p録画は品質が不安定になりうる**ことをヒント文で案内する
+  （touhou-recorder reports/81 §9.9.3の実測、`docs/decisions/0046`参照。
+  g6f.xlarge=4vCPUのまま1080pを提供しているため）。

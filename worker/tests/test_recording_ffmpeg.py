@@ -22,6 +22,33 @@ def test_build_video_ffmpeg_cmd_captures_without_watermark():
     assert "-copyts" in cmd  # A/V同期補正用の絶対start_time保持(reports/28)
 
 
+def test_build_video_ffmpeg_cmd_with_side_stream_adds_split_filter():
+    # Issue #241: poll_side_stream使用時のみsplitフィルタでサブストリーム出力を追加する。
+    config = make_config()
+    cmd = ffmpeg.build_video_ffmpeg_cmd(config, 0, 0, 1280, 720, "out.video.mp4", "out.pollstream.jpg")
+
+    assert "-filter_complex" in cmd
+    assert "split=2" in cmd[cmd.index("-filter_complex") + 1]
+    assert "out.video.mp4" in cmd
+    assert "out.pollstream.jpg" in cmd
+    assert "-update" in cmd
+    assert "-flush_packets" in cmd
+
+
+def test_build_video_ffmpeg_cmd_without_side_stream_matches_legacy_command():
+    # side_stream_path未指定時は既存9タイトルのコマンド文字列と完全一致すること
+    # (Issue #241対応による回帰が無いことの確認)。
+    config = make_config()
+    legacy = ["ffmpeg", "-y", "-copyts",
+              "-f", "x11grab", "-draw_mouse", "0", "-video_size", "640x480", "-framerate", "60",
+              "-i", f"{config.display}+0,0",
+              "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+              "out.video.mp4"]
+
+    assert ffmpeg.build_video_ffmpeg_cmd(config, 0, 0, 640, 480, "out.video.mp4") == legacy
+    assert ffmpeg.build_video_ffmpeg_cmd(config, 0, 0, 640, 480, "out.video.mp4", None) == legacy
+
+
 def test_build_audio_ffmpeg_cmd_uses_pulse_source():
     config = make_config()
     cmd = ffmpeg.build_audio_ffmpeg_cmd(config, "out.audio.m4a")

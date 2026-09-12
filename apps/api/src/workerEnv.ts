@@ -87,6 +87,13 @@ export function buildWorkerEnv(
     // 呼び出し側が値を変える必要が無い。
     env.TH10_BUGFIX_MARISA_B = "1";
   }
+  if (job.game === "th06nc" && job.options.th06ncHighResolution) {
+    // 1080p録画オプション（Issue #241）。th06ncは自宅ワーカーへは絶対にオファーされない
+    // （`workerRouting.ts`の`offerToHomeWorker: false`）ため常にEC2（GPU系）で録画され、
+    // th10BugfixMarisaBと同様「割り当て先次第で無効化される」性質のオプションではない。
+    // 未指定＝720p（既定値を環境変数で表現しない）。
+    env.TH06NC_RESOLUTION = "1080p";
+  }
   return env;
 }
 

@@ -22,7 +22,7 @@ const job = {
   jobId: "job-1",
   game: "th20",
   replayKey: "replays/abc.rpy",
-  options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false },
+  options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
   estimatedDurationSeconds: 1757,
 } as unknown as JobRecord;
 
@@ -103,6 +103,51 @@ describe("buildWorkerEnv", () => {
     const env = buildWorkerEnv(config, jobWithScore, "task-token", { slowMotion: false, spotInterruptionWatch: false });
 
     expect(env.EXPECTED_SCORE).toBe("481237400");
+  });
+
+  it("th06ncHighResolution が有効なら TH06NC_RESOLUTION=1080p を付ける（Issue #241）", () => {
+    const jobWithHighRes = {
+      ...job,
+      game: "th06nc",
+      options: { ...job.options, th06ncHighResolution: true },
+    } as unknown as JobRecord;
+
+    const env = buildWorkerEnv(config, jobWithHighRes, "task-token", {
+      slowMotion: false,
+      spotInterruptionWatch: false,
+    });
+
+    expect(env.TH06NC_RESOLUTION).toBe("1080p");
+  });
+
+  it("th06ncHighResolution が無効なら TH06NC_RESOLUTION を付けない(未指定＝720p)", () => {
+    const jobWithoutHighRes = {
+      ...job,
+      game: "th06nc",
+      options: { ...job.options, th06ncHighResolution: false },
+    } as unknown as JobRecord;
+
+    const env = buildWorkerEnv(config, jobWithoutHighRes, "task-token", {
+      slowMotion: false,
+      spotInterruptionWatch: false,
+    });
+
+    expect(env.TH06NC_RESOLUTION).toBeUndefined();
+  });
+
+  it("th06nc以外のタイトルでth06ncHighResolutionがtrueでもTH06NC_RESOLUTIONを付けない", () => {
+    const jobWithMismatchedOption = {
+      ...job,
+      game: "th20",
+      options: { ...job.options, th06ncHighResolution: true },
+    } as unknown as JobRecord;
+
+    const env = buildWorkerEnv(config, jobWithMismatchedOption, "task-token", {
+      slowMotion: false,
+      spotInterruptionWatch: false,
+    });
+
+    expect(env.TH06NC_RESOLUTION).toBeUndefined();
   });
 
   it("replayInfo が無い/score が未取得なら EXPECTED_SCORE を付けない", () => {

@@ -1,0 +1,64 @@
+# Sattori 録画ワーカー(GPU描画必須タイトル専用、Issue #241)。
+# th06nc(東方紅魔郷: New Classic)のようにD3D11描画でXvfb+wined3d+llvmpipeでは
+# 60fpsに遠く届かないタイトル向け。Xorg+NVIDIA GRIDドライバ+DXVK(D3D11→Vulkan)で
+# 描画する(`worker/docs/titles/th06nc.md`、touhou-recorder reports/78〜81)。
+#
+# 既存の共通イメージ(`worker/Dockerfile`、CPU系9タイトル用)とは別のECRリポジトリ
+# (`sattori-worker-gpu`)へビルド・pushする(`docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md`)。
+# `recording/`パッケージ・`entrypoint.py`・各`record_thNN.py`は共通ソースのため
+# 両方のDockerfileでCOPYが重複するが、タイトル数がまだ1本(th06nc)なので
+# 抽象化は見送っている。変更時は両方のDockerfileを確認すること。
+#
+# 【重要・実機未検証】NVIDIAドライバ本体(Xorgのnvidia_drv.so等)はこのイメージには
+# 含めない。GPU用カスタムAMI(`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`)
+# 側に導入したNVIDIA GRIDドライバを、`docker run --gpus all`(nvidia-container-toolkit)
+# 経由でコンテナへマウントする前提。**AMI側のドライババージョンとコンテナ内で期待する
+# ユーザースペースライブラリのバージョンを一致させる必要がある**(worker/docs/titles/
+# th06nc.md参照)。実機検証(g6f.xlarge)でXorgの起動に必要な要素が過不足なく
+# マウントされるかを確認し、不足があればこのDockerfileへ追加すること。
+#
+# 重要: 以下はウォーターマーク素材・終了検知用テンプレート画像であり、リポジトリには
+# 含めない(.gitignore 済み)。docker build 前にビルドコンテキスト(worker/)配下へ
+# 配置しておくこと(詳細は worker/README.md):
+#   assets/watermark/watermark-60fps.webm … ウォーターマーク素材(VP9 アルファ、タイトル非依存の共通素材)
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      wine64 winetricks \
+      xserver-xorg-core xserver-xorg-legacy x11-xserver-utils \
+      xdotool openbox x11-utils procps rsync \
+      libvulkan1 vulkan-tools \
+      ffmpeg pulseaudio pulseaudio-utils \
+      language-pack-ja \
+      python3 python3-numpy python3-pil python3-pip \
+      ca-certificates \
+    && locale-gen ja_JP.UTF-8 && update-locale \
+    && pip3 install --break-system-packages --no-cache-dir boto3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# root権限でXorgを起動できるようにする(Ubuntu 24.04のxserver-xorg-legacyは
+# 既定でconsole所有者以外のroot起動を禁止しているため)。
+RUN sed -i 's/^allowed_users=.*/allowed_users=anybody/' /etc/X11/Xwrapper.config 2>/dev/null || \
+    echo "allowed_users=anybody" > /etc/X11/Xwrapper.config
+
+WORKDIR /app
+
+# ウォーターマーク素材(タイトル非依存の共通素材。ビルド時にコンテキストへ配置。
+# リポジトリには含まれない)
+COPY assets/watermark/watermark-60fps.webm /app/assets/watermark/watermark-60fps.webm
+
+# リプレイ選択画面テンプレート(終了検知用。th06ncは未整備でも起動できるよう
+# ディレクトリごとコピーする。存在しないファイルはload_end_template()がNoneを
+# 返して画面静止のみ判定へフォールバックする)
+COPY assets/replay_end_templates/ /app/assets/replay_end_templates/
+
+# ワーカーのソース(リポジトリ管理、CPU系Dockerfileと共通)
+COPY recording/ /app/recording/
+COPY record_th06.py record_th06c.py record_th06nc.py record_th07.py record_th08.py record_th09.py record_th10.py record_th11.py record_th12.py record_th20.py entrypoint.py status.py convert.py interruption_watcher.py task_heartbeat.py progress_reporter.py title_assets.py pulse.py /app/
+
+RUN mkdir -p /app/instances /app/runs
+
+ENTRYPOINT ["python3", "/app/entrypoint.py"]

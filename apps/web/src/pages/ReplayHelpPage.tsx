@@ -15,20 +15,21 @@ import styles from "./ReplayHelpPage.module.css";
  * 追加すればここは自動で追従する（例外は`REMAKE_GAME_IDS`）。
  */
 /**
- * th06nc（`GAME_IDS`にはリプレイ解析用に含まれるが録画は未対応）はここでは扱わない。
- * 保存先がSteamライブラリ配下のゲームディレクトリで、既存の2グループのどちらの説明にも
- * 当てはまらないため（録画対応時に専用の案内を足すこと。th06cは同型の保存先だが
- * 録画対応済みなので`STEAM_LIBRARY_GAME_IDS`で専用案内を出す）。
+ * 現状、既存の2グループのどちらの説明にも当てはまらない未対応タイトルは無い
+ * （th06ncは録画対応済み、Issue #241、`STEAM_LIBRARY_GAME_IDS`で専用案内を出す）。
  */
-const REMAKE_GAME_IDS: readonly GameId[] = ["th06nc"];
+const REMAKE_GAME_IDS: readonly GameId[] = [];
 
 /**
  * Steamライブラリ配下のゲームディレクトリ直下にreplayフォルダを持つタイトル
  * （インストール先直下でも%APPDATA%でもない第三のパターン、Issue #240）。
  * th06cは実機（Windows）で`C:\Program Files (x86)\Steam\steamapps\common\th06c\replay`
  * と確認済み——Steamのインストールフォルダ名が`GameId`とそのまま一致する。
+ * **th06ncのインストールフォルダ名は実機未確認**（`GameId`と同じ`th06nc`と仮定して
+ * いる。異なることが判明したら`GameInfoPage.tsx`同様、専用のフォルダ名マップを
+ * 導入すること、Issue #241）。
  */
-const STEAM_LIBRARY_GAME_IDS: readonly GameId[] = ["th06c"];
+const STEAM_LIBRARY_GAME_IDS: readonly GameId[] = ["th06c", "th06nc"];
 
 const HELP_GAME_IDS: readonly GameId[] = GAME_IDS.filter(
   (id) => !REMAKE_GAME_IDS.includes(id) && !STEAM_LIBRARY_GAME_IDS.includes(id),

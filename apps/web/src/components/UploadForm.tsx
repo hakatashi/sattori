@@ -7,6 +7,7 @@ import {
   parseReplayInfo,
   SLOW_MOTION_CAPABILITY,
   supportsEc2SlowMotion,
+  supportsHighResolutionRecording,
   supportsSlowMotion,
   supportsTh10BugfixMarisaB,
 } from "@sattori/shared";
@@ -42,6 +43,13 @@ const gameTitles = [
     shortName: "EoSD:C",
     supported: true,
     icon: 'th06c.png',
+  },
+  {
+    japanese: "東方紅魔郷: New Classic",
+    english: "Embodiment of\nScarlet Devil: New Classic",
+    shortName: "EoSD:NC",
+    supported: true,
+    icon: 'th06nc.png',
   },
   {
     japanese: "東方妖々夢",
@@ -217,6 +225,8 @@ export function UploadForm() {
     setSlowMotion,
     th10BugfixMarisaB,
     setTh10BugfixMarisaB,
+    th06ncHighResolution,
+    setTh06ncHighResolution,
   } = useUploadFormState();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -260,6 +270,10 @@ export function UploadForm() {
     preview?.character ?? null,
   );
   const th10BugfixMarisaBChecked = th10BugfixMarisaBSelectable && th10BugfixMarisaB;
+
+  // 1080p録画オプション(Issue #241)。th06nc(GPU描画必須)限定で選べる。既定は720p。
+  const th06ncHighResolutionSelectable = supportsHighResolutionRecording(preview?.game ?? null);
+  const th06ncHighResolutionChecked = th06ncHighResolutionSelectable && th06ncHighResolution;
 
   // 自宅ワーカーの空き状況はページ表示時に1回だけ取得する。実際に録画が始まるのは
   // ユーザーがマジックリンクを開いた後（最大24時間後）で、その時点の可否とは
@@ -402,7 +416,12 @@ export function UploadForm() {
     try {
       await requestMagicLink(
         replayKey,
-        { watermark, slowMotion: slowMotionChecked, th10BugfixMarisaB: th10BugfixMarisaBChecked },
+        {
+          watermark,
+          slowMotion: slowMotionChecked,
+          th10BugfixMarisaB: th10BugfixMarisaBChecked,
+          th06ncHighResolution: th06ncHighResolutionChecked,
+        },
         email,
         locale,
       );
@@ -638,6 +657,29 @@ export function UploadForm() {
               {th10BugfixMarisaBSelectable
                 ? t("uploadForm.th10BugfixMarisaBHintLine2")
                 : t("uploadForm.th10BugfixMarisaBUnsupportedGame")}
+            </small>
+          </span>
+        </label>
+        {/*
+          1080p録画オプション(Issue #241)。th06nc(東方紅魔郷: New Classic、GPU描画必須)
+          限定。720p/1080pどちらもインスタンスはg6f.xlargeのまま提供する
+          (docs/decisions/0046)ため、ワーカーの空き状況には依存しない。
+        */}
+        <label
+          className={clsx(styles.option, !th06ncHighResolutionSelectable && styles.optionDisabled)}
+        >
+          <input
+            type="checkbox"
+            checked={th06ncHighResolutionChecked}
+            onChange={(e) => setTh06ncHighResolution(e.target.checked)}
+            disabled={busy || !th06ncHighResolutionSelectable}
+          />
+          <span>
+            {t("uploadForm.th06ncHighResolutionOption")}
+            <small className={styles.optionHint}>
+              {th06ncHighResolutionSelectable
+                ? t("uploadForm.th06ncHighResolutionHintLine1")
+                : t("uploadForm.th06ncHighResolutionUnsupportedGame")}
             </small>
           </span>
         </label>
