@@ -189,7 +189,7 @@ describe("buildUserData", () => {
     ).toString("utf-8");
     expect(decoded).toContain(config.workerGpuImage);
     expect(decoded).not.toContain(config.workerImage);
-    expect(decoded).toContain("docker run --rm --gpus all --ipc=host -v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro -v /tmp/.X11-unix:/tmp/.X11-unix");
+    expect(decoded).toContain("docker run --rm --gpus all --ipc=host -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=all -e VK_LOADER_DEBUG=all -v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro -v /tmp/.X11-unix:/tmp/.X11-unix -v /etc/vulkan/icd.d:/etc/vulkan/icd.d:ro");
     // GPU用カスタムAMIはECS基盤ではないため、ECSエージェント停止処理は行わない。
     expect(decoded).not.toContain("systemctl disable --now ecs");
   });

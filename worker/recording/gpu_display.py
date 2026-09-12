@@ -271,20 +271,37 @@ def ensure_gpu_display(config, env, log=print):
 
     # OpenGL / Vulkan の診断ログ
     try:
-        glx = subprocess.run(["glxinfo"], env=env, capture_output=True, text=True)
-        for line in glx.stdout.splitlines():
-            if "OpenGL renderer" in line or "OpenGL version" in line:
-                log(f"[gpu_display] {line.strip()}")
+        glx = subprocess.run(["glxinfo", "-B"], env=env, capture_output=True, text=True)
+        if glx.returncode == 0:
+            for line in glx.stdout.splitlines():
+                log(f"[gpu_display:glx] {line.strip()}")
+        else:
+            log(f"[gpu_display:glx] glxinfo -B 失敗 (exit={glx.returncode}): {glx.stderr.strip()[:500]}")
     except Exception as e:
-        log(f"[gpu_display] glxinfo 実行失敗: {e}")
+        log(f"[gpu_display:glx] glxinfo 実行例外: {e}")
 
     try:
         vk = subprocess.run(["vulkaninfo", "--summary"], env=env, capture_output=True, text=True)
-        for line in vk.stdout.splitlines():
-            if "deviceName" in line or "driverInfo" in line:
-                log(f"[gpu_display] {line.strip()}")
+        log(f"[gpu_display:vk] vulkaninfo --summary exit={vk.returncode}")
+        if vk.stdout.strip():
+            for line in vk.stdout.splitlines():
+                if any(k in line for k in ("deviceName", "driverInfo", "apiVersion", "driverVersion", "ERROR", "WARNING")):
+                    log(f"[gpu_display:vk] {line.strip()}")
+        if vk.stderr.strip():
+            for line in vk.stderr.splitlines()[:20]:
+                log(f"[gpu_display:vk:stderr] {line.strip()}")
     except Exception as e:
-        log(f"[gpu_display] vulkaninfo 実行失敗: {e}")
+        log(f"[gpu_display:vk] vulkaninfo 実行例外: {e}")
+
+    # Vulkan ICD / ドライバファイルの診断
+    icd_files = glob.glob("/etc/vulkan/icd.d/*.json") + glob.glob("/usr/share/vulkan/icd.d/*.json")
+    log(f"[gpu_display] 検出された Vulkan ICD ファイル: {icd_files}")
+    for icd_path in icd_files:
+        try:
+            with open(icd_path, "r") as f:
+                log(f"[gpu_display] ICD {icd_path}: {f.read().strip()}")
+        except Exception as e:
+            log(f"[gpu_display] ICD {icd_path} 読み取り失敗: {e}")
 
     if config.crtc_mode:
         output_name = _primary_output_name(env)
