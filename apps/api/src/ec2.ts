@@ -125,13 +125,14 @@ const TH12_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
  * DXVK）が必須なため、CPU系タイトルとは全く別のインスタンスファミリを使う
  * （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
  *
- * `g6f.xlarge`（NVIDIA L4の1/8スライス、4vCPU/16GiB）のみで、720p・1080pどちらの
- * 録画もこの1タイプで行う（touhou-recorder reports/80・81で実機検証済み）。
- * eu-south-2のG系スポットクォータは現状8vCPUで、g6f.xlarge換算で2台分の並列運用
- * 余地がある（32vCPUへの追加申請は別issueで進行中、スコープ外）。
+ * `g6f.xlarge`（NVIDIA L4の1/8スライス、4vCPU/16GiB）を第一候補とし、Spot枯渇耐性
+ * （Issue #29）および1080p録画（touhou-recorder reports/81 §9.9.3で推奨）のために
+ * `g6f.2xlarge`（8vCPU/32GiB）も候補に含める。eu-south-2のG系スポットクォータは現状
+ * 8vCPU（32vCPUへの追加申請は別issueで進行中、スコープ外）。
  */
 const GPU_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "g6f.xlarge",
+  "g6f.xlarge", // NVIDIA L4 1/8スライス (4vCPU/16GiB)。reports/80・81実測、第一候補
+  "g6f.2xlarge", // NVIDIA L4 1/4スライス (8vCPU/32GiB)。reports/81実測で1080p推奨・xlarge枯渇対策
 ];
 
 function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {

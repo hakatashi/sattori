@@ -56,8 +56,8 @@ Issue #101のスコープ）。Issue #101でth09を対応させる際はMOD側�
 
 2026-09-10 発売の「東方紅魔郷: New Classic」は録画対応済み（Issue #241、
 [`worker/docs/titles/th06nc.md`](../worker/docs/titles/th06nc.md)）。**GPU描画
-（Xorg+NVIDIA GRIDドライバ+DXVK）が必須のタイトルで、`g6f.xlarge`インスタンスでのみ
-録画される**。Xvfb+wined3d+llvmpipe（既存9タイトルの方式）では720pで9.1fpsしか出ず
+（Xorg+NVIDIA GRIDドライバ+DXVK）が必須のタイトルで、GPU系インスタンス
+（`g6f.xlarge` / `g6f.2xlarge`）で録画される**。Xvfb+wined3d+llvmpipe（既存9タイトルの方式）では720pで9.1fpsしか出ず
 60fpsに遠く届かないため（touhou-recorder reports/78 §5）。自宅ワーカー（GPU非搭載）
 には常にオファーされない
 （[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。

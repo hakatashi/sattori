@@ -25,8 +25,9 @@ reports/78 §5）。**GPU（Xorg+NVIDIA GRIDドライバ）+ DXVK（D3D11→Vulk
 amdgpu固有の可能性が高い）があり、**本番はAWSのNVIDIA GPUインスタンス
 （g6f.xlarge）でのみ録画する**方針にした（reports/80・81）。
 
-- インスタンス: `g6f.xlarge`（NVIDIA L4の1/8スライス、4vCPU/16GiB）固定。720p/1080p
-  どちらもこの1タイプで録画する（`apps/api/src/ec2.ts`の`GPU_CANDIDATE_INSTANCE_TYPES`）。
+- インスタンス: `g6f.xlarge`（第一候補、NVIDIA L4の1/8スライス、4vCPU/16GiB）および
+  `g6f.2xlarge`（xlarge枯渇対策・1080p推奨、8vCPU/32GiB）。`apps/api/src/ec2.ts`の
+  `GPU_CANDIDATE_INSTANCE_TYPES`で管理。
 - ワーカーイメージ: 別Dockerfile（`worker/Dockerfile.gpu`）・別ECRリポジトリ
   （`sattori-worker-gpu`）。既存の共通イメージ（CPU系9タイトル）とは分離してある。
 - ヘッドレス画面: `recording/gpu_display.py`（Xorg+nvidia、`GameConfig.gpu_display=True`）。
