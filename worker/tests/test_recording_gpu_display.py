@@ -6,15 +6,46 @@ from recording import gpu_display
 from recording_helpers import make_config
 
 
-def test_query_bus_id_returns_value_via_subprocess(monkeypatch):
+def test_parse_pci_bus_id():
+    assert gpu_display._parse_pci_bus_id("00000000:31:00.0") == "PCI:49:0:0"
+    assert gpu_display._parse_pci_bus_id("0000:31:00.0") == "PCI:49:0:0"
+    assert gpu_display._parse_pci_bus_id("00000000:00:1E.0") == "PCI:0:30:0"
+    assert gpu_display._parse_pci_bus_id("00000001:01:00.0") == "PCI:1@1:0:0"
+    assert gpu_display._parse_pci_bus_id("PCI:49:0:0") == "PCI:49:0:0"
+    assert gpu_display._parse_pci_bus_id("") is None
+    assert gpu_display._parse_pci_bus_id("invalid") is None
+
+
+def test_query_bus_id_via_nvidia_smi(monkeypatch):
     def fake_run(cmd, **kwargs):
-        assert cmd == ["nvidia-xconfig", "--query-gpu-info"]
-        return subprocess.CompletedProcess(
-            cmd, returncode=0,
-            stdout="GPU #0:\n  PCI BusID : PCI:49:0:0\n", stderr="",
-        )
+        if cmd[:2] == ["nvidia-smi", "--query-gpu=pci.bus_id"]:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="00000000:31:00.0\n", stderr="")
+        raise FileNotFoundError("not found")
 
     monkeypatch.setattr(gpu_display.subprocess, "run", fake_run)
+
+    assert gpu_display._query_bus_id({}) == "PCI:49:0:0"
+
+
+def test_query_bus_id_fallback_to_nvidia_xconfig(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        if cmd[0] == "nvidia-smi":
+            raise FileNotFoundError("not found")
+        if cmd[0] == "nvidia-xconfig":
+            return subprocess.CompletedProcess(
+                cmd, returncode=0,
+                stdout="GPU #0:\n  PCI BusID : PCI:49:0:0\n", stderr="",
+            )
+        raise FileNotFoundError("not found")
+
+    monkeypatch.setattr(gpu_display.subprocess, "run", fake_run)
+
+    assert gpu_display._query_bus_id({}) == "PCI:49:0:0"
+
+
+def test_query_bus_id_fallback_to_procfs(monkeypatch):
+    monkeypatch.setattr(gpu_display.subprocess, "run", lambda cmd, **k: subprocess.CompletedProcess(cmd, returncode=1))
+    monkeypatch.setattr(gpu_display.glob, "glob", lambda pat: ["/proc/driver/nvidia/gpus/0000:31:00.0"] if "proc" in pat else [])
 
     assert gpu_display._query_bus_id({}) == "PCI:49:0:0"
 
@@ -22,8 +53,9 @@ def test_query_bus_id_returns_value_via_subprocess(monkeypatch):
 def test_query_bus_id_returns_none_when_not_found(monkeypatch):
     monkeypatch.setattr(
         gpu_display.subprocess, "run",
-        lambda cmd, **k: subprocess.CompletedProcess(cmd, returncode=0, stdout="no info\n", stderr=""),
+        lambda cmd, **k: subprocess.CompletedProcess(cmd, returncode=1, stdout="no info\n", stderr=""),
     )
+    monkeypatch.setattr(gpu_display.glob, "glob", lambda _pat: [])
 
     assert gpu_display._query_bus_id({}) is None
 
@@ -60,17 +92,20 @@ def test_ensure_gpu_display_reuses_existing_display(monkeypatch):
 
     gpu_display.ensure_gpu_display(config, {}, log=lambda _m: None)
 
-    # xdotool searchだけが呼ばれ、Xorg等は一切起動しない
-    assert calls == [["xdotool", "search", "--name", "."]]
+    # xdpyinfoだけが呼ばれ、Xorg等は一切起動しない
+    assert calls == [["xdpyinfo"]]
 
 
 def test_ensure_gpu_display_raises_when_bus_id_unresolvable(monkeypatch):
     def fake_run(cmd, **kwargs):
-        if cmd[0] == "xdotool":
+        if cmd[0] == "xdpyinfo":
             return subprocess.CompletedProcess(cmd, returncode=1)
+        if cmd[0] in ("nvidia-smi", "nvidia-xconfig"):
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="")
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(gpu_display.subprocess, "run", fake_run)
+    monkeypatch.setattr(gpu_display.glob, "glob", lambda _pat: [])
     config = make_config(gpu_display=True, display=":88")
 
     try:
@@ -84,11 +119,17 @@ def test_ensure_gpu_display_starts_xorg_and_applies_crtc_mode(monkeypatch, tmp_p
     monkeypatch.setattr(gpu_display.time, "sleep", lambda _s: None)
     run_calls = []
     popen_calls = []
+    xdpyinfo_count = 0
 
     def fake_run(cmd, **kwargs):
+        nonlocal xdpyinfo_count
         run_calls.append(list(cmd))
-        if cmd[0] == "xdotool":
-            return subprocess.CompletedProcess(cmd, returncode=1)
+        if cmd[0] == "xdpyinfo":
+            xdpyinfo_count += 1
+            # 1回目(起動前確認)は未起動(returncode=1)、2回目(起動待ち)は起動済み(returncode=0)
+            if xdpyinfo_count == 1:
+                return subprocess.CompletedProcess(cmd, returncode=1)
+            return subprocess.CompletedProcess(cmd, returncode=0)
         if cmd[0] == "nvidia-xconfig":
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="PCI BusID : PCI:49:0:0\n")
         if cmd[0] == "xrandr" and cmd[1:2] == ["--query"]:
@@ -101,7 +142,8 @@ def test_ensure_gpu_display_starts_xorg_and_applies_crtc_mode(monkeypatch, tmp_p
         popen_calls.append(list(cmd))
 
         class _Proc:
-            pass
+            def poll(self):
+                return None
 
         return _Proc()
 
@@ -121,17 +163,26 @@ def test_ensure_gpu_display_starts_xorg_and_applies_crtc_mode(monkeypatch, tmp_p
 def test_ensure_gpu_display_skips_crtc_change_when_not_specified(monkeypatch):
     monkeypatch.setattr(gpu_display.time, "sleep", lambda _s: None)
     run_calls = []
+    xdpyinfo_count = 0
 
     def fake_run(cmd, **kwargs):
+        nonlocal xdpyinfo_count
         run_calls.append(list(cmd))
-        if cmd[0] == "xdotool":
-            return subprocess.CompletedProcess(cmd, returncode=1)
+        if cmd[0] == "xdpyinfo":
+            xdpyinfo_count += 1
+            if xdpyinfo_count == 1:
+                return subprocess.CompletedProcess(cmd, returncode=1)
+            return subprocess.CompletedProcess(cmd, returncode=0)
         if cmd[0] == "nvidia-xconfig":
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="PCI BusID : PCI:49:0:0\n")
         return subprocess.CompletedProcess(cmd, returncode=0)
 
+    class _Proc:
+        def poll(self):
+            return None
+
     monkeypatch.setattr(gpu_display.subprocess, "run", fake_run)
-    monkeypatch.setattr(gpu_display.subprocess, "Popen", lambda cmd, **k: object())
+    monkeypatch.setattr(gpu_display.subprocess, "Popen", lambda cmd, **k: _Proc())
 
     config = make_config(gpu_display=True, display=":88", xvfb_screen="1280x720x24")
 
