@@ -534,7 +534,7 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
 describe("UploadForm のth06nc 1080p録画オプション", () => {
   function th06ncHighResolutionCheckbox(): HTMLInputElement {
     const label = screen
-      .getAllByText(/1080pで録画する|Record in 1080p/)
+      .getAllByText(/1080pで録画する|Record.*1080p/)
       .at(0)
       ?.closest("label");
     return label?.querySelector('input[type="checkbox"]') as HTMLInputElement;
