@@ -41,47 +41,134 @@ Xorg+nvidia環境では「仮想画面サイズ(`config.xvfb_screen`)」と「CR
 実装であり、AMI構築・実機検証(worker/docs/titles/th06nc.md参照)の過程で
 出力フォーマットの差異が見つかった場合は調整が必要。
 """
+import glob
+import os
 import subprocess
 import time
 
 
+def _parse_pci_bus_id(raw_str):
+    """PCI BusID文字列 (例: '00000000:31:00.0', '0000:31:00.0', 'PCI:49:0:0') を
+    Xorg設定で使える 'PCI:bus:device:function' (またはドメイン付き 'PCI:bus@domain:device:function')
+    形式へ正規化する。
+    パースできなければNone。"""
+    if not raw_str:
+        return None
+    raw_str = raw_str.strip()
+    if not raw_str:
+        return None
+
+    # 既に 'PCI:...' 形式の場合 (例: nvidia-xconfig の出力)
+    if raw_str.startswith("PCI:"):
+        return raw_str
+
+    # '00000000:31:00.0' または '0000:31:00.0' の形式
+    # ドメイン:バス:デバイス.ファンクション (16進数)
+    try:
+        domain_bus_dev, dot, func_hex = raw_str.partition(".")
+        if not dot:
+            return None
+        parts = domain_bus_dev.split(":")
+        if len(parts) == 3:
+            domain_hex, bus_hex, dev_hex = parts
+        elif len(parts) == 2:
+            domain_hex = "0"
+            bus_hex, dev_hex = parts
+        else:
+            return None
+
+        domain = int(domain_hex, 16)
+        bus = int(bus_hex, 16)
+        dev = int(dev_hex, 16)
+        func = int(func_hex, 16)
+
+        if domain == 0:
+            return f"PCI:{bus}:{dev}:{func}"
+        return f"PCI:{bus}@{domain}:{dev}:{func}"
+    except ValueError:
+        return None
+
+
 def _query_bus_id(env):
-    """`nvidia-xconfig --query-gpu-info`の出力から`PCI BusID`の値を取得する。
+    """GPUのBusIDを取得する。
+    1. nvidia-smi --query-gpu=pci.bus_id
+    2. nvidia-xconfig --query-gpu-info
+    3. /proc/driver/nvidia/gpus/ 配下のディレクトリ名
+    4. /sys/bus/pci/drivers/nvidia/ 配下のシンボリックリンク名
+    の順に試行する。
     取得できなければNone。"""
-    result = subprocess.run(
-        ["nvidia-xconfig", "--query-gpu-info"], env=env, capture_output=True, text=True,
-    )
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if line.startswith("PCI BusID"):
-            _label, _sep, value = line.partition(":")
-            return value.strip().lstrip(":").strip() or None
+    # 1. nvidia-smi (コンテナ内・nvidia-container-toolkit経由で最も確実に利用可能)
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=pci.bus_id", "--format=csv,noheader"],
+            env=env, capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                parsed = _parse_pci_bus_id(line)
+                if parsed:
+                    return parsed
+    except Exception:
+        pass
+
+    # 2. nvidia-xconfig (ホスト環境等)
+    try:
+        result = subprocess.run(
+            ["nvidia-xconfig", "--query-gpu-info"], env=env, capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line.startswith("PCI BusID"):
+                    _label, _sep, value = line.partition(":")
+                    parsed = _parse_pci_bus_id(value.strip().lstrip(":").strip())
+                    if parsed:
+                        return parsed
+    except Exception:
+        pass
+
+    # 3. /proc/driver/nvidia/gpus/ (Linux procfs)
+    proc_gpu_dirs = glob.glob("/proc/driver/nvidia/gpus/*")
+    for d in proc_gpu_dirs:
+        parsed = _parse_pci_bus_id(os.path.basename(d))
+        if parsed:
+            return parsed
+
+    # 4. /sys/bus/pci/drivers/nvidia/ (Linux sysfs)
+    sys_pci_entries = glob.glob("/sys/bus/pci/drivers/nvidia/0000:*") + glob.glob("/sys/bus/pci/drivers/nvidia/00000000:*")
+    for entry in sys_pci_entries:
+        parsed = _parse_pci_bus_id(os.path.basename(entry))
+        if parsed:
+            return parsed
+
     return None
 
 
 def _build_xorg_config(bus_id, screen_wh):
     """ヘッドレスNVIDIA用のXorg設定。`UseDisplayDevice`は意図的に付けない
     (vGPUでは`Failed to select a display subsystem`になる、ファイル冒頭の説明参照)。"""
-    return f"""Section "Device"
-    Identifier "Card0"
+    screen_w, screen_h = screen_wh.split("x")
+    return f"""Section "ServerLayout"
+    Identifier "Layout0"
+    Screen 0 "Screen0"
+EndSection
+
+Section "Device"
+    Identifier "Device0"
     Driver "nvidia"
     BusID "{bus_id}"
     Option "AllowEmptyInitialConfiguration" "true"
+    Option "ModeValidation" "AllowNonEdidModes, NoVesaModes"
 EndSection
 
 Section "Screen"
     Identifier "Screen0"
-    Device "Card0"
+    Device "Device0"
     DefaultDepth 24
     SubSection "Display"
         Depth 24
-        Modes "{screen_wh}"
+        Virtual {screen_w} {screen_h}
     EndSubSection
-EndSection
-
-Section "ServerLayout"
-    Identifier "Layout0"
-    Screen 0 "Screen0"
 EndSection
 """
 
@@ -101,12 +188,12 @@ def ensure_gpu_display(config, env, log=print):
     """GPU描画必須タイトル用のヘッドレスX画面(Xorg+NVIDIA)を用意する
     (`recording.instance.ensure_display()`が`config.gpu_display`で本関数を選ぶ)。
 
-    既に起動済みなら再利用する(`ensure_xvfb()`と同じ判定手法、xdotoolでの
-    ウィンドウ列挙が成功するかどうかを見る)。未起動の場合はBusIDを動的解決して
+    既に起動済みなら再利用する(`ensure_xvfb()`と同じ判定手法、xdpyinfoでの
+    ディスプレイ接続が成功するかどうかを見る)。未起動の場合はBusIDを動的解決して
     Xorg設定ファイルを生成し、Xorg起動 -> openbox起動 -> (crtc_mode指定時)
     xrandrでCRTCモード変更、の順に行う。
     """
-    check = subprocess.run(["xdotool", "search", "--name", "."], env=env, capture_output=True)
+    check = subprocess.run(["xdpyinfo"], env=env, capture_output=True)
     if check.returncode == 0:
         log(f"GPU描画面 {config.display} は起動済みとみなして再利用します")
         return
@@ -114,29 +201,90 @@ def ensure_gpu_display(config, env, log=print):
     bus_id = _query_bus_id(env)
     if not bus_id:
         raise RuntimeError(
-            "nvidia-xconfig --query-gpu-info からBusIDを取得できませんでした"
+            "nvidia-smi / nvidia-xconfig からBusIDを取得できませんでした"
             "(GPU用カスタムAMI・ドライバ導入を確認すること)"
         )
     log(f"GPU BusID: {bus_id}")
 
     screen_w, screen_h, _depth = config.xvfb_screen.split("x")
-    xorg_conf_path = f"/tmp/xorg-{config.display.lstrip(':')}.conf"
+    disp_num = config.display.lstrip(":")
+    xorg_conf_path = f"/tmp/xorg-{disp_num}.conf"
+    xorg_log_path = f"/tmp/xorg-{disp_num}.log"
     with open(xorg_conf_path, "w") as f:
         f.write(_build_xorg_config(bus_id, f"{screen_w}x{screen_h}"))
 
+    # 古いロックファイルやソケットの掃除
+    for lock_file in [f"/tmp/.X11-unix/X{disp_num}", f"/tmp/.X{disp_num}-lock"]:
+        try:
+            if os.path.exists(lock_file):
+                os.remove(lock_file)
+        except OSError:
+            pass
+
     log(f"Xorg {config.display} を起動します (screen={config.xvfb_screen}, config={xorg_conf_path})")
-    subprocess.Popen(
-        ["Xorg", config.display, "-config", xorg_conf_path],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    xorg_log_file = open(xorg_log_path, "wb")
+    xorg_proc = subprocess.Popen(
+        ["Xorg", config.display, "-config", xorg_conf_path, "-noreset", "-logfile", xorg_log_path],
+        env=env, stdout=xorg_log_file, stderr=subprocess.STDOUT,
     )
-    # Xvfbより起動が重い(GPU初期化を伴う)ため、ensure_xvfb()の1.5秒より長く待つ。
-    time.sleep(3.0)
+
+    # Xorgの起動完了を待機
+    xorg_ok = False
+    for _ in range(40):
+        if xorg_proc.poll() is not None:
+            break
+        check = subprocess.run(["xdpyinfo"], env=env, capture_output=True)
+        if check.returncode == 0:
+            xorg_ok = True
+            break
+        time.sleep(0.25)
+
+    if not xorg_ok:
+        xorg_log_file.close()
+        log_content = ""
+        candidate_logs = [
+            xorg_log_path,
+            f"/var/log/Xorg.{disp_num}.log",
+            f"/var/log/Xorg.0.log",
+        ]
+        for path in candidate_logs:
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", errors="replace") as f:
+                        log_content = f.read()
+                    if log_content.strip():
+                        break
+                except Exception:
+                    pass
+        raise RuntimeError(
+            f"Xorg {config.display} の起動に失敗しました (exit_code={xorg_proc.poll()})。\n"
+            f"--- Xorg Log ---\n{log_content[-3000:]}"
+        )
+
+    log(f"Xorg {config.display} の起動を確認しました")
 
     subprocess.Popen(
         ["openbox", "--sm-disable"], env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     time.sleep(1.0)
+
+    # OpenGL / Vulkan の診断ログ
+    try:
+        glx = subprocess.run(["glxinfo"], env=env, capture_output=True, text=True)
+        for line in glx.stdout.splitlines():
+            if "OpenGL renderer" in line or "OpenGL version" in line:
+                log(f"[gpu_display] {line.strip()}")
+    except Exception as e:
+        log(f"[gpu_display] glxinfo 実行失敗: {e}")
+
+    try:
+        vk = subprocess.run(["vulkaninfo", "--summary"], env=env, capture_output=True, text=True)
+        for line in vk.stdout.splitlines():
+            if "deviceName" in line or "driverInfo" in line:
+                log(f"[gpu_display] {line.strip()}")
+    except Exception as e:
+        log(f"[gpu_display] vulkaninfo 実行失敗: {e}")
 
     if config.crtc_mode:
         output_name = _primary_output_name(env)
@@ -148,3 +296,4 @@ def ensure_gpu_display(config, env, log=print):
             subprocess.run(
                 ["xrandr", "--output", output_name, "--mode", config.crtc_mode], env=env,
             )
+

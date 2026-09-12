@@ -216,7 +216,11 @@ systemctl disable --now ecs >/dev/null 2>&1 || true`;
 
   // GPU用カスタムAMIはnvidia-container-toolkit導入済み前提で、コンテナへGPUを
   // 渡すために`--gpus all`が必要（CPU系では付けない）。
-  const dockerRunFlags = isGpuJob ? "--rm --gpus all" : "--rm";
+  // またホスト側のXorg NVIDIAドライバ(/usr/lib/xorg/modules)をコンテナへマウントし、
+  // X11共有メモリ・PulseAudioのために--ipc=hostを付与する。
+  const dockerRunFlags = isGpuJob
+    ? "--rm --gpus all --ipc=host -v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro -v /tmp/.X11-unix:/tmp/.X11-unix"
+    : "--rm";
 
   // trap EXIT で必ず shutdown する（Spot 終了 = 課金停止）。ECR ログインや
   // docker 実行が失敗しても、インスタンスを起動したまま残さない（孤児防止）。

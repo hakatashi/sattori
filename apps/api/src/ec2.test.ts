@@ -189,7 +189,7 @@ describe("buildUserData", () => {
     ).toString("utf-8");
     expect(decoded).toContain(config.workerGpuImage);
     expect(decoded).not.toContain(config.workerImage);
-    expect(decoded).toContain("docker run --rm --gpus all");
+    expect(decoded).toContain("docker run --rm --gpus all --ipc=host -v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro -v /tmp/.X11-unix:/tmp/.X11-unix");
     // GPU用カスタムAMIはECS基盤ではないため、ECSエージェント停止処理は行わない。
     expect(decoded).not.toContain("systemctl disable --now ecs");
   });

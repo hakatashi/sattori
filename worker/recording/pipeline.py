@@ -84,11 +84,34 @@ MAX_ATTEMPTS_DEFAULT = 3
 MAX_DUPLICATE_RATE_DEFAULT = 30.0
 
 
+def _log_failure_diagnostics(config, log):
+    """起動失敗時・ウィンドウ検出失敗時の診断のため、wine.log と mod.log の末尾を出力する。"""
+    wine_log = f"{config.instance_dir}/wine.log"
+    if os.path.exists(wine_log):
+        try:
+            with open(wine_log, "r", errors="replace") as f:
+                content = f.read()
+            if content.strip():
+                log(f"--- wine.log (末尾2000文字) ---\n{content[-2000:]}")
+        except Exception:
+            pass
+
+    if os.path.exists(config.log_path):
+        try:
+            with open(config.log_path, "r", errors="replace") as f:
+                content = f.read()
+            if content.strip():
+                log(f"--- mod.log (末尾2000文字) ---\n{content[-2000:]}")
+        except Exception:
+            pass
+
+
 def _failure_result(config, env, log):
     """game_pid/ウィンドウ検出/安定確認のいずれかが失敗した場合の戻り値。
     output_exists=Falseにしておけばrecord_with_retry()の失敗判定がそのまま効く
     (reports/24で、以前はsys.exit(1)によりリトライループごとプロセスが終了して
     しまう不具合があった教訓を踏まえた設計)。"""
+    _log_failure_diagnostics(config, log)
     kill_wine_and_wait(config, env, config.process_name, log=log)
     return {
         "output_exists": False,
@@ -134,10 +157,12 @@ def _launch_game(config, env, replay_path, log):
 
     injector_cmd = build_injector_cmd(config)
     log(f"injector を起動します: {' '.join(injector_cmd)}")
+    wine_log_path = f"{config.instance_dir}/wine.log"
+    wine_log_file = open(wine_log_path, "wb")
     subprocess.Popen(
         injector_cmd,
         cwd=config.instance_dir, env=env,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=wine_log_file, stderr=subprocess.STDOUT,
     )
 
     game_pid = None
