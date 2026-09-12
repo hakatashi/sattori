@@ -5,7 +5,10 @@ import { LAUNCH_LAMBDA_TIMEOUT_SECONDS, ORPHAN_SWEEP_INTERVAL_MINUTES } from "@s
 import { SattoriStack } from "../lib/sattori-stack.ts";
 
 function synth(): Template {
-  const app = new App();
+  // gpuWorkerAmiId(GPU描画必須タイトル用カスタムAMI、Issue #241)はコンテキスト値
+  // 未設定時にsynth自体が失敗する設計(誤ってCPU系AMIのままGPU系を起動する事故を
+  // 防ぐため)。テストではダミー値を渡す。
+  const app = new App({ context: { gpuWorkerAmiId: "ami-0123456789abcdef0" } });
   const stack = new SattoriStack(app, "TestStack", {
     env: { account: "123456789012", region: "ap-northeast-1" },
     webDomainName: "sattori.hakatashi.com",
@@ -29,6 +32,12 @@ describe("SattoriStack", () => {
   it("録画ワーカーの ECR リポジトリが存在する", () => {
     template.hasResourceProperties("AWS::ECR::Repository", {
       RepositoryName: "sattori-worker",
+    });
+  });
+
+  it("GPU描画必須タイトル専用のECRリポジトリが別に存在する(Issue #241)", () => {
+    template.hasResourceProperties("AWS::ECR::Repository", {
+      RepositoryName: "sattori-worker-gpu",
     });
   });
 
@@ -287,6 +296,31 @@ describe("SattoriStack", () => {
         InstanceInitiatedShutdownBehavior: "terminate",
       }),
     });
+  });
+
+  it("GPU描画必須タイトル専用の EC2 Launch Template が g6f.xlarge 固定で存在する(Issue #241)", () => {
+    template.hasResourceProperties("AWS::EC2::LaunchTemplate", {
+      LaunchTemplateData: Match.objectLike({
+        InstanceType: "g6f.xlarge",
+        ImageId: "ami-0123456789abcdef0",
+        InstanceInitiatedShutdownBehavior: "terminate",
+      }),
+    });
+  });
+
+  it("gpuWorkerAmiIdコンテキスト値が未設定だとsynth自体が失敗する(誤ってCPU系AMIのままGPU系を起動する事故を防ぐ)", () => {
+    const app = new App();
+    expect(
+      () =>
+        new SattoriStack(app, "NoGpuAmiStack", {
+          env: { account: "123456789012", region: "ap-northeast-1" },
+          webDomainName: "sattori.hakatashi.com",
+          webCertificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/dummy",
+          sesRegion: "us-east-1",
+          sesConfigurationSetName: "test-config-set",
+          opsAlertEmail: "ops@example.com",
+        }),
+    ).toThrow(/gpuWorkerAmiId/);
   });
 
   it("StartJob Lambda に Step Functions 実行開始権限が付与されている", () => {

@@ -15,10 +15,12 @@ const REQUIRED_ENV: Record<string, string> = {
   CDN_DOMAIN: "cdn.example.net",
   JOBS_TABLE: "sattori-jobs",
   WORKER_IMAGE: "123456789012.dkr.ecr.us-east-1.amazonaws.com/sattori-worker:latest",
+  WORKER_GPU_IMAGE: "123456789012.dkr.ecr.us-east-1.amazonaws.com/sattori-worker-gpu:latest",
   TITLE_ASSETS_BUCKET: "title-assets-bucket",
   WORKER_LOG_GROUP: "/sattori/worker",
   WORKER_SUBNET_IDS: "subnet-xxxx,subnet-yyyy",
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
+  GPU_WORKER_LAUNCH_TEMPLATE_ID: "lt-gpu-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
   SETTINGS_TABLE: "sattori-settings",
   WORKERS_TABLE: "sattori-workers",
@@ -37,7 +39,7 @@ const sfnMock = mockClient(SFNClient);
 const failedJob: JobRecord = createJobRecord({
   game: "th11",
   status: "failed",
-  options: { watermark: false, slowMotion: false, th10BugfixMarisaB: false },
+  options: { watermark: false, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
   outputPath: "videos/job-1.mp4",
   error: "録画に複数回失敗しました",
   errorCode: "retries_exhausted",
@@ -71,7 +73,7 @@ describe("buildRetryJob", () => {
     // 引き継ぐもの
     expect(retried.game).toBe("th11");
     expect(retried.replayKey).toBe("replays/abc.rpy");
-    expect(retried.options).toEqual({ watermark: false, slowMotion: false, th10BugfixMarisaB: false });
+    expect(retried.options).toEqual({ watermark: false, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false });
     expect(retried.email).toBe("user@example.com");
     expect(retried.language).toBe("en");
     expect(retried.estimatedDurationSeconds).toBe(900);

@@ -1,5 +1,5 @@
 /** 設定読み込みのテスト。環境変数は `loadConfig()` の引数として渡す。 */
-import { SUPPORTED_GAME_IDS, WORKER_CAPABILITIES } from "@sattori/shared";
+import { GPU_RECORDING_GAME_IDS, SUPPORTED_GAME_IDS, WORKER_CAPABILITIES } from "@sattori/shared";
 import { describe, expect, it } from "vitest";
 import { ConfigError, loadConfig } from "./config.js";
 import type { Environment } from "./config.js";
@@ -17,14 +17,28 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ WORKERS_TABLE: "w", WORKER_IMAGE: "i" })).toThrow(ConfigError);
   });
 
-  it("既定値は録画対応タイトルと控えめな並列度、能力はすべて宣言する", () => {
+  it("既定値は録画対応タイトル(GPU専用タイトルを除く)と控えめな並列度、能力はすべて宣言する", () => {
     const config = loadConfig(env());
 
-    expect(config.supportedGames).toEqual([...SUPPORTED_GAME_IDS]);
+    // GPU描画必須タイトル（th06nc、Issue #241）は自宅マシンにGPUが無い前提のため
+    // 既定から除外される（多層防御、`workerRouting.ts`の`offerToHomeWorker: false`と対）。
+    expect(config.supportedGames).toEqual(
+      SUPPORTED_GAME_IDS.filter((game) => !GPU_RECORDING_GAME_IDS.includes(game)),
+    );
+    for (const game of GPU_RECORDING_GAME_IDS) {
+      expect(config.supportedGames).not.toContain(game);
+    }
     expect(config.maxConcurrency).toBe(2);
     // 低速録画（Issue #68）の実体はEC2と共通のワーカーイメージ側にあり、デーモンは
     // 環境変数をそのまま`docker run`へ渡すだけなので、自宅ワーカーは無条件に対応できる。
     expect(config.capabilities).toEqual([...WORKER_CAPABILITIES]);
+  });
+
+  it("GPU描画必須タイトル(th06nc)をHOME_WORKER_SUPPORTED_GAMESで明示指定するとエラー", () => {
+    expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th06nc" }))).toThrow(ConfigError);
+    expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th07,th06nc" }))).toThrow(
+      ConfigError,
+    );
   });
 
   it("能力は空文字で明示的に降りられる（自宅マシンを長時間占有されたくない場合）", () => {

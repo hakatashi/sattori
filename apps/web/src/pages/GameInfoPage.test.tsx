@@ -7,6 +7,9 @@ describe("GameInfoPage", () => {
     render(<GameInfoPage />);
 
     expect(screen.getByText("東方紅魔郷 ～ the Embodiment of Scarlet Devil.")).toBeTruthy();
+    expect(
+      screen.getByText("東方紅魔郷: New Classic ～ the Embodiment of Scarlet Devil."),
+    ).toBeTruthy();
     expect(screen.getByText("東方妖々夢 ～ Perfect Cherry Blossom.")).toBeTruthy();
     expect(screen.getByText("東方永夜抄 ～ Imperishable Night.")).toBeTruthy();
     expect(screen.getByText("東方風神録 ～ Mountain of Faith.")).toBeTruthy();

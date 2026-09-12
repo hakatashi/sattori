@@ -261,7 +261,7 @@ describe("UploadForm", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
       "user@example.com",
       "ja",
     );
@@ -371,7 +371,7 @@ describe("UploadForm の低速録画オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
       "koishi@example.com",
       "ja",
     );
@@ -495,7 +495,7 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: true },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: true, th06ncHighResolution: false },
       "marisa@example.com",
       "ja",
     );
@@ -524,7 +524,94 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
+      "koishi@example.com",
+      "ja",
+    );
+  });
+});
+
+describe("UploadForm のth06nc 1080p録画オプション", () => {
+  function th06ncHighResolutionCheckbox(): HTMLInputElement {
+    const label = screen
+      .getAllByText(/1080pで録画する|Record in 1080p/)
+      .at(0)
+      ?.closest("label");
+    return label?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+  }
+
+  const TH06NC_REPLAY_INFO: ReplayInfo = {
+    ...SAMPLE_REPLAY_INFO,
+    game: "th06nc",
+  };
+
+  it("th06ncのリプレイなら選択でき、既定はオフ(720p)", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH06NC_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th6_01.rpy");
+
+    await waitFor(() => expect(th06ncHighResolutionCheckbox()?.disabled).toBe(false));
+    expect(th06ncHighResolutionCheckbox().checked).toBe(false);
+  });
+
+  it("th06nc以外はグレーアウトする", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th7_07.rpy");
+
+    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    expect(th06ncHighResolutionCheckbox().disabled).toBe(true);
+    expect(th06ncHighResolutionCheckbox().checked).toBe(false);
+    expect(screen.getByText(/New Classicのリプレイでのみ|New Classic replays/)).toBeTruthy();
+  });
+
+  it("チェックを入れて送信すると options.th06ncHighResolution が true で送られる", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH06NC_REPLAY_INFO });
+    mockedClient.requestMagicLink.mockResolvedValue({});
+    renderUploadForm();
+    selectFile("th6_01.rpy");
+    await waitFor(() => expect(th06ncHighResolutionCheckbox()?.disabled).toBe(false));
+
+    fireEvent.click(th06ncHighResolutionCheckbox());
+    fillEmail("reimu@example.com");
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(nextStepButton());
+    });
+
+    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
+    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
+      "replays/x.rpy",
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: true },
+      "reimu@example.com",
+      "ja",
+    );
+  });
+
+  it("チェック済みで非対応タイトルへ差し替えると、送信される値がオフに戻る", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH06NC_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th6_01.rpy");
+    await waitFor(() => expect(th06ncHighResolutionCheckbox()?.disabled).toBe(false));
+    fireEvent.click(th06ncHighResolutionCheckbox());
+    expect(th06ncHighResolutionCheckbox().checked).toBe(true);
+
+    // th06nc から th07（非対応タイトル）へ差し替える。
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+    selectFile("th7_07.rpy");
+    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    expect(th06ncHighResolutionCheckbox().checked).toBe(false);
+
+    mockedClient.requestMagicLink.mockResolvedValue({});
+    fillEmail("koishi@example.com");
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(nextStepButton());
+    });
+    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
+    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
+      expect.anything(),
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
       "koishi@example.com",
       "ja",
     );

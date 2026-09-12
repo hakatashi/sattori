@@ -34,6 +34,8 @@ export interface UploadFormPersistedState {
   setSlowMotion: Dispatch<SetStateAction<boolean>>;
   th10BugfixMarisaB: boolean;
   setTh10BugfixMarisaB: Dispatch<SetStateAction<boolean>>;
+  th06ncHighResolution: boolean;
+  setTh06ncHighResolution: Dispatch<SetStateAction<boolean>>;
 }
 
 export const UploadFormStateContext = createContext<UploadFormPersistedState | null>(null);
@@ -57,6 +59,9 @@ export function useUploadFormPersistedState(): UploadFormPersistedState {
   const [th10BugfixMarisaB, setTh10BugfixMarisaB] = useState(
     DEFAULT_RECORDING_OPTIONS.th10BugfixMarisaB,
   );
+  const [th06ncHighResolution, setTh06ncHighResolution] = useState(
+    DEFAULT_RECORDING_OPTIONS.th06ncHighResolution,
+  );
 
   return {
     file,
@@ -77,6 +82,8 @@ export function useUploadFormPersistedState(): UploadFormPersistedState {
     setSlowMotion,
     th10BugfixMarisaB,
     setTh10BugfixMarisaB,
+    th06ncHighResolution,
+    setTh06ncHighResolution,
   };
 }
 

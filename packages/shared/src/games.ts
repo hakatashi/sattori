@@ -7,9 +7,10 @@ export const GAME_IDS = [
   // 2026年の紅魔郷リメイク2本。リプレイのマジックバイトは th06 と同じ `T6RP` で、
   // ヘッダのバージョン語で識別する（packages/replay-parser の `games/th06.ts`）。
   // th06 とは互換性が無い（Classic のリプレイは 1.02h では読み込めない）ため、
-  // 別タイトルとして扱う。録画は未対応なので `SUPPORTED_GAME_IDS` には入れない。
+  // 別タイトルとして扱う。両方とも `SUPPORTED_GAME_IDS` に入っている（録画対応済み）。
   "th06c", // 東方紅魔郷: Classic
-  "th06nc", // 東方紅魔郷: New Classic
+  "th06nc", // 東方紅魔郷: New Classic。GPU描画必須のためth06/th06cとは別系統の
+            // EC2インスタンス（g6f.xlarge）で録画する（`apps/api/src/ec2.ts`、Issue #241）。
   "th07", // 東方妖々夢
   "th08", // 東方永夜抄
   "th09", // 東方花映塚
@@ -228,13 +229,17 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
  * スコアRVA未特定のためlifeのみ監視、touhou-recorder reports/68〜69、Issue #73）に続き、
  * th06c（東方紅魔郷: Classic。th06の完全な再実装でth06c.exeがPE32+/x86-64、
  * Steamworks APIスタブ必須、GetProcAddressフックによる入力注入、touhou-recorder
- * reports/74〜77、Issue #240）を追加した。th06とはリプレイのバージョンが非互換
- * （`packages/replay-parser`がバージョン語で判別）なため別`GameId`として扱う。
- * PoC（touhou-recorder）で E2E 実証済みなのはこの9本のみで、他タイトルは
+ * reports/74〜77、Issue #240）に続き、th06nc（東方紅魔郷: New Classic。th06cと同系統
+ * だがGPU描画が必須——Xvfb+wined3d+llvmpipeのソフトウェア描画では60fpsに遠く届かず、
+ * Xorg+NVIDIA GRIDドライバ+DXVK(D3D11→Vulkan)によるGPUインスタンス（g6f.xlarge）
+ * でのみ録画できる、touhou-recorder reports/78〜81、Issue #241）を追加した。
+ * th06とはリプレイのバージョンが非互換（`packages/replay-parser`がバージョン語で判別）
+ * なため別`GameId`として扱う。
+ * PoC（touhou-recorder）で E2E 実証済みなのはこの10本のみで、他タイトルは
  * MOD 移植（録画対応）が未着手（AGENTS.md 参照）。
  */
 export const SUPPORTED_GAME_IDS: readonly GameId[] = [
-  "th06", "th06c", "th07", "th08", "th09", "th10", "th11", "th12", "th20",
+  "th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th20",
 ];
 
 export function isSupportedGame(game: GameId): boolean {

@@ -119,6 +119,39 @@ class GameConfig:
     # 検出した全ウィンドウへ`xdotool windowmap`を発行してから判定する
     # (touhou-recorder reports/61)。既定Falseの他タイトルはこの追加処理を経ない。
     force_window_map: bool = False
+    # GPU描画(Xorg+NVIDIA GRIDドライバ)でヘッドレス画面を作るタイトルか(Issue #241)。
+    # Falseなら従来通りXvfb+llvmpipe(ソフトウェア描画)を使う。th06ncはD3D11描画で
+    # あり、Xvfb+wined3d+llvmpipeでは60fpsに遠く届かない(720pで9.1fps、
+    # touhou-recorder reports/78)ため、この経路が必須。`recording.instance.
+    # ensure_display()`が本フラグで初期化方法を切り替える。
+    gpu_display: bool = False
+    # GPU使用時にWineへ渡すWINEDLLOVERRIDES(DXVK有効化用、例:
+    # "d3d11,dxgi,d3d10core=n")。gpu_display=Falseなら無視する。DXVK(D3D11→Vulkan)は
+    # wined3d(D3D11→OpenGL)より重複フレーム率が一貫して優位だった
+    # (touhou-recorder reports/79〜81)ため、GPU系タイトルはこちらを既定採用する。
+    dxvk_dll_overrides: str | None = None
+    # GPU使用時、Xorg起動後にxrandrで明示的に切り替えるCRTCモード(例: "1920x1080")。
+    # Noneならxrandrでの変更は行わない(Xorg起動時の既定モードのまま)。
+    # Xorg+nvidia環境では「仮想画面サイズ」と「CRTCの実モード」が別概念で、th06ncは
+    # CRTCの実モードを見てウィンドウ解像度の選択肢を決めるため、1080p録画を選ぶ
+    # 場合はこれを明示的に1920x1080へ変更する必要がある(touhou-recorder
+    # reports/81 §9.9.1)。
+    crtc_mode: str | None = None
+    # 終了検知・進捗スクショ用の定期ポーリングキャプチャ(grab_frame)を、本番録画用
+    # x11grabと同一のffmpegプロセスから分岐させたサブストリーム経由で行うか。
+    # GPU実行時にポーリング用の別ffmpegプロセスが本番キャプチャと定期的に競合し、
+    # 周期的なコマ落ちを引き起こす問題への対処(touhou-recorder reports/81 §9)。
+    # 既定Falseのタイトルは従来通りgrab_frame()が毎回新規ffmpegプロセスを起動する
+    # (CPU専用インスタンス・640x480程度の解像度では実害が確認されていないため、
+    # 既存9タイトルの挙動はそのまま維持する)。
+    poll_side_stream: bool = False
+    # rsync後(prepare_instance())に上書きコピーする追加ファイル
+    # ((絶対パスの元ファイル, instance_dir配下の相対パス)のタプル)。
+    # th06ncのth06.env(起動時の解像度設定)のように、ゲーム終了時に書き戻されて
+    # しまう設定ファイルを、ジョブオプション(720p/1080p)に応じて毎回正しい内容へ
+    # 上書きする必要がある場合に使う(touhou-recorder reports/78 §11.2)。
+    # 空タプルが既定で、既存9タイトルは触れない。
+    extra_instance_files: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self):
         if self.game_exe is None:
@@ -185,4 +218,6 @@ class GameConfig:
         # という指定でしかなく接続先sinkを固定しないため、Wine側の変更ではなく
         # この環境変数で制御する。
         env["PULSE_SINK"] = self.pulse_sink
+        if self.dxvk_dll_overrides:
+            env["WINEDLLOVERRIDES"] = self.dxvk_dll_overrides
         return env

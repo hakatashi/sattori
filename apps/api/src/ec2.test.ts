@@ -28,6 +28,7 @@ const config: ApiConfig = {
   cdnDomain: "cdn.example.net",
   jobsTable: "sattori-jobs",
   workerImage: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker:latest",
+  workerGpuImage: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker-gpu:latest",
   titleAssetsBucket: "title-assets-bucket",
   logGroup: "/sattori/worker",
   maxReplayBytes: 5 * 1024 * 1024,
@@ -43,6 +44,7 @@ const config: ApiConfig = {
     subnetIds: ["subnet-aaaa", "subnet-bbbb"],
     region: "ap-northeast-1",
     launchTemplateId: "lt-xxxx",
+    gpuLaunchTemplateId: "lt-gpu-xxxx",
   },
 };
 
@@ -51,7 +53,7 @@ const job: JobRecord = {
   game: "th07",
   replayKey: "replays/abc.rpy",
   status: "queued",
-  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
+  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
   outputPath: null,
   outputPath720p: null,
   error: null,
@@ -116,7 +118,7 @@ describe("buildUserData", () => {
     const decoded = Buffer.from(
       buildUserData(
         config,
-        { ...job, options: { watermark: false, slowMotion: false, th10BugfixMarisaB: false } },
+        { ...job, options: { watermark: false, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false } },
         "task-token-abc",
       ),
       "base64",
@@ -160,7 +162,7 @@ describe("buildUserData", () => {
     const decoded = Buffer.from(
       buildUserData(
         config,
-        { ...job, game: "th20", options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false } },
+        { ...job, game: "th20", options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false, th06ncHighResolution: false } },
         "task-token-abc",
       ),
       "base64",
@@ -172,12 +174,32 @@ describe("buildUserData", () => {
     const decoded = Buffer.from(
       buildUserData(
         config,
-        { ...job, game: "th06", options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false } },
+        { ...job, game: "th06", options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false, th06ncHighResolution: false } },
         "task-token-abc",
       ),
       "base64",
     ).toString("utf-8");
     expect(decoded).not.toContain("FPS_LIMIT_TARGET_HZ");
+  });
+
+  it("GPU描画必須タイトル(th06nc)はGPU系ECRイメージ・--gpus allを使う（Issue #241）", () => {
+    const decoded = Buffer.from(
+      buildUserData(config, { ...job, game: "th06nc" }, "task-token-abc"),
+      "base64",
+    ).toString("utf-8");
+    expect(decoded).toContain(config.workerGpuImage);
+    expect(decoded).not.toContain(config.workerImage);
+    expect(decoded).toContain("docker run --rm --gpus all");
+    // GPU用カスタムAMIはECS基盤ではないため、ECSエージェント停止処理は行わない。
+    expect(decoded).not.toContain("systemctl disable --now ecs");
+  });
+
+  it("CPU系タイトルは--gpus allを付けず、ECSエージェント停止処理も行う", () => {
+    const decoded = Buffer.from(buildUserData(config, job, "task-token-abc"), "base64").toString(
+      "utf-8",
+    );
+    expect(decoded).not.toContain("--gpus all");
+    expect(decoded).toContain("systemctl disable --now ecs");
   });
 });
 
@@ -305,6 +327,45 @@ describe("launchRecordingInstance", () => {
     // th06/07/08向けの.xlarge帯は含まれない
     for (const override of overrides) {
       expect(override.InstanceType).not.toMatch(/\.xlarge$/);
+    }
+  });
+
+  it("th06ncジョブはGPU専用Launch Template・g6f.xlargeで起動する（Issue #241）", async () => {
+    ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
+      LaunchTemplateVersion: { VersionNumber: 5 },
+    });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [
+        {
+          InstanceIds: ["i-0123456789abcdef0"],
+          InstanceType: "g6f.xlarge",
+          AvailabilityZone: "ap-northeast-1a",
+        },
+      ],
+    });
+
+    await launchRecordingInstance(config, { ...job, game: "th06nc" }, "task-token-abc");
+
+    const versionCall = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[0];
+    expect(versionCall?.args[0].input).toMatchObject({
+      LaunchTemplateId: "lt-gpu-xxxx",
+      SourceVersion: "$Default",
+    });
+
+    const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
+    expect(fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]).toMatchObject({
+      LaunchTemplateSpecification: { LaunchTemplateId: "lt-gpu-xxxx", Version: "5" },
+    });
+    const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    expect(overrides).toEqual(
+      expect.arrayContaining([
+        { SubnetId: "subnet-aaaa", InstanceType: "g6f.xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "g6f.xlarge" },
+      ]),
+    );
+    // CPU系Launch Templateは一切参照しない
+    for (const call of ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)) {
+      expect(call.args[0].input.LaunchTemplateId).not.toBe("lt-xxxx");
     }
   });
 

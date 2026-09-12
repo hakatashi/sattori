@@ -1,6 +1,6 @@
 ---
 name: build-mods
-description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th06c・th09・th10・th11・th12・th20）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th20 は `-static` が必須、th06c は64bitクロスビルドとSteamworks APIスタブが必要など、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
+description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th06c・th06nc・th09・th10・th11・th12・th20）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th20 は `-static` が必須、th06c/th06nc は64bitクロスビルドとSteamworks APIスタブが必要など、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
 ---
 
 # MOD（`*_hook.dll`）・injector.exe のビルド
@@ -63,6 +63,24 @@ make -C worker/mods th06c
 # 必須コンポーネント(worker/docs/titles/th06c.md)。games/th06c/直下へ正規のsteam_api64.dll
 # の代わりに同梱する(upload-title-assets skill)。
 make -C worker/mods steam_api64
+```
+
+### th06nc
+
+th06ncはth06cと同じDXライブラリ系エンジンの64bitバイナリで、ビルド方法もth06cと
+ほぼ同一（`-static`必須、Steamworks APIスタブが要る）。**ただしGPU描画が必須の
+タイトルであり、CPU系タイトルとは別のEC2インスタンス（g6f.xlarge）・別ECRイメージ
+（worker-gpu）で録画する**（`worker/docs/titles/th06nc.md`、Issue #241）。
+Steam AppIDがth06cと異なる（4763590、th06cは4771400）ため、Steamworks APIスタブは
+`th06nc_steam_stub/`として別ビルドする（インターフェースの個別対応は不要だった
+実機確認済みだが、`GetAppID()`が将来呼ばれた場合に備えAppIDだけ正しい値にしてある）。
+
+```bash
+# th06nc_hook.dll
+make -C worker/mods th06nc
+
+# Steamworks APIスタブ(th06nc用、AppIDのみth06c用と異なる)
+make -C worker/mods steam_api64_th06nc
 ```
 
 ### th09
