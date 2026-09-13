@@ -17,6 +17,11 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-13",
+    ja: "リプレイファイルの保存場所のヘルプページで、作品のグループ分類をやめ、すべての作品を1つのボタングループから選択できるよう改善",
+    en: "Updated the replay file location help page to select from all titles in a single button group instead of categorized groups",
+  },
+  {
+    date: "2026-09-13",
     ja: "「現在録画対応中のタイトル」の表示スタイルを修正",
     en: "Fixed the display style of \"Currently supported titles\"",
   },
