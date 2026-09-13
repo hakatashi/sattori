@@ -162,6 +162,24 @@ describe("estimateJobCost", () => {
     expect(estimate.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
   });
 
+  it("GPU系(g6f.xlarge/g6f.2xlarge)をCPU系.xlarge/.2xlarge帯へ混同しない（Issue #241）", () => {
+    const estimateXlarge = estimateJobCost(
+      makeJob({ spotPricePerHour: null, instanceType: "g6f.xlarge" }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+
+    expect(estimateXlarge.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
+    expect(estimateXlarge.spotPricePerHour).not.toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.xlarge);
+
+    const estimate2xlarge = estimateJobCost(
+      makeJob({ spotPricePerHour: null, instanceType: "g6f.2xlarge" }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+
+    expect(estimate2xlarge.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
+    expect(estimate2xlarge.spotPricePerHour).not.toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
+  });
+
   it("インスタンスタイプも不明ならゲームからサイズ帯を推定する（th11・th12は.2xlarge帯）", () => {
     const th11 = estimateJobCost(
       makeJob({ spotPricePerHour: null, instanceType: null, game: "th11" }),
@@ -180,6 +198,10 @@ describe("estimateJobCost", () => {
       makeJob({ spotPricePerHour: null, instanceType: null, game: "th20" }),
       new Date("2026-08-02T00:00:00.000Z"),
     );
+    const th06nc = estimateJobCost(
+      makeJob({ spotPricePerHour: null, instanceType: null, game: "th06nc" }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
 
     expect(th11.spotPriceSource).toBe("fallback-game");
     expect(th11.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
@@ -188,6 +210,8 @@ describe("estimateJobCost", () => {
     expect(th07.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.xlarge);
     // `launching`（インスタンスタイプ記録前）や管理画面からの再実行で通る経路。
     expect(th20.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
+    expect(th06nc.spotPriceSource).toBe("fallback-game");
+    expect(th06nc.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
   });
 
   it("配信量は720p版1回ぶん、保管量は両方の合計とする", () => {

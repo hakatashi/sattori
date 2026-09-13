@@ -1,6 +1,6 @@
 ---
 name: upload-title-assets
-description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th06c/th07/th08/th09/th10/th11/th12/th20）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
+description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th06c/th06nc/th07/th08/th09/th10/th11/th12/th20）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
 ---
 
 # タイトル資産（ゲームデータ）の S3 アップロード
@@ -106,6 +106,39 @@ aws s3 cp /tmp/th06c-assets.tar.gz \
 > で上書きしてからtarに固めること（`cp mods/th06c_steam_stub/build/steam_api64.dll
 > games/th06c/steam_api64.dll`）。忘れると本番でSteamクライアント常駐要求により
 > 即終了する。
+
+### th06nc（東方紅魔郷: New Classic、GPU描画必須）
+
+`games/th06nc`は`touhou-recorder`の`games/th06nc`から`rsync`でコピーする(Steam版、
+`worker/docs/titles/th06nc.md`参照)。th06cと同様の同梱物に加え、GPU描画・解像度切替
+専用の同梱物がある。
+
+1. **正規の`steam_api64.dll`をth06nc用Steamworks APIスタブで上書きすること**
+   （`mods/th06nc_steam_stub/build/steam_api64.dll`。th06c用スタブとはAppIDのみ異なる
+   別ビルド、`build-mods` skill参照）。th06c用スタブを誤って流用しないこと。
+2. **injectorは64bit版（`injector64.exe`）を同梱すること**（th06ncもPE32+/x86-64）。
+3. **`th06.env.720p`・`th06.env.1080p`を`games/th06nc/`直下に同梱すること**
+   （12バイトの解像度設定ファイル、byte[5]が4=720p/3=1080p。`record_th06nc.py`が
+   `TH06NC_RESOLUTION`環境変数に応じてどちらを`th06.env`として使うか選ぶ。
+   ゲーム終了時に書き戻されるため、素の`th06.env`だけを同梱しても意味が無い）。
+
+WINEPREFIXは`WINEARCH=win64`かつ**DXVK配置済み**のものを使う（§3.1参照、th06cの
+WINEPREFIXとは別物）。
+
+```bash
+tar -czf /tmp/th06nc-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
+  games/th06nc \
+  prefixes/th06nc-wined3d-gl \
+  mods/common/build/injector64.exe \
+  mods/th06nc_replay_autoplay/build/th06nc_hook.dll
+aws s3 cp /tmp/th06nc-assets.tar.gz \
+  "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th06nc/assets.tar.gz"
+```
+
+> `games/th06nc/steam_api64.dll`は`rsync`前に
+> `mods/th06nc_steam_stub/build/steam_api64.dll`で上書きしてからtarに固めること
+> （`cp mods/th06nc_steam_stub/build/steam_api64.dll games/th06nc/steam_api64.dll`）。
 
 ### th07（東方妖々夢）
 
@@ -294,6 +327,39 @@ WINEPREFIX="$(pwd)/prefixes/th06c-wined3d-gl" wine reg add \
 扱わない（`recording.config.GameConfig.build_env()` が起動時に毎回設定する。理由は
 `worker/docs/titles/th07.md`）。**WINEPREFIX を作り直したら §2 でタイトル資産アーカイブを
 作り直してアップロードすること。**
+
+### th06nc（64bitプレフィックス + DXVK配置）
+
+th06cと同じ手順で64bitプレフィックスを作成したうえで、**DXVK（D3D11→Vulkan）を
+追加配置する**（GPU描画必須タイトルのみの手順、`worker/docs/titles/th06nc.md`参照。
+wined3dよりDXVKの方が重複フレーム率が一貫して優位だったため、th06ncは既定でDXVKを
+使う——`record_th06nc.py`が`WINEDLLOVERRIDES=d3d11,dxgi,d3d10core=n`を設定する）。
+
+```bash
+cd worker
+WINEARCH=win64 WINEPREFIX="$(pwd)/prefixes/th06nc-wined3d-gl" xvfb-run -a wineboot -u
+WINEPREFIX="$(pwd)/prefixes/th06nc-wined3d-gl" wineserver -w
+xvfb-run -a ./setup_wineprefix.sh "$(pwd)/prefixes/th06nc-wined3d-gl" \
+  "$(pwd)/games/assets/msgothic.ttc" "$(pwd)/games/assets/msmincho.ttc"
+WINEPREFIX="$(pwd)/prefixes/th06nc-wined3d-gl" wine reg add \
+  'HKCU\Software\Wine\WineDbg' /v ShowCrashDialog /t REG_DWORD /d 0 /f
+
+# DXVK配置: 対応するDXVKリリース(dxvk-<version>.tar.gz)のx64 DLLを
+# system32へ配置する前に、wineビルトインを退避しておくこと
+# (WINEDLLOVERRIDESを付けない限りwineは既定でbuiltinを優先するため、
+# 退避しなくても動作はするが、誤ってオーバーライドを外した場合の事故を防ぐ)。
+PREFIX="$(pwd)/prefixes/th06nc-wined3d-gl"
+SYS32="$PREFIX/drive_c/windows/system32"
+mkdir -p "$SYS32/_wine_builtin_backup"
+for dll in d3d11 dxgi d3d10core; do
+  mv "$SYS32/$dll.dll" "$SYS32/_wine_builtin_backup/$dll.dll"
+  cp "/path/to/dxvk-<version>/x64/$dll.dll" "$SYS32/$dll.dll"
+done
+```
+
+**DXVKのバージョンはtouhou-recorderでの実機検証時に使用したものと同じにすること**
+（バージョン間の互換性は未検証）。DXVKの入手元・ライセンスはtouhou-recorder側の
+記録を確認する。
 
 ## 関連
 

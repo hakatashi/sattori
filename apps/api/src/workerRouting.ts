@@ -97,6 +97,16 @@ export const GAME_ROUTING_POLICIES: Partial<Record<GameId, GameRoutingPolicy>> =
     requiredCapabilities: [],
     offerWindowSeconds: MAX_OFFER_WINDOW_SECONDS,
   },
+  th06nc: {
+    // GPU描画必須タイトル（`requiresGpuRecording()`、Issue #241）。自宅ワーカーは
+    // GPUを搭載していないため、Xvfb+wined3d+llvmpipeでは60fpsに遠く届かず録画が
+    // 成立しない（touhou-recorder reports/78）。「自宅マシンでは録画できないタイトルが
+    // 出てきた場合の逃げ道」として`offerToHomeWorker: false`で常にEC2（GPU系）へ
+    // 固定する（`docs/decisions/0047-no-gpu-titles-for-home-worker.md`）。
+    offerToHomeWorker: false,
+    requiredCapabilities: [],
+    offerWindowSeconds: 0,
+  },
 };
 
 /**

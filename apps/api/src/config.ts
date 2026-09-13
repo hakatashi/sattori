@@ -13,6 +13,13 @@ export interface ApiConfig {
   /** 録画ワーカーの ECR イメージ URI。 */
   workerImage: string;
   /**
+   * GPU描画必須タイトル（th06nc、Issue #241）専用の録画ワーカー ECR イメージ URI。
+   * `worker/Dockerfile.gpu` から別リポジトリ（`worker-gpu`）へビルド・pushする
+   * （`workerImage`とはライフサイクル・ベースイメージが異なるため分離している、
+   * `docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md`）。
+   */
+  workerGpuImage: string;
+  /**
    * タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)を保管するバケット。ワーカーが
    * GAME環境変数に応じて起動時にダウンロード・展開する（`titles/{game}/assets.tar.gz`、
    * Issue #22）。ECRイメージ自体をタイトル数に依存しない共通部分のみにするための分離。
@@ -67,6 +74,13 @@ export interface Ec2LaunchConfig {
    * 作成し、`CreateFleet` からそのバージョンを参照する。
    */
   launchTemplateId: string;
+  /**
+   * GPU描画必須タイトル（th06nc、Issue #241）専用の Launch Template ID。
+   * CPU系（`launchTemplateId`）はAMIをSSMパラメータで動的解決するが、GPU系は
+   * NVIDIA GRIDドライバ・Xorg設定込みで事前に1回手動構築したカスタムAMIを固定参照する
+   * （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
+   */
+  gpuLaunchTemplateId: string;
 }
 
 /**
@@ -94,6 +108,7 @@ export function loadConfig(): ApiConfig {
     cdnDomain: required("CDN_DOMAIN"),
     jobsTable: required("JOBS_TABLE"),
     workerImage: required("WORKER_IMAGE"),
+    workerGpuImage: required("WORKER_GPU_IMAGE"),
     titleAssetsBucket: required("TITLE_ASSETS_BUCKET"),
     logGroup: required("WORKER_LOG_GROUP"),
     maxReplayBytes: Number(process.env.MAX_REPLAY_BYTES ?? 5 * 1024 * 1024),
@@ -109,6 +124,7 @@ export function loadConfig(): ApiConfig {
       subnetIds: required("WORKER_SUBNET_IDS").split(","),
       region: process.env.AWS_REGION ?? "eu-south-2",
       launchTemplateId: required("WORKER_LAUNCH_TEMPLATE_ID"),
+      gpuLaunchTemplateId: required("GPU_WORKER_LAUNCH_TEMPLATE_ID"),
     },
   };
 }

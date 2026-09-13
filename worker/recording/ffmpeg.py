@@ -7,7 +7,7 @@ import re
 import subprocess
 
 
-def build_video_ffmpeg_cmd(config, x, y, w, h, video_output):
+def build_video_ffmpeg_cmd(config, x, y, w, h, video_output, side_stream_path=None):
     """映像のみを録画するffmpegコマンド(音声は別プロセス、reports/26参照)。
     `-copyts`で実際の絶対キャプチャ開始時刻(wallclockベースのepoch秒)を出力ファイルの
     start_timeとして保持する。mux時にこれを使ってA/V同期を補正する(reports/28参照)。
@@ -20,13 +20,31 @@ def build_video_ffmpeg_cmd(config, x, y, w, h, video_output):
     ウォーターマークは convert.py 側(`-copyts`を使わない通常のファイル入力
     同士の合成で、かつどのみち720p変換のために既に発生する再エンコード1回に
     相乗りできる)で行う。
+
+    `side_stream_path`(`config.poll_side_stream`使用時のみ)を指定すると、
+    `-filter_complex`の`split`で本番録画用の出力とは別に、8fpsの静止画連番出力
+    (`-f image2 -update 1`で同一ファイルへ継続上書き)を追加する。終了検知・進捗
+    スクショ用の定期ポーリング(`vision.grab_frame()`)が毎回新規ffmpegプロセスを
+    起動して本番のx11grabキャプチャと競合し、周期的なコマ落ちを起こす問題への対処
+    (GPU描画・高解像度のth06ncで顕在化、touhou-recorder reports/81 §9)。
+    未指定時は従来通りのコマンド文字列と完全に一致する。
     """
-    return [
+    base_cmd = [
         "ffmpeg", "-y", "-copyts",
         "-f", "x11grab", "-draw_mouse", "0", "-video_size", f"{w}x{h}", "-framerate", "60",
         "-i", f"{config.display}+{x},{y}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
-        video_output,
+    ]
+    if not side_stream_path:
+        return base_cmd + [
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+            video_output,
+        ]
+    return base_cmd + [
+        "-filter_complex", "[0:v]split=2[vmain][vpoll];[vpoll]fps=8[vpollout]",
+        "-map", "[vmain]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-pix_fmt", "yuv420p", video_output,
+        "-map", "[vpollout]", "-f", "image2", "-update", "1", "-flush_packets", "1",
+        "-qscale:v", "5", side_stream_path,
     ]
 
 

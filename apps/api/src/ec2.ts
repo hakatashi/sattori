@@ -9,7 +9,7 @@ import {
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import type { JobRecord } from "@sattori/shared";
-import { supportsEc2SlowMotion } from "@sattori/shared";
+import { requiresGpuRecording, supportsEc2SlowMotion } from "@sattori/shared";
 import type { ApiConfig } from "./config.js";
 import { buildWorkerEnv } from "./workerEnv.js";
 
@@ -120,6 +120,21 @@ const TH12_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
   "m7i.2xlarge", // Intel Sapphire Rapids(メモリ倍増版)。2026-09-01実機検証で重複フレーム率12.7%(局所ノイズ、秒単位再解析で良好と確認)
 ];
 
+/**
+ * th06nc専用の候補インスタンスタイプ（Issue #241）。GPU描画（Xorg+NVIDIA GRIDドライバ+
+ * DXVK）が必須なため、CPU系タイトルとは全く別のインスタンスファミリを使う
+ * （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
+ *
+ * `g6f.xlarge`（NVIDIA L4の1/8スライス、4vCPU/16GiB）を第一候補とし、Spot枯渇耐性
+ * （Issue #29）および1080p録画（touhou-recorder reports/81 §9.9.3で推奨）のために
+ * `g6f.2xlarge`（8vCPU/32GiB）も候補に含める。eu-south-2のG系スポットクォータは現状
+ * 8vCPU（32vCPUへの追加申請は別issueで進行中、スコープ外）。
+ */
+const GPU_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
+  "g6f.xlarge", // NVIDIA L4 1/8スライス (4vCPU/16GiB)。reports/80・81実測、第一候補
+  "g6f.2xlarge", // NVIDIA L4 1/4スライス (8vCPU/32GiB)。reports/81実測で1080p推奨・xlarge枯渇対策
+];
+
 function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
   switch (game) {
     case "th11":
@@ -128,6 +143,8 @@ function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
       return TH12_CANDIDATE_INSTANCE_TYPES;
     case "th20":
       return TH20_CANDIDATE_INSTANCE_TYPES;
+    case "th06nc":
+      return GPU_CANDIDATE_INSTANCE_TYPES;
     default:
       return DEFAULT_CANDIDATE_INSTANCE_TYPES;
   }
@@ -158,7 +175,14 @@ function shellEscape(value: string): string {
  * 録画/変換の成功・失敗を `SendTaskSuccess`/`SendTaskFailure` で直接通知するために渡す。
  */
 export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: string): string {
-  const registry = config.workerImage.split("/")[0] ?? "";
+  // GPU描画必須タイトル（th06nc、Issue #241）は別ECRイメージ（`worker-gpu`）・
+  // GPU用カスタムAMI（Launch Templateはこの関数の外、`launchRecordingInstance()`側で
+  // 分岐する）を使う。AMIにNVIDIA GRIDドライバ・nvidia-container-toolkitを事前導入
+  // 済みのため、`docker run`にGPUを渡す`--gpus all`を追加するだけでよい
+  // （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
+  const isGpuJob = requiresGpuRecording(job.game);
+  const workerImage = isGpuJob ? config.workerGpuImage : config.workerImage;
+  const registry = workerImage.split("/")[0] ?? "";
 
   // 環境変数の中身は自宅ワーカー（Issue #49）と共有する（`workerEnv.ts`）。
   // taskToken だけはスクリプト冒頭で $TASK_TOKEN に格納済み（bootstrap 失敗時の
@@ -174,6 +198,29 @@ export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: stri
   ).map(([key, value]) =>
     key === "TASK_TOKEN" ? `-e TASK_TOKEN="$TASK_TOKEN"` : `-e ${key}=${shellEscape(value)}`,
   );
+
+  // ECS 最適化 AMI（CPU系ワーカー専用）は docker を含むが、プレーンな docker ホストと
+  // して使う。常駐する ECS エージェントが 4vCPU を消費し、高負荷区間(弾幕)で ffmpeg の
+  // x11grab キャプチャと CPU コンテンションを起こしてフレーム取りこぼし(処理落ち)を
+  // 増やすため停止する（検証: 八雲藍(Extra ボス)戦の重複フレーム率が
+  // 15-26%(有効時) → 4.8%(停止時) に改善）。GPU用カスタムAMIはECS基盤ではなく
+  // このエージェント自体が存在しないため、この処理自体を行わない。
+  const ecsDisableStep = isGpuJob
+    ? ""
+    : `
+# ECS 最適化 AMI は docker を含むが、プレーンな docker ホストとして使う。常駐する
+# ECS エージェントが 4vCPU を消費し、高負荷区間(弾幕)で ffmpeg の x11grab キャプチャと
+# CPU コンテンションを起こしてフレーム取りこぼし(処理落ち)を増やすため停止する。
+# 検証: 八雲藍(Extra ボス)戦の重複フレーム率が 15-26%(有効時) → 4.8%(停止時) に改善。
+systemctl disable --now ecs >/dev/null 2>&1 || true`;
+
+  // GPU用カスタムAMIはnvidia-container-toolkit導入済み前提で、コンテナへGPUを
+  // 渡すために`--gpus all`が必要（CPU系では付けない）。
+  // またホスト側のXorg NVIDIAドライバ(/usr/lib/xorg/modules)およびVulkan ICD設定を
+  // コンテナへマウントし、X11共有メモリ・PulseAudioのために--ipc=hostを付与する。
+  const dockerRunFlags = isGpuJob
+    ? "--rm --gpus all --ipc=host -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=all -e VK_LOADER_DEBUG=all -v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro -v /tmp/.X11-unix:/tmp/.X11-unix -v /etc/vulkan/icd.d:/etc/vulkan/icd.d:ro"
+    : "--rm";
 
   // trap EXIT で必ず shutdown する（Spot 終了 = 課金停止）。ECR ログインや
   // docker 実行が失敗しても、インスタンスを起動したまま残さない（孤児防止）。
@@ -193,12 +240,7 @@ notify_bootstrap_failure() {
     --error "WorkerBootstrapFailure" \\
     --cause "$1" >/dev/null 2>&1 || true
 }
-
-# ECS 最適化 AMI は docker を含むが、プレーンな docker ホストとして使う。常駐する
-# ECS エージェントが 4vCPU を消費し、高負荷区間(弾幕)で ffmpeg の x11grab キャプチャと
-# CPU コンテンションを起こしてフレーム取りこぼし(処理落ち)を増やすため停止する。
-# 検証: 八雲藍(Extra ボス)戦の重複フレーム率が 15-26%(有効時) → 4.8%(停止時) に改善。
-systemctl disable --now ecs >/dev/null 2>&1 || true
+${ecsDisableStep}
 # プレーンな docker ホストとして使うため docker のみ明示起動。
 systemctl enable --now docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true
 # aws CLI が無い環境向けのフォールバック導入。
@@ -220,7 +262,7 @@ fi
 
 pull_ok=0
 for attempt in 1 2 3; do
-  if docker pull ${config.workerImage}; then
+  if docker pull ${workerImage}; then
     pull_ok=1
     break
   fi
@@ -232,13 +274,13 @@ if [ "$pull_ok" -ne 1 ]; then
   exit 1
 fi
 
-docker run --rm \\
+docker run ${dockerRunFlags} \\
   --log-driver awslogs \\
   --log-opt awslogs-region=${config.ec2.region} \\
   --log-opt awslogs-group=${config.logGroup} \\
   --log-opt awslogs-stream=${job.jobId} \\
   ${envFlags.join(" \\\n  ")} \\
-  ${config.workerImage}
+  ${workerImage}
 `;
   return Buffer.from(script, "utf-8").toString("base64");
 }
@@ -281,7 +323,8 @@ export async function fetchSpotPrice(
       new DescribeSpotPriceHistoryCommand({
         InstanceTypes: [instanceType as InstanceType],
         AvailabilityZone: availabilityZone,
-        // ワーカーAMIはAmazon Linux系（ECS最適化AL2023）なので Linux/UNIX 帯。
+        // CPU系ワーカーAMIはAmazon Linux系（ECS最適化AL2023）、GPU系ワーカーAMI
+        // （Issue #241）もUbuntu系のためいずれも Linux/UNIX 帯。
         ProductDescriptions: ["Linux/UNIX"],
         StartTime: new Date(),
         MaxResults: 1,
@@ -322,6 +365,11 @@ export async function fetchSpotPrice(
  * レスポンス（`result.Instances[0]`）からそのまま読み取れ、追加の `DescribeInstances`
  * 呼び出しは不要。ただし**Spot単価だけはレスポンスに含まれない**ため、コスト推定
  * （Issue #60）用に `fetchSpotPrice()` で1回だけ別途取得する。
+ *
+ * GPU描画必須タイトル（`requiresGpuRecording()`、Issue #241）は`config.ec2.
+ * gpuLaunchTemplateId`（GPU用カスタムAMI固定）を使う。CPU系の`launchTemplateId`とは
+ * 別のLaunch Templateであり、`CreateLaunchTemplateVersion`・`CreateFleet`の両方で
+ * 参照先を切り替える。
  */
 export async function launchRecordingInstance(
   config: ApiConfig,
@@ -330,10 +378,13 @@ export async function launchRecordingInstance(
 ): Promise<LaunchedInstance> {
   const userData = buildUserData(config, job, taskToken);
   const candidateInstanceTypes = getCandidateInstanceTypes(job.game);
+  const launchTemplateId = requiresGpuRecording(job.game)
+    ? config.ec2.gpuLaunchTemplateId
+    : config.ec2.launchTemplateId;
 
   const version = await ec2.send(
     new CreateLaunchTemplateVersionCommand({
-      LaunchTemplateId: config.ec2.launchTemplateId,
+      LaunchTemplateId: launchTemplateId,
       SourceVersion: "$Default",
       LaunchTemplateData: { UserData: userData },
     }),
@@ -349,7 +400,7 @@ export async function launchRecordingInstance(
       LaunchTemplateConfigs: [
         {
           LaunchTemplateSpecification: {
-            LaunchTemplateId: config.ec2.launchTemplateId,
+            LaunchTemplateId: launchTemplateId,
             Version: String(versionNumber),
           },
           Overrides: config.ec2.subnetIds.flatMap((subnetId) =>

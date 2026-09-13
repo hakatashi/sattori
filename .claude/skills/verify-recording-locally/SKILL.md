@@ -18,6 +18,16 @@ S3/DynamoDB/Step Functions を一切介さずこのマシン上の Docker で動
 の外側タイムアウトラッパーだけでは防ぎきれないリスクがあるため、コンテナの`--rm`による
 確実な後始末を優先する)。
 
+## 0.0 対象外: GPU描画必須タイトル(th06nc等)
+
+**th06nc(東方紅魔郷: New Classic、Issue #241)はこの手順の対象外**。このマシンには
+GPUを使ったヘッドレス描画環境(Xorg+NVIDIA GRIDドライバ)が無く、CPU系ワーカーイメージ
+（このSkillが検証対象とするもの）にもGPU用の依存が入っていない。ローカルで
+`GAME=th06nc`のコンテナを動かしても`Xvfb+wined3d+llvmpipe`の経路に落ち、60fpsに
+遠く届かず「録画が壊れている」ように見えるが、**これはth06ncの既知の制約であり
+バグではない**（`worker/docs/titles/th06nc.md`参照）。th06ncの実機検証は必ずAWSの
+GPUインスタンス（g6f.xlarge、本番リージョンeu-south-2）で行うこと。
+
 ## 0. 前提: sattori-home-worker が停止していることを確認する
 
 自宅ワーカーは常駐デーモンとして本番ジョブを受け付け続けており、検証用コンテナと

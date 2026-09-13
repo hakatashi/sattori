@@ -57,6 +57,9 @@
 | [0043](0043-remove-fps-runaway-detection.md) | 2026-09-08 | worker | fps暴走検知(`scan_fps_runaway()`)を削除する。真陽性の実績が無く、th08の会話イベント・th09のステージ間演出で誤検知した実績のみだったため | 有効 |
 | [0044](0044-th06c-steam-drm-stub-and-64bit-title.md) | 2026-09-10 | worker | th06cのSteamworks API初期化要求は最小限のスタブDLLで回避し、64bit専用の録画経路(`GameConfig.for_game()`のoverridesでinjectorを差し替え)を別途用意する | 有効 |
 | [0045](0045-ec2-slow-motion-for-th20.md) | 2026-09-11 | packages/shared / apps/api / apps/web / docs | EC2環境でのth20低速録画を有効化し、対応タイトルをコード内定数で管理する | 有効 |
+| [0046](0046-gpu-ec2-instance-and-fixed-ami.md) | 2026-09-12 | infra / apps/api / worker | GPU描画必須タイトル向けにg6f.xlargeを新規導入し、AMIは事前構築したカスタムAMIを固定参照する | 有効 |
+| [0047](0047-no-gpu-titles-for-home-worker.md) | 2026-09-12 | apps/api / home-worker | GPU描画必須タイトルは自宅ワーカーへ常にオファーしない | 有効 |
+| [0048](0048-separate-ecr-repo-for-gpu-workers.md) | 2026-09-12 | infra / worker / apps/api | GPU描画必須タイトル専用の別ECRリポジトリ（worker-gpu）を新設する | 有効 |
 
 ## 書き方
 

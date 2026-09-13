@@ -7,9 +7,10 @@ export const GAME_IDS = [
   // 2026年の紅魔郷リメイク2本。リプレイのマジックバイトは th06 と同じ `T6RP` で、
   // ヘッダのバージョン語で識別する（packages/replay-parser の `games/th06.ts`）。
   // th06 とは互換性が無い（Classic のリプレイは 1.02h では読み込めない）ため、
-  // 別タイトルとして扱う。録画は未対応なので `SUPPORTED_GAME_IDS` には入れない。
+  // 別タイトルとして扱う。両方とも `SUPPORTED_GAME_IDS` に入っている（録画対応済み）。
   "th06c", // 東方紅魔郷: Classic
-  "th06nc", // 東方紅魔郷: New Classic
+  "th06nc", // 東方紅魔郷: New Classic。GPU描画必須のためth06/th06cとは別系統の
+            // EC2インスタンス（g6f.xlarge）で録画する（`apps/api/src/ec2.ts`、Issue #241）。
   "th07", // 東方妖々夢
   "th08", // 東方永夜抄
   "th09", // 東方花映塚
@@ -39,6 +40,7 @@ export interface GameTitleInfo {
   englishName: string;
   japaneseShortName: string;
   englishShortName: string;
+  englishHyphenatedName: string;
 }
 
 /** 表示用の日本語タイトル名。 */
@@ -50,6 +52,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Embodiment of Scarlet Devil",
     japaneseShortName: "紅",
     englishShortName: "EoSD",
+    englishHyphenatedName: "Em\xadbod\xadi\xadment of Scarlet Devil",
   },
   th06c: {
     id: "th06c",
@@ -58,6 +61,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Embodiment of Scarlet Devil: Classic",
     japaneseShortName: "紅C",
     englishShortName: "EoSD:C",
+    englishHyphenatedName: "Em\xadbod\xadi\xadment of Scarlet Devil: Classic",
   },
   th06nc: {
     id: "th06nc",
@@ -66,6 +70,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Embodiment of Scarlet Devil: New Classic",
     japaneseShortName: "紅NC",
     englishShortName: "EoSD:NC",
+    englishHyphenatedName: "Em\xadbod\xadi\xadment of Scarlet Devil: New Classic",
   },
   th07: {
     id: "th07",
@@ -74,6 +79,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Perfect Cherry Blossom",
     japaneseShortName: "妖",
     englishShortName: "PCB",
+    englishHyphenatedName: "Perfect Cherry Blossom",
   },
   th08: {
     id: "th08",
@@ -82,6 +88,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Imperishable Night",
     japaneseShortName: "永",
     englishShortName: "IN",
+    englishHyphenatedName: "Im\xadper\xadish\xadable Night",
   },
   th09: {
     id: "th09",
@@ -90,6 +97,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Phantasmagoria of Flower View",
     japaneseShortName: "花",
     englishShortName: "PoFV",
+    englishHyphenatedName: "Phan\xadtas\xadma\xadgo\xadria of Flower View",
   },
   th095: {
     id: "th095",
@@ -98,6 +106,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Shoot the Bullet",
     japaneseShortName: "文",
     englishShortName: "StB",
+    englishHyphenatedName: "Shoot the Bullet",
   },
   th10: {
     id: "th10",
@@ -106,6 +115,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Mountain of Faith",
     japaneseShortName: "風",
     englishShortName: "MoF",
+    englishHyphenatedName: "Mountain of Faith",
   },
   th11: {
     id: "th11",
@@ -114,6 +124,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Subterranean Animism",
     japaneseShortName: "地",
     englishShortName: "SA",
+    englishHyphenatedName: "Sub\xadter\xadra\xadnean Animism",
   },
   th12: {
     id: "th12",
@@ -122,6 +133,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Undefined Fantastic Object",
     japaneseShortName: "星",
     englishShortName: "UFO",
+    englishHyphenatedName: "Undefined Fantastic Object",
   },
   th125: {
     id: "th125",
@@ -130,6 +142,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Double Spoiler",
     japaneseShortName: "DS",
     englishShortName: "DS",
+    englishHyphenatedName: "Double Spoiler",
   },
   th128: {
     id: "th128",
@@ -138,6 +151,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Fairy Wars",
     japaneseShortName: "戦",
     englishShortName: "FW",
+    englishHyphenatedName: "Fairy Wars",
   },
   th13: {
     id: "th13",
@@ -146,6 +160,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Ten Desires",
     japaneseShortName: "神",
     englishShortName: "TD",
+    englishHyphenatedName: "Ten Desires",
   },
   th14: {
     id: "th14",
@@ -154,6 +169,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Double Dealing Character",
     japaneseShortName: "輝",
     englishShortName: "DDC",
+    englishHyphenatedName: "Double Dealing Character",
   },
   th143: {
     id: "th143",
@@ -162,6 +178,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Impossible Spell Card",
     japaneseShortName: "ア",
     englishShortName: "ISC",
+    englishHyphenatedName: "Impossible Spell Card",
   },
   th15: {
     id: "th15",
@@ -170,6 +187,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Legacy of Lunatic Kingdom",
     japaneseShortName: "紺",
     englishShortName: "LoLK",
+    englishHyphenatedName: "Legacy of Lunatic Kingdom",
   },
   th16: {
     id: "th16",
@@ -178,6 +196,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Hidden Star in Four Seasons",
     japaneseShortName: "天",
     englishShortName: "HSiFS",
+    englishHyphenatedName: "Hidden Star in Four Seasons",
   },
   th165: {
     id: "th165",
@@ -186,6 +205,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Violet Detector",
     japaneseShortName: "秘",
     englishShortName: "VD",
+    englishHyphenatedName: "Violet Detector",
   },
   th17: {
     id: "th17",
@@ -194,6 +214,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Wily Beast and Weakest Creature",
     japaneseShortName: "鬼",
     englishShortName: "WBaWC",
+    englishHyphenatedName: "Wily Beast and Weakest Creature",
   },
   th18: {
     id: "th18",
@@ -202,6 +223,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Unconnected Marketeers",
     japaneseShortName: "虹",
     englishShortName: "UM",
+    englishHyphenatedName: "Un\xadcon\xadnected Marketeers",
   },
   th20: {
     id: "th20",
@@ -210,6 +232,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Fossilized Wonders",
     japaneseShortName: "錦",
     englishShortName: "FoW",
+    englishHyphenatedName: "Fossilized Wonders",
   },
 };
 
@@ -228,13 +251,17 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
  * スコアRVA未特定のためlifeのみ監視、touhou-recorder reports/68〜69、Issue #73）に続き、
  * th06c（東方紅魔郷: Classic。th06の完全な再実装でth06c.exeがPE32+/x86-64、
  * Steamworks APIスタブ必須、GetProcAddressフックによる入力注入、touhou-recorder
- * reports/74〜77、Issue #240）を追加した。th06とはリプレイのバージョンが非互換
- * （`packages/replay-parser`がバージョン語で判別）なため別`GameId`として扱う。
- * PoC（touhou-recorder）で E2E 実証済みなのはこの9本のみで、他タイトルは
+ * reports/74〜77、Issue #240）に続き、th06nc（東方紅魔郷: New Classic。th06cと同系統
+ * だがGPU描画が必須——Xvfb+wined3d+llvmpipeのソフトウェア描画では60fpsに遠く届かず、
+ * Xorg+NVIDIA GRIDドライバ+DXVK(D3D11→Vulkan)によるGPUインスタンス（g6f.xlarge）
+ * でのみ録画できる、touhou-recorder reports/78〜81、Issue #241）を追加した。
+ * th06とはリプレイのバージョンが非互換（`packages/replay-parser`がバージョン語で判別）
+ * なため別`GameId`として扱う。
+ * PoC（touhou-recorder）で E2E 実証済みなのはこの10本のみで、他タイトルは
  * MOD 移植（録画対応）が未着手（AGENTS.md 参照）。
  */
 export const SUPPORTED_GAME_IDS: readonly GameId[] = [
-  "th06", "th06c", "th07", "th08", "th09", "th10", "th11", "th12", "th20",
+  "th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th20",
 ];
 
 export function isSupportedGame(game: GameId): boolean {

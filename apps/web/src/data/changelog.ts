@@ -16,6 +16,18 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-13",
+    ja: "「現在録画対応中のタイトル」の表示スタイルを修正",
+    en: "Fixed the display style of \"Currently supported titles\"",
+  },
+  {
+    date: "2026-09-13",
+    ja: "東方紅魔郷: New Classic (th06nc) の録画に対応",
+    en: "Added recording support for the Embodiment of Scarlet Devil: New Classic (th06nc)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/241",
+    important: true,
+  },
+  {
     date: "2026-09-11",
     ja: "東方錦上京 (th20) の低速録画をサーバーの混雑状況に関わらず常に利用できるよう改善",
     en: "Slow-motion recording for Unfinished Dream of All Living Ghost (th20) is now available at all times regardless of server load",
