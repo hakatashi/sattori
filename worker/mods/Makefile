@@ -23,9 +23,11 @@ SRCS_FPS_HOOK  := $(SRCS_BASE_HOOK) $(SRC_FPS)
 # ターゲット出力ファイル
 TARGET_INJECTOR32 := common/build/injector.exe
 TARGET_INJECTOR64 := common/build/injector64.exe
-TARGET_STEAM_API  := th06c_steam_stub/build/steam_api64.dll
+TARGET_STEAM_API      := th06c_steam_stub/build/steam_api64.dll
+TARGET_STEAM_API_NC   := th06nc_steam_stub/build/steam_api64.dll
 TARGET_TH06       := th06_replay_autoplay/build/th06_hook.dll
 TARGET_TH06C      := th06c_replay_autoplay/build/th06c_hook.dll
+TARGET_TH06NC     := th06nc_replay_autoplay/build/th06nc_hook.dll
 TARGET_TH07       := th07_replay_autoplay/build/th07_hook.dll
 TARGET_TH08       := th08_replay_autoplay/build/th08_hook.dll
 TARGET_TH09       := th09_replay_autoplay/build/th09_hook.dll
@@ -38,8 +40,10 @@ ALL_TARGETS := \
 	$(TARGET_INJECTOR32) \
 	$(TARGET_INJECTOR64) \
 	$(TARGET_STEAM_API) \
+	$(TARGET_STEAM_API_NC) \
 	$(TARGET_TH06) \
 	$(TARGET_TH06C) \
+	$(TARGET_TH06NC) \
 	$(TARGET_TH07) \
 	$(TARGET_TH08) \
 	$(TARGET_TH09) \
@@ -49,8 +53,8 @@ ALL_TARGETS := \
 	$(TARGET_TH20)
 
 .PHONY: all clean \
-	injector injector64 steam_api64 \
-	th06 th06c th07 th08 th09 th10 th11 th12 th20
+	injector injector64 steam_api64 steam_api64_th06nc \
+	th06 th06c th06nc th07 th08 th09 th10 th11 th12 th20
 
 all: $(ALL_TARGETS)
 
@@ -58,8 +62,10 @@ all: $(ALL_TARGETS)
 injector: $(TARGET_INJECTOR32)
 injector64: $(TARGET_INJECTOR64)
 steam_api64: $(TARGET_STEAM_API)
+steam_api64_th06nc: $(TARGET_STEAM_API_NC)
 th06: $(TARGET_TH06)
 th06c: $(TARGET_TH06C)
+th06nc: $(TARGET_TH06NC)
 th07: $(TARGET_TH07)
 th08: $(TARGET_TH08)
 th09: $(TARGET_TH09)
@@ -73,6 +79,8 @@ clean:
 	rm -rf th06_replay_autoplay/build
 	rm -rf th06c_replay_autoplay/build
 	rm -rf th06c_steam_stub/build
+	rm -rf th06nc_replay_autoplay/build
+	rm -rf th06nc_steam_stub/build
 	rm -rf th07_replay_autoplay/build
 	rm -rf th08_replay_autoplay/build
 	rm -rf th09_replay_autoplay/build
@@ -95,8 +103,20 @@ $(TARGET_STEAM_API): th06c_steam_stub/steam_api_stub.cpp
 	@mkdir -p $(@D)
 	$(CXX64) $(DLL_FLAGS) -static -o $@ $<
 
+# 2b. Steamworks API stub for th06nc（64bit、AppIDのみth06cと異なる）
+$(TARGET_STEAM_API_NC): th06nc_steam_stub/steam_api_stub.cpp
+	@mkdir -p $(@D)
+	$(CXX64) $(DLL_FLAGS) -static -o $@ $<
+
 # 3. th06c hook（64bit、UTF-8/UTF-16LE、-static）
 $(TARGET_TH06C): th06c_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE)
+	@mkdir -p $(@D)
+	$(CXX64) $(DLL_FLAGS) -static \
+		-finput-charset=UTF-8 -fexec-charset=UTF-8 -fwide-exec-charset=UTF-16LE \
+		-o $@ $^
+
+# 3b. th06nc hook（64bit、UTF-8/UTF-16LE、-static。GPU描画必須タイトル、Issue #241）
+$(TARGET_TH06NC): th06nc_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE)
 	@mkdir -p $(@D)
 	$(CXX64) $(DLL_FLAGS) -static \
 		-finput-charset=UTF-8 -fexec-charset=UTF-8 -fwide-exec-charset=UTF-16LE \

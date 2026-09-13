@@ -130,12 +130,20 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | th11 | `TH11_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th12 | `TH12_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th20 | `TH20_CANDIDATE_INSTANCE_TYPES` | `c7i.4xlarge` のみ |
+| th06nc | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.xlarge` のみ（GPU描画必須、Issue #241） |
 
 > **候補を足す・変える前に
 > [`docs/decisions/0016`](../../docs/decisions/0016-ec2-fleet-instance-type-diversification.md)
 > を必ず読むこと**（各候補の実機検証の裏付け・th20が1タイプしかない理由・
 > 「同スペック帯だから安全」が繰り返し裏切られている経緯）。インスタンスの起動を
 > CDK側へ移さない理由は [`0002`](../../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)。
+
+**th06nc（`requiresGpuRecording()`がtrueのタイトル）だけは別系統**——GPU用の
+Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決ではなく
+事前構築したカスタムAMIを固定参照）・別ECRイメージ（`config.workerGpuImage`）を
+使い、`buildUserData()`が`docker run`に`--gpus all`を追加する
+（[`docs/decisions/0046`](../../docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)〜
+[`0048`](../../docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)）。
 
 `CreateFleet`が実際に確保したインスタンスタイプ・AZは `result.Instances[0]` から
 そのまま取得でき、追加の`DescribeInstances`呼び出しは不要。`JobRecord.instanceType`/
@@ -181,6 +189,11 @@ Step Functions実行の生死（`getExecutionLiveness()`）・実行中ジョブ
 ではなく起動側がこの関数の出力に足すかどうかで表現する（理由は
 [`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)・
 [`docs/decisions/0045`](../../docs/decisions/0045-ec2-slow-motion-for-th20.md)）。
+
+th06ncの1080p録画オプション（Issue #241、`TH06NC_RESOLUTION=1080p`）は
+`th10BugfixMarisaB`と同じパターン——`job.options`から直接読む——を使う。th06ncは
+自宅ワーカーへ絶対に来ないため「割り当て先に応じて有効/無効が変わる」性質を
+持たず、`WorkerEnvOptions`を経由する必要が無い。
 
 `TASK_TOKEN`（Step Functionsの実行を任意に成功/失敗させられるベアラ）を含むため、
 ログや外部への出力では必ず `redactWorkerEnv()` を通すこと。**この約束は型で強制して

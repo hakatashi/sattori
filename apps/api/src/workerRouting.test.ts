@@ -14,7 +14,7 @@ import type { GameRoutingPolicy } from "./workerRouting.js";
 const NOW = new Date("2026-08-09T12:00:00.000Z");
 const JOB = {
   game: "th07",
-  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
+  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
 } as const;
 
 function heartbeat(overrides: Partial<WorkerHeartbeat> = {}): WorkerHeartbeat {
@@ -40,7 +40,7 @@ describe("routingPolicyFor", () => {
   it("低速録画を希望するジョブは slow-motion-recording を宣言したワーカーにだけオファーする", () => {
     const policy = routingPolicyFor({
       game: "th20",
-      options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false },
+      options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
     });
     expect(policy.requiredCapabilities).toContain("slow-motion-recording");
   });
@@ -48,7 +48,7 @@ describe("routingPolicyFor", () => {
   it("低速録画を希望しなければ、th20でも能力の要求は足さない(オファー先を無用に狭めない)", () => {
     const policy = routingPolicyFor({
       game: "th20",
-      options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false },
+      options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
     });
     expect(policy.requiredCapabilities).toEqual([]);
   });
@@ -58,7 +58,7 @@ describe("routingPolicyFor", () => {
     expect(routingPolicyFor(JOB).offerWindowSeconds).toBeLessThan(
       routingPolicyFor({
         game: "th20",
-        options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false },
+        options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
       })
         .offerWindowSeconds,
     );
@@ -151,5 +151,16 @@ describe("selectHomeWorker", () => {
     const a = heartbeat({ workerId: "home-b" });
     const b = heartbeat({ workerId: "home-a" });
     expect(selectHomeWorker([a, b], JOB, DEFAULT_ROUTING_POLICY, NOW)?.workerId).toBe("home-a");
+  });
+
+  it("th06nc(GPU専用タイトル)は自宅ワーカーの空き・宣言に関わらず常にnull（Issue #241）", () => {
+    const policy = GAME_ROUTING_POLICIES.th06nc;
+    expect(policy?.offerToHomeWorker).toBe(false);
+    // supportedGamesにth06ncを明示的に持つ(≒GPUを積んだ自宅マシンを自称する)
+    // ワーカーがいても、方針自体がオファーしないため常にnull。
+    const worker = heartbeat({ supportedGames: ["th06nc"] });
+    expect(
+      selectHomeWorker([worker], { game: "th06nc" }, policy as GameRoutingPolicy, NOW),
+    ).toBeNull();
   });
 });

@@ -71,12 +71,24 @@ export interface RecordingOptions {
    * 再現する方が大半のリプレイに合致するため）。
    */
   th10BugfixMarisaB: boolean;
+  /**
+   * th06nc（東方紅魔郷: New Classic）を1080pで録画するか（Issue #241）。詳細と定数は
+   * `highResolutionRecording.ts` 参照。既定は720p（false）。
+   *
+   * **1080p録画に対応したタイトル（`HIGH_RESOLUTION_RECORDING_SUPPORTED_GAME_IDS`）
+   * でしか選べない**。非対応タイトルではページAがグレーアウトし、`POST /magic-links`
+   * も true を握り潰す。低速録画と異なり「割り当て先次第で無効化される」性質の
+   * オプションではない（th06ncは常にGPU系EC2インスタンスで録画される）ため、
+   * `apps/api/src/workerEnv.ts`は`job.options`から直接読んで環境変数化する。
+   */
+  th06ncHighResolution: boolean;
 }
 
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   watermark: true,
   slowMotion: false,
   th10BugfixMarisaB: false,
+  th06ncHighResolution: false,
 };
 
 /**

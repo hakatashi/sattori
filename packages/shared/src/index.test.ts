@@ -6,6 +6,8 @@ import {
   ADMIN_JOB_LIST_DEFAULT_LIMIT,
   ADMIN_JOB_LIST_MAX_LIMIT,
   DEFAULT_MONTHLY_COST_LIMIT_USD,
+  GAME_IDS,
+  GAME_TITLES,
 } from "./index.js";
 
 describe("shared", () => {
@@ -17,6 +19,15 @@ describe("shared", () => {
     expect(isSupportedGame("th12")).toBe(true);
     // th13以降はパーサー的には認識できるが録画には未対応(MOD移植が未着手)。
     expect(isSupportedGame("th13")).toBe(false);
+  });
+
+  it("GAME_TITLESの全タイトルにenglishHyphenatedNameが存在し、ソフトハイフンを除去するとenglishNameと一致する", () => {
+    for (const id of GAME_IDS) {
+      const titleInfo = GAME_TITLES[id];
+      expect(titleInfo).toBeDefined();
+      expect(titleInfo.englishHyphenatedName).toBeTruthy();
+      expect(titleInfo.englishHyphenatedName.replaceAll("\xad", "")).toBe(titleInfo.englishName);
+    }
   });
 
   it("終端状態を正しく判定する", () => {
@@ -39,3 +50,4 @@ describe("shared", () => {
     expect(DEFAULT_MONTHLY_COST_LIMIT_USD).toBe(50);
   });
 });
+

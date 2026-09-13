@@ -189,6 +189,64 @@ def test_prepare_instance_applies_vpatch_ini_overrides(tmp_path):
     assert parser.get("Option", "BugFixTh10Power3") == "0"
 
 
+def test_prepare_instance_overwrites_extra_instance_files(tmp_path):
+    """th06ncのth06.env(解像度設定)のように、rsync後に上書きコピーが必要な
+    ファイルを配置する(Issue #241)。ゲーム終了時に書き戻されてしまうため、
+    ジョブオプションに応じた正しい内容で毎回上書きする必要がある。"""
+    game_dir = tmp_path / "games" / "th06nc"
+    game_dir.mkdir(parents=True)
+    (game_dir / "th06.env").write_bytes(b"\x00" * 12)  # rsyncで持ち込まれる既定値
+    env_1080p = tmp_path / "th06.env.1080p"
+    env_1080p.write_bytes(bytes([2, 1, 0, 0, 1, 3, 0, 0, 1, 0, 0, 0]))
+    replay = tmp_path / "upload.rpy"
+    replay.write_bytes(b"replay")
+    injector = tmp_path / "injector.exe"
+    injector.write_bytes(b"i")
+    hook = tmp_path / "th06nc_hook.dll"
+    hook.write_bytes(b"h")
+
+    config = make_config(
+        game_id="th06nc",
+        wineprefix=str(tmp_path / "prefix"),
+        instance_dir=str(tmp_path / "instance"),
+        game_dir_src=str(game_dir),
+        canonical_slot="th6_01.rpy",
+        injector_path=str(injector),
+        hook_dll_path=str(hook),
+        extra_instance_files=((str(env_1080p), "th06.env"),),
+    )
+    (tmp_path / "instance").mkdir()
+
+    instance.prepare_instance(config, str(replay), log=lambda _m: None)
+
+    assert (tmp_path / "instance" / "th06.env").read_bytes() == env_1080p.read_bytes()
+
+
+def test_ensure_display_uses_xvfb_when_gpu_display_is_false(monkeypatch):
+    calls = []
+    monkeypatch.setattr(instance, "ensure_xvfb", lambda *a, **k: calls.append("xvfb"))
+    config = make_config(gpu_display=False)
+
+    instance.ensure_display(config, {}, log=lambda _m: None)
+
+    assert calls == ["xvfb"]
+
+
+def test_ensure_display_uses_gpu_display_when_enabled(monkeypatch):
+    import sys
+    import types
+
+    calls = []
+    fake_module = types.ModuleType("recording.gpu_display")
+    fake_module.ensure_gpu_display = lambda *a, **k: calls.append("gpu")
+    monkeypatch.setitem(sys.modules, "recording.gpu_display", fake_module)
+    config = make_config(gpu_display=True)
+
+    instance.ensure_display(config, {}, log=lambda _m: None)
+
+    assert calls == ["gpu"]
+
+
 def test_prepare_instance_skips_vpatch_ini_rewrite_when_no_overrides(tmp_path):
     """既定(overridesなし)では同梱のvpatch.iniをそのまま使う(他タイトルへの影響なし)。"""
     game_dir = tmp_path / "games" / "th11"

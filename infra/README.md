@@ -122,7 +122,9 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   - アラーム受信時の初動は[`docs/runbooks/ops-alerts.md`](../docs/runbooks/ops-alerts.md)。
 - **ECR**: `sattori-worker`（`maxImageCount: 2`でストレージコストを抑制。
   ワーカーイメージはタイトル数に依存しない共通部分のみで構成するため、Issue #22で
-  タイトル固有アセットをS3側へ分離済み）。
+  タイトル固有アセットをS3側へ分離済み）。GPU描画必須タイトル（th06nc等、Issue #241）
+  専用に`sattori-worker-gpu`をもう1本持つ（別Dockerfile・別ベースイメージのため分離、
+  [`docs/decisions/0048`](../docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)）。
 - **VPC**: NATなし公開サブネット×最大6AZ（`maxAzs: 6`。実際に作られる数は
   リージョンの提供AZ数とのmin。eu-south-2は現状3AZなので3つ）+ SG（egressのみ）。
   ワーカーは外向き通信のみのためNAT不要=コスト増なしでAZを広げられる。
@@ -135,6 +137,12 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   により上書きする（ここでのUserDataはプレースホルダで実際に使われることはない）。
   **この分離を崩さないこと** ——
   [`docs/decisions/0002`](../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)。
+  GPU描画必須タイトル（th06nc等）専用にもう1本`GpuWorkerLaunchTemplate`を持つ
+  （`g6f.xlarge`固定、AMIはSSM動的解決ではなく事前構築したカスタムAMIをコンテキスト値
+  `gpuWorkerAmiId`で固定参照する。**未設定のままsynthすると例外で失敗する**——
+  `cdk.json`の`context`に設定するか`-c gpuWorkerAmiId=ami-xxxx`で指定すること、
+  AMI構築手順は`build-gpu-worker-ami` skill、
+  [`docs/decisions/0046`](../docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)）。
 - **Step Functions**: `RecordingStateMachine`（Standard）。`Launch`
   （`waitForTaskToken`、150分タイムアウト+**15分のハートビートタイムアウト**）→
   失敗時 `WaitBeforeCheck`（3分）→
@@ -274,6 +282,10 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの 
 0. （初回のみ）管理画面用トークンをSSMへ手動で作成する（上記「管理画面」参照。
    CDKでは作成できないSecureStringのため、忘れると`/admin/*`が403になり続ける。
    `--region eu-south-2`を指定すること）
+0.5. （初回のみ）GPU描画必須タイトル（th06nc等）用カスタムAMIを構築し、
+   `infra/cdk.json`の`context.gpuWorkerAmiId`へAMI IDを設定する（`build-gpu-worker-ami`
+   skill）。**未設定のままsynth/deployすると例外で失敗する**（誤ってCPU系AMIのまま
+   GPU系を起動する事故を防ぐための意図的な設計）。
 1. `pnpm build`（`apps/web/dist`が無いと`BucketDeployment`はスキップされる）
 2. `cdk bootstrap`（初回のみ。`SattoriEdgeStack`用にus-east-1でも必要。
    `cdk bootstrap aws://<account>/us-east-1 aws://<account>/eu-south-2`）→
@@ -283,7 +295,8 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの 
    ECRリポジトリはeu-south-2側）。**`Launch`のハートビートタイムアウト（Issue #49）を
    追加・変更するデプロイでは、この手順を`cdk deploy`より先に行うこと**
    ——ハートビートを送らない古いイメージが残っていると全ジョブが15分で
-   タイムアウトする
+   タイムアウトする。th06nc等を変更した場合は`worker/Dockerfile.gpu`から
+   `sattori-worker-gpu`イメージも同様にpushする（`deploy-sattori` skill）
 4. ACM証明書のDNS検証用CNAME・SESのDKIM用CNAME・MAIL FROM用MX/TXT
    （`SesMailFromMxRecord`・`SesMailFromSpfRecord`）を、`cdk deploy`完了後の
    `SattoriEdgeStack`のCfnOutputを確認して外部DNSへ手動追加する

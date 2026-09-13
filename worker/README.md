@@ -30,6 +30,7 @@
 | --- | --- | --- | --- | --- |
 | th06 東方紅魔郷 | `record_th06.py` | [docs/titles/th06.md](docs/titles/th06.md) | テンプレート照合 | 640x480 |
 | th06c 東方紅魔郷: Classic | `record_th06c.py` | [docs/titles/th06c.md](docs/titles/th06c.md) | テンプレート照合(絞り込み領域) | 640x480 |
+| th06nc 東方紅魔郷: New Classic | `record_th06nc.py` | [docs/titles/th06nc.md](docs/titles/th06nc.md) | 画面静止のみ | **1280x720/1920x1080選択可(GPU描画必須)** |
 | th07 東方妖々夢 | `record_th07.py` | [docs/titles/th07.md](docs/titles/th07.md) | テンプレート照合 | 640x480 |
 | th08 東方永夜抄 | `record_th08.py` | [docs/titles/th08.md](docs/titles/th08.md) | テンプレート照合 | 640x480 |
 | th09 東方花映塚 | `record_th09.py` | [docs/titles/th09.md](docs/titles/th09.md) | テンプレート照合(絞り込み領域) | 640x480 |
@@ -79,7 +80,7 @@
 | 変数 | 説明 |
 | --- | --- |
 | `JOB_ID` | ジョブ ID(DynamoDB キー・出力キーに使用) |
-| `GAME` | タイトル(`th06` / `th06c` / `th07` / `th08` / `th09` / `th10` / `th11` / `th12` / `th20`) |
+| `GAME` | タイトル(`th06` / `th06c` / `th06nc` / `th07` / `th08` / `th09` / `th10` / `th11` / `th12` / `th20`) |
 | `REPLAY_BUCKET` / `REPLAY_KEY` | アップロード済みリプレイの S3 位置 |
 | `OUTPUT_BUCKET` | 録画動画の出力先バケット(CloudFront オリジン) |
 | `TITLE_ASSETS_BUCKET` | タイトル固有アセットのバケット(§8) |
@@ -99,6 +100,9 @@
 | `TITLE_ASSETS_CACHE_DIR` | 自宅ワーカーのみが渡す(§8、Issue #104)。設定時はタイトル資産を
   直接ダウンロードせず、このディレクトリ配下のキャッシュを使う。EC2は渡さないため常に
   直接ダウンロードする |
+| `TH06NC_RESOLUTION` | `1080p`でth06nc(GPU描画必須)を1080pで録画する(Issue #241、
+  [`titles/th06nc.md`](docs/titles/th06nc.md))。省略時・それ以外の値は720p。
+  th06nc以外では読まれない |
 
 ## 4. 出力ファイル
 
@@ -111,6 +115,7 @@
 | th06/06c/07/08/09/10/11/12(640x480・等倍) | 960x720へ拡大 | **そのまま2本目として配信** | 生データが無加工で通用するので、再エンコードは配信版の1回だけで済む |
 | th20(1280x960・等倍) | 1280x960のまま | 出さない | 2本目はウォーターマークの有無しか違わず、S3保管料とCloudFront転送量が倍になるだけ |
 | th20(低速録画) | 1280x960のまま | 出さない | 生データが半分の速度でそのまま配信できない。別途出すには等倍化の再エンコードがもう1回要る |
+| th06nc(1280x720/1920x1080) | 元解像度のまま | 出さない | 既に720p以上のためth20と同じ理由(`needs_separate_raw_output()`は解像度・低速録画有無だけを見る汎用ロジックなので、th06nc固有の分岐は無い) |
 
 640x480 の録画はそのままだと YouTube 側で60fpsと認識されないため拡大する(reports/21)。
 **逆に、元から720p以上ある録画を高さ720pxへ「合わせる」ことはしない**(th20を960x720へ縮小
@@ -265,6 +270,17 @@ AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/work
 コンテキストへ配置すること(§8)。ビルド・pushのコマンドとデプロイ手順全体は
 `deploy-sattori` skill(**push と deploy の順序を守ること**)。
 
+**GPU描画必須タイトル(th06nc)は別Dockerfile(`Dockerfile.gpu`)・別ECRリポジトリ
+(`sattori-worker-gpu`)を使う**(Issue #241、
+[`decisions/0048`](../docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md))。
+`recording/`パッケージ・`entrypoint.py`・各`record_thNN.py`は`Dockerfile`と共通の
+ソースをCOPYしているが、依存パッケージ(wine64のみ・Xorg関連・libvulkan1等)が異なる
+ため別イメージにビルドする。ビルド・pushの手順は`deploy-sattori` skillに追記済み。
+GPU用カスタムAMI(`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`)の構築手順は
+`build-gpu-worker-ami` skill。**AMI更新時はworker-gpuイメージの動作確認もセットで
+行うこと**(ドライババージョンの不一致でXorg/DXVKが起動しなくなるリスクがある、
+[`titles/th06nc.md`](docs/titles/th06nc.md))。
+
 ## 13. 既知の制約
 
 一覧と詳細は [`docs/known-limitations.md`](../docs/known-limitations.md)。録画パイプラインに
@@ -286,8 +302,11 @@ AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/work
   できない**。利用者の自己申告(`th10BugfixMarisaB`、既定false)に頼っており、誤った申告の
   リプレイはデシンクする([known-limitations §1](../docs/known-limitations.md#1-対応タイトルの拡大)、
   [`titles/th10.md`](docs/titles/th10.md))。
-- **対応タイトルは §1 の9本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
+- **対応タイトルは §1 の10本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
   対応 —— MOD 移植・実機検証。Issue #13 配下。同 §1)。
+- **th06nc(GPU描画必須)は自宅ワーカーでは録画できない**(GPU非搭載が前提。`apps/api/src/
+  workerRouting.ts`で常にEC2へ固定される、Issue #241、[`titles/th06nc.md`](docs/titles/th06nc.md))。
+  低速録画にも非対応(D3D11経路の新規実装が必要、th06cと同じ扱い)。
 
 **想定尺より大幅に早く終了した/タイムアウトへ近づいたジョブでは、検知ロジック側を疑う前に
 まず録画された映像を目視して**不自然な被弾・ゲームオーバーが無いか確認すること(閾値調整や

@@ -42,6 +42,12 @@ END_TEMPLATE_MAD_THRESHOLD = 15.0  # 実測: テンプレート自己一致は0.
                                    # 40〜140超と大きなマージンがある(reports/33・34)
 
 
+def _to_gray_thumbnail(color):
+    """カラー画像(PIL Image)を、終了検知の画素比較に使う160x120グレースケール
+    配列へ変換する。`grab_frame()`と`read_side_stream_frame()`の共通処理。"""
+    return np.asarray(color.convert("L").resize((160, 120)), dtype=np.float32)
+
+
 def grab_frame(config, env, x, y, w, h):
     """終了検知用のグレースケール縮小画像と、進捗スクリーンショット用のカラー画像を
     同じffmpegキャプチャから作る(1回のキャプチャで両方をまかない、追加コストを出さない)。"""
@@ -51,8 +57,35 @@ def grab_frame(config, env, x, y, w, h):
     ]
     result = subprocess.run(cmd, env=env, capture_output=True)
     color = Image.open(io.BytesIO(result.stdout)).convert("RGB")
-    gray = np.asarray(color.convert("L").resize((160, 120)), dtype=np.float32)
-    return gray, color
+    return _to_gray_thumbnail(color), color
+
+
+def read_side_stream_frame(path, last_mtime=None):
+    """`config.poll_side_stream`使用時、本番録画用ffmpegが継続出力しているサブ
+    ストリーム(8fpsの静止画連番、同一パスへの上書き)から最新フレームを読む。
+
+    戻り値: (gray, color, mtime)。以下のいずれかの場合は (None, None, last_mtime)
+    を返し、呼び出し側は直近のフレームを使い続けてポーリングを継続すること。
+
+    - ファイルがまだ存在しない(録画開始直後)
+    - mtimeが`last_mtime`から進んでいない(=ffmpegが前回ポーリング以降まだ
+      このファイルを書き直していない。`-flush_packets 1`を付けても書き込み
+      タイミングは保証されないため、同一フレームを2回掴んで画面静止と誤判定
+      しないための安全策、touhou-recorder reports/81 §9.2)
+    - 書き込み途中で不完全なファイルを掴んでPIL側の読み込みが失敗した場合
+    """
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return None, None, last_mtime
+    if last_mtime is not None and mtime <= last_mtime:
+        return None, None, last_mtime
+    try:
+        color = Image.open(path).convert("RGB")
+        color.load()
+    except (OSError, ValueError):
+        return None, None, last_mtime
+    return _to_gray_thumbnail(color), color, mtime
 
 
 def grab_frame_from_video(video_path, at_sec):

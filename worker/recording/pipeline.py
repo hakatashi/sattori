@@ -4,6 +4,7 @@
 `recording/vision.py` にある(連続回数は `POLL_INTERVAL_SEC` との積で意味が決まるため、
 ループを回すこちら側に置いている)。
 """
+import glob
 import os
 import signal
 import subprocess
@@ -25,7 +26,7 @@ from .ffmpeg import (
     measure_duplicate_rate,
     mux_audio_video,
 )
-from .instance import build_injector_cmd, ensure_xvfb, prepare_instance
+from .instance import build_injector_cmd, ensure_display, prepare_instance
 from .modlog import check_replay_desync, wait_for_log_marker
 from .process import attach_thprac, find_live_game_pid, kill_wine_and_wait
 from .timing import duplicate_rate_threshold_for_raw, scaled_poll_count, slow_motion_scale
@@ -38,6 +39,7 @@ from .vision import (
     grab_frame_from_video,
     load_end_template,
     mad_masked,
+    read_side_stream_frame,
 )
 from .window import (
     GEOMETRY_SETTLE_TIMEOUT_AFTER_MOVE_SEC,
@@ -83,11 +85,44 @@ MAX_ATTEMPTS_DEFAULT = 3
 MAX_DUPLICATE_RATE_DEFAULT = 30.0
 
 
+def _log_failure_diagnostics(config, log):
+    """起動失敗時・ウィンドウ検出失敗時の診断のため、wine.log / mod.log / DXVK log の末尾を出力する。"""
+    wine_log = f"{config.instance_dir}/wine.log"
+    if os.path.exists(wine_log):
+        try:
+            with open(wine_log, "r", errors="replace") as f:
+                content = f.read()
+            if content.strip():
+                log(f"--- wine.log (末尾2000文字) ---\n{content[-2000:]}")
+        except Exception:
+            pass
+
+    if os.path.exists(config.log_path):
+        try:
+            with open(config.log_path, "r", errors="replace") as f:
+                content = f.read()
+            if content.strip():
+                log(f"--- mod.log (末尾2000文字) ---\n{content[-2000:]}")
+        except Exception:
+            pass
+
+    # DXVK ログ (th06nc_d3d11.log, th06nc_dxgi.log 等)
+    for dxvk_log in glob.glob(f"{config.instance_dir}/*_d3d11.log") + glob.glob(f"{config.instance_dir}/*_dxgi.log"):
+        try:
+            with open(dxvk_log, "r", errors="replace") as f:
+                content = f.read()
+            if content.strip():
+                log(f"--- {os.path.basename(dxvk_log)} (末尾2000文字) ---\n{content[-2000:]}")
+        except Exception:
+            pass
+
+
 def _failure_result(config, env, log):
     """game_pid/ウィンドウ検出/安定確認のいずれかが失敗した場合の戻り値。
     output_exists=Falseにしておけばrecord_with_retry()の失敗判定がそのまま効く
     (reports/24で、以前はsys.exit(1)によりリトライループごとプロセスが終了して
     しまう不具合があった教訓を踏まえた設計)。"""
+    _log_failure_diagnostics(config, log)
     kill_wine_and_wait(config, env, config.process_name, log=log)
     return {
         "output_exists": False,
@@ -128,15 +163,17 @@ def _launch_game(config, env, replay_path, log):
 
     検出できなければ None(呼び出し側は `_failure_result()` で後片付けすること)。
     """
-    ensure_xvfb(config, env, log=log)
+    ensure_display(config, env, log=log)
     prepare_instance(config, replay_path, log=log)
 
     injector_cmd = build_injector_cmd(config)
     log(f"injector を起動します: {' '.join(injector_cmd)}")
+    wine_log_path = f"{config.instance_dir}/wine.log"
+    wine_log_file = open(wine_log_path, "wb")
     subprocess.Popen(
         injector_cmd,
         cwd=config.instance_dir, env=env,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=wine_log_file, stderr=subprocess.STDOUT,
     )
 
     game_pid = None
@@ -220,7 +257,12 @@ def _settle_crop_geometry(config, env, game_pid, seen_lines, log):
     # 非同期なので、ここでもwait_for_stable_geometry()で座標が落ち着くのを待ってから
     # 画面内に収まったかを判定し、収まるまで最大20回リトライする。
     screen_w, screen_h = (int(v) for v in config.xvfb_screen.split("x")[:2])
-    if x + w > screen_w or y + h > screen_h:
+    # 負座標(左・上へのはみ出し)も画面外とみなす。従来は右・下へのはみ出し
+    # (x + w > screen_w等)しか見ておらず、ウィンドウマネージャが左上の外側
+    # (例: x=-3, y=-16)に配置した場合に「画面内に収まっている」と誤判定していた
+    # (GPU描画のXorg+nvidia環境で実際に発生、touhou-recorder reports/81 §9.9.5)。
+    # 空の録画がそのまま「正常」として通ってしまうため、既存タイトルも含め一般修正する。
+    if x < 0 or y < 0 or x + w > screen_w or y + h > screen_h:
         for _ in range(20):
             subprocess.run(["xdotool", "windowmove", winid, "0", "0"], env=env)
             moved_geom = wait_for_stable_geometry(
@@ -230,7 +272,7 @@ def _settle_crop_geometry(config, env, game_pid, seen_lines, log):
             if not moved_geom:
                 continue
             mx, my, mw, mh, _ = moved_geom
-            if mx + mw > screen_w or my + mh > screen_h:
+            if mx < 0 or my < 0 or mx + mw > screen_w or my + mh > screen_h:
                 continue
             x, y, w, h = mx, my, mw, mh
             break
@@ -243,7 +285,8 @@ def _settle_crop_geometry(config, env, game_pid, seen_lines, log):
 
 
 def _monitor_until_end(config, env, geometry, detection, *, time_scale,
-                       progress_dir, expected_duration_seconds, seen_lines, log):
+                       progress_dir, expected_duration_seconds, seen_lines, log,
+                       side_stream_path=None):
     """リプレイ終了(または異常)を検知するまでポーリングする。
 
     戻り値: (detected, detected_by, frozen, last_color_frame)。**録画の停止はここでは
@@ -293,6 +336,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
 
     prev_frame = None
     last_color_frame = None
+    last_side_stream_mtime = None
     consecutive_still = 0
     end_template_consecutive = 0
     consecutive_freeze = 0
@@ -310,7 +354,19 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
             time.sleep(POLL_INTERVAL_SEC)
             continue
 
-        frame, color_frame = grab_frame(config, env, x, y, w, h)
+        if side_stream_path:
+            # 本番録画用ffmpegが出力しているサブストリームを読む(別プロセスの
+            # x11grabを都度起動しない)。フレームがまだ更新されていない/読み込みに
+            # 失敗した場合は、今回のポーリングをスキップして直近のフレームのまま
+            # 次の周期を待つ(config.poll_side_stream、Issue #241)。
+            frame, color_frame, last_side_stream_mtime = read_side_stream_frame(
+                side_stream_path, last_side_stream_mtime,
+            )
+            if frame is None:
+                time.sleep(POLL_INTERVAL_SEC)
+                continue
+        else:
+            frame, color_frame = grab_frame(config, env, x, y, w, h)
         last_color_frame = color_frame
         poll_count += 1
         if progress_dir and poll_count % PROGRESS_SNAPSHOT_EVERY_N_POLLS == 0:
@@ -474,8 +530,9 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     base, _ext = os.path.splitext(output_path)
     video_target = f"{base}.video.mp4"
     audio_target = f"{base}.audio.m4a"
+    side_stream_path = f"{base}.pollstream.jpg" if config.poll_side_stream else None
 
-    video_cmd = build_video_ffmpeg_cmd(config, x, y, w, h, video_target)
+    video_cmd = build_video_ffmpeg_cmd(config, x, y, w, h, video_target, side_stream_path)
     log(f"録画開始(映像): {' '.join(video_cmd)}")
     video_log_path = f"{os.path.dirname(output_path)}/ffmpeg_video.log"
     video_log_file = open(video_log_path, "wb")
@@ -495,7 +552,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     detected, detected_by, frozen, last_color_frame = _monitor_until_end(
         config, env, geometry, detection, time_scale=time_scale,
         progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
-        seen_lines=seen_lines, log=log,
+        seen_lines=seen_lines, log=log, side_stream_path=side_stream_path,
     )
 
     output_exists = _stop_and_mux(video, audio, output_path, env, log=log)
