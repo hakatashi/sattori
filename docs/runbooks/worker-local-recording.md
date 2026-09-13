@@ -32,6 +32,13 @@ kill_wine_and_wait` のように名前で import しているため、**monkeypa
 `process.kill_wine_and_wait` ではない)。モジュールの一覧は
 [`worker/docs/recording-package.md`](../../worker/docs/recording-package.md)。
 
+**Wine/Xvfb/実ゲームに依存する部分(MOD経由の録画本体)は上記の対象外**だが、別途
+`tests/mod_integration/run.py` がこの部分だけを狙った統合テストを持つ(`worker/README.md`
+§14)。§2のホスト直接実行と同じ経路を使うため、`worker/games/`・`worker/prefixes/`に
+ゲーム資産・WINEPREFIXが展開済みの環境でしか動かない。**pytestの対象ではなく、CIにも
+組み込まれていない**——ローカル実行に限定している理由は
+[`decisions/0049`](../decisions/0049-mod-integration-test-local-only.md)。
+
 ## 2. ローカルでの実行(ネットワーク不要)
 
 **用途は`recording/`パッケージのコードを編集しながらの素早い動作確認に限る**。
