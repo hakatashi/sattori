@@ -8,6 +8,13 @@ released 2026-09-10 / Implemented in:
 *This is an English translation of the Japanese document linked above. If the two
 ever disagree, the Japanese one is authoritative.*
 
+> **Update (2026-09-14)**: two of this report's §6 open items (Spell Practice
+> difficulty, the meaning of the stage-offset-array index used by Spell
+> Practice) were resolved with additional replays; clear-status detection
+> remained unresolved. See the (Japanese-only)
+> [followup report](2026-09-14-th06-classic-replay-format-followup.md)
+> (Issue #238).
+
 **Conclusion**: both titles are direct descendants of th06's (Touhou 6: Embodiment
 of Scarlet Devil, 1.02h) replay format. They keep the `T6RP` magic, the +7
 additive-key obfuscation, and the "fixed header → 7 per-stage snapshots →

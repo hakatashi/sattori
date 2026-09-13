@@ -1,0 +1,672 @@
+[
+  {
+    "number": 1,
+    "difficulty": "Hard",
+    "name": "月符「ムーンライトレイ」"
+  },
+  {
+    "number": 2,
+    "difficulty": "Lunatic",
+    "name": "月符「ムーンライトレイ」"
+  },
+  {
+    "number": 3,
+    "difficulty": "Normal",
+    "name": "夜符「ナイトバード」"
+  },
+  {
+    "number": 4,
+    "difficulty": "Hard",
+    "name": "夜符「ナイトバード」"
+  },
+  {
+    "number": 5,
+    "difficulty": "Lunatic",
+    "name": "夜符「ナイトバード」"
+  },
+  {
+    "number": 6,
+    "difficulty": "Easy",
+    "name": "闇符「ディマーケイション」"
+  },
+  {
+    "number": 7,
+    "difficulty": "Normal",
+    "name": "闇符「ディマーケイション」"
+  },
+  {
+    "number": 8,
+    "difficulty": "Hard",
+    "name": "闇符「ディマーケイション」"
+  },
+  {
+    "number": 9,
+    "difficulty": "Lunatic",
+    "name": "闇符「ディマーケイション」"
+  },
+  {
+    "number": 10,
+    "difficulty": "Easy",
+    "name": "氷符「アイシクルフォール」"
+  },
+  {
+    "number": 11,
+    "difficulty": "Normal",
+    "name": "氷符「アイシクルフォール」"
+  },
+  {
+    "number": 12,
+    "difficulty": "Hard",
+    "name": "雹符「ヘイルストーム」"
+  },
+  {
+    "number": 13,
+    "difficulty": "Lunatic",
+    "name": "雹符「ヘイルストーム」"
+  },
+  {
+    "number": 14,
+    "difficulty": "Easy",
+    "name": "凍符「パーフェクトフリーズ」"
+  },
+  {
+    "number": 15,
+    "difficulty": "Normal",
+    "name": "凍符「パーフェクトフリーズ」"
+  },
+  {
+    "number": 16,
+    "difficulty": "Hard",
+    "name": "凍符「パーフェクトフリーズ」"
+  },
+  {
+    "number": 17,
+    "difficulty": "Lunatic",
+    "name": "凍符「パーフェクトフリーズ」"
+  },
+  {
+    "number": 18,
+    "difficulty": "Normal",
+    "name": "雪符「ダイアモンドブリザード」"
+  },
+  {
+    "number": 19,
+    "difficulty": "Hard",
+    "name": "雪符「ダイアモンドブリザード」"
+  },
+  {
+    "number": 20,
+    "difficulty": "Lunatic",
+    "name": "雪符「ダイアモンドブリザード」"
+  },
+  {
+    "number": 21,
+    "difficulty": "Easy",
+    "name": "華符「芳華絢爛」"
+  },
+  {
+    "number": 22,
+    "difficulty": "Normal",
+    "name": "華符「芳華絢爛」"
+  },
+  {
+    "number": 23,
+    "difficulty": "Hard",
+    "name": "華符「セラギネラ９」"
+  },
+  {
+    "number": 24,
+    "difficulty": "Lunatic",
+    "name": "華符「セラギネラ９」"
+  },
+  {
+    "number": 25,
+    "difficulty": "Easy",
+    "name": "虹符「彩虹の風鈴」"
+  },
+  {
+    "number": 26,
+    "difficulty": "Normal",
+    "name": "虹符「彩虹の風鈴」"
+  },
+  {
+    "number": 27,
+    "difficulty": "Hard",
+    "name": "虹符「彩虹の風鈴」"
+  },
+  {
+    "number": 28,
+    "difficulty": "Lunatic",
+    "name": "虹符「彩虹の風鈴」"
+  },
+  {
+    "number": 29,
+    "difficulty": "Hard",
+    "name": "幻符「華想夢葛」"
+  },
+  {
+    "number": 30,
+    "difficulty": "Lunatic",
+    "name": "幻符「華想夢葛」"
+  },
+  {
+    "number": 31,
+    "difficulty": "Easy",
+    "name": "彩符「彩雨」"
+  },
+  {
+    "number": 32,
+    "difficulty": "Normal",
+    "name": "彩符「彩雨」"
+  },
+  {
+    "number": 33,
+    "difficulty": "Hard",
+    "name": "彩符「彩光乱舞」"
+  },
+  {
+    "number": 34,
+    "difficulty": "Lunatic",
+    "name": "彩符「彩光乱舞」"
+  },
+  {
+    "number": 35,
+    "difficulty": "Normal",
+    "name": "彩符「極彩颱風」"
+  },
+  {
+    "number": 36,
+    "difficulty": "Hard",
+    "name": "彩符「極彩颱風」"
+  },
+  {
+    "number": 37,
+    "difficulty": "Lunatic",
+    "name": "彩符「極彩颱風」"
+  },
+  {
+    "number": 38,
+    "difficulty": "Easy",
+    "name": "火符「アグニシャイン」"
+  },
+  {
+    "number": 39,
+    "difficulty": "Normal",
+    "name": "火符「アグニシャイン」"
+  },
+  {
+    "number": 40,
+    "difficulty": "Normal",
+    "name": "火符「アグニシャイン上級」"
+  },
+  {
+    "number": 41,
+    "difficulty": "Hard",
+    "name": "火符「アグニシャイン上級」"
+  },
+  {
+    "number": 42,
+    "difficulty": "Lunatic",
+    "name": "火符「アグニシャイン上級」"
+  },
+  {
+    "number": 43,
+    "difficulty": "Hard",
+    "name": "火符「アグニレイディアンス」"
+  },
+  {
+    "number": 44,
+    "difficulty": "Lunatic",
+    "name": "火符「アグニレイディアンス」"
+  },
+  {
+    "number": 45,
+    "difficulty": "Easy",
+    "name": "水符「プリンセスウンディネ」"
+  },
+  {
+    "number": 46,
+    "difficulty": "Normal",
+    "name": "水符「プリンセスウンディネ」"
+  },
+  {
+    "number": 47,
+    "difficulty": "Hard",
+    "name": "水符「ベリーインレイク」"
+  },
+  {
+    "number": 48,
+    "difficulty": "Lunatic",
+    "name": "水符「ベリーインレイク」"
+  },
+  {
+    "number": 49,
+    "difficulty": "Easy",
+    "name": "木符「シルフィホルン」"
+  },
+  {
+    "number": 50,
+    "difficulty": "Normal",
+    "name": "木符「シルフィホルン」"
+  },
+  {
+    "number": 51,
+    "difficulty": "Normal",
+    "name": "木符「シルフィホルン上級」"
+  },
+  {
+    "number": 52,
+    "difficulty": "Hard",
+    "name": "木符「シルフィホルン上級」"
+  },
+  {
+    "number": 53,
+    "difficulty": "Lunatic",
+    "name": "木符「シルフィホルン上級」"
+  },
+  {
+    "number": 54,
+    "difficulty": "Hard",
+    "name": "木符「グリーンストーム」"
+  },
+  {
+    "number": 55,
+    "difficulty": "Lunatic",
+    "name": "木符「グリーンストーム」"
+  },
+  {
+    "number": 56,
+    "difficulty": "Easy",
+    "name": "土符「レイジィトリリトン」"
+  },
+  {
+    "number": 57,
+    "difficulty": "Normal",
+    "name": "土符「レイジィトリリトン」"
+  },
+  {
+    "number": 58,
+    "difficulty": "Normal",
+    "name": "土符「レイジィトリリトン上級」"
+  },
+  {
+    "number": 59,
+    "difficulty": "Hard",
+    "name": "土符「レイジィトリリトン上級」"
+  },
+  {
+    "number": 60,
+    "difficulty": "Lunatic",
+    "name": "土符「レイジィトリリトン上級」"
+  },
+  {
+    "number": 61,
+    "difficulty": "Hard",
+    "name": "土符「トリリトンシェイク」"
+  },
+  {
+    "number": 62,
+    "difficulty": "Lunatic",
+    "name": "土符「トリリトンシェイク」"
+  },
+  {
+    "number": 63,
+    "difficulty": "Normal",
+    "name": "金符「メタルファティーグ」"
+  },
+  {
+    "number": 64,
+    "difficulty": "Hard",
+    "name": "金符「シルバードラゴン」"
+  },
+  {
+    "number": 65,
+    "difficulty": "Lunatic",
+    "name": "金符「シルバードラゴン」"
+  },
+  {
+    "number": 66,
+    "difficulty": "Easy",
+    "name": "火＆土符「ラーヴァクロムレク」"
+  },
+  {
+    "number": 67,
+    "difficulty": "Normal",
+    "name": "火＆土符「ラーヴァクロムレク」"
+  },
+  {
+    "number": 68,
+    "difficulty": "Hard",
+    "name": "火＆土符「ラーヴァクロムレク」"
+  },
+  {
+    "number": 69,
+    "difficulty": "Lunatic",
+    "name": "火＆土符「ラーヴァクロムレク」"
+  },
+  {
+    "number": 70,
+    "difficulty": "Easy",
+    "name": "木＆火符「フォレストブレイズ」"
+  },
+  {
+    "number": 71,
+    "difficulty": "Normal",
+    "name": "木＆火符「フォレストブレイズ」"
+  },
+  {
+    "number": 72,
+    "difficulty": "Hard",
+    "name": "木＆火符「フォレストブレイズ」"
+  },
+  {
+    "number": 73,
+    "difficulty": "Lunatic",
+    "name": "木＆火符「フォレストブレイズ」"
+  },
+  {
+    "number": 74,
+    "difficulty": "Easy",
+    "name": "水＆木符「ウォーターエルフ」"
+  },
+  {
+    "number": 75,
+    "difficulty": "Normal",
+    "name": "水＆木符「ウォーターエルフ」"
+  },
+  {
+    "number": 76,
+    "difficulty": "Hard",
+    "name": "水＆木符「ウォーターエルフ」"
+  },
+  {
+    "number": 77,
+    "difficulty": "Lunatic",
+    "name": "水＆木符「ウォーターエルフ」"
+  },
+  {
+    "number": 78,
+    "difficulty": "Normal",
+    "name": "金＆水符「マーキュリポイズン」"
+  },
+  {
+    "number": 79,
+    "difficulty": "Hard",
+    "name": "金＆水符「マーキュリポイズン」"
+  },
+  {
+    "number": 80,
+    "difficulty": "Lunatic",
+    "name": "金＆水符「マーキュリポイズン」"
+  },
+  {
+    "number": 81,
+    "difficulty": "Easy",
+    "name": "土＆金符「エメラルドメガリス」"
+  },
+  {
+    "number": 82,
+    "difficulty": "Normal",
+    "name": "土＆金符「エメラルドメガリス」"
+  },
+  {
+    "number": 83,
+    "difficulty": "Hard",
+    "name": "土＆金符「エメラルドメガリス」"
+  },
+  {
+    "number": 84,
+    "difficulty": "Lunatic",
+    "name": "土＆金符「エメラルドメガリス」"
+  },
+  {
+    "number": 85,
+    "difficulty": "Easy",
+    "name": "奇術「ミスディレクション」"
+  },
+  {
+    "number": 86,
+    "difficulty": "Normal",
+    "name": "奇術「ミスディレクション」"
+  },
+  {
+    "number": 87,
+    "difficulty": "Hard",
+    "name": "奇術「幻惑ミスディレクション」"
+  },
+  {
+    "number": 88,
+    "difficulty": "Lunatic",
+    "name": "奇術「幻惑ミスディレクション」"
+  },
+  {
+    "number": 89,
+    "difficulty": "Easy",
+    "name": "幻在「クロックコープス」"
+  },
+  {
+    "number": 90,
+    "difficulty": "Normal",
+    "name": "幻在「クロックコープス」"
+  },
+  {
+    "number": 91,
+    "difficulty": "Hard",
+    "name": "幻幽「ジャック・ザ・ルドビレ」"
+  },
+  {
+    "number": 92,
+    "difficulty": "Lunatic",
+    "name": "幻幽「ジャック・ザ・ルドビレ」"
+  },
+  {
+    "number": 93,
+    "difficulty": "Easy",
+    "name": "幻象「ルナクロック」"
+  },
+  {
+    "number": 94,
+    "difficulty": "Normal",
+    "name": "幻象「ルナクロック」"
+  },
+  {
+    "number": 95,
+    "difficulty": "Hard",
+    "name": "幻世「ザ・ワールド」"
+  },
+  {
+    "number": 96,
+    "difficulty": "Lunatic",
+    "name": "幻世「ザ・ワールド」"
+  },
+  {
+    "number": 97,
+    "difficulty": "Easy",
+    "name": "メイド秘技「操りドール」"
+  },
+  {
+    "number": 98,
+    "difficulty": "Normal",
+    "name": "メイド秘技「操りドール」"
+  },
+  {
+    "number": 99,
+    "difficulty": "Hard",
+    "name": "メイド秘技「殺人ドール」"
+  },
+  {
+    "number": 100,
+    "difficulty": "Lunatic",
+    "name": "メイド秘技「殺人ドール」"
+  },
+  {
+    "number": 101,
+    "difficulty": "Normal",
+    "name": "奇術「エターナルミーク」"
+  },
+  {
+    "number": 102,
+    "difficulty": "Hard",
+    "name": "奇術「エターナルミーク」"
+  },
+  {
+    "number": 103,
+    "difficulty": "Lunatic",
+    "name": "奇術「エターナルミーク」"
+  },
+  {
+    "number": 104,
+    "difficulty": "Normal",
+    "name": "天罰「スターオブヴァニティーズ」"
+  },
+  {
+    "number": 105,
+    "difficulty": "Hard",
+    "name": "神罰「幼きデーモンロード」"
+  },
+  {
+    "number": 106,
+    "difficulty": "Lunatic",
+    "name": "神罰「幼きデーモンロード」"
+  },
+  {
+    "number": 107,
+    "difficulty": "Normal",
+    "name": "冥符「紅色の冥界」"
+  },
+  {
+    "number": 108,
+    "difficulty": "Hard",
+    "name": "獄符「千本の針の山」"
+  },
+  {
+    "number": 109,
+    "difficulty": "Lunatic",
+    "name": "獄符「千本の針の山」"
+  },
+  {
+    "number": 110,
+    "difficulty": "Normal",
+    "name": "呪詛「ブラド・ツェペシュの呪い」"
+  },
+  {
+    "number": 111,
+    "difficulty": "Hard",
+    "name": "神術「吸血鬼幻想」"
+  },
+  {
+    "number": 112,
+    "difficulty": "Lunatic",
+    "name": "神術「吸血鬼幻想」"
+  },
+  {
+    "number": 113,
+    "difficulty": "Normal",
+    "name": "紅符「スカーレットシュート」"
+  },
+  {
+    "number": 114,
+    "difficulty": "Hard",
+    "name": "紅符「スカーレットマイスタ」"
+  },
+  {
+    "number": 115,
+    "difficulty": "Lunatic",
+    "name": "紅符「スカーレットマイスタ」"
+  },
+  {
+    "number": 116,
+    "difficulty": "Normal",
+    "name": "「レッドマジック」"
+  },
+  {
+    "number": 117,
+    "difficulty": "Hard",
+    "name": "「紅色の幻想郷」"
+  },
+  {
+    "number": 118,
+    "difficulty": "Lunatic",
+    "name": "「紅色の幻想郷」"
+  },
+  {
+    "number": 119,
+    "difficulty": "Extra",
+    "name": "月符「サイレントセレナ」"
+  },
+  {
+    "number": 120,
+    "difficulty": "Extra",
+    "name": "日符「ロイヤルフレア」"
+  },
+  {
+    "number": 121,
+    "difficulty": "Extra",
+    "name": "火水木金土符「賢者の石」"
+  },
+  {
+    "number": 122,
+    "difficulty": "Extra",
+    "name": "禁忌「クランベリートラップ」"
+  },
+  {
+    "number": 123,
+    "difficulty": "Extra",
+    "name": "禁忌「レーヴァテイン」"
+  },
+  {
+    "number": 124,
+    "difficulty": "Extra",
+    "name": "禁忌「フォーオブアカインド」"
+  },
+  {
+    "number": 125,
+    "difficulty": "Extra",
+    "name": "禁忌「カゴメカゴメ」"
+  },
+  {
+    "number": 126,
+    "difficulty": "Extra",
+    "name": "禁忌「恋の迷路」"
+  },
+  {
+    "number": 127,
+    "difficulty": "Extra",
+    "name": "禁弾「スターボウブレイク」"
+  },
+  {
+    "number": 128,
+    "difficulty": "Extra",
+    "name": "禁弾「カタディオプトリック」"
+  },
+  {
+    "number": 129,
+    "difficulty": "Extra",
+    "name": "禁弾「過去を刻む時計」"
+  },
+  {
+    "number": 130,
+    "difficulty": "Extra",
+    "name": "秘弾「そして誰もいなくなるか？」"
+  },
+  {
+    "number": 131,
+    "difficulty": "Extra",
+    "name": "ＱＥＤ「４９５年の波紋」"
+  },
+  {
+    "number": 132,
+    "difficulty": "Extra Phantom",
+    "name": "呪弾「フラジャイルウィング」"
+  },
+  {
+    "number": 133,
+    "difficulty": "Extra Phantom",
+    "name": "呪弾「這い寄る血痕」"
+  },
+  {
+    "number": 134,
+    "difficulty": "Extra Phantom",
+    "name": "「弾幕の心臓」"
+  }
+]
