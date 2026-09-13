@@ -136,10 +136,21 @@ In short:
 - New Classic additionally added a game mode byte at 0x06, widened the
   difficulty field to 4 bytes and widened the score to `u64`, shifting
   everything after it. Its mode is reported through `stage`
-  (`"Challenge"`, `"Spell Practice No. 108"`; `null` for Standard).
-- Known gaps: `cleared` is `null` for all three variants, and a New Classic
-  Spell Practice replay reports `difficulty: null` because the difficulty
-  slot is reused for the spell card index.
+  (`"Challenge"`, `"Spell Practice No. 108 (獄符「千本の針の山」)"`; `null` for
+  Standard).
+- New Classic Spell Practice reuses the difficulty slot for the spell card
+  index, so the difficulty isn't stored a second time anywhere in the file —
+  but the card index turns out to itself be difficulty-scoped (one card has a
+  different number per difficulty it's practiced at), confirmed against a
+  134-entry number→difficulty→name table sourced from the game's own Spell
+  Practice menu (`src/data/th06nc/spellcards.json`, Issue #238). `difficulty`
+  and the card name in `stage` are resolved through that table; both fall
+  back to their un-resolved form (`difficulty: null`, `stage` without the
+  parenthesized name) for a card number the table doesn't have.
+- Known gap: `cleared` is `null` for all three variants — no candidate flag
+  byte was found even after diffing same-difficulty/same-reached-stage game
+  over vs. clear fixture pairs
+  ([followup investigation](https://github.com/hakatashi/sattori/blob/main/docs/research/2026-09-14-th06-classic-replay-format-followup.md), Issue #238).
 
 ### Notes on th20 (東方錦上京, FW)
 
