@@ -63,6 +63,20 @@ END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録�
                                        # よる単発の偶然一致を弾くため連続一致を要求する(reports/34)
 
 
+# 終了検知(画面静止/テンプレート照合)は「連続で一致した」ことを確認するためにこの秒数
+# ぶん確定を遅らせており、その間もリプレイ終了後の静止画面(選択画面等)がそのまま録画に
+# 残り続ける。リプレイ本編が短いタイトルではこの確認待ちぶんが録画全体に占める割合が
+# 無視できず、重複フレーム率チェック(固定で録画開始15〜45秒を見る、Issue #93)の対象窓に
+# 静止画面が入り込んで常に閾値を超え、3回とも誤ってリトライ・失敗する
+# (本番のth06ncジョブで確認、Issue #250)。`_CONFIRMATION_TAIL_POLL_COUNT_BY_DETECTION_METHOD`は
+# detected_byごとの確認待ちポーリング回数で、attempt_recording()が重複フレーム率
+# チェック用の実質的なコンテンツ終了秒を逆算するのに使う。
+_CONFIRMATION_TAIL_POLL_COUNT_BY_DETECTION_METHOD = {
+    "still": STILL_CONSECUTIVE_REQUIRED,
+    "template": END_TEMPLATE_CONSECUTIVE_REQUIRED,
+}
+
+
 # end_templateを使うゲームは終了判定そのものに画面静止を使わない(recording/vision.py)ため、
 # デシンク・非再生等で本編が完全に固まった場合にこれを検知する手段が無く、TIMEOUT_SEC
 # (60分)まで打ち切られない。処理落ち早期検知(stutter probe)を削除した結果(Issue #193、
@@ -574,10 +588,21 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     if classification != "good":
         save_diagnostics_snapshot(diagnostics_dir, last_color_frame, attempt, classification)
 
+    # 終了検知の確認待ち(_CONFIRMATION_TAIL_POLL_COUNT_BY_DETECTION_METHOD参照)ぶん
+    # total_record_secから差し引いた、リプレイ終了後の静止画面を含まない実質的な
+    # コンテンツ終了秒。detected_byが対象外(timeout/frozen)ならtotal_record_secのまま。
+    confirmation_tail_poll_count = _CONFIRMATION_TAIL_POLL_COUNT_BY_DETECTION_METHOD.get(detected_by)
+    if confirmation_tail_poll_count is not None:
+        confirmation_tail_sec = scaled_poll_count(confirmation_tail_poll_count, time_scale) * POLL_INTERVAL_SEC
+        content_end_sec = max(0.0, total_record_sec - confirmation_tail_sec)
+    else:
+        content_end_sec = total_record_sec
+
     return {
         "output_exists": output_exists,
         "classification": classification,
         "total_record_sec": total_record_sec,
+        "content_end_sec": content_end_sec,
         # この試行の録画に適用されていた実時間スケール(等倍なら1.0)。出力は等倍へ
         # 戻す前の生データなので、重複フレーム率の判定にこの値が要る
         # (`duplicate_rate_threshold_for_raw()`)。
@@ -653,7 +678,12 @@ def _record_with_retry(config, replay_path, output_path, *,
         # 値が変わらないため、th06/07/08/11の挙動は従来どおり。
         time_scale = result.get("time_scale", 1.0)
         threshold = duplicate_rate_threshold_for_raw(max_duplicate_rate, time_scale)
-        dup_rate = measure_duplicate_rate(output_path, 15, min(30, max(5, result["total_record_sec"] - 15)))
+        # total_record_secではなくcontent_end_secを使う。短いリプレイでは終了検知の
+        # 確認待ち(_CONFIRMATION_TAIL_POLL_COUNT_BY_DETECTION_METHOD)で録画に付加される
+        # 静止画面(選択画面等)が固定30秒窓の大半を占め、閾値超過と誤判定する
+        # (本番のth06ncジョブで確認、Issue #250)。
+        content_end_sec = result.get("content_end_sec", result["total_record_sec"])
+        dup_rate = measure_duplicate_rate(output_path, 15, min(30, max(5, content_end_sec - 15)))
         log(
             f"録画開始15秒以降の重複フレーム率: {dup_rate}% "
             f"(閾値{threshold:.1f}% = 等倍換算{max_duplicate_rate}%、time_scale={time_scale})"
