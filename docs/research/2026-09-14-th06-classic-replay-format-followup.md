@@ -77,7 +77,7 @@ th06c ペア（`th6_07` vs `th6_08`）・th06nc ペア（`th6_08` vs `th6_22`）
 
 `th06.ts` の `readModeAndStage` は `spellcards.json` を組み込み、Spell Practice
 リプレイの `difficulty` をこの対応表から復元するよう変更した（表に無い番号は従来通り
-`null`）。`stage` にもカード名を括弧書きで付加した。
+`null`）。`stage` にもカード名を付加した（例: `"Spell Practice No. 34 彩符「彩光乱舞」"`）。
 
 ### ゲームモード値2: 「ステージプラクティスにリプレイが存在しうる」が否定されたのみ
 

@@ -394,7 +394,7 @@ function readModeAndStage(
     const card = TH06NC_SPELL_CARDS_BY_NUMBER.get(spellNumber);
     return {
       difficulty: card?.difficulty ?? null,
-      stage: card === undefined ? `Spell Practice No. ${spellNumber}` : `Spell Practice No. ${spellNumber} (${card.name})`,
+      stage: card === undefined ? `Spell Practice No. ${spellNumber}` : `Spell Practice No. ${spellNumber} ${card.name}`,
     };
   }
   return {
