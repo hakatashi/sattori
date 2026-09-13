@@ -4,8 +4,11 @@ import { Link } from "react-router-dom";
 import {
   defaultSlowMotionFor,
   EMAIL_PATTERN,
+  GAME_TITLES,
+  isSupportedGame,
   parseReplayInfo,
   SLOW_MOTION_CAPABILITY,
+  SUPPORTED_GAME_IDS,
   supportsEc2SlowMotion,
   supportsHighResolutionRecording,
   supportsSlowMotion,
@@ -28,156 +31,6 @@ import { useUploadFormState } from "./UploadFormStateContext.ts";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
 import { helpCircleOutline, warningOutline } from "ionicons/icons";
-
-const gameTitles = [
-  {
-    japanese: "東方紅魔郷",
-    english: "Embodiment of\nScarlet Devil",
-    shortName: "EoSD",
-    supported: true,
-    icon: 'th06.png',
-  },
-  {
-    japanese: "東方紅魔郷: Classic",
-    english: "Embodiment of\nScarlet Devil: Classic",
-    shortName: "EoSD:C",
-    supported: true,
-    icon: 'th06c.png',
-  },
-  {
-    japanese: "東方紅魔郷: New Classic",
-    english: "Embodiment of\nScarlet Devil: New Classic",
-    shortName: "EoSD:NC",
-    supported: true,
-    icon: 'th06nc.png',
-  },
-  {
-    japanese: "東方妖々夢",
-    english: "Perfect Cherry\nBlossom",
-    shortName: "PCB",
-    supported: true,
-    icon: 'th07.png',
-  },
-  {
-    japanese: "東方永夜抄",
-    english: "Imperishable Night",
-    shortName: "IN",
-    supported: true,
-    icon: 'th08.png',
-  },
-  {
-    japanese: "東方花映塚",
-    english: "Phantasmagoria of\nFlower View",
-    shortName: "PoFV",
-    supported: true,
-    icon: 'th09.png',
-  },
-  {
-    japanese: "東方文花帖",
-    english: "Shoot the Bullet",
-    shortName: "StB",
-    supported: false,
-    icon: 'th095.png',
-  },
-  {
-    japanese: "東方風神録",
-    english: "Mountain of Faith",
-    shortName: "MoF",
-    supported: true,
-    icon: 'th10.png',
-  },
-  {
-    japanese: "東方地霊殿",
-    english: "Subterranean\nAnimism",
-    shortName: "SA",
-    supported: true,
-    icon: 'th11.png',
-  },
-  {
-    japanese: "東方星蓮船",
-    english: "Undefined\nFantastic Object",
-    shortName: "UFO",
-    supported: true,
-    icon: 'th12.png',
-  },
-  {
-    japanese: "ダブルスポイラー",
-    english: "Double Spoiler",
-    shortName: "DS",
-    supported: false,
-    icon: 'th125.png',
-  },
-  {
-    japanese: "妖精大戦争",
-    english: "Fairy Wars",
-    shortName: "GFW",
-    supported: false,
-    icon: 'th128.png',
-  },
-  {
-    japanese: "東方神霊廟",
-    english: "Ten Desires",
-    shortName: "TD",
-    supported: false,
-    icon: 'th13.png',
-  },
-  {
-    japanese: "東方輝針城",
-    english: "Double Dealing\nCharacter",
-    shortName: "DDC",
-    supported: false,
-    icon: 'th14.png',
-  },
-  {
-    japanese: "弾幕アマノジャク",
-    english: "Impossible\nSpell Card",
-    shortName: "ISC",
-    supported: false,
-    icon: 'th143.png',
-  },
-  {
-    japanese: "東方紺珠伝",
-    english: "Legacy of\nLunatic Kingdom",
-    shortName: "LoLK",
-    supported: false,
-    icon: 'th15.png',
-  },
-  {
-    japanese: "東方天空璋",
-    english: "Hidden Star in\nFour Seasons",
-    shortName: "HSiFS",
-    supported: false,
-    icon: 'th16.png',
-  },
-  {
-    japanese: "秘封ナイトメア\nダイアリー",
-    english: "Violet Detector",
-    shortName: "VD",
-    supported: false,
-    icon: 'th165.png',
-  },
-  {
-    japanese: "東方鬼形獣",
-    english: "Wily Beast and\nWeakest Creature",
-    shortName: "WBaWC",
-    supported: false,
-    icon: 'th17.png',
-  },
-  {
-    japanese: "東方虹龍洞",
-    english: "Unconnected\nMarketeers",
-    shortName: "UM",
-    supported: false,
-    icon: 'th18.png',
-  },
-  {
-    japanese: "東方錦上京",
-    english: "Fossilized Wonders",
-    shortName: "FW",
-    supported: true,
-    icon: 'th20.png',
-  },
-];
 
 function formatFileSize(bytes: number): string {
   return `${(bytes / 1024).toFixed(2)}KB`;
@@ -479,15 +332,16 @@ export function UploadForm() {
     <section className={styles.card}>
       <p className={styles.supportedTitlesLabel}>
         {t("uploadForm.supportedTitlesLabel", {
-          count: gameTitles.filter((title) => title.supported).length,
+          count: SUPPORTED_GAME_IDS.length,
         })}
       </p>
       <ul className={styles.supportedTitles}>
-        {gameTitles.map((title) => {
-          const fullName = isEnglish ? title.english : title.japanese;
+        {Object.values(GAME_TITLES).map((title) => {
+          const supported = isSupportedGame(title.id);
+          const fullName = isEnglish ? title.englishHyphenatedName : title.japaneseName;
           return (
-            <li key={title.shortName} className={clsx(styles.supportedTitle, title.supported && styles.supported)}>
-              <img src={`/icons/${title.icon}`} alt={fullName} className={styles.supportedTitleIcon} />
+            <li key={title.id} className={clsx(styles.supportedTitle, supported && styles.supported)}>
+              <img src={`/icons/${title.id}.png`} alt={fullName} className={styles.supportedTitleIcon} />
               <span className={styles.supportedTitleName}>{fullName}</span>
             </li>
           );

@@ -40,6 +40,7 @@ export interface GameTitleInfo {
   englishName: string;
   japaneseShortName: string;
   englishShortName: string;
+  englishHyphenatedName: string;
 }
 
 /** 表示用の日本語タイトル名。 */
@@ -51,6 +52,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Embodiment of Scarlet Devil",
     japaneseShortName: "紅",
     englishShortName: "EoSD",
+    englishHyphenatedName: "Em\xadbod\xadi\xadment of Scarlet Devil",
   },
   th06c: {
     id: "th06c",
@@ -59,6 +61,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Embodiment of Scarlet Devil: Classic",
     japaneseShortName: "紅C",
     englishShortName: "EoSD:C",
+    englishHyphenatedName: "Em\xadbod\xadi\xadment of Scarlet Devil: Classic",
   },
   th06nc: {
     id: "th06nc",
@@ -67,6 +70,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Embodiment of Scarlet Devil: New Classic",
     japaneseShortName: "紅NC",
     englishShortName: "EoSD:NC",
+    englishHyphenatedName: "Em\xadbod\xadi\xadment of Scarlet Devil: New Classic",
   },
   th07: {
     id: "th07",
@@ -75,6 +79,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Perfect Cherry Blossom",
     japaneseShortName: "妖",
     englishShortName: "PCB",
+    englishHyphenatedName: "Perfect Cherry Blossom",
   },
   th08: {
     id: "th08",
@@ -83,6 +88,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Imperishable Night",
     japaneseShortName: "永",
     englishShortName: "IN",
+    englishHyphenatedName: "Im\xadper\xadish\xadable Night",
   },
   th09: {
     id: "th09",
@@ -91,6 +97,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Phantasmagoria of Flower View",
     japaneseShortName: "花",
     englishShortName: "PoFV",
+    englishHyphenatedName: "Phan\xadtas\xadma\xadgo\xadria of Flower View",
   },
   th095: {
     id: "th095",
@@ -99,6 +106,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Shoot the Bullet",
     japaneseShortName: "文",
     englishShortName: "StB",
+    englishHyphenatedName: "Shoot the Bullet",
   },
   th10: {
     id: "th10",
@@ -107,6 +115,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Mountain of Faith",
     japaneseShortName: "風",
     englishShortName: "MoF",
+    englishHyphenatedName: "Mountain of Faith",
   },
   th11: {
     id: "th11",
@@ -115,6 +124,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Subterranean Animism",
     japaneseShortName: "地",
     englishShortName: "SA",
+    englishHyphenatedName: "Sub\xadter\xadra\xadnean Animism",
   },
   th12: {
     id: "th12",
@@ -123,6 +133,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Undefined Fantastic Object",
     japaneseShortName: "星",
     englishShortName: "UFO",
+    englishHyphenatedName: "Undefined Fantastic Object",
   },
   th125: {
     id: "th125",
@@ -131,6 +142,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Double Spoiler",
     japaneseShortName: "DS",
     englishShortName: "DS",
+    englishHyphenatedName: "Double Spoiler",
   },
   th128: {
     id: "th128",
@@ -139,6 +151,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Fairy Wars",
     japaneseShortName: "戦",
     englishShortName: "FW",
+    englishHyphenatedName: "Fairy Wars",
   },
   th13: {
     id: "th13",
@@ -147,6 +160,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Ten Desires",
     japaneseShortName: "神",
     englishShortName: "TD",
+    englishHyphenatedName: "Ten Desires",
   },
   th14: {
     id: "th14",
@@ -155,6 +169,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Double Dealing Character",
     japaneseShortName: "輝",
     englishShortName: "DDC",
+    englishHyphenatedName: "Double Dealing Character",
   },
   th143: {
     id: "th143",
@@ -163,6 +178,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Impossible Spell Card",
     japaneseShortName: "ア",
     englishShortName: "ISC",
+    englishHyphenatedName: "Impossible Spell Card",
   },
   th15: {
     id: "th15",
@@ -171,6 +187,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Legacy of Lunatic Kingdom",
     japaneseShortName: "紺",
     englishShortName: "LoLK",
+    englishHyphenatedName: "Legacy of Lunatic Kingdom",
   },
   th16: {
     id: "th16",
@@ -179,6 +196,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Hidden Star in Four Seasons",
     japaneseShortName: "天",
     englishShortName: "HSiFS",
+    englishHyphenatedName: "Hidden Star in Four Seasons",
   },
   th165: {
     id: "th165",
@@ -187,6 +205,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Violet Detector",
     japaneseShortName: "秘",
     englishShortName: "VD",
+    englishHyphenatedName: "Violet Detector",
   },
   th17: {
     id: "th17",
@@ -195,6 +214,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Wily Beast and Weakest Creature",
     japaneseShortName: "鬼",
     englishShortName: "WBaWC",
+    englishHyphenatedName: "Wily Beast and Weakest Creature",
   },
   th18: {
     id: "th18",
@@ -203,6 +223,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Unconnected Marketeers",
     japaneseShortName: "虹",
     englishShortName: "UM",
+    englishHyphenatedName: "Un\xadcon\xadnected Marketeers",
   },
   th20: {
     id: "th20",
@@ -211,6 +232,7 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
     englishName: "Fossilized Wonders",
     japaneseShortName: "錦",
     englishShortName: "FoW",
+    englishHyphenatedName: "Fossilized Wonders",
   },
 };
 
