@@ -55,12 +55,24 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Collect test reports
+        if: always() && github.repository == 'hakatashi/sattori'
+        run: |
+          mkdir -p reports
+          cp apps/api/junit.xml reports/api.xml 2>/dev/null || true
+          cp apps/web/junit.xml reports/web.xml 2>/dev/null || true
+          cp home-worker/junit.xml reports/home-worker.xml 2>/dev/null || true
+          cp infra/junit.xml reports/infra.xml 2>/dev/null || true
+          cp packages/replay-parser/junit.xml reports/replay-parser.xml 2>/dev/null || true
+          cp packages/shared/junit.xml reports/shared.xml 2>/dev/null || true
+          cp worker/junit.xml reports/worker.xml 2>/dev/null || true
+
       - name: Upload test results to BuildPulse
         if: always() && github.repository == 'hakatashi/sattori'
         uses: BuildPulseLLC/test-reporter-action@v3
         with:
           api-token: ${{ secrets.BUILDPULSE_API_TOKEN }}
-          path: .
+          path: reports
           coverage-files: "apps/api/coverage/lcov.info apps/web/coverage/lcov.info home-worker/coverage/lcov.info infra/coverage/lcov.info packages/replay-parser/coverage/lcov.info packages/shared/coverage/lcov.info worker/coverage.xml"
 
   # 録画用MOD(*_hook.dll)がmingw-w64クロスビルドで壊れていないかの簡易確認。
