@@ -1,5 +1,6 @@
 import { decodeAnsiText } from "../byte-reader.js";
 import { localizeCharacterName } from "../character-names.js";
+import th06ncSpellCardsData from "../data/th06nc/spellcards.json" with { type: "json" };
 import { ReplayCorruptError } from "../errors.js";
 import { additiveKeyDecode, readBufferedUint32LE } from "../lzss.js";
 import { DATE_TOKENS_MDY, parseDateComponents } from "../date-format.js";
@@ -8,6 +9,25 @@ import { REPLAY_GAME_TITLES, type ReplayGameId } from "../game-ids.js";
 
 const CHARACTERS = ["ReimuA", "ReimuB", "MarisaA", "MarisaB"];
 const DIFFICULTIES = ["Easy", "Normal", "Hard", "Lunatic", "Extra"];
+
+/**
+ * th06nc Spell Practice card number → difficulty/name, sourced from the
+ * game's own Spell Practice menu (not derived from any file format). Confirmed
+ * to resolve Issue #238 item 2 (`docs/research/th06-classic-replay-format.md`
+ * §6): No.33/No.34 are the same card (彩符「彩光乱舞」) at Hard/Lunatic, proving
+ * the spell card index is itself difficulty-scoped rather than a single
+ * difficulty-agnostic id — this is *why* `difficultyOffset` gets overwritten
+ * by the spell index in Spell Practice mode (there is no separate difficulty
+ * to preserve).
+ */
+interface Th06ncSpellCard {
+  number: number;
+  difficulty: string;
+  name: string;
+}
+const TH06NC_SPELL_CARDS_BY_NUMBER = new Map<number, Th06ncSpellCard>(
+  (th06ncSpellCardsData as Th06ncSpellCard[]).map((card) => [card.number, card]),
+);
 
 /**
  * Size of the fixed per-stage header preceding each stage's raw input-change
@@ -187,9 +207,13 @@ const VARIANTS_BY_VERSION = new Map<number, Th06Layout>([
  * th06nc's game modes, indexed by the byte at `Th06Layout.modeOffset`.
  * `Standard` is the original game's rules; `Challenge` removes lives and
  * counts hits instead; `SpellPractice` is a single spell card, as in th08.
- * Index 2 has not been observed in any replay — most likely stage practice,
- * but this package does not claim so without a sample, and an unrecognized
- * mode is surfaced verbatim (`"Mode 2"`) rather than silently dropped.
+ * Index 2 has not been observed in any replay, and is no longer believed to
+ * be stage practice: the in-game menus were checked directly (Issue #238) —
+ * New Classic does have a stage-practice mode, but it has no replay-saving
+ * feature (same as th19's total lack of one, see `game-ids.ts`), so there is
+ * nothing such a mode could save a replay for. Its actual meaning remains
+ * unknown — an unrecognized mode is surfaced verbatim (`"Mode 2"`) rather
+ * than silently dropped or guessed at.
  */
 const MODES = ["Standard", "Challenge", undefined, "SpellPractice"];
 
@@ -307,11 +331,16 @@ export function parseTh06(original: Uint8Array): ParsedReplay {
     // th07 (games/th07.ts) has the identical stageOffsets/maxStage layout and
     // it turned out maxStage only indicates which stage was *reached*, not
     // cleared — th07 has a separate 1-byte clear flag found empirically via
-    // a game-over fixture, but no equivalent has been verified for any of the
-    // three th06 variants (no "reached the final stage without clearing"
-    // fixture exists yet, and a byte-wise scan over the th06c/th06nc fixtures
-    // found nothing that separates their cleared runs from their game-overs).
-    // Left null rather than guessing.
+    // a game-over fixture. Issue #238 added exactly the fixture pairs that
+    // were missing to look for a th06 equivalent the same way (a th06c Extra
+    // game over/clear pair sharing the same maxStage index, and a th06nc
+    // Lunatic-reaching-stage-6 game over/clear pair) — a byte-wise diff of
+    // the two pairs' decoded headers and final-stage snapshots turned up
+    // nothing beyond fields already explained by the checksum, the RNG-like
+    // "unknown u16" next to it, and the score itself, and the stage's
+    // sentinel-doubling behavior (§3.4 of the research doc) didn't correlate
+    // with clear status either. Left null rather than guessing; see §6 item 1
+    // of `docs/research/th06-classic-replay-format.md` for the full account.
     cleared: null,
     loadout: null,
     splits,
@@ -322,14 +351,28 @@ export function parseTh06(original: Uint8Array): ParsedReplay {
 /**
  * Reads the difficulty and, for th06nc, the game mode — which share a field.
  * In Spell Practice mode th06nc reuses the difficulty slot for the 0-based
- * spell card index instead, so the difficulty of such a replay simply isn't
- * recoverable from the file (there is no second copy of it anywhere in the
- * header) and is reported as `null`.
+ * spell card index instead, so the difficulty isn't stored a second time
+ * anywhere in the header — but it turns out that's fine, because the card
+ * index is itself difficulty-scoped rather than a single card having one
+ * difficulty-agnostic id (Issue #238: No.33 and No.34 are both 彩符「彩光乱舞」,
+ * at Hard and Lunatic respectively, confirmed via the game's own Spell
+ * Practice menu — see `TH06NC_SPELL_CARDS_BY_NUMBER`). So the difficulty is
+ * recovered via that lookup table instead of the file itself; it's `null`
+ * only for a card number the table doesn't know about.
  *
  * The mode is surfaced through `stage` rather than a field of its own,
  * following how th20 reports Spell Practice (see `spellPracticeStage` in
  * games/th20.ts). `Standard` maps to `null` so that ordinary th06nc replays
- * read the same as th06/th06c ones.
+ * read the same as th06/th06c ones. When the card is in the lookup table, its
+ * name is appended the same way th08 embeds a card's full name in `stage`
+ * (this package has no equivalent table for th20, see that title's notes in
+ * the README) — this doubles as an independent check that a stage's spells
+ * really do land on the stage-offset-array index matching the stage they
+ * belong to (§6 item 4 of the research doc): 彩符 is 3面 (紅美鈴)'s card and
+ * lands on index 2 (`splits[0].stage === 3`), 禁忌「恋の迷路」(No.126) is an
+ * Extra card and lands on index 6 (`splits[0].stage === 7`) — both cross-
+ * checked against the in-game Spell Practice menu, which reports the same
+ * stage for each.
  *
  * Note this reads the *undecoded* buffer: every field it touches lives before
  * the obfuscated region.
@@ -347,7 +390,12 @@ function readModeAndStage(
   const mode = MODES[rawMode];
   if (mode === "SpellPractice") {
     // The number the game's own Spell Practice menu shows is 1-based.
-    return { difficulty: null, stage: `Spell Practice No. ${rawDifficulty + 1}` };
+    const spellNumber = rawDifficulty + 1;
+    const card = TH06NC_SPELL_CARDS_BY_NUMBER.get(spellNumber);
+    return {
+      difficulty: card?.difficulty ?? null,
+      stage: card === undefined ? `Spell Practice No. ${spellNumber}` : `Spell Practice No. ${spellNumber} ${card.name}`,
+    };
   }
   return {
     difficulty: DIFFICULTIES[rawDifficulty] ?? null,
