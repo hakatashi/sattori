@@ -247,8 +247,9 @@ MOD が何をしているか(各フックの役割)は [`docs/mods.md`](docs/mod
 
 Wine/Xvfb/実ゲームに依存する録画本体(`recording.pipeline.attempt_recording()`)以外の、純粋な
 ロジック部分を pytest でユニットテストする(boto3 呼び出しは `unittest.mock` でモックし、実際の
-AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/workflows/test.yml`)の
-`worker-test` ジョブで push・PR 毎に自動実行される。**走らせ方と、`recording/` のテストに効く
+AWS リソースには接続しない)。ルートの `pnpm test` (Turborepo) や `pnpm --filter @sattori/worker test`、
+または `worker/` 配下での `pytest` で実行できる。GitHub Actions の `Test`(`.github/workflows/test.yml`)
+で push・PR 毎に自動実行される。**走らせ方と、`recording/` のテストに効く
 規約(monkeypatch は定義側ではなく「使う側」のモジュールに当てる)は
 [`docs/runbooks/worker-local-recording.md`](../docs/runbooks/worker-local-recording.md) §1。**
 
