@@ -43,11 +43,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node -e \"import('node:fs').then(fs => fs.chmodSync('dist/cli/index.js', 0o755))\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --coverage"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

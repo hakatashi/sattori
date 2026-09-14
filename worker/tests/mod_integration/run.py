@@ -30,6 +30,7 @@
   `timeout --kill-after=` を必ず併用する
 """
 import argparse
+from dataclasses import dataclass
 import json
 import os
 import shutil
@@ -37,6 +38,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 WORKER_ROOT = Path(__file__).resolve().parents[2]
@@ -45,6 +47,15 @@ RECORD_TIMEOUT_SECONDS = 300  # フル尺が2分強のリプレイなので、�
 
 sys.path.insert(0, str(WORKER_ROOT))
 from recording.modlog import SCORE_MONITOR_RE, GRAZE_GARBAGE_MAX  # noqa: E402
+
+
+@dataclass
+class TestResult:
+    ok: bool
+    duration: float = 0.0
+    failure_message: str | None = None
+    log: str = ""
+
 
 # ScoreMonitorは1秒間隔のポーリングでしか値を見ていないため、被弾タイミングの
 # 観測誤差は原理的に最大1秒強ある。基準値(expected_hit_offsets_seconds)との
@@ -273,19 +284,21 @@ def run_one(game, keep_output):
     cleanup_stale_display(cfg["display"], f"[{game}]")
     replay_path = FIXTURES_DIR / game / cfg["replay"]
     if not replay_path.exists():
-        print(f"[{game}] ERROR: {replay_path} が見つかりません", file=sys.stderr)
-        return False
+        msg = f"{replay_path} が見つかりません"
+        print(f"[{game}] ERROR: {msg}", file=sys.stderr)
+        return TestResult(ok=False, failure_message=msg)
 
     game_dir = WORKER_ROOT / "games" / game
     prefix_dir = WORKER_ROOT / "prefixes" / f"{game}-wined3d-gl"
     if not game_dir.is_dir() or not prefix_dir.is_dir():
+        msg = f"{game_dir} または {prefix_dir} が見つかりません"
         print(
-            f"[{game}] ERROR: {game_dir} または {prefix_dir} が見つかりません。"
+            f"[{game}] ERROR: {msg}。"
             "setup_wineprefix.sh・upload-title-assets skillの手順でこの環境に"
             "ゲーム資産を用意してください。",
             file=sys.stderr,
         )
-        return False
+        return TestResult(ok=False, failure_message=msg)
 
     tmp_root = Path(tempfile.mkdtemp(prefix=f"sattori-mod-integration-{game}-"))
     try:
@@ -315,9 +328,13 @@ def run_one(game, keep_output):
         elapsed = time.time() - t0
         print(f"[{game}] 終了(exit={proc.returncode}, {elapsed:.0f}s)")
 
+        log_content = run_log.read_text(errors="replace") if run_log.exists() else ""
+        failure_reasons = []
+
         ok = proc.returncode == 0
         if not ok:
             print(f"[{game}] NG: record_{game}.py が異常終了しました(ログ: {run_log if keep_output else '破棄'})")
+            failure_reasons.append(f"record_{game}.py が異常終了しました(exit={proc.returncode})")
 
         # write_desync_result()/write_timeout_result()(recording/artifacts.py)は
         # {"desyncDetected": bool|None}/{"timedOut": bool}というオブジェクトを書き出す。
@@ -325,6 +342,7 @@ def run_one(game, keep_output):
         desync = json.loads(desync_result.read_text())["desyncDetected"] if desync_result.exists() else None
         if desync:
             print(f"[{game}] NG: リプレイずれ(デシンク)の疑いが検知されました")
+            failure_reasons.append("リプレイずれ(デシンク)の疑いが検知されました")
             ok = False
         elif desync is None and ok:
             print(f"[{game}] WARNING: デシンク検証ができませんでした(MODログからスコアが取得できなかった)")
@@ -332,9 +350,11 @@ def run_one(game, keep_output):
         timed_out = json.loads(timeout_result.read_text())["timedOut"] if timeout_result.exists() else None
         if timed_out:
             print(f"[{game}] NG: リプレイ終了を検知できずタイムアウトで打ち切られました")
+            failure_reasons.append("リプレイ終了を検知できずタイムアウトで打ち切られました")
             ok = False
 
         if ok and check_hit_timing(game, cfg):
+            failure_reasons.append("被弾タイミングが基準値と一致しませんでした")
             ok = False
 
         if keep_output or not ok:
@@ -344,25 +364,73 @@ def run_one(game, keep_output):
             shutil.copytree(tmp_root, dest)
             print(f"[{game}] 出力を保存しました: {dest}")
 
-        return ok
+        return TestResult(
+            ok=ok,
+            duration=elapsed,
+            failure_message="; ".join(failure_reasons) if failure_reasons else None,
+            log=log_content,
+        )
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+def write_junit_xml(output_path: Path, results: dict[str, TestResult], total_duration: float):
+    """テスト結果を標準の JUnit XML フォーマットで出力する。"""
+    testsuites = ET.Element("testsuites")
+    testsuite = ET.SubElement(
+        testsuites,
+        "testsuite",
+        name="worker.mod_integration",
+        tests=str(len(results)),
+        failures=str(sum(1 for r in results.values() if not r.ok)),
+        errors="0",
+        time=f"{total_duration:.3f}",
+    )
+
+    for game, res in results.items():
+        testcase = ET.SubElement(
+            testsuite,
+            "testcase",
+            classname="worker.tests.mod_integration",
+            name=game,
+            time=f"{res.duration:.3f}",
+        )
+        if not res.ok:
+            failure = ET.SubElement(
+                testcase,
+                "failure",
+                message=res.failure_message or "Test failed",
+            )
+            failure.text = res.log
+
+    tree = ET.ElementTree(testsuites)
+    ET.indent(tree, space="  ")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tree.write(output_path, encoding="utf-8", xml_declaration=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--game", nargs="*", choices=sorted(TITLES), default=sorted(TITLES))
     parser.add_argument("--keep-output", action="store_true", help="成功時も録画結果・ログを/tmpに残す")
+    parser.add_argument("--junit-xml", type=Path, help="JUnit XML レポートの出力先ファイルパス")
     args = parser.parse_args()
 
     check_home_worker_idle()
 
+    t_start = time.time()
     results = {game: run_one(game, args.keep_output) for game in args.game}
+    total_elapsed = time.time() - t_start
 
     print("\n=== 結果 ===")
-    for game, ok in results.items():
-        print(f"{game}: {'OK' if ok else 'NG'}")
-    sys.exit(0 if all(results.values()) else 1)
+    for game, res in results.items():
+        print(f"{game}: {'OK' if res.ok else 'NG'}")
+
+    if args.junit_xml:
+        write_junit_xml(args.junit_xml, results, total_elapsed)
+        print(f"\nJUnit XML レポートを出力しました: {args.junit_xml}")
+
+    sys.exit(0 if all(r.ok for r in results.values()) else 1)
 
 
 if __name__ == "__main__":

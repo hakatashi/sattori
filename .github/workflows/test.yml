@@ -55,6 +55,22 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Upload Vitest results to BuildPulse
+        if: always() && github.repository == 'hakatashi/sattori'
+        uses: BuildPulseLLC/test-reporter-action@v3
+        with:
+          api-token: ${{ secrets.BUILDPULSE_API_TOKEN }}
+          path: "apps/*/junit.xml packages/*/junit.xml home-worker/junit.xml infra/junit.xml"
+          coverage-files: "apps/*/coverage/lcov.info packages/*/coverage/lcov.info home-worker/coverage/lcov.info infra/coverage/lcov.info"
+
+      - name: Upload Pytest results to BuildPulse
+        if: always() && github.repository == 'hakatashi/sattori'
+        uses: BuildPulseLLC/test-reporter-action@v3
+        with:
+          api-token: ${{ secrets.BUILDPULSE_API_TOKEN }}
+          path: worker/junit.xml
+          coverage-files: worker/coverage.xml
+
   # 録画用MOD(*_hook.dll)がmingw-w64クロスビルドで壊れていないかの簡易確認。
   # 実機注入テストの代わりにはならない(.claude/skills/build-mods/SKILL.md)。
   mods-build-smoketest:

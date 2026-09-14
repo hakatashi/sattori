@@ -16,6 +16,15 @@ worker/__pycache__/
 *.pyc
 .pytest_cache/
 
+# test reports and coverage
+junit.xml
+**/junit.xml
+coverage/
+**/coverage/
+coverage.xml
+**/coverage.xml
+.coverage
+
 # 東方ゲーム本体・リプレイ・録画物・素材（著作権物・個人データ・生成物）
 worker/games/
 worker/instances/
