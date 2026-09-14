@@ -3,29 +3,29 @@
   "gameTitle": "東方紅魔郷: New Classic ～ the Embodiment of Scarlet Devil.",
   "formatVersion": 271,
   "player": "koyi",
-  "date": "09/10/26",
+  "date": "09/14/26",
   "parsedDate": {
     "fullYear": null,
     "shortYear": 26,
     "month": 9,
-    "date": 10,
+    "date": 14,
     "hours": null,
     "minutes": null,
     "seconds": null
   },
   "recordedAt": null,
-  "character": "ReimuB",
-  "characterNameJa": "夢符",
-  "characterNameEn": "Reimu B",
-  "difficulty": "Hard",
-  "stage": "Spell Practice No. 108 獄符「千本の針の山」",
-  "score": 5710640,
+  "character": "ReimuA",
+  "characterNameJa": "霊符",
+  "characterNameEn": "Reimu A",
+  "difficulty": "Lunatic",
+  "stage": "Spell Practice No. 34 彩符「彩光乱舞」",
+  "score": 1577960,
   "cleared": null,
   "loadout": null,
   "splits": [
     {
-      "stage": 6,
-      "score": 5710640,
+      "stage": 3,
+      "score": 1577960,
       "power": "128",
       "piv": null,
       "lives": {
@@ -40,8 +40,8 @@
       },
       "graze": null,
       "additional": null,
-      "frameCount": 1063
+      "frameCount": 1085
     }
   ],
-  "frameCount": 1063
+  "frameCount": 1085
 }

@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-14",
+    ja: "東方紅魔郷: New Classic (th06nc) のスペルプラクティスのリプレイファイル選択時にスペルカード名を表示するよう修正",
+    en: "Fixed the replay selection screen to show the spell card name for Spell Practice replays of the Embodiment of Scarlet Devil: New Classic (th06nc)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/238",
+  },
+  {
+    date: "2026-09-14",
     ja: "リプレイの収録時間が短い場合に録画が誤って失敗することがある不具合を修正",
     en: "Fixed an issue where recording could incorrectly fail for replays with a very short playtime",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/250",

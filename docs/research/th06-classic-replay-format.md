@@ -4,6 +4,12 @@
 結果を実装した場所: `packages/replay-parser/src/games/th06.ts`
 / English version: [`th06-classic-replay-format.en.md`](th06-classic-replay-format.en.md)
 
+> **追記（2026-09-14）**: 本レポート§6の未確定事項のうち2件（スペルプラクティスの
+> 難易度・ステージ添字）が追加リプレイで確定し、クリア判定は追加データでも未確定の
+> ままだった。詳細は
+> [`2026-09-14-th06-classic-replay-format-followup.md`](2026-09-14-th06-classic-replay-format-followup.md)
+> 参照（Issue #238）。
+
 **結論**: 両作とも th06（東方紅魔郷 1.02h）のリプレイ形式の直系の派生で、
 マジック `T6RP`・+7 加算鍵による難読化・「固定ヘッダ→7個のステージ別スナップショット→
 入力変化イベントの疎ログ」という構造をそのまま受け継いでいた。違いは
