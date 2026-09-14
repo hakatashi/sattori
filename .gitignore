@@ -17,6 +17,7 @@ worker/__pycache__/
 .pytest_cache/
 
 # test reports and coverage
+/reports/
 junit.xml
 **/junit.xml
 coverage/
