@@ -20,8 +20,9 @@ def test_grab_frame_from_video_returns_image_from_ffmpeg_stdout(monkeypatch):
     png = _png_bytes()
 
     def fake_run(cmd, **kwargs):
-        assert cmd[:3] == ["ffmpeg", "-y", "-ss"]
+        assert cmd[:4] == ["ffmpeg", "-y", "-nostdin", "-ss"]
         assert "15" in cmd
+        assert kwargs["stdin"] == subprocess.DEVNULL
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=png, stderr=b"")
 
     monkeypatch.setattr(vision.subprocess, "run", fake_run)
