@@ -536,3 +536,126 @@ def test_record_with_retry_saves_diagnostics_snapshot_on_duplicate_rate_discard(
 
     assert success is False
     assert saved == [("/diag", "frame:/out.mp4:15", 1, "duplicate_rate")]
+
+
+def test_record_with_retry_uses_content_end_sec_for_duplicate_rate_window(monkeypatch):
+    """重複フレーム率の計測窓の終端は`total_record_sec`ではなく`content_end_sec`を使う。
+    短いリプレイでは終了検知の確認待ち(still: 16秒/template: 4秒相当)ぶんの静止画面が
+    録画末尾に付加されるため、`total_record_sec`をそのまま使うと固定30秒窓の大半が
+    その静止画面になり閾値超過と誤判定する(本番のth06ncジョブで発生、Issue #250)。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good",
+        "total_record_sec": 48.3, "content_end_sec": 32.3,
+    })
+    calls = []
+    monkeypatch.setattr(
+        pipeline, "measure_duplicate_rate",
+        lambda *a, **k: calls.append(a) or 1.0,
+    )
+
+    success = pipeline.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=1, log=lambda msg: None)
+
+    assert success is True
+    assert calls == [("/out.mp4", 15, pytest.approx(17.3))]
+
+
+def test_record_with_retry_falls_back_to_total_record_sec_without_content_end_sec(monkeypatch):
+    """`content_end_sec`を返さない(旧仕様の)戻り値でも従来どおり`total_record_sec`を
+    使えること。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good", "total_record_sec": 60.0,
+    })
+    calls = []
+    monkeypatch.setattr(
+        pipeline, "measure_duplicate_rate",
+        lambda *a, **k: calls.append(a) or 1.0,
+    )
+
+    success = pipeline.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=1, log=lambda msg: None)
+
+    assert success is True
+    assert calls == [("/out.mp4", 15, 30)]
+
+
+def test_attempt_recording_content_end_sec_excludes_still_confirmation_tail(monkeypatch, tmp_path):
+    """still検知(画面静止)の場合、確認待ち`STILL_CONSECUTIVE_REQUIRED`(8) *
+    `POLL_INTERVAL_SEC`(2秒) = 16秒ぶんを`total_record_sec`から差し引いた
+    `content_end_sec`を返すこと(Issue #250)。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "load_end_template", lambda path: None)
+    monkeypatch.setattr(pipeline, "_launch_game", lambda *a, **k: 1234)
+    monkeypatch.setattr(pipeline, "_settle_crop_geometry", lambda *a, **k: (0, 0, 640, 480))
+    monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
+    monkeypatch.setattr(
+        pipeline, "_monitor_until_end", lambda *a, **k: (True, "still", False, "the-last-frame"),
+    )
+    monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
+    monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
+    times = iter([100.0, 148.3])
+    monkeypatch.setattr(pipeline.time, "time", lambda: next(times))
+
+    result = pipeline.attempt_recording(
+        config, "/replay.rpy", str(tmp_path / "out.mp4"), None, None,
+        diagnostics_dir="/diag", attempt=1, log=lambda msg: None,
+    )
+
+    assert result["total_record_sec"] == pytest.approx(48.3)
+    assert result["content_end_sec"] == pytest.approx(48.3 - 16.0)
+
+
+def test_attempt_recording_content_end_sec_excludes_template_confirmation_tail(monkeypatch, tmp_path):
+    """template検知の場合、確認待ち`END_TEMPLATE_CONSECUTIVE_REQUIRED`(2) *
+    `POLL_INTERVAL_SEC`(2秒) = 4秒ぶんを差し引くこと(Issue #250)。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "load_end_template", lambda path: object())
+    monkeypatch.setattr(pipeline, "_launch_game", lambda *a, **k: 1234)
+    monkeypatch.setattr(pipeline, "_settle_crop_geometry", lambda *a, **k: (0, 0, 640, 480))
+    monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
+    monkeypatch.setattr(
+        pipeline, "_monitor_until_end", lambda *a, **k: (True, "template", False, "the-last-frame"),
+    )
+    monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
+    monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
+    times = iter([100.0, 120.0])
+    monkeypatch.setattr(pipeline.time, "time", lambda: next(times))
+
+    result = pipeline.attempt_recording(
+        config, "/replay.rpy", str(tmp_path / "out.mp4"), None, None,
+        diagnostics_dir="/diag", attempt=1, log=lambda msg: None,
+    )
+
+    assert result["total_record_sec"] == pytest.approx(20.0)
+    assert result["content_end_sec"] == pytest.approx(20.0 - 4.0)
+
+
+def test_attempt_recording_content_end_sec_equals_total_record_sec_on_timeout(monkeypatch, tmp_path):
+    """timeout/frozen(detected_byがNone)の場合は差し引く確認待ちが無いため、
+    `content_end_sec`は`total_record_sec`のままであること。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "load_end_template", lambda path: None)
+    monkeypatch.setattr(pipeline, "_launch_game", lambda *a, **k: 1234)
+    monkeypatch.setattr(pipeline, "_settle_crop_geometry", lambda *a, **k: (0, 0, 640, 480))
+    monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
+    monkeypatch.setattr(
+        pipeline, "_monitor_until_end", lambda *a, **k: (False, None, True, "the-last-frame"),
+    )
+    monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
+    monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "save_diagnostics_snapshot", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
+    times = iter([100.0, 160.0])
+    monkeypatch.setattr(pipeline.time, "time", lambda: next(times))
+
+    result = pipeline.attempt_recording(
+        config, "/replay.rpy", str(tmp_path / "out.mp4"), None, None,
+        diagnostics_dir="/diag", attempt=1, log=lambda msg: None,
+    )
+
+    assert result["content_end_sec"] == result["total_record_sec"] == pytest.approx(60.0)

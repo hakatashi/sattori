@@ -16,6 +16,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-14",
+    ja: "リプレイの収録時間が短い場合に録画が誤って失敗することがある不具合を修正",
+    en: "Fixed an issue where recording could incorrectly fail for replays with a very short playtime",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/250",
+  },
+  {
     date: "2026-09-13",
     ja: "リプレイファイルの保存場所のヘルプページで、作品のグループ分類をやめ、すべての作品を1つのボタングループから選択できるよう改善",
     en: "Updated the replay file location help page to select from all titles in a single button group instead of categorized groups",
