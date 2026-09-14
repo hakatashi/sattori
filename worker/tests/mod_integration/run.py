@@ -45,16 +45,21 @@ RECORD_TIMEOUT_SECONDS = 300  # フル尺が2分強のリプレイなので、�
 
 # 各タイトルの検証リプレイと期待値。expected_score はリプレイファイルに記録された
 # 最終スコア(画面表示値、threp -j で確認できる)。リプレイを差し替えたら要更新。
+# display は record_th{game}.py の GameConfig.for_game(display=...) と同じ値を書く
+# (残留プロセスの掃除に使う。2箇所の値がずれると掃除対象を取り違えるので、
+# record_thNN.py側のdisplayを変更したらここも合わせること)。
 TITLES = {
     "th06": {
         "replay": "th6_10.rpy",
         "expected_score": 13_951_380,
         "expected_duration_seconds": 6924 / 60,
+        "display": ":96",
     },
     "th08": {
         "replay": "th8_05.rpy",
         "expected_score": 30_082_870,
         "expected_duration_seconds": 7569 / 60,
+        "display": ":98",
     },
 }
 
@@ -84,8 +89,34 @@ def check_home_worker_idle():
     sys.exit(1)
 
 
+def cleanup_stale_display(display, log_prefix):
+    """`display`(例: ":96")に残っている前回試行のXvfbを検知し、あれば強制終了する。
+
+    このスクリプトは`timeout --kill-after=`で打ち切るため、前回の試行がタイムアウトで
+    SIGKILLされるとrecord_{game}.py側の後片付け(Xvfb終了)がfinally節ごと吹き飛び、
+    Xvfbだけプロセスとして残り続ける。残ったままだと次回試行の`grab_frame()`
+    (`recording/vision.py`、pollごとに新しいffmpegでそのdisplayをx11grabする)が
+    ブロックし続け、終了検知のpollログが1行も出ないまま必ず330秒タイムアウトで
+    失敗する(2026-09-15、th06/th08で実際に観測・re-run で再現確認済み)。
+    `check_home_worker_idle()`でデーモン停止を確認済みの前提のため、このdisplayに
+    残っているXvfbは前回試行の残骸とみなしてよい。
+    """
+    result = subprocess.run(
+        ["pgrep", "-f", f"Xvfb {display} "], capture_output=True, text=True, check=False,
+    )
+    pids = [pid for pid in result.stdout.split() if pid]
+    if not pids:
+        return
+    print(
+        f"{log_prefix} WARNING: display {display} に前回試行の残留Xvfbを検出したため終了します"
+        f"(pid={','.join(pids)})",
+    )
+    subprocess.run(["kill", "-9", *pids], check=False)
+
+
 def run_one(game, keep_output):
     cfg = TITLES[game]
+    cleanup_stale_display(cfg["display"], f"[{game}]")
     replay_path = FIXTURES_DIR / game / cfg["replay"]
     if not replay_path.exists():
         print(f"[{game}] ERROR: {replay_path} が見つかりません", file=sys.stderr)
