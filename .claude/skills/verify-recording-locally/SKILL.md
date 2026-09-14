@@ -181,4 +181,11 @@ sudo rm -rf "$D/assets"   # 本番キャッシュではなく§4で複製した�
   [`decisions/0040`](../../docs/decisions/0040-home-worker-title-assets-cache.md)
 - ホスト直接実行(コンテナを使わない経路)の手順 →
   [`docs/runbooks/worker-local-recording.md`](../../docs/runbooks/worker-local-recording.md) §2
+- **特定のジョブの再現ではなく、MOD変更後に決まった短いリプレイで機械的に退行が無いか
+  確認したいだけなら** `worker/tests/mod_integration/run.py`
+  （`worker/README.md` §14、[`decisions/0049`](../../docs/decisions/0049-mod-integration-test-local-only.md)）
+  の方が速い。こちらはDockerコンテナを介さず、`worker/games/`・`worker/prefixes/`に
+  ゲーム資産・WINEPREFIXを展開済みの環境でホスト直接実行する
+  （`docs/runbooks/worker-local-recording.md` §2と同じ経路）。実機検証の代わりには
+  ならない点はこのスキルと同じ
 - 録画パイプラインの構成・各モジュールの役割 → `worker/docs/recording-package.md`

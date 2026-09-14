@@ -27,6 +27,9 @@ worker/assets/
 # 例外: replay-parser のゴールデンテスト用リプレイ（ユーザー自身がプレイして
 # 作成したファイルのみ。著作権上の懸念がないため明示的にチェックインする）
 !packages/replay-parser/test-fixtures/**/*.rpy
+# 例外: MOD統合テスト用リプレイ（同じくユーザー自身がプレイして作成したファイルのみ、
+# worker/tests/fixtures/mod-integration/README.md参照）
+!worker/tests/fixtures/mod-integration/**/*.rpy
 
 # MODビルド成果物（ソース・ビルドスクリプトのみコミットする。Windows+MSVCでビルド）
 worker/mods/**/build/
