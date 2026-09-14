@@ -18,11 +18,16 @@ Wine/Xvfb/実ゲームに依存する録画本体(`recording.pipeline.attempt_re
 配信用変換の解像度/フィルタ組み立て/進捗計算・DynamoDB更新式の組み立て・Spot中断/リバランス
 判定・進捗レポートの重複排除等)を pytest でユニットテストする。boto3 呼び出しは
 `unittest.mock` でモックし、実際の AWS リソースには接続しない(moto 等の追加依存は導入して
-いない)。GitHub Actions の `Test`(`.github/workflows/test.yml`)の `worker-test` ジョブで
-push・PR 毎に自動実行される。
+いない)。リポジトリルートでの `pnpm test` (Turborepo) や `pnpm --filter @sattori/worker test`、
+または `worker/` 配下での `pytest` で実行できる。GitHub Actions の `Test`(`.github/workflows/test.yml`)
+で push・PR 毎に自動実行される。
 
 ```bash
+# worker/ 配下で直接実行する場合
 pip install -r requirements-dev.txt && pytest
+
+# リポジトリルートから実行する場合
+pnpm test
 ```
 
 `recording/` パッケージのテストは `tests/test_recording_<モジュール名>.py` と1対1に対応させる
