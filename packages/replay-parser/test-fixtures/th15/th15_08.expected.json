@@ -1,0 +1,47 @@
+{
+  "game": "th15",
+  "gameTitle": "東方紺珠伝 ～ Legacy of Lunatic Kingdom.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "26/09/16 16:47",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 9,
+    "date": 16,
+    "hours": 16,
+    "minutes": 47,
+    "seconds": null
+  },
+  "recordedAt": 1789544832,
+  "character": "Reimu",
+  "characterNameJa": "霊夢",
+  "characterNameEn": "Reimu",
+  "difficulty": "Extra",
+  "stage": "Extra Stage",
+  "score": 110347900,
+  "cleared": false,
+  "loadout": null,
+  "splits": [
+    {
+      "stage": 7,
+      "score": 0,
+      "power": "4.00",
+      "piv": 10000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 0,
+      "additional": null,
+      "frameCount": 45872
+    }
+  ],
+  "frameCount": 45872
+}
