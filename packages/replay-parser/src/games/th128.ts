@@ -57,19 +57,27 @@ export function parseTh128(original: Uint8Array): ParsedReplay {
   xorBlockDecode(workBuffer, length, 0x80, 0x7d, 0x36);
   const decodedata = decompress(workBuffer, length, dlength);
 
-  // Bit 0x10 of the header's `cleared` field (offset 0x68) is set iff the
-  // run ended in a clear (Player Wins); the low bits otherwise duplicate the
-  // last stage's raw `stage` id (see below), which this package already
-  // exposes directly, so only the bit is used. Confirmed against all 4
-  // checked-in fixtures cross-referenced with real in-game clear/game-over
-  // observation: values 3/4/11 (routes ending in game over) vs. 19 = 3 |
-  // 0x10 (the one fixture that reached "B1 All" and actually cleared).
-  const cleared = (readBufferedUint32LE(decodedata, 0x68) & 0x10) !== 0;
+  // The header's `cleared` field (offset 0x68) duplicates the last stage's
+  // raw `stage` id (see below) when the run ended in a game over, and diverges
+  // from it when the run ended in an actual clear (Player Wins) — but *how*
+  // it diverges is not a single fixed bit: Route runs OR in 0x10 (e.g. B1's
+  // last stage id 3 becomes 19 = 3 | 0x10 on "B1 All"), while Extra clears OR
+  // in 0x07 instead (Extra's last-and-only stage id is itself 16 = 0x10, so a
+  // literal `& 0x10` check misfires — every Extra run looks "cleared" even on
+  // game over, since the stage id already has that bit set; this was a real
+  // bug, see git history). Comparing against the last stage's own raw id
+  // sidesteps that: confirmed against the 4 checked-in Route/Extra fixtures
+  // (values 3/4/11/16 unchanged = game over) plus 3 independently-sourced
+  // Extra clears fetched from Silent Selene (replay ids 83280/84310/84398,
+  // all 16 -> 23 = 16 | 0x07) cross-referenced with their upload comments
+  // ("My first 1000% Clear!", "尽滅光に勝利", top-3 medal scores).
+  const clearField = readBufferedUint32LE(decodedata, 0x68);
 
   const splits: ReplayStageSplit[] = [];
   let stageOffset = 0x70;
   const stageCount = decodedata[0x58] ?? 0;
   let frameCount = 0;
+  let lastRawStage = 0;
   for (let i = 0; i < stageCount; i++) {
     const split = emptySplit();
     // Raw in-game stage id (th128's routing branches — Route A/A2/B/B2/C/C2 —
@@ -77,6 +85,7 @@ export function parseTh128(original: Uint8Array): ParsedReplay {
     // that branches to A2 after stage 1 records ids 1 then 4, confirmed
     // against real in-game stage names for all 4 checked-in fixtures).
     split.stage = readUint16LE(decodedata, stageOffset);
+    lastRawStage = split.stage;
     split.score = readBufferedUint32LE(decodedata, stageOffset + 0xc) * 10;
     split.power = String(readBufferedUint32LE(decodedata, stageOffset + 0x10) + 1);
     // th128 records lives/bombs as a percentage gauge rather than a count
@@ -102,6 +111,7 @@ export function parseTh128(original: Uint8Array): ParsedReplay {
     splits.push(split);
     stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0x90;
   }
+  const cleared = clearField !== lastRawStage;
 
   return {
     game: "th128",
