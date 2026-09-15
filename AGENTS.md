@@ -12,7 +12,7 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
 説明を最小限に、操作を単純にする。想定利用規模は**月間最大1000回**の録画で、コストとオペレー
 ションの最小化を最優先に設計判断を行っている。主要機能（アップロード→解析プレビュー→マジック
 リンク認証→録画→ポーリング→DL→完了メール）は実装済みで、2026-08-22に初回リリース済み。
-対応タイトルは th06・th06c・th07・th08・th09・th10・th11・th12・th20・th128 の10本。未実装・未検証の事項は
+対応タイトルは th06・th06c・th06nc・th07・th08・th09・th10・th11・th12・th20・th128 の11本。未実装・未検証の事項は
 [`docs/known-limitations.md`](docs/known-limitations.md) に一覧してある。実機検証レポート群は別
 リポジトリ `touhou-recorder`（PoC）にあり、各所の `reports/NN` はその番号。
 
@@ -67,15 +67,14 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
   （[`decisions/0006`](docs/decisions/0006-progress-polling-not-websocket.md)）。
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。永年無料枠で egress を実質ゼロにできる。
 - **録画ワーカーは EC2 Fleet と自宅サーバーの2種類あり、どちらも同じ ECR イメージ・同じ taskToken
-  契約で動く**（Issue #49）。自宅マシンは NAT 配下で到達できないため割り当ては**Pull 型**（AWS が
+  契約で動く**（Issue #49、GPU描画必須タイトルは自宅ワーカーへ常に来ないため例外
+  ——別ECRイメージ・別インスタンスタイプ、[`0046`](docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)〜
+  [`0048`](docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)）。自宅マシンは NAT 配下で
+  到達できないため割り当ては**Pull 型**（AWS が
   オファーを書き、デーモンが条件付き更新で原子的に claim する。
   [`0018`](docs/decisions/0018-home-worker-pull-assignment.md)）。**ワーカーの中に「自宅かEC2か」
   の分岐を作らないこと** —— 環境差分は起動側が渡す環境変数（`apps/api/src/workerEnv.ts`）で表す。
-- **低速録画（1/2倍速で録画し後処理で等倍へ戻す、Issue #68）は自宅ワーカー限定で、かつ対応タイトル
-  （`SLOW_MOTION_SUPPORTED_GAME_IDS`、現状 th20 のみ）でしか選べない**。**この制約もワーカー側の
-  分岐にはしない** —— 起動側が `FPS_LIMIT_TARGET_HZ` を渡すかで決まり、claim されなければ EC2 での
-  等倍録画へ静かにフォールバックする（[`decisions/0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
-  未対応タイトルで要求すると2倍速の動画ができワーカーは検知できない（`docs/known-limitations.md` §1）。
+- **低速録画（1/2倍速で録画し後処理で等倍へ戻す、Issue #68）は対応タイトル（`SLOW_MOTION_SUPPORTED_GAME_IDS`、現状 th20 のみ）で選べ、EC2でも設定（`EC2_SLOW_MOTION_SUPPORTED_GAME_IDS`）により有効化されている（Issue #245）**。**この制約もワーカー側の分岐にはしない** —— 起動側が `FPS_LIMIT_TARGET_HZ` を渡すかで決まり、EC2非対応タイトルがEC2へ落ちた場合は等倍録画へ静かにフォールバックする（[`decisions/0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)・[`0045`](docs/decisions/0045-ec2-slow-motion-for-th20.md)）。未対応タイトルで要求すると2倍速の動画ができワーカーは検知できない（`docs/known-limitations.md` §1）。
 - **録画ワーカー（`worker/`）だけ Python**。**この例外は録画パイプラインに限る** —— 自宅ワーカーの
   常駐デーモン（`home-worker/`）はコントロールプレーンしか担わないので TypeScript で書いている
   （[`decisions/0003`](docs/decisions/0003-worker-python-home-worker-typescript.md)）。
@@ -89,7 +88,7 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
   唯一の例外は`c7i`/`c7a`/`m7i`の`.2xlarge`帯（異なる2タイトルでの実証実績に基づく限定的な
   グループ化、[`decisions/0042`](docs/decisions/0042-2xlarge-instance-type-group-precedent.md)）。
 - **重複フレーム率の自動チェックは録画開始15〜45秒の30秒スポットしか見ていない**
-  （`recording_common.measure_duplicate_rate`、Issue #93）。タイトル間・環境間で比較する際は
+  （`recording.ffmpeg.measure_duplicate_rate`、Issue #93）。タイトル間・環境間で比較する際は
   「全編の代表値ではない」ことに注意（`docs/known-limitations.md` §3）。**さらに背景が
   常時アニメーションするタイトルでは処理落ちを過小評価しうるため、リプレイの
   frameCountとの理論尺比較も必ず併用すること**（同 §3、th12実機検証で判明）。

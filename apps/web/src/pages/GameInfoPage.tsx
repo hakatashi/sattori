@@ -31,6 +31,7 @@ interface TitleInfo {
 const TITLE_INFO: TitleInfo[] = [
   { id: "th06", version: "ver 1.02h", vpatchRev: 4 },
   { id: "th06c", version: "ver 1.03" },
+  { id: "th06nc", version: "ver 1.03" },
   { id: "th07", version: "ver 1.00b", vpatchRev: 4, cherryBugFix: true },
   { id: "th08", version: "ver 1.00d" },
   { id: "th09", version: "ver 1.50a" },

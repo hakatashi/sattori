@@ -20,8 +20,9 @@ def test_grab_frame_from_video_returns_image_from_ffmpeg_stdout(monkeypatch):
     png = _png_bytes()
 
     def fake_run(cmd, **kwargs):
-        assert cmd[:3] == ["ffmpeg", "-y", "-ss"]
+        assert cmd[:4] == ["ffmpeg", "-y", "-nostdin", "-ss"]
         assert "15" in cmd
+        assert kwargs["stdin"] == subprocess.DEVNULL
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=png, stderr=b"")
 
     monkeypatch.setattr(vision.subprocess, "run", fake_run)
@@ -169,3 +170,49 @@ def test_build_still_mask_still_accepts_a_single_rect_tuple():
 
     assert mask[75, 30] == False  # noqa: E712
     assert mask[0, 0] == True  # noqa: E712
+
+
+def test_read_side_stream_frame_returns_none_when_file_missing(tmp_path):
+    gray, color, mtime = vision.read_side_stream_frame(str(tmp_path / "missing.jpg"))
+
+    assert gray is None
+    assert color is None
+    assert mtime is None
+
+
+def test_read_side_stream_frame_reads_new_frame(tmp_path):
+    path = tmp_path / "poll.jpg"
+    Image.new("RGB", (16, 16), color=(10, 20, 30)).save(path)
+
+    gray, color, mtime = vision.read_side_stream_frame(str(path))
+
+    assert gray is not None
+    assert gray.shape == (120, 160)
+    assert color.size == (16, 16)
+    assert mtime is not None
+
+
+def test_read_side_stream_frame_skips_unchanged_mtime(tmp_path):
+    """ffmpegがまだファイルを書き直していない(=同一フレーム)場合は、直近フレームを
+    使い続けるよう(None, None, last_mtime)を返す(touhou-recorder reports/81 §9.2、
+    重複フレームによる誤った静止判定を防ぐ)。"""
+    path = tmp_path / "poll.jpg"
+    Image.new("RGB", (16, 16), color=(10, 20, 30)).save(path)
+    _, _, mtime = vision.read_side_stream_frame(str(path))
+
+    gray, color, returned_mtime = vision.read_side_stream_frame(str(path), mtime)
+
+    assert gray is None
+    assert color is None
+    assert returned_mtime == mtime
+
+
+def test_read_side_stream_frame_returns_none_on_corrupt_file(tmp_path):
+    path = tmp_path / "poll.jpg"
+    path.write_bytes(b"not a real image")
+
+    gray, color, mtime = vision.read_side_stream_frame(str(path))
+
+    assert gray is None
+    assert color is None
+    assert mtime is None

@@ -11,6 +11,8 @@
 削除([`0038`](0038-remove-stutter-early-detection.md))の副作用で生じた「デシンク等の
 完全フリーズがTIMEOUT_SEC(60分)まで打ち切られない」問題を、誤検知を再導入せずに緩和する。
 
+> **注**: 本決定に記述されている `worker/recording_common.py`（`FREEZE_CONSECUTIVE_REQUIRED`・`attempt_recording()` 等）は、PR #206 / [`0041`](0041-worker-recording-package-split.md) により `worker/recording/` パッケージ（`recording.vision`, `recording.pipeline`）へ分割されました。
+
 ## 背景
 
 [`0038`](0038-remove-stutter-early-detection.md)でstutter probeを削除した結果、完全な

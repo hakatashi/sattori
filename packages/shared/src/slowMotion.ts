@@ -26,12 +26,17 @@ import type { WorkerCapability, WorkerKind } from "./worker.js";
  * タイトルでしか使えない（`SLOW_MOTION_SUPPORTED_GAME_IDS`）。他タイトルへの展開は
  * Issue #101。
  *
- * ## なぜ自宅ワーカー限定なのか
+ * ## EC2環境での低速録画
  *
- * 録画に**実時間で倍かかる**ため、EC2 Spot では単純にコストが倍になる。電気代しか
- * かからない自宅ワーカー（Issue #49）でのみ行う。この制約は「ワーカー側が自分の
- * 実行環境で分岐する」のではなく、**起動側が `FPS_LIMIT_TARGET_HZ` を渡すかどうか**
- * で表現する（`apps/api/src/workerEnv.ts`）。
+ * 録画に**実時間で倍かかる**ため、EC2 Spot では単純にコストが倍になる。当初は電気代しか
+ * かからない自宅ワーカー（Issue #49）でのみ行っていたが、実際の運用実績から th20 の
+ * 利用頻度が落ち着いておりコスト上の不安が無いことが判明したため、th20 については
+ * EC2 Fleet でも低速録画を有効化している（Issue #245）。
+ *
+ * 今後も低速録画の有効化・無効化を素早く切り替えられるよう、EC2で有効化するタイトル一覧
+ * （`EC2_SLOW_MOTION_SUPPORTED_GAME_IDS`）として設定を管理している。
+ * この制約は「ワーカー側が自分の実行環境で分岐する」のではなく、**起動側が
+ * `FPS_LIMIT_TARGET_HZ` を渡すかどうか**で表現する（`apps/api/src/workerEnv.ts`）。
  */
 
 /** ゲーム本来のフレームレート（Hz）。低速録画の基準になる。 */
@@ -82,6 +87,20 @@ export function supportsSlowMotion(game: GameId | null): game is GameId {
 }
 
 /**
+ * EC2環境での低速録画を有効化するタイトル一覧（Issue #245）。
+ *
+ * これを修正することで、EC2環境での低速録画の有効化・無効化をタイトルごとに
+ * 素早く切り替えられる。MOD側が低速録画に対応している必要があるため、
+ * 当然ながら `SLOW_MOTION_SUPPORTED_GAME_IDS` の部分集合でなければならない。
+ */
+export const EC2_SLOW_MOTION_SUPPORTED_GAME_IDS: readonly GameId[] = ["th20"];
+
+/** そのタイトルがEC2環境での低速録画に対応しているか。タイトル未確定（解析前）なら false。 */
+export function supportsEc2SlowMotion(game: GameId | null): game is GameId {
+  return game !== null && EC2_SLOW_MOTION_SUPPORTED_GAME_IDS.includes(game);
+}
+
+/**
  * 低速録画を既定でオンにするタイトル。等倍録画では品質が担保できないことが実機検証で
  * 判明しているタイトルだけを挙げる（現状 th20 のみ）。他タイトルは等倍で十分な品質が
  * 出ているため、倍の時間をかける既定にはしない（ユーザーが明示的に選ぶことは可能）。
@@ -90,11 +109,20 @@ export function supportsSlowMotion(game: GameId | null): game is GameId {
 export const SLOW_MOTION_DEFAULT_GAME_IDS: readonly GameId[] = ["th20"];
 
 /**
- * そのタイトルで低速録画を既定オンにするか。**自宅ワーカーが使えない場合は常に false**
- * （低速録画自体が選べないため）。
+ * そのタイトルで低速録画を既定オンにするか。
+ *
+ * 自宅ワーカーが使える場合、またはEC2で低速録画が有効なタイトル（`supportsEc2SlowMotion()`）
+ * である場合に判定する。どちらも使えない環境の場合は常に false（低速録画自体が選べないため）。
  */
-export function defaultSlowMotionFor(game: GameId | null, available: boolean): boolean {
-  if (!available || !supportsSlowMotion(game)) {
+export function defaultSlowMotionFor(
+  game: GameId | null,
+  homeWorkerAvailable: boolean = false,
+): boolean {
+  if (!supportsSlowMotion(game)) {
+    return false;
+  }
+  const available = homeWorkerAvailable || supportsEc2SlowMotion(game);
+  if (!available) {
     return false;
   }
   return SLOW_MOTION_DEFAULT_GAME_IDS.includes(game);
@@ -111,16 +139,25 @@ export function recordingWallClockScale(slowMotion: boolean): number {
 /**
  * このジョブが**実際に**低速録画で走る（走った）か。
  *
- * `options.slowMotion` はあくまでユーザーの希望であり、オファーが時間内にclaimされず
- * EC2 Fleet へフォールバックした場合は等倍録画になる（EC2で倍の時間をかけない、
- * Issue #68 の前提）。割り当てが確定していない間（`workerKind === null`）は、
- * 自宅ワーカーが空いていたからこそチェックできた option を尊重して低速録画とみなす
+ * `options.slowMotion` はあくまでユーザーの希望であり、EC2 Fleet へフォールバックした
+ * （または最初からEC2で起動された）場合は、そのタイトルがEC2低速録画に対応している
+ * （`supportsEc2SlowMotion(game)`）場合のみ低速録画になる。
+ *
+ * 割り当てが確定していない間（`workerKind === null`）は、自宅ワーカーが空いていたからこそ
+ * チェックできた option（またはEC2で低速録画が有効なタイトル）を尊重して低速録画とみなす
  * ——ジョブページの残り時間推定が、割り当て確定の瞬間に大きく飛ぶのを避けるため。
- * EC2 に確定した時点で false に落ちる。
+ * EC2 に確定した時点で、EC2非対応タイトルであれば false に落ちる。
  */
 export function isSlowMotionRecording(
   options: { slowMotion: boolean },
   workerKind: WorkerKind | null,
+  game: GameId | null = null,
 ): boolean {
-  return options.slowMotion && workerKind !== "ec2";
+  if (!options.slowMotion) {
+    return false;
+  }
+  if (workerKind === "ec2") {
+    return supportsEc2SlowMotion(game);
+  }
+  return true;
 }

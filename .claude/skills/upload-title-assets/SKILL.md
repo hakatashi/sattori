@@ -1,6 +1,6 @@
 ---
 name: upload-title-assets
-description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th06c/th07/th08/th09/th10/th11/th12/th20/th128）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
+description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th06c/th06nc/th07/th08/th09/th10/th11/th12/th20/th128）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
 ---
 
 # タイトル資産（ゲームデータ）の S3 アップロード
@@ -22,7 +22,9 @@ echo "$SATTORI_TITLE_ASSETS_BUCKET"
 > （クリーンスレート方針、旧 us-east-1 バケットのデータは引き継いでいない）。上記の
 > 解決結果が常に正であり、ドキュメントに書かれた古いバケット名は使わないこと。
 
-## 1. `tar` に `-h`（`--dereference`）を付けないこと
+## 1. `tar` 作成時の注意点
+
+### 1.1 `-h`（`--dereference`）を付けないこと
 
 WINEPREFIX 配下には `dosdevices/z:` → `/` のような絶対パスへのシンボリックリンクが
 Wine のドライブマッピングとして正規に存在する。`-h` はアーカイブ対象ツリー内の
@@ -31,8 +33,24 @@ Wine のドライブマッピングとして正規に存在する。`-h` はア�
 肥大化した実例あり）。
 
 内部のシンボリックリンクはリンクのまま格納してよい。`worker/title_assets.py` の
-`tar.extractall(..., filter="fully_trusted")` により、展開時に絶対リンクとして正しく
-復元される。
+`tar.extractall` により、展開時に絶対リンクとして正しく復元される。
+
+### 1.2 セーブデータ（`score.dat`）やランタイム生成物（`log.txt`等）を同梱しないこと
+
+開発機やローカル検証でプレイ・録画した際のセーブデータ（`score.dat`）やランタイムログ
+（`log.txt`）、Steam Cloud メタデータ（`steam_autocloud.vdf`）、リプレイ残骸（`replay/`）が
+`games/{title}/` 配下に残っていると、アーカイブに同梱されて本番ワーカーへ展開されてしまう。
+録画ジョブは常にクリーンな状態で実行されるべきであるため、**`tar` 作成時に `--exclude` で
+除外するか、事前に削除すること**。
+
+```bash
+TAR_EXCLUDES=(
+  --exclude='score.dat'
+  --exclude='log.txt'
+  --exclude='steam_autocloud.vdf'
+  --exclude='games/*/replay/*'
+)
+```
 
 ## 2. タイトルごとの手順
 
@@ -50,6 +68,7 @@ Wine のドライブマッピングとして正規に存在する。`-h` はア�
 
 ```bash
 tar -czf /tmp/th06-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th06 \
   prefixes/th06-wined3d-gl \
   mods/common/build/injector.exe \
@@ -74,6 +93,7 @@ WINEPREFIXは`WINEARCH=win64`で作成する（§3参照、他タイトルの32b
 
 ```bash
 tar -czf /tmp/th06c-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th06c \
   prefixes/th06c-wined3d-gl \
   mods/common/build/injector64.exe \
@@ -87,10 +107,44 @@ aws s3 cp /tmp/th06c-assets.tar.gz \
 > games/th06c/steam_api64.dll`）。忘れると本番でSteamクライアント常駐要求により
 > 即終了する。
 
+### th06nc（東方紅魔郷: New Classic、GPU描画必須）
+
+`games/th06nc`は`touhou-recorder`の`games/th06nc`から`rsync`でコピーする(Steam版、
+`worker/docs/titles/th06nc.md`参照)。th06cと同様の同梱物に加え、GPU描画・解像度切替
+専用の同梱物がある。
+
+1. **正規の`steam_api64.dll`をth06nc用Steamworks APIスタブで上書きすること**
+   （`mods/th06nc_steam_stub/build/steam_api64.dll`。th06c用スタブとはAppIDのみ異なる
+   別ビルド、`build-mods` skill参照）。th06c用スタブを誤って流用しないこと。
+2. **injectorは64bit版（`injector64.exe`）を同梱すること**（th06ncもPE32+/x86-64）。
+3. **`th06.env.720p`・`th06.env.1080p`を`games/th06nc/`直下に同梱すること**
+   （12バイトの解像度設定ファイル、byte[5]が4=720p/3=1080p。`record_th06nc.py`が
+   `TH06NC_RESOLUTION`環境変数に応じてどちらを`th06.env`として使うか選ぶ。
+   ゲーム終了時に書き戻されるため、素の`th06.env`だけを同梱しても意味が無い）。
+
+WINEPREFIXは`WINEARCH=win64`かつ**DXVK配置済み**のものを使う（§3.1参照、th06cの
+WINEPREFIXとは別物）。
+
+```bash
+tar -czf /tmp/th06nc-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
+  games/th06nc \
+  prefixes/th06nc-wined3d-gl \
+  mods/common/build/injector64.exe \
+  mods/th06nc_replay_autoplay/build/th06nc_hook.dll
+aws s3 cp /tmp/th06nc-assets.tar.gz \
+  "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th06nc/assets.tar.gz"
+```
+
+> `games/th06nc/steam_api64.dll`は`rsync`前に
+> `mods/th06nc_steam_stub/build/steam_api64.dll`で上書きしてからtarに固めること
+> （`cp mods/th06nc_steam_stub/build/steam_api64.dll games/th06nc/steam_api64.dll`）。
+
 ### th07（東方妖々夢）
 
 ```bash
 tar -czf /tmp/th07-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th07 \
   prefixes/th07-wined3d-gl \
   mods/common/build/injector.exe \
@@ -110,6 +164,7 @@ aws s3 cp /tmp/th07-assets.tar.gz \
 
 ```bash
 tar -czf /tmp/th08-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th08 \
   prefixes/th08-wined3d-gl \
   mods/common/build/injector.exe \
@@ -127,6 +182,7 @@ VsyncPatch本体（`vpatch.exe` / `vpatch.ini` / `vpatch_th09.dll`）は同梱�
 
 ```bash
 tar -czf /tmp/th09-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th09 \
   prefixes/th09-wined3d-gl \
   mods/common/build/injector.exe \
@@ -145,6 +201,7 @@ VsyncPatch本体（`vpatch.exe` / `vpatch.ini` / `vpatch_th10.dll`）を `games/
 
 ```bash
 tar -czf /tmp/th10-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th10 \
   prefixes/th10-wined3d-gl \
   mods/common/build/injector.exe \
@@ -164,6 +221,7 @@ MS明朝（`msmincho.ttc`、NPC 会話シーン等で必要、`worker/docs/title
 
 ```bash
 tar -czf /tmp/th11-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th11 \
   prefixes/th11-wined3d-gl \
   mods/common/build/injector.exe \
@@ -183,6 +241,7 @@ VsyncPatch本体（`vpatch.exe` / `vpatch.ini` / `vpatch_th12.dll`）を `games/
 
 ```bash
 tar -czf /tmp/th12-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th12 \
   prefixes/th12-wined3d-gl \
   mods/common/build/injector.exe \
@@ -209,6 +268,7 @@ aws s3 cp /tmp/th12-assets.tar.gz \
 
 ```bash
 tar -czf /tmp/th20-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
   games/th20 \
   prefixes/th20-wined3d-gl \
   mods/common/build/injector.exe \
@@ -289,6 +349,39 @@ WINEPREFIX="$(pwd)/prefixes/th06c-wined3d-gl" wine reg add \
 扱わない（`recording.config.GameConfig.build_env()` が起動時に毎回設定する。理由は
 `worker/docs/titles/th07.md`）。**WINEPREFIX を作り直したら §2 でタイトル資産アーカイブを
 作り直してアップロードすること。**
+
+### th06nc（64bitプレフィックス + DXVK配置）
+
+th06cと同じ手順で64bitプレフィックスを作成したうえで、**DXVK（D3D11→Vulkan）を
+追加配置する**（GPU描画必須タイトルのみの手順、`worker/docs/titles/th06nc.md`参照。
+wined3dよりDXVKの方が重複フレーム率が一貫して優位だったため、th06ncは既定でDXVKを
+使う——`record_th06nc.py`が`WINEDLLOVERRIDES=d3d11,dxgi,d3d10core=n`を設定する）。
+
+```bash
+cd worker
+WINEARCH=win64 WINEPREFIX="$(pwd)/prefixes/th06nc-wined3d-gl" xvfb-run -a wineboot -u
+WINEPREFIX="$(pwd)/prefixes/th06nc-wined3d-gl" wineserver -w
+xvfb-run -a ./setup_wineprefix.sh "$(pwd)/prefixes/th06nc-wined3d-gl" \
+  "$(pwd)/games/assets/msgothic.ttc" "$(pwd)/games/assets/msmincho.ttc"
+WINEPREFIX="$(pwd)/prefixes/th06nc-wined3d-gl" wine reg add \
+  'HKCU\Software\Wine\WineDbg' /v ShowCrashDialog /t REG_DWORD /d 0 /f
+
+# DXVK配置: 対応するDXVKリリース(dxvk-<version>.tar.gz)のx64 DLLを
+# system32へ配置する前に、wineビルトインを退避しておくこと
+# (WINEDLLOVERRIDESを付けない限りwineは既定でbuiltinを優先するため、
+# 退避しなくても動作はするが、誤ってオーバーライドを外した場合の事故を防ぐ)。
+PREFIX="$(pwd)/prefixes/th06nc-wined3d-gl"
+SYS32="$PREFIX/drive_c/windows/system32"
+mkdir -p "$SYS32/_wine_builtin_backup"
+for dll in d3d11 dxgi d3d10core; do
+  mv "$SYS32/$dll.dll" "$SYS32/_wine_builtin_backup/$dll.dll"
+  cp "/path/to/dxvk-<version>/x64/$dll.dll" "$SYS32/$dll.dll"
+done
+```
+
+**DXVKのバージョンはtouhou-recorderでの実機検証時に使用したものと同じにすること**
+（バージョン間の互換性は未検証）。DXVKの入手元・ライセンスはtouhou-recorder側の
+記録を確認する。
 
 ## 関連
 

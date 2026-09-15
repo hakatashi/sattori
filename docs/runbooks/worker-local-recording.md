@@ -18,11 +18,16 @@ Wine/Xvfb/実ゲームに依存する録画本体(`recording.pipeline.attempt_re
 配信用変換の解像度/フィルタ組み立て/進捗計算・DynamoDB更新式の組み立て・Spot中断/リバランス
 判定・進捗レポートの重複排除等)を pytest でユニットテストする。boto3 呼び出しは
 `unittest.mock` でモックし、実際の AWS リソースには接続しない(moto 等の追加依存は導入して
-いない)。GitHub Actions の `Test`(`.github/workflows/test.yml`)の `worker-test` ジョブで
-push・PR 毎に自動実行される。
+いない)。リポジトリルートでの `pnpm test` (Turborepo) や `pnpm --filter @sattori/worker test`、
+または `worker/` 配下での `pytest` で実行できる。GitHub Actions の `Test`(`.github/workflows/test.yml`)
+で push・PR 毎に自動実行される。
 
 ```bash
+# worker/ 配下で直接実行する場合
 pip install -r requirements-dev.txt && pytest
+
+# リポジトリルートから実行する場合
+pnpm test
 ```
 
 `recording/` パッケージのテストは `tests/test_recording_<モジュール名>.py` と1対1に対応させる
@@ -31,6 +36,13 @@ kill_wine_and_wait` のように名前で import しているため、**monkeypa
 「使う側」のモジュールに当てること**(`pipeline.kill_wine_and_wait` であって
 `process.kill_wine_and_wait` ではない)。モジュールの一覧は
 [`worker/docs/recording-package.md`](../../worker/docs/recording-package.md)。
+
+**Wine/Xvfb/実ゲームに依存する部分(MOD経由の録画本体)は上記の対象外**だが、別途
+`tests/mod_integration/run.py` がこの部分だけを狙った統合テストを持つ(`worker/README.md`
+§14)。§2のホスト直接実行と同じ経路を使うため、`worker/games/`・`worker/prefixes/`に
+ゲーム資産・WINEPREFIXが展開済みの環境でしか動かない。**pytestの対象ではなく、CIにも
+組み込まれていない**——ローカル実行に限定している理由は
+[`decisions/0049`](../decisions/0049-mod-integration-test-local-only.md)。
 
 ## 2. ローカルでの実行(ネットワーク不要)
 

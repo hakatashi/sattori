@@ -100,11 +100,19 @@ export const CLOUDFRONT_USD_PER_GB = 0.085;
  * （`docs/research/aws-region-cost-analysis.md` §2）と同様の30日間・時間重み付き平均（TWA）
  * での再計測がまだのため、実際の値とは数%ずれうる。次にこの定数を見直す際は
  * TWAで再計測すること。
+ *
+ * `gpu-xlarge`はth06nc（Issue #241）が使うGPU系インスタンス（`g6f.xlarge`）専用の帯。
+ * CPU系の`xlarge`帯とは全く別のハードウェア（NVIDIA L4スライス搭載）で価格体系も
+ * 異なるため、同じ`xlarge`に混ぜると過小評価になる（`sizeClassOf()`は末尾の
+ * `.xlarge`一致だけでは`g6f.xlarge`と`c7i.xlarge`を区別できないため、専用の帯として
+ * 分離する必要がある）。touhou-recorder reports/80・81実測（us-west-2/eu-south-2、
+ * AZ a/bの安い方）$0.062〜0.075/時間の範囲を採り、中央値寄りの$0.07を暫定値とする。
  */
 export const FALLBACK_SPOT_PRICE_USD_PER_HOUR = {
   xlarge: 0.045,
   "2xlarge": 0.092,
   "4xlarge": 0.118,
+  "gpu-xlarge": 0.07,
 } as const;
 
 /**
@@ -253,8 +261,16 @@ export interface JobCostEstimate {
   outputSizeUnknown: boolean;
 }
 
-/** インスタンスタイプ（例 `c7i.2xlarge`）からサイズ帯を取り出す。 */
+/**
+ * インスタンスタイプ（例 `c7i.2xlarge`）からサイズ帯を取り出す。
+ *
+ * GPU系（`g6f.*`、Issue #241）はCPU系の`.xlarge`/`.2xlarge`/`.4xlarge`とは別の価格帯
+ * （`gpu-xlarge`）を持つため、末尾一致より先にファミリ名で判定する。
+ */
 function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD_PER_HOUR {
+  if (instanceType.startsWith("g6f.")) {
+    return "gpu-xlarge";
+  }
   if (instanceType.endsWith(".4xlarge")) {
     return "4xlarge";
   }
@@ -262,10 +278,11 @@ function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD
 }
 
 /**
- * ゲームからサイズ帯を推定する。th11・th12・th128は`.2xlarge`帯、th20だけ`.4xlarge`帯の
- * 候補リストを使う（`apps/api/src/ec2.ts`の`TH11_CANDIDATE_INSTANCE_TYPES` /
- * `TH12_CANDIDATE_INSTANCE_TYPES` / `TH128_CANDIDATE_INSTANCE_TYPES` /
- * `TH20_CANDIDATE_INSTANCE_TYPES`、touhou-recorder reports/40・46・73）。
+ * ゲームからサイズ帯を推定する。th11・th12・th128は`.2xlarge`帯、th20は`.4xlarge`帯、
+ * th06ncはGPU系`gpu-xlarge`帯の候補リストを使う（`apps/api/src/ec2.ts`の
+ * `TH11_CANDIDATE_INSTANCE_TYPES` / `TH12_CANDIDATE_INSTANCE_TYPES` /
+ * `TH128_CANDIDATE_INSTANCE_TYPES` / `TH20_CANDIDATE_INSTANCE_TYPES` /
+ * `GPU_CANDIDATE_INSTANCE_TYPES`、touhou-recorder reports/40・46・73・80・81）。
  *
  * インスタンスタイプがまだ記録されていない段階（`launching`）や、リトライで
  * リセットされた場合（`retryJob.ts`）に使われる。ここが実態とずれると、`ec2.ts`の
@@ -279,6 +296,8 @@ function sizeClassOfGame(game: GameId): keyof typeof FALLBACK_SPOT_PRICE_USD_PER
       return "2xlarge";
     case "th20":
       return "4xlarge";
+    case "th06nc":
+      return "gpu-xlarge";
     default:
       return "xlarge";
   }

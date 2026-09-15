@@ -4,8 +4,13 @@ import { Link } from "react-router-dom";
 import {
   defaultSlowMotionFor,
   EMAIL_PATTERN,
+  GAME_TITLES,
+  isSupportedGame,
   parseReplayInfo,
   SLOW_MOTION_CAPABILITY,
+  SUPPORTED_GAME_IDS,
+  supportsEc2SlowMotion,
+  supportsHighResolutionRecording,
   supportsSlowMotion,
   supportsTh10BugfixMarisaB,
 } from "@sattori/shared";
@@ -26,149 +31,6 @@ import { useUploadFormState } from "./UploadFormStateContext.ts";
 import styles from "./UploadForm.module.css";
 import clsx from "clsx";
 import { helpCircleOutline, warningOutline } from "ionicons/icons";
-
-const gameTitles = [
-  {
-    japanese: "東方紅魔郷",
-    english: "Embodiment of\nScarlet Devil",
-    shortName: "EoSD",
-    supported: true,
-    icon: 'th06.png',
-  },
-  {
-    japanese: "東方紅魔郷: Classic",
-    english: "Embodiment of\nScarlet Devil: Classic",
-    shortName: "EoSD:C",
-    supported: true,
-    icon: 'th06c.png',
-  },
-  {
-    japanese: "東方妖々夢",
-    english: "Perfect Cherry\nBlossom",
-    shortName: "PCB",
-    supported: true,
-    icon: 'th07.png',
-  },
-  {
-    japanese: "東方永夜抄",
-    english: "Imperishable Night",
-    shortName: "IN",
-    supported: true,
-    icon: 'th08.png',
-  },
-  {
-    japanese: "東方花映塚",
-    english: "Phantasmagoria of\nFlower View",
-    shortName: "PoFV",
-    supported: true,
-    icon: 'th09.png',
-  },
-  {
-    japanese: "東方文花帖",
-    english: "Shoot the Bullet",
-    shortName: "StB",
-    supported: false,
-    icon: 'th095.png',
-  },
-  {
-    japanese: "東方風神録",
-    english: "Mountain of Faith",
-    shortName: "MoF",
-    supported: true,
-    icon: 'th10.png',
-  },
-  {
-    japanese: "東方地霊殿",
-    english: "Subterranean\nAnimism",
-    shortName: "SA",
-    supported: true,
-    icon: 'th11.png',
-  },
-  {
-    japanese: "東方星蓮船",
-    english: "Undefined\nFantastic Object",
-    shortName: "UFO",
-    supported: true,
-    icon: 'th12.png',
-  },
-  {
-    japanese: "ダブルスポイラー",
-    english: "Double Spoiler",
-    shortName: "DS",
-    supported: false,
-    icon: 'th125.png',
-  },
-  {
-    japanese: "妖精大戦争",
-    english: "Fairy Wars",
-    shortName: "GFW",
-    supported: true,
-    icon: 'th128.png',
-  },
-  {
-    japanese: "東方神霊廟",
-    english: "Ten Desires",
-    shortName: "TD",
-    supported: false,
-    icon: 'th13.png',
-  },
-  {
-    japanese: "東方輝針城",
-    english: "Double Dealing\nCharacter",
-    shortName: "DDC",
-    supported: false,
-    icon: 'th14.png',
-  },
-  {
-    japanese: "弾幕アマノジャク",
-    english: "Impossible\nSpell Card",
-    shortName: "ISC",
-    supported: false,
-    icon: 'th143.png',
-  },
-  {
-    japanese: "東方紺珠伝",
-    english: "Legacy of\nLunatic Kingdom",
-    shortName: "LoLK",
-    supported: false,
-    icon: 'th15.png',
-  },
-  {
-    japanese: "東方天空璋",
-    english: "Hidden Star in\nFour Seasons",
-    shortName: "HSiFS",
-    supported: false,
-    icon: 'th16.png',
-  },
-  {
-    japanese: "秘封ナイトメア\nダイアリー",
-    english: "Violet Detector",
-    shortName: "VD",
-    supported: false,
-    icon: 'th165.png',
-  },
-  {
-    japanese: "東方鬼形獣",
-    english: "Wily Beast and\nWeakest Creature",
-    shortName: "WBaWC",
-    supported: false,
-    icon: 'th17.png',
-  },
-  {
-    japanese: "東方虹龍洞",
-    english: "Unconnected\nMarketeers",
-    shortName: "UM",
-    supported: false,
-    icon: 'th18.png',
-  },
-  {
-    japanese: "東方錦上京",
-    english: "Fossilized Wonders",
-    shortName: "FW",
-    supported: true,
-    icon: 'th20.png',
-  },
-];
 
 function formatFileSize(bytes: number): string {
   return `${(bytes / 1024).toFixed(2)}KB`;
@@ -216,6 +78,8 @@ export function UploadForm() {
     setSlowMotion,
     th10BugfixMarisaB,
     setTh10BugfixMarisaB,
+    th06ncHighResolution,
+    setTh06ncHighResolution,
   } = useUploadFormState();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -229,14 +93,17 @@ export function UploadForm() {
 
   const busy = phase !== "idle" && phase !== "ready";
   const emailValid = EMAIL_PATTERN.test(email);
+  const game = preview?.game ?? null;
   // 低速録画に対応したタイトルか（Issue #101）。非対応タイトルで要求すると、ゲームは
   // 等倍で動くのに後処理だけが等倍化を行って2倍速の動画が出来上がるため、可否とは
   // 別にここで塞ぐ。タイトル未確定（解析前）も非対応として扱う。
-  const slowMotionSupported = supportsSlowMotion(preview?.game ?? null);
-  // 低速録画は「対応タイトル」かつ「自宅ワーカーが使える」場合に限り有効。可否が
-  // 変わった／別タイトルのリプレイに差し替えられた場合に、実際に送信される値が
+  const slowMotionSupported = supportsSlowMotion(game);
+  const ec2SlowMotionSupported = supportsEc2SlowMotion(game);
+  // 低速録画は「対応タイトル」かつ「自宅ワーカーまたはEC2で利用可能」な場合に有効（Issue #245）。
+  // 可否が変わった／別タイトルのリプレイに差し替えられた場合に、実際に送信される値が
   // 取り残されないよう、「チェック状態」ではなくこの導出値を唯一の真実として扱う。
-  const slowMotionSelectable = slowMotionAvailable && slowMotionSupported;
+  const isSlowMotionAvailable = slowMotionAvailable || ec2SlowMotionSupported;
+  const slowMotionSelectable = isSlowMotionAvailable && slowMotionSupported;
   const slowMotionChecked = slowMotionSelectable && slowMotion;
   // 選べない理由はユーザーから見て意味が違う（タイトル側の未対応は待っても変わらないが、
   // ワーカーの混雑は時間をおけば変わる）ので区別して出す。タイトルが未確定の間は
@@ -244,7 +111,7 @@ export function UploadForm() {
   const slowMotionHint =
     preview && !slowMotionSupported
       ? t("uploadForm.slowMotionUnsupportedGame")
-      : slowMotionAvailable
+      : isSlowMotionAvailable
         ? t("uploadForm.slowMotionHintLine2")
         : t("uploadForm.slowMotionUnavailable");
 
@@ -256,6 +123,10 @@ export function UploadForm() {
     preview?.character ?? null,
   );
   const th10BugfixMarisaBChecked = th10BugfixMarisaBSelectable && th10BugfixMarisaB;
+
+  // 1080p録画オプション(Issue #241)。th06nc(GPU描画必須)限定で選べる。既定は720p。
+  const th06ncHighResolutionSelectable = supportsHighResolutionRecording(preview?.game ?? null);
+  const th06ncHighResolutionChecked = th06ncHighResolutionSelectable && th06ncHighResolution;
 
   // 自宅ワーカーの空き状況はページ表示時に1回だけ取得する。実際に録画が始まるのは
   // ユーザーがマジックリンクを開いた後（最大24時間後）で、その時点の可否とは
@@ -398,7 +269,12 @@ export function UploadForm() {
     try {
       await requestMagicLink(
         replayKey,
-        { watermark, slowMotion: slowMotionChecked, th10BugfixMarisaB: th10BugfixMarisaBChecked },
+        {
+          watermark,
+          slowMotion: slowMotionChecked,
+          th10BugfixMarisaB: th10BugfixMarisaBChecked,
+          th06ncHighResolution: th06ncHighResolutionChecked,
+        },
         email,
         locale,
       );
@@ -456,15 +332,16 @@ export function UploadForm() {
     <section className={styles.card}>
       <p className={styles.supportedTitlesLabel}>
         {t("uploadForm.supportedTitlesLabel", {
-          count: gameTitles.filter((title) => title.supported).length,
+          count: SUPPORTED_GAME_IDS.length,
         })}
       </p>
       <ul className={styles.supportedTitles}>
-        {gameTitles.map((title) => {
-          const fullName = isEnglish ? title.english : title.japanese;
+        {Object.values(GAME_TITLES).map((title) => {
+          const supported = isSupportedGame(title.id);
+          const fullName = isEnglish ? title.englishHyphenatedName : title.japaneseName;
           return (
-            <li key={title.shortName} className={clsx(styles.supportedTitle, title.supported && styles.supported)}>
-              <img src={`/icons/${title.icon}`} alt={fullName} className={styles.supportedTitleIcon} />
+            <li key={title.id} className={clsx(styles.supportedTitle, supported && styles.supported)}>
+              <img src={`/icons/${title.id}.png`} alt={fullName} className={styles.supportedTitleIcon} />
               <span className={styles.supportedTitleName}>{fullName}</span>
             </li>
           );
@@ -634,6 +511,29 @@ export function UploadForm() {
               {th10BugfixMarisaBSelectable
                 ? t("uploadForm.th10BugfixMarisaBHintLine2")
                 : t("uploadForm.th10BugfixMarisaBUnsupportedGame")}
+            </small>
+          </span>
+        </label>
+        {/*
+          1080p録画オプション(Issue #241)。th06nc(東方紅魔郷: New Classic、GPU描画必須)
+          限定。720p/1080pどちらもインスタンスはg6f.xlargeのまま提供する
+          (docs/decisions/0046)ため、ワーカーの空き状況には依存しない。
+        */}
+        <label
+          className={clsx(styles.option, !th06ncHighResolutionSelectable && styles.optionDisabled)}
+        >
+          <input
+            type="checkbox"
+            checked={th06ncHighResolutionChecked}
+            onChange={(e) => setTh06ncHighResolution(e.target.checked)}
+            disabled={busy || !th06ncHighResolutionSelectable}
+          />
+          <span>
+            {t("uploadForm.th06ncHighResolutionOption")}
+            <small className={styles.optionHint}>
+              {th06ncHighResolutionSelectable
+                ? t("uploadForm.th06ncHighResolutionHintLine1")
+                : t("uploadForm.th06ncHighResolutionUnsupportedGame")}
             </small>
           </span>
         </label>

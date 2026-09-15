@@ -10,6 +10,8 @@
 「上部帯全体×固定閾値」に固定していた。th10ではこの前提が崩れるため、比較領域・閾値を
 `GameConfig`で上書きできるよう一般化した。0011自体を覆すものではない。
 
+> **注**: 本決定に記述されている `worker/recording_common.py`（`build_end_template_mask()`・`load_end_template()`・`GameConfig` 等）は、PR #206 / [`0041`](0041-worker-recording-package-split.md) により `worker/recording/` パッケージ（`recording.vision`, `recording.config` 等）へ分割されました。
+
 ## 背景
 
 th10（東方風神録）のリプレイ選択画面は、th06/07/08と異なり**背景全体が常時

@@ -6,6 +6,7 @@ import {
   isSupportedGame,
   isSupportedLanguage,
   parseReplayInfo,
+  supportsHighResolutionRecording,
   supportsSlowMotion,
   supportsTh10BugfixMarisaB,
   type GameId,
@@ -183,6 +184,10 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       th10BugfixMarisaB:
         body.options.th10BugfixMarisaB === true &&
         supportsTh10BugfixMarisaB(game, replayInfo?.character ?? null),
+      // 1080p録画オプション（Issue #241）。ここも上と同じ理由でサーバー側の再パース
+      // 結果（`game`）に基づいて握り潰す——非対応タイトルでtrueを指定されても無視する。
+      th06ncHighResolution:
+        body.options.th06ncHighResolution === true && supportsHighResolutionRecording(game),
     },
     outputPath: null,
     outputPath720p: null,

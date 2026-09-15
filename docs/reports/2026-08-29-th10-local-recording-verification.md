@@ -9,6 +9,8 @@
   `worker/record_th10.py`）でth10のフル尺録画・終了検知・スコア完全一致検証・
   「バグマリ」修正オプション（`TH10_BUGFIX_MARISA_B`）のいずれも実機で成功を確認した。
 
+> **注**: 本レポートに記述されている `worker/recording_common.py` は、2026-08-31 の PR #206 / [`0041`](../decisions/0041-worker-recording-package-split.md) により `worker/recording/` パッケージへ分割されました。
+
 touhou-recorderでのタイトル対応検証（reports/56〜60）を踏まえて実装したth10録画対応
 （MOD移植・`recording_common.py`の終了検知一般化・VsyncPatch ini動的書き換え）を、
 sattoriリポジトリ自身のコードで再検証したもの。

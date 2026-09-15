@@ -12,10 +12,12 @@ const REQUIRED_ENV: Record<string, string> = {
   CDN_DOMAIN: "cdn.example.net",
   JOBS_TABLE: "sattori-jobs",
   WORKER_IMAGE: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker:latest",
+  WORKER_GPU_IMAGE: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker-gpu:latest",
   TITLE_ASSETS_BUCKET: "title-assets-bucket",
   WORKER_LOG_GROUP: "/sattori/worker",
   WORKER_SUBNET_IDS: "subnet-xxxx,subnet-yyyy",
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
+  GPU_WORKER_LAUNCH_TEMPLATE_ID: "lt-gpu-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
   SETTINGS_TABLE: "sattori-settings",
   WORKERS_TABLE: "sattori-workers",
@@ -351,15 +353,26 @@ describe("GET /jobs/{jobId}", () => {
     expect(parseBody(res as APIGatewayProxyStructuredResultV2).slowMotion).toBe(true);
   });
 
-  it("EC2へフォールバックしたジョブは、希望されていても slowMotion:false を返す", async () => {
+  it("EC2低速録画未対応タイトル(th11)でEC2へフォールバックしたジョブは、希望されていても slowMotion:false を返す", async () => {
     ddbMock.on(GetCommand).resolves({
-      Item: { ...doneJob, options: { watermark: true, slowMotion: true }, workerKind: "ec2" },
+      Item: { ...doneJob, game: "th11", options: { watermark: true, slowMotion: true }, workerKind: "ec2" },
     });
 
     const { handler } = await import("./getJob.js");
     const res = await handler(makeEvent("job-1"), {} as never, () => {});
 
     expect(parseBody(res as APIGatewayProxyStructuredResultV2).slowMotion).toBe(false);
+  });
+
+  it("EC2低速録画対応タイトル(th20)でEC2へフォールバックしたジョブは、slowMotion:true を維持する（Issue #245）", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, game: "th20", options: { watermark: true, slowMotion: true }, workerKind: "ec2" },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+
+    expect(parseBody(res as APIGatewayProxyStructuredResultV2).slowMotion).toBe(true);
   });
 
   it("低速録画を希望していないジョブは常に slowMotion:false を返す", async () => {

@@ -4,5 +4,10 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
     exclude: ["dist/**", "node_modules/**"],
+    reporters: ["default", ["junit", { outputFile: "junit.xml" }]],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+    },
   },
 });

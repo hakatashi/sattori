@@ -91,8 +91,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     posterImageUrl,
     replayInfo: job.replayInfo ?? null,
     // ユーザーの希望（`options.slowMotion`）そのままではなく、EC2へフォールバック
-    // したかどうかまで織り込んだ「実際に低速録画で走るか」を返す（Issue #68）。
-    slowMotion: isSlowMotionRecording(job.options, job.workerKind),
+    // したかどうか（EC2低速録画対応タイトルかどうかも含む）まで織り込んだ「実際に低速録画で走るか」を返す（Issue #68, #245）。
+    slowMotion: isSlowMotionRecording(job.options, job.workerKind, job.game),
     // `errorCode`と同じ理由（Issue #103追加より前の旧ジョブでは属性自体が無く
     // `undefined`になりうる）で`?? null`を通す。
     desyncDetected: job.desyncDetected ?? null,

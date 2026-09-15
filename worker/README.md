@@ -23,6 +23,7 @@
 - [11. ローカルでの実行(ネットワーク不要)](#11-ローカルでの実行ネットワーク不要)
 - [12. ビルドとECRへのpush](#12-ビルドとecrへのpush)
 - [13. 既知の制約](#13-既知の制約)
+- [14. MOD統合テスト(`worker/games/`がある環境限定)](#14-mod統合テストworkergamesがある環境限定)
 
 ## 1. 対応タイトル
 
@@ -30,6 +31,7 @@
 | --- | --- | --- | --- | --- |
 | th06 東方紅魔郷 | `record_th06.py` | [docs/titles/th06.md](docs/titles/th06.md) | テンプレート照合 | 640x480 |
 | th06c 東方紅魔郷: Classic | `record_th06c.py` | [docs/titles/th06c.md](docs/titles/th06c.md) | テンプレート照合(絞り込み領域) | 640x480 |
+| th06nc 東方紅魔郷: New Classic | `record_th06nc.py` | [docs/titles/th06nc.md](docs/titles/th06nc.md) | 画面静止のみ | **1280x720/1920x1080選択可(GPU描画必須)** |
 | th07 東方妖々夢 | `record_th07.py` | [docs/titles/th07.md](docs/titles/th07.md) | テンプレート照合 | 640x480 |
 | th08 東方永夜抄 | `record_th08.py` | [docs/titles/th08.md](docs/titles/th08.md) | テンプレート照合 | 640x480 |
 | th09 東方花映塚 | `record_th09.py` | [docs/titles/th09.md](docs/titles/th09.md) | テンプレート照合(絞り込み領域) | 640x480 |
@@ -80,7 +82,7 @@
 | 変数 | 説明 |
 | --- | --- |
 | `JOB_ID` | ジョブ ID(DynamoDB キー・出力キーに使用) |
-| `GAME` | タイトル(`th06` / `th06c` / `th07` / `th08` / `th09` / `th10` / `th11` / `th12` / `th20` / `th128`) |
+| `GAME` | タイトル(`th06` / `th06c` / `th06nc` / `th07` / `th08` / `th09` / `th10` / `th11` / `th12` / `th20` / `th128`) |
 | `REPLAY_BUCKET` / `REPLAY_KEY` | アップロード済みリプレイの S3 位置 |
 | `OUTPUT_BUCKET` | 録画動画の出力先バケット(CloudFront オリジン) |
 | `TITLE_ASSETS_BUCKET` | タイトル固有アセットのバケット(§8) |
@@ -100,6 +102,9 @@
 | `TITLE_ASSETS_CACHE_DIR` | 自宅ワーカーのみが渡す(§8、Issue #104)。設定時はタイトル資産を
   直接ダウンロードせず、このディレクトリ配下のキャッシュを使う。EC2は渡さないため常に
   直接ダウンロードする |
+| `TH06NC_RESOLUTION` | `1080p`でth06nc(GPU描画必須)を1080pで録画する(Issue #241、
+  [`titles/th06nc.md`](docs/titles/th06nc.md))。省略時・それ以外の値は720p。
+  th06nc以外では読まれない |
 
 ## 4. 出力ファイル
 
@@ -109,13 +114,10 @@
 
 | 録画 | 配信版 | 生データ(元解像度版) | 理由 |
 | --- | --- | --- | --- |
-<<<<<<< HEAD
-| th06/07/08/09/10/11/12/128(640x480・等倍) | 960x720へ拡大 | **そのまま2本目として配信** | 生データが無加工で通用するので、再エンコードは配信版の1回だけで済む |
-=======
-| th06/06c/07/08/09/10/11/12(640x480・等倍) | 960x720へ拡大 | **そのまま2本目として配信** | 生データが無加工で通用するので、再エンコードは配信版の1回だけで済む |
->>>>>>> origin/main
+| th06/06c/07/08/09/10/11/12/128(640x480・等倍) | 960x720へ拡大 | **そのまま2本目として配信** | 生データが無加工で通用するので、再エンコードは配信版の1回だけで済む |
 | th20(1280x960・等倍) | 1280x960のまま | 出さない | 2本目はウォーターマークの有無しか違わず、S3保管料とCloudFront転送量が倍になるだけ |
 | th20(低速録画) | 1280x960のまま | 出さない | 生データが半分の速度でそのまま配信できない。別途出すには等倍化の再エンコードがもう1回要る |
+| th06nc(1280x720/1920x1080) | 元解像度のまま | 出さない | 既に720p以上のためth20と同じ理由(`needs_separate_raw_output()`は解像度・低速録画有無だけを見る汎用ロジックなので、th06nc固有の分岐は無い) |
 
 640x480 の録画はそのままだと YouTube 側で60fpsと認識されないため拡大する(reports/21)。
 **逆に、元から720p以上ある録画を高さ720pxへ「合わせる」ことはしない**(th20を960x720へ縮小
@@ -246,8 +248,9 @@ MOD が何をしているか(各フックの役割)は [`docs/mods.md`](docs/mod
 
 Wine/Xvfb/実ゲームに依存する録画本体(`recording.pipeline.attempt_recording()`)以外の、純粋な
 ロジック部分を pytest でユニットテストする(boto3 呼び出しは `unittest.mock` でモックし、実際の
-AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/workflows/test.yml`)の
-`worker-test` ジョブで push・PR 毎に自動実行される。**走らせ方と、`recording/` のテストに効く
+AWS リソースには接続しない)。ルートの `pnpm test` (Turborepo) や `pnpm --filter @sattori/worker test`、
+または `worker/` 配下での `pytest` で実行できる。GitHub Actions の `Test`(`.github/workflows/test.yml`)
+で push・PR 毎に自動実行される。**走らせ方と、`recording/` のテストに効く
 規約(monkeypatch は定義側ではなく「使う側」のモジュールに当てる)は
 [`docs/runbooks/worker-local-recording.md`](../docs/runbooks/worker-local-recording.md) §1。**
 
@@ -270,6 +273,17 @@ AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/work
 コンテキストへ配置すること(§8)。ビルド・pushのコマンドとデプロイ手順全体は
 `deploy-sattori` skill(**push と deploy の順序を守ること**)。
 
+**GPU描画必須タイトル(th06nc)は別Dockerfile(`Dockerfile.gpu`)・別ECRリポジトリ
+(`sattori-worker-gpu`)を使う**(Issue #241、
+[`decisions/0048`](../docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md))。
+`recording/`パッケージ・`entrypoint.py`・各`record_thNN.py`は`Dockerfile`と共通の
+ソースをCOPYしているが、依存パッケージ(wine64のみ・Xorg関連・libvulkan1等)が異なる
+ため別イメージにビルドする。ビルド・pushの手順は`deploy-sattori` skillに追記済み。
+GPU用カスタムAMI(`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`)の構築手順は
+`build-gpu-worker-ami` skill。**AMI更新時はworker-gpuイメージの動作確認もセットで
+行うこと**(ドライババージョンの不一致でXorg/DXVKが起動しなくなるリスクがある、
+[`titles/th06nc.md`](docs/titles/th06nc.md))。
+
 ## 13. 既知の制約
 
 一覧と詳細は [`docs/known-limitations.md`](../docs/known-limitations.md)。録画パイプラインに
@@ -291,10 +305,48 @@ AWS リソースには接続しない)。GitHub Actions の `Test`(`.github/work
   できない**。利用者の自己申告(`th10BugfixMarisaB`、既定false)に頼っており、誤った申告の
   リプレイはデシンクする([known-limitations §1](../docs/known-limitations.md#1-対応タイトルの拡大)、
   [`titles/th10.md`](docs/titles/th10.md))。
-- **対応タイトルは §1 の9本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
+- **対応タイトルは §1 の10本のみ**(リプレイパーサー側は多タイトル対応済みで、残作業は録画
   対応 —— MOD 移植・実機検証。Issue #13 配下。同 §1)。
+- **th06nc(GPU描画必須)は自宅ワーカーでは録画できない**(GPU非搭載が前提。`apps/api/src/
+  workerRouting.ts`で常にEC2へ固定される、Issue #241、[`titles/th06nc.md`](docs/titles/th06nc.md))。
+  低速録画にも非対応(D3D11経路の新規実装が必要、th06cと同じ扱い)。
 
 **想定尺より大幅に早く終了した/タイムアウトへ近づいたジョブでは、検知ロジック側を疑う前に
 まず録画された映像を目視して**不自然な被弾・ゲームオーバーが無いか確認すること(閾値調整や
 リトライでは解決しない —— 同一リプレイなら毎回同じ箇所で再現する。`apps/api` の
 `retryPolicy.ts`・`handleFailure.ts` はこの性質を前提にリトライ回数を決めている)。
+
+## 14. MOD統合テスト(`worker/games/`がある環境限定)
+
+`worker/mods/`(`*_hook.dll`)を変更した際、実機検証(`verify-recording-locally` skill・
+touhou-recorderのreports/)に進む前の速い足がかりとして、決まった短いリプレイで自動退行
+検知ができる(`tests/mod_integration/run.py`)。CIの`mods-build-smoketest`はビルドが通るか
+しか見ておらず実機注入テストの代わりにはならないため、このスクリプトはその隙間を埋める
+(**このテスト自体もCIには組み込んでおらず、pushごとには実行しない**。ゲーム資産の
+ライセンス・実行コストの都合、[`decisions/0049`](../docs/decisions/0049-mod-integration-test-local-only.md))。
+
+**`worker/games/<game>/`・`worker/prefixes/<game>-wined3d-gl/`にゲーム本体・WINEPREFIXが
+展開済みの環境専用**(§11のホスト直接実行と同じ経路。Dockerコンテナは使わず、ホストの
+Wine/Xvfb/PulseAudioをそのまま使う)。
+
+```bash
+python3 tests/mod_integration/run.py               # 対象タイトル全部(現状th06/th08)
+python3 tests/mod_integration/run.py --game th06
+```
+
+判定基準は本番と同じ自動検知ロジックをそのまま使う。`record_thNN.py`の異常終了(重複
+フレーム率超過による全試行失敗を含む)・デシンク検知(`recording.modlog.
+check_replay_desync()`)・タイムアウト打ち切りのいずれかが起きればNGとする。
+
+**このスクリプトは実機検証の代わりにはならない**。判定できるのは「今のMODが壊れていない
+か」という退行検知のみで、新規タイトル対応や未検証のインスタンスタイプでの妥当性確認は
+これまで通り実機検証が必須(AGENTS.md §3)。またDockerコンテナを介さずホストの環境を
+直接使うため、§11と同じくWineプロセス残留のリスクを伴う(`timeout --kill-after=`を
+必ず併用する設計にしてある)。
+
+同一ホストで自宅ワーカーデーモン(`sattori-home-worker`)が稼働している場合は、Xvfbの
+ディスプレイ番号・PulseAudioの競合を避けるため停止していること(稼働中なら中断する)。
+検証用リプレイは`tests/fixtures/mod-integration/`にタイトルごと1本ずつ配置している
+(短時間で自然終了するもの限定。狙いは`tests/fixtures/mod-integration/README.md`参照)。
+対象タイトルを増やす場合は同じ条件のリプレイを追加し、`run.py`の`TITLES`辞書に期待
+スコア(threpで確認できるリプレイの記録スコア)を登録すること。

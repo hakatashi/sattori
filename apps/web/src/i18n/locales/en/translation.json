@@ -28,7 +28,7 @@
       "The goal is to let anyone create a recorded video of a replay casually, without any tedious steps or video-editing knowledge, and easily upload it to video sites."
     ],
     "disclaimer": "This service is an unofficial, fan-made project unaffiliated with the Touhou Project's development circles — Team Shanghai Alice, Shanghai Alice Reprise, and Tasogare Frontier — their representative ZUN, or any other individuals or organizations holding related rights. Please do not contact Team Shanghai Alice with inquiries about this service.",
-    "authorHeading": "About the author",
+    "authorHeading": "About the developer",
     "authorName": "Name",
     "authorRace": "Race",
     "authorRaceValue": "Human",
@@ -131,6 +131,9 @@
     "th10BugfixMarisaBHintLine1": "Marisa B in Mountain of Faith has a known bug where her shot power spikes abnormally under certain conditions (nicknamed \"bug Marisa\"). Only enable this option if you installed VsyncPatch to fix this bug while playing.",
     "th10BugfixMarisaBHintLine2": "Choosing a setting different from how the replay was actually played will make the recording diverge from the original playthrough.",
     "th10BugfixMarisaBUnsupportedGame": "This option is only available for Marisa B replays of Mountain of Faith.",
+    "th06ncHighResolutionOption": "Record Embodiment of Scarlet Devil: New Classic in 1080p",
+    "th06ncHighResolutionHintLine1": "Records at a higher resolution than the default 720p. The resulting video may be slightly choppy.",
+    "th06ncHighResolutionUnsupportedGame": "This option is only available for Embodiment of Scarlet Devil: New Classic replays.",
     "th20NoticeTitle": "About recording replays of this title",
     "th20NoticeDesync": "Fossilized Wonders is prone to replay desync (playback diverging from the run that was recorded), so the video may not match what the replay originally showed. This comes from the replay file and the game itself, so re-recording produces the same result. Also, when a desync happens during recording on TouhouSattori, the recording takes much longer to finish (up to about two hours). Note that players have reported that saving replays while playing with the community patch <0>thprac</0> applied avoids the desync.",
     "th20NoticeFrameDrop": "This title is demanding to render, and recording can drop frames during dense danmaku scenes.",
@@ -143,24 +146,20 @@
   "replayHelp": {
     "heading": "Where Touhou Project games save replay files",
     "intro": "Where your replay file is saved depends on which title you played. Choose your title below.",
-    "titleSeparator": ", ",
     "groups": {
       "installFolder": {
-        "heading": "{{first}} – {{last}}",
         "description1": "A \"replay\" folder is created automatically right inside the folder where you installed {{title}}, and your replay files are saved there after you play.",
         "defaultLabel": "If you used the default install location, it's saved here by default.",
         "virtualStoreLabel": "However, on Windows 11 and many current systems, UAC virtualization is enabled by default, so it may actually be saved in this folder instead.",
         "steamLabel": "If you bought it on Steam, it's saved here by default (you can also open it from your Steam library: right-click the game → Manage → Browse local files)."
       },
       "appData": {
-        "heading": "{{first}} onward",
         "description1": "{{title}} stores data such as your scores and replay files in your %APPDATA% folder.",
         "pathLabel": "By default, your replay files are saved here."
       },
       "steamLibrary": {
-        "heading": "Embodiment of Scarlet Devil remakes",
-        "description1": "{{title}} is only distributed on Steam. A \"replay\" folder is created automatically right inside your Steam library's install folder, and your replay files are saved there after you play.",
-        "pathLabel": "By default, it's saved here (you can also open it from your Steam library: right-click the game → Manage → Browse local files)."
+        "description1": "Retrieving replay files for {{title}} has currently only been confirmed for the Steam version.",
+        "pathLabel": "For the Steam version, replay files are saved here by default (you can also open it from your Steam library: right-click the game → Manage → Browse local files)."
       }
     },
     "copy": "Copy",

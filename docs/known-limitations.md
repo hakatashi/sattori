@@ -21,7 +21,7 @@ Sattori の「まだできていないこと」「できているが条件付き
 
 ## 1. 対応タイトルの拡大
 
-現在の対応タイトルは th06・th06c・th07・th08・th09・th10・th11・th12・th20・th128 の10本。
+現在の対応タイトルは th06・th06c・th06nc・th07・th08・th09・th10・th11・th12・th20・th128 の11本。
 
 リプレイパーサー自体は th06〜th20 の大半に対応済みで、**残作業は録画対応**
 （Wine 上での MOD 移植・実機検証）である。タイトルごとの状況は
@@ -52,16 +52,29 @@ API（`POST /magic-links` での握り潰し）の両方で入口を塞いでい
 Issue #101のスコープ）。Issue #101でth09を対応させる際はMOD側の追加実装は不要で、
 許可リストに加えるだけでよい（[`worker/docs/titles/th09.md`](../worker/docs/titles/th09.md)）。
 
-### th06nc（東方紅魔郷: New Classic）はパースのみ対応で録画は未対応
+### th06nc（東方紅魔郷: New Classic）は録画対応済み。ただしGPU専用インスタンスでのみ録画可能
 
-2026-09-10 発売の「東方紅魔郷: New Classic」は、リプレイのフォーマット解析とパースだけ
-済んでいる（[`docs/research/th06-classic-replay-format.md`](research/th06-classic-replay-format.md)、
-`packages/replay-parser/src/games/th06.ts`）。録画は未対応のため
-`SUPPORTED_GAME_IDS` には入れておらず、アップロードすると非対応タイトルとして弾かれる
-（録画対応は別Issue）。
+2026-09-10 発売の「東方紅魔郷: New Classic」は録画対応済み（Issue #241、
+[`worker/docs/titles/th06nc.md`](../worker/docs/titles/th06nc.md)）。**GPU描画
+（Xorg+NVIDIA GRIDドライバ+DXVK）が必須のタイトルで、GPU系インスタンス
+（`g6f.xlarge` / `g6f.2xlarge`）で録画される**。Xvfb+wined3d+llvmpipe（既存9タイトルの方式）では720pで9.1fpsしか出ず
+60fpsに遠く届かないため（touhou-recorder reports/78 §5）。自宅ワーカー（GPU非搭載）
+には常にオファーされない
+（[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
 
-同時発売の「東方紅魔郷: Classic」（th06c）は録画対応済み（Issue #240、
-[`worker/docs/titles/th06c.md`](../worker/docs/titles/th06c.md)）。
+**低速録画はスコープ外**（D3D11経路の新規実装が必要、th06cと同じ扱い。
+`SLOW_MOTION_SUPPORTED_GAME_IDS`未登録のため自動的に塞がれる）。
+
+**1080p録画オプションはg6f.xlarge（4vCPU）のまま提供している**。touhou-recorder
+reports/81 §9.9.3の実測では、1080p録画は本来g6f.2xlarge（8vCPU）が推奨——
+4vCPUでは実効fpsが54.87まで悪化し重複フレーム率が7.9%まで増える——ことが確認されて
+いる。それでもeu-south-2のG系スポットクォータ（現状8vCPU＝g6f.xlarge換算で2台分の
+並列運用余地）を踏まえ、並列運用の余地を残すためユーザー判断で4vCPUのまま提供して
+いる（[`decisions/0046`](decisions/0046-gpu-ec2-instance-and-fixed-ami.md)）。1080p
+録画で処理落ちが疑われる場合はこの制約を踏まえて調査すること。
+
+同時発売の「東方紅魔郷: Classic」（th06c）も録画対応済み（Issue #240、
+[`worker/docs/titles/th06c.md`](../worker/docs/titles/th06c.md)、こちらはGPU不要）。
 
 **th06nc を th06 として受け付けてはならない。** マジックバイトは th06 と同じ `T6RP` の
 ままなので、バージョン語（0x04）を見ない実装は誤って th06 として扱ってしまう
@@ -70,7 +83,22 @@ Classic系のリプレイ（ver. 1.03系）は th06 1.02h ではファイルと�
 録画が必ず失敗する。逆方向、すなわち 1.02h のリプレイを 1.03 で再生することは可能）。
 
 解析上の未確定事項（クリア判定フラグ、New Classic のスペルプラクティスの難易度、
-モード値 2 の意味）はレポートの §6 に、追加で必要なリプレイの種類とあわせて挙げてある。
+モード値 2 の意味）は`docs/research/th06-classic-replay-format.md` §6に、追加で
+必要なリプレイの種類とあわせて挙げてある。メニューカーソル位置・ステージ番号・
+残機・グレイズのRVAも未特定（`worker/docs/titles/th06nc.md`参照）。
+
+**【2026-09-12時点】本番相当のE2E録画検証（720p/1080pのフル尺録画）はまだ完了して
+いない**。GPU用カスタムAMI構築・CDKデプロイ・タイトル資産アップロードは完了済みだが、
+eu-south-2のg6f.xlargeスポット在庫の長時間枯渇により実際の録画ジョブが起動できな
+かった（sattori側の不具合ではない、
+[`docs/reports/2026-09-12-th06nc-recording-verification.md`](reports/2026-09-12-th06nc-recording-verification.md)）。
+在庫回復後に必ず再検証すること。
+
+GPU用カスタムAMIとworker-gpuイメージのドライババージョン同期、初回起動時の
+wineserverコールドスタートによる録画失敗しやすさは`worker/docs/titles/th06nc.md`
+「既知の残課題」を参照。`worker/recording/pipeline.py`の`_record_with_retry()`が
+重複フレーム率計測不能（`None`）を異常として扱っていない問題も、th06nc対応と合わせて
+修正していない（実機観測後に必要性を判断する）。
 
 ### th09はリプレイずれの事後検知が機能しない
 
@@ -189,6 +217,12 @@ th09のジョブは`JobRecord.desyncDetected`が常にfalseになる（デシン
 2並列とも完走することは確認済み（詳細は
 [`reports/2026-08-09-home-worker-parallel-recording.md`](reports/2026-08-09-home-worker-parallel-recording.md)）。
 
+**th06nc（GPU描画必須タイトル、Issue #241）は自宅ワーカーへは常にオファーされない**
+（GPU非搭載が前提のため。`apps/api/src/workerRouting.ts`の
+`offerToHomeWorker: false`、[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
+自宅マシンにGPUを搭載する予定がある場合でも、現状の実装は明示的な許可リストを持たない
+ため、対応させるには別途改修が要る。
+
 ### 未検証の経路
 
 **claim 競合・claim 取り消し・オファー経由の E2E（AWS を通した割り当て）は未検証**で、
@@ -299,6 +333,8 @@ IP 単位のレート制限・reCAPTCHA 等の追加 bot ゲートは、**メー
 常に効いてくるため `AGENTS.md` §3 にも要約を置いてある。
 
 - リージョンや候補インスタンスタイプを変える場合は**単価定数も併せて見直すこと**。
+  GPU系（`g6f.xlarge`、th06nc、Issue #241）はCPU系`.xlarge`帯とは全く異なる価格帯
+  （`gpu-xlarge`、暫定値$0.07/h）を別枠で持つ（`FALLBACK_SPOT_PRICE_USD_PER_HOUR`）。
 - 自宅ワーカー（Issue #49）が処理したジョブは EC2/EBS/IPv4 の課金が発生しないため 0 で
   計上する（自宅の電気代・回線費は AWS の請求に現れず按分する意味も無いので一切計上しない）。
 - リトライで試行ごとにワーカー種別が変わったジョブの推定は過少になる（Issue #94）。

@@ -16,16 +16,51 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-14",
+    ja: "東方紅魔郷: New Classic (th06nc) のスペルプラクティスのリプレイファイル選択時にスペルカード名を表示するよう修正",
+    en: "Fixed the replay selection screen to show the spell card name for Spell Practice replays of the Embodiment of Scarlet Devil: New Classic (th06nc)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/238",
+  },
+  {
+    date: "2026-09-14",
+    ja: "リプレイの収録時間が短い場合に録画が誤って失敗することがある不具合を修正",
+    en: "Fixed an issue where recording could incorrectly fail for replays with a very short playtime",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/250",
+  },
+  {
+    date: "2026-09-13",
+    ja: "リプレイファイルの保存場所のヘルプページで、作品のグループ分類をやめ、すべての作品を1つのボタングループから選択できるよう改善",
+    en: "Updated the replay file location help page to select from all titles in a single button group instead of categorized groups",
+  },
+  {
+    date: "2026-09-13",
+    ja: "「現在録画対応中のタイトル」の表示スタイルを修正",
+    en: "Fixed the display style of \"Currently supported titles\"",
+  },
+  {
+    date: "2026-09-13",
+    ja: "東方紅魔郷: New Classic (th06nc) の録画に対応",
+    en: "Added recording support for the Embodiment of Scarlet Devil: New Classic (th06nc)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/241",
+    important: true,
+  },
+  {
+    date: "2026-09-11",
+    ja: "東方錦上京 (th20) の低速録画をサーバーの混雑状況に関わらず常に利用できるよう改善",
+    en: "Slow-motion recording for Unfinished Dream of All Living Ghost (th20) is now available at all times regardless of server load",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/245",
+  },
+  {
     date: "2026-09-10",
-    ja: "「東方紅魔郷: Classic」(th06c) の録画に対応",
-    en: "Added recording support for \"the Embodiment of Scarlet Devil: Classic\" (th06c)",
+    ja: "東方紅魔郷: Classic (th06c) の録画に対応",
+    en: "Added recording support for the Embodiment of Scarlet Devil: Classic (th06c)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/240",
     important: true,
   },
   {
     date: "2026-09-10",
-    ja: "リプレイファイルパーサが「東方紅魔郷: Classic」「東方紅魔郷: New Classic」を認識できるよう対応 (録画は未対応)",
-    en: "The replay file parser now recognizes \"the Embodiment of Scarlet Devil: Classic\" and \"the Embodiment of Scarlet Devil: New Classic\" (recording is not yet supported)",
+    ja: "リプレイファイルパーサが「東方紅魔郷: Classic」「東方紅魔郷: New Classic」を認識できるよう対応",
+    en: "The replay file parser now recognizes \"the Embodiment of Scarlet Devil: Classic\" and \"the Embodiment of Scarlet Devil: New Classic\"",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/236",
   },
   {
