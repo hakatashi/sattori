@@ -6,5 +6,10 @@ export default defineConfig({
     exclude: ["cdk.out/**", "node_modules/**"],
     // NodejsFunction の esbuild バンドルを伴う synth のため長めに取る。
     testTimeout: 60_000,
+    reporters: ["default", ["junit", { outputFile: "junit.xml" }]],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov"],
+    },
   },
 });

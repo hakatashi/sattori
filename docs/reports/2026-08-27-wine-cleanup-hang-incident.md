@@ -5,6 +5,8 @@
 - **環境**: HakataMatrix(自宅ワーカーのホスト)、`worker/`をDockerを介さず直接(ベアメタルで)実行した検証セッション
 - **結論**: `kill_wine_and_wait()`が`wineserver -w`のタイムアウトを捕捉しておらず、例外がリトライループごと伝播してスクリプトをクラッシュさせ、放置されたWineプロセスがsystem D-Busのメッセージキューを枯渇させたことがホストハングの一因だった。Issue #186で修正済み。
 
+> **注**: 本レポートに記述されている `worker/recording_common.py` は、2026-08-31 の PR #206 / [`0041`](../decisions/0041-worker-recording-package-split.md) により `worker/recording/` パッケージへ分割されました。
+
 ## 経緯
 
 2026-08-27朝、自宅ワーカーのホストマシン(HakataMatrix)でsystemd(PID 1)が完全にハングし、

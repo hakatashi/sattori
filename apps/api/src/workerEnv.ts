@@ -11,9 +11,9 @@ import type { ApiConfig } from "./config.js";
 export interface WorkerEnvOptions {
   /**
    * この起動で低速録画（Issue #68）を行うか。**ジョブの `options.slowMotion` を
-   * そのまま渡してはいけない**——低速録画は自宅ワーカーへのオファーでのみ有効で、
-   * EC2 Fleet 起動時は常に false になる（録画に倍の実時間＝倍のコストがかかるため）。
-   * 呼び出し側（`handlers/sfn/launch.ts`）が割り当て先に応じて決める。
+   * そのまま渡してはいけない**——低速録画は自宅ワーカーへのオファー、または
+   * EC2低速録画対応タイトル（`supportsEc2SlowMotion()`）でのみ有効。
+   * 呼び出し側（`ec2.buildUserData`/`handlers/sfn/launch.ts`）が割り当て先に応じて決める。
    */
   slowMotion: boolean;
   /**
@@ -86,6 +86,13 @@ export function buildWorkerEnv(
     // `WorkerEnvOptions`を経由せず`job.options`から直接読む——割り当て先に応じて
     // 呼び出し側が値を変える必要が無い。
     env.TH10_BUGFIX_MARISA_B = "1";
+  }
+  if (job.game === "th06nc" && job.options.th06ncHighResolution) {
+    // 1080p録画オプション（Issue #241）。th06ncは自宅ワーカーへは絶対にオファーされない
+    // （`workerRouting.ts`の`offerToHomeWorker: false`）ため常にEC2（GPU系）で録画され、
+    // th10BugfixMarisaBと同様「割り当て先次第で無効化される」性質のオプションではない。
+    // 未指定＝720p（既定値を環境変数で表現しない）。
+    env.TH06NC_RESOLUTION = "1080p";
   }
   return env;
 }

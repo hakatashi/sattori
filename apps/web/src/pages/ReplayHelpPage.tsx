@@ -12,36 +12,21 @@ import styles from "./ReplayHelpPage.module.css";
  * 録画対応タイトル（`SUPPORTED_GAME_IDS`）に限らず、東方の全ナンバリングタイトル
  * （th19除く。リプレイ保存機能が無いため`GAME_IDS`にも含まれない）を対象にした
  * 汎用ヘルプとして一覧する。新タイトルは`GAME_IDS`（`packages/shared/src/games.ts`）へ
- * 追加すればここは自動で追従する（例外は`REMAKE_GAME_IDS`）。
+ * 追加すればここは自動で追従する（例外は`STEAM_LIBRARY_GAME_IDS`）。
  */
-/**
- * th06nc（`GAME_IDS`にはリプレイ解析用に含まれるが録画は未対応）はここでは扱わない。
- * 保存先がSteamライブラリ配下のゲームディレクトリで、既存の2グループのどちらの説明にも
- * 当てはまらないため（録画対応時に専用の案内を足すこと。th06cは同型の保存先だが
- * 録画対応済みなので`STEAM_LIBRARY_GAME_IDS`で専用案内を出す）。
- */
-const REMAKE_GAME_IDS: readonly GameId[] = ["th06nc"];
 
 /**
  * Steamライブラリ配下のゲームディレクトリ直下にreplayフォルダを持つタイトル
  * （インストール先直下でも%APPDATA%でもない第三のパターン、Issue #240）。
  * th06cは実機（Windows）で`C:\Program Files (x86)\Steam\steamapps\common\th06c\replay`
  * と確認済み——Steamのインストールフォルダ名が`GameId`とそのまま一致する。
+ * **th06ncのインストールフォルダ名は実機未確認**（`GameId`と同じ`th06nc`と仮定して
+ * いる。異なることが判明したら`GameInfoPage.tsx`同様、専用のフォルダ名マップを
+ * 導入すること、Issue #241）。
  */
-const STEAM_LIBRARY_GAME_IDS: readonly GameId[] = ["th06c"];
+const STEAM_LIBRARY_GAME_IDS: readonly GameId[] = ["th06c", "th06nc"];
 
-const HELP_GAME_IDS: readonly GameId[] = GAME_IDS.filter(
-  (id) => !REMAKE_GAME_IDS.includes(id) && !STEAM_LIBRARY_GAME_IDS.includes(id),
-);
-
-const APP_DATA_START_INDEX = HELP_GAME_IDS.indexOf("th125");
-const INSTALL_FOLDER_GAME_IDS: readonly GameId[] = HELP_GAME_IDS.slice(0, APP_DATA_START_INDEX);
-const APP_DATA_GAME_IDS: readonly GameId[] = HELP_GAME_IDS.slice(APP_DATA_START_INDEX);
-
-/** 見出しの範囲表示用（上の配列の始端・終端と対応させること）。 */
-const INSTALL_FOLDER_HEADING_FIRST: GameId = "th06";
-const INSTALL_FOLDER_HEADING_LAST: GameId = "th12";
-const APP_DATA_HEADING_FIRST: GameId = "th125";
+const APP_DATA_START_GAME_ID: GameId = "th125";
 
 /**
  * Steam版が存在しないタイトル。th06〜08はSteam配信が無く、公式配布アーカイブの
@@ -55,9 +40,22 @@ const NO_STEAM_RELEASE_GAME_IDS: readonly GameId[] = ["th06", "th07", "th08"];
  */
 const SHANGHAI_ALICE_FOLDER_START_GAME_ID: GameId = "th10";
 
+type StorageType = "installFolder" | "steamLibrary" | "appData";
+
+function getStorageType(id: GameId): StorageType {
+  if (STEAM_LIBRARY_GAME_IDS.includes(id)) {
+    return "steamLibrary";
+  }
+  const appDataStartIndex = GAME_IDS.indexOf(APP_DATA_START_GAME_ID);
+  if (GAME_IDS.indexOf(id) >= appDataStartIndex) {
+    return "appData";
+  }
+  return "installFolder";
+}
+
 function installFolderPathPrefix(id: GameId): string {
-  const startIndex = INSTALL_FOLDER_GAME_IDS.indexOf(SHANGHAI_ALICE_FOLDER_START_GAME_ID);
-  return INSTALL_FOLDER_GAME_IDS.indexOf(id) >= startIndex ? "上海アリス幻樂団\\" : "";
+  const startIndex = GAME_IDS.indexOf(SHANGHAI_ALICE_FOLDER_START_GAME_ID);
+  return GAME_IDS.indexOf(id) >= startIndex ? "上海アリス幻樂団\\" : "";
 }
 
 function iconSrc(id: GameId): string {
@@ -76,7 +74,7 @@ interface TitlePickerProps {
   isEnglish: boolean;
 }
 
-/** グループ内の作品を切り替えるボタン列。 */
+/** 作品を切り替えるボタン列。 */
 function TitlePicker({ titleIds, selected, onSelect, isEnglish }: TitlePickerProps) {
   return (
     <div className={styles.picker} role="group">
@@ -137,75 +135,67 @@ function CopyablePath({ path }: CopyablePathProps) {
 export function ReplayHelpPage() {
   const { t, i18n } = useTranslation();
   usePageMeta({ title: t("replayHelp.heading"), path: "/replay-help" });
-  const [installFolderSelected, setInstallFolderSelected] = useState<GameId>(INSTALL_FOLDER_HEADING_FIRST);
-  const [appDataSelected, setAppDataSelected] = useState<GameId>("th20");
-  const [steamLibrarySelected, setSteamLibrarySelected] = useState<GameId>("th06c");
+  const [selectedGameId, setSelectedGameId] = useState<GameId>("th06");
 
   const isEnglish = i18n.language.startsWith("en");
-  const installFolderTitle = shortTitle(installFolderSelected, false);
-  const appDataTitle = shortTitle(appDataSelected, isEnglish);
-  const showSteamPath = !NO_STEAM_RELEASE_GAME_IDS.includes(installFolderSelected);
+  const selectedGameTitle = shortTitle(selectedGameId, isEnglish);
+  const selectedGameJapaneseTitle = shortTitle(selectedGameId, false);
+  const storageType = getStorageType(selectedGameId);
+  const showSteamPath = !NO_STEAM_RELEASE_GAME_IDS.includes(selectedGameId);
 
   return (
     <section className={staticStyles.card}>
       <h1 className={staticStyles.heading}>{t("replayHelp.heading")}</h1>
       <p>{t("replayHelp.intro")}</p>
 
-      <h2>
-        {t("replayHelp.groups.installFolder.heading", {
-          first: shortTitle(INSTALL_FOLDER_HEADING_FIRST, isEnglish),
-          last: shortTitle(INSTALL_FOLDER_HEADING_LAST, isEnglish),
-        })}
-      </h2>
       <TitlePicker
-        titleIds={INSTALL_FOLDER_GAME_IDS}
-        selected={installFolderSelected}
-        onSelect={setInstallFolderSelected}
+        titleIds={GAME_IDS}
+        selected={selectedGameId}
+        onSelect={setSelectedGameId}
         isEnglish={isEnglish}
       />
-      <p>{t("replayHelp.groups.installFolder.description1", { title: shortTitle(installFolderSelected, isEnglish) })}</p>
-      <p>{t("replayHelp.groups.installFolder.defaultLabel")}</p>
-      <CopyablePath
-        path={`C:\\Program Files (x86)\\${installFolderPathPrefix(installFolderSelected)}${installFolderTitle}\\replay`}
-      />
-      <p>{t("replayHelp.groups.installFolder.virtualStoreLabel")}</p>
-      <CopyablePath
-        path={`%LOCALAPPDATA%\\VirtualStore\\Program Files (x86)\\${installFolderPathPrefix(installFolderSelected)}${installFolderTitle}\\replay`}
-      />
-      {showSteamPath && (
+
+      {storageType === "installFolder" && (
         <>
-          <p>{t("replayHelp.groups.installFolder.steamLabel")}</p>
+          <p>{t("replayHelp.groups.installFolder.description1", { title: selectedGameTitle })}</p>
+          <p>{t("replayHelp.groups.installFolder.defaultLabel")}</p>
           <CopyablePath
-            path={`C:\\Program Files (x86)\\Steam\\steamapps\\common\\${installFolderSelected}\\replay`}
+            path={`C:\\Program Files (x86)\\${installFolderPathPrefix(selectedGameId)}${selectedGameJapaneseTitle}\\replay`}
           />
+          <p>{t("replayHelp.groups.installFolder.virtualStoreLabel")}</p>
+          <CopyablePath
+            path={`%LOCALAPPDATA%\\VirtualStore\\Program Files (x86)\\${installFolderPathPrefix(selectedGameId)}${selectedGameJapaneseTitle}\\replay`}
+          />
+          {showSteamPath && (
+            <>
+              <p>{t("replayHelp.groups.installFolder.steamLabel")}</p>
+              <CopyablePath
+                path={`C:\\Program Files (x86)\\Steam\\steamapps\\common\\${selectedGameId}\\replay`}
+              />
+            </>
+          )}
         </>
       )}
 
-      <h2>{t("replayHelp.groups.steamLibrary.heading")}</h2>
-      <TitlePicker
-        titleIds={STEAM_LIBRARY_GAME_IDS}
-        selected={steamLibrarySelected}
-        onSelect={setSteamLibrarySelected}
-        isEnglish={isEnglish}
-      />
-      <p>
-        {t("replayHelp.groups.steamLibrary.description1", {
-          title: shortTitle(steamLibrarySelected, isEnglish),
-        })}
-      </p>
-      <p>{t("replayHelp.groups.steamLibrary.pathLabel")}</p>
-      <CopyablePath path={`C:\\Program Files (x86)\\Steam\\steamapps\\common\\${steamLibrarySelected}\\replay`} />
+      {storageType === "steamLibrary" && (
+        <>
+          <p>
+            {t("replayHelp.groups.steamLibrary.description1", {
+              title: selectedGameTitle,
+            })}
+          </p>
+          <p>{t("replayHelp.groups.steamLibrary.pathLabel")}</p>
+          <CopyablePath path={`C:\\Program Files (x86)\\Steam\\steamapps\\common\\${selectedGameId}\\replay`} />
+        </>
+      )}
 
-      <h2>{t("replayHelp.groups.appData.heading", { first: shortTitle(APP_DATA_HEADING_FIRST, isEnglish) })}</h2>
-      <TitlePicker
-        titleIds={APP_DATA_GAME_IDS}
-        selected={appDataSelected}
-        onSelect={setAppDataSelected}
-        isEnglish={isEnglish}
-      />
-      <p>{t("replayHelp.groups.appData.description1", { title: appDataTitle })}</p>
-      <p>{t("replayHelp.groups.appData.pathLabel")}</p>
-      <CopyablePath path={`%APPDATA%\\ShanghaiAlice\\${appDataSelected}\\replay`} />
+      {storageType === "appData" && (
+        <>
+          <p>{t("replayHelp.groups.appData.description1", { title: selectedGameTitle })}</p>
+          <p>{t("replayHelp.groups.appData.pathLabel")}</p>
+          <CopyablePath path={`%APPDATA%\\ShanghaiAlice\\${selectedGameId}\\replay`} />
+        </>
+      )}
     </section>
   );
 }

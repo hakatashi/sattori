@@ -28,6 +28,13 @@ jobs:
           node-version: "24"
           cache: pnpm
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: worker/requirements-dev.txt
+
       # ドキュメントのサイズ上限（docs/documentation-guidelines.md §6.1）。依存パッケージを
       # 使わないので install より前に置き、超過していれば真っ先に落ちるようにしてある。
       - name: Check documentation size
@@ -35,6 +42,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install Python dependencies
+        run: pip install -r worker/requirements-dev.txt
 
       - name: Build
         run: pnpm build
@@ -45,25 +55,25 @@ jobs:
       - name: Test
         run: pnpm test
 
-  worker-test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Collect test reports
+        if: always() && github.repository == 'hakatashi/sattori'
+        run: |
+          mkdir -p reports
+          cp apps/api/junit.xml reports/api.xml 2>/dev/null || true
+          cp apps/web/junit.xml reports/web.xml 2>/dev/null || true
+          cp home-worker/junit.xml reports/home-worker.xml 2>/dev/null || true
+          cp infra/junit.xml reports/infra.xml 2>/dev/null || true
+          cp packages/replay-parser/junit.xml reports/replay-parser.xml 2>/dev/null || true
+          cp packages/shared/junit.xml reports/shared.xml 2>/dev/null || true
+          cp worker/junit.xml reports/worker.xml 2>/dev/null || true
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Upload test results to BuildPulse
+        if: always() && github.repository == 'hakatashi/sattori'
+        uses: BuildPulseLLC/test-reporter-action@v3
         with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: worker/requirements-dev.txt
-
-      - name: Install dependencies
-        run: pip install -r worker/requirements-dev.txt
-
-      - name: Test
-        working-directory: worker
-        run: pytest
+          api-token: ${{ secrets.BUILDPULSE_API_TOKEN }}
+          path: reports
+          coverage-files: "apps/api/coverage/lcov.info apps/web/coverage/lcov.info home-worker/coverage/lcov.info infra/coverage/lcov.info packages/replay-parser/coverage/lcov.info packages/shared/coverage/lcov.info worker/coverage.xml"
 
   # 録画用MOD(*_hook.dll)がmingw-w64クロスビルドで壊れていないかの簡易確認。
   # 実機注入テストの代わりにはならない(.claude/skills/build-mods/SKILL.md)。

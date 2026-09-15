@@ -259,6 +259,45 @@ class _FakeClock:
         self.t += seconds
 
 
+def test_settle_crop_geometry_moves_window_when_position_is_negative(monkeypatch):
+    """ウィンドウマネージャが左上の外側(負座標)にウィンドウを配置した場合も
+    画面外とみなしてwindowmoveする。従来は右・下へのはみ出し
+    (x + w > screen_w等)しか見ておらず、負座標配置を「画面内」と誤判定して
+    空の録画がそのまま正常扱いになっていた(GPU描画のXorg+nvidia環境で実際に
+    発生、touhou-recorder reports/81 §9.9.5、Issue #241)。"""
+    config = make_config()  # xvfb_screen既定 "800x600x24"
+    calls = []
+    monkeypatch.setattr(pipeline, "find_window", lambda *a, **k: (-3, -16, 640, 480, "0x1"))
+    monkeypatch.setattr(pipeline, "attach_thprac", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "wait_for_log_marker", lambda *a, **k: 1.0)
+    geometries = iter([
+        (-3, -16, 640, 480, "0x1"),  # 確定直後の座標(画面外)
+        (0, 0, 640, 480, "0x1"),  # windowmove後の座標
+    ])
+    monkeypatch.setattr(pipeline, "wait_for_stable_geometry", lambda *a, **k: next(geometries))
+    monkeypatch.setattr(pipeline.subprocess, "run", lambda cmd, **k: calls.append(list(cmd)))
+
+    result = pipeline._settle_crop_geometry(config, {}, 123, set(), log=lambda _m: None)
+
+    assert result == (0, 0, 640, 480)
+    assert any(c[:2] == ["xdotool", "windowmove"] for c in calls)
+
+
+def test_settle_crop_geometry_skips_move_when_within_bounds(monkeypatch):
+    config = make_config()
+    calls = []
+    monkeypatch.setattr(pipeline, "find_window", lambda *a, **k: (10, 10, 640, 480, "0x1"))
+    monkeypatch.setattr(pipeline, "attach_thprac", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "wait_for_log_marker", lambda *a, **k: 1.0)
+    monkeypatch.setattr(pipeline, "wait_for_stable_geometry", lambda *a, **k: (10, 10, 640, 480, "0x1"))
+    monkeypatch.setattr(pipeline.subprocess, "run", lambda cmd, **k: calls.append(list(cmd)))
+
+    result = pipeline._settle_crop_geometry(config, {}, 123, set(), log=lambda _m: None)
+
+    assert result == (10, 10, 640, 480)
+    assert calls == []
+
+
 def test_monitor_until_end_returns_last_captured_frame_on_freeze(monkeypatch):
     """画面固着で打ち切られても、直近にgrab_frame()で取得したカラー画像を返すこと
     (Issue #159。診断スナップショットの元になる)。"""
@@ -294,6 +333,75 @@ def test_monitor_until_end_returns_last_captured_frame_on_freeze(monkeypatch):
     assert detected_by is None
     assert frozen is True
     assert last_color_frame == "color2"
+
+
+def test_monitor_until_end_uses_side_stream_when_configured(monkeypatch):
+    """poll_side_stream使用時はgrab_frame()(別プロセスのx11grab)ではなく
+    read_side_stream_frame()を使う(GPU実行時のキャプチャ競合対策、Issue #241)。"""
+    config = make_config(poll_side_stream=True)
+    env = config.build_env()
+    clock = _FakeClock()
+    monkeypatch.setattr(pipeline.time, "time", clock.time)
+    monkeypatch.setattr(pipeline.time, "sleep", clock.sleep)
+    monkeypatch.setattr(pipeline, "wait_for_log_marker", lambda *a, **k: 0.0)
+    monkeypatch.setattr(pipeline, "FREEZE_CONSECUTIVE_REQUIRED", 2)
+
+    def fail_grab_frame(*a, **k):
+        raise AssertionError("poll_side_stream時はgrab_frame()を呼んではならない")
+
+    monkeypatch.setattr(pipeline, "grab_frame", fail_grab_frame)
+
+    gray = np.zeros((120, 160), dtype=np.float32)
+    side_calls = {"n": 0}
+
+    def fake_read_side_stream_frame(path, last_mtime=None):
+        side_calls["n"] += 1
+        assert path == "/side.jpg"
+        return gray, f"color{side_calls['n']}", float(side_calls["n"])
+
+    monkeypatch.setattr(pipeline, "read_side_stream_frame", fake_read_side_stream_frame)
+
+    end_template = np.zeros((120, 160), dtype=np.float32)
+    detection = pipeline._EndDetection(
+        template=end_template, template_mask=None, template_mad_threshold=0.0, still_mask=None,
+    )
+    detected, detected_by, frozen, last_color_frame = pipeline._monitor_until_end(
+        config, env, (0, 0, 640, 480), detection, time_scale=1.0,
+        progress_dir=None, expected_duration_seconds=None, seen_lines=set(), log=lambda msg: None,
+        side_stream_path="/side.jpg",
+    )
+
+    assert frozen is True
+    assert side_calls["n"] > 0
+    assert last_color_frame == f"color{side_calls['n']}"
+
+
+def test_monitor_until_end_skips_poll_when_side_stream_frame_unchanged(monkeypatch):
+    """フレーム未更新(None)が返された場合はポーリングをスキップして次周期を待つだけで、
+    静止・タイムアウト判定を進めない(同一フレームを誤って静止と数えない)。"""
+    config = make_config(poll_side_stream=True)
+    env = config.build_env()
+    clock = _FakeClock()
+    monkeypatch.setattr(pipeline.time, "time", clock.time)
+    monkeypatch.setattr(pipeline.time, "sleep", clock.sleep)
+    monkeypatch.setattr(pipeline, "wait_for_log_marker", lambda *a, **k: 0.0)
+    monkeypatch.setattr(pipeline, "TIMEOUT_SEC", 20)
+
+    monkeypatch.setattr(pipeline, "read_side_stream_frame", lambda *a, **k: (None, None, None))
+
+    end_template = np.zeros((120, 160), dtype=np.float32)
+    detection = pipeline._EndDetection(
+        template=end_template, template_mask=None, template_mad_threshold=0.0, still_mask=None,
+    )
+    detected, detected_by, frozen, last_color_frame = pipeline._monitor_until_end(
+        config, env, (0, 0, 640, 480), detection, time_scale=1.0,
+        progress_dir=None, expected_duration_seconds=None, seen_lines=set(), log=lambda msg: None,
+        side_stream_path="/side.jpg",
+    )
+
+    assert last_color_frame is None
+    assert frozen is False
+    assert detected is False
 
 
 def test_attempt_recording_saves_diagnostics_snapshot_on_discarded_attempt(monkeypatch, tmp_path):
@@ -428,3 +536,126 @@ def test_record_with_retry_saves_diagnostics_snapshot_on_duplicate_rate_discard(
 
     assert success is False
     assert saved == [("/diag", "frame:/out.mp4:15", 1, "duplicate_rate")]
+
+
+def test_record_with_retry_uses_content_end_sec_for_duplicate_rate_window(monkeypatch):
+    """重複フレーム率の計測窓の終端は`total_record_sec`ではなく`content_end_sec`を使う。
+    短いリプレイでは終了検知の確認待ち(still: 16秒/template: 4秒相当)ぶんの静止画面が
+    録画末尾に付加されるため、`total_record_sec`をそのまま使うと固定30秒窓の大半が
+    その静止画面になり閾値超過と誤判定する(本番のth06ncジョブで発生、Issue #250)。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good",
+        "total_record_sec": 48.3, "content_end_sec": 32.3,
+    })
+    calls = []
+    monkeypatch.setattr(
+        pipeline, "measure_duplicate_rate",
+        lambda *a, **k: calls.append(a) or 1.0,
+    )
+
+    success = pipeline.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=1, log=lambda msg: None)
+
+    assert success is True
+    assert calls == [("/out.mp4", 15, pytest.approx(17.3))]
+
+
+def test_record_with_retry_falls_back_to_total_record_sec_without_content_end_sec(monkeypatch):
+    """`content_end_sec`を返さない(旧仕様の)戻り値でも従来どおり`total_record_sec`を
+    使えること。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good", "total_record_sec": 60.0,
+    })
+    calls = []
+    monkeypatch.setattr(
+        pipeline, "measure_duplicate_rate",
+        lambda *a, **k: calls.append(a) or 1.0,
+    )
+
+    success = pipeline.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=1, log=lambda msg: None)
+
+    assert success is True
+    assert calls == [("/out.mp4", 15, 30)]
+
+
+def test_attempt_recording_content_end_sec_excludes_still_confirmation_tail(monkeypatch, tmp_path):
+    """still検知(画面静止)の場合、確認待ち`STILL_CONSECUTIVE_REQUIRED`(8) *
+    `POLL_INTERVAL_SEC`(2秒) = 16秒ぶんを`total_record_sec`から差し引いた
+    `content_end_sec`を返すこと(Issue #250)。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "load_end_template", lambda path: None)
+    monkeypatch.setattr(pipeline, "_launch_game", lambda *a, **k: 1234)
+    monkeypatch.setattr(pipeline, "_settle_crop_geometry", lambda *a, **k: (0, 0, 640, 480))
+    monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
+    monkeypatch.setattr(
+        pipeline, "_monitor_until_end", lambda *a, **k: (True, "still", False, "the-last-frame"),
+    )
+    monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
+    monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
+    times = iter([100.0, 148.3])
+    monkeypatch.setattr(pipeline.time, "time", lambda: next(times))
+
+    result = pipeline.attempt_recording(
+        config, "/replay.rpy", str(tmp_path / "out.mp4"), None, None,
+        diagnostics_dir="/diag", attempt=1, log=lambda msg: None,
+    )
+
+    assert result["total_record_sec"] == pytest.approx(48.3)
+    assert result["content_end_sec"] == pytest.approx(48.3 - 16.0)
+
+
+def test_attempt_recording_content_end_sec_excludes_template_confirmation_tail(monkeypatch, tmp_path):
+    """template検知の場合、確認待ち`END_TEMPLATE_CONSECUTIVE_REQUIRED`(2) *
+    `POLL_INTERVAL_SEC`(2秒) = 4秒ぶんを差し引くこと(Issue #250)。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "load_end_template", lambda path: object())
+    monkeypatch.setattr(pipeline, "_launch_game", lambda *a, **k: 1234)
+    monkeypatch.setattr(pipeline, "_settle_crop_geometry", lambda *a, **k: (0, 0, 640, 480))
+    monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
+    monkeypatch.setattr(
+        pipeline, "_monitor_until_end", lambda *a, **k: (True, "template", False, "the-last-frame"),
+    )
+    monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
+    monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
+    times = iter([100.0, 120.0])
+    monkeypatch.setattr(pipeline.time, "time", lambda: next(times))
+
+    result = pipeline.attempt_recording(
+        config, "/replay.rpy", str(tmp_path / "out.mp4"), None, None,
+        diagnostics_dir="/diag", attempt=1, log=lambda msg: None,
+    )
+
+    assert result["total_record_sec"] == pytest.approx(20.0)
+    assert result["content_end_sec"] == pytest.approx(20.0 - 4.0)
+
+
+def test_attempt_recording_content_end_sec_equals_total_record_sec_on_timeout(monkeypatch, tmp_path):
+    """timeout/frozen(detected_byがNone)の場合は差し引く確認待ちが無いため、
+    `content_end_sec`は`total_record_sec`のままであること。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "load_end_template", lambda path: None)
+    monkeypatch.setattr(pipeline, "_launch_game", lambda *a, **k: 1234)
+    monkeypatch.setattr(pipeline, "_settle_crop_geometry", lambda *a, **k: (0, 0, 640, 480))
+    monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
+    monkeypatch.setattr(
+        pipeline, "_monitor_until_end", lambda *a, **k: (False, None, True, "the-last-frame"),
+    )
+    monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
+    monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "save_diagnostics_snapshot", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
+    times = iter([100.0, 160.0])
+    monkeypatch.setattr(pipeline.time, "time", lambda: next(times))
+
+    result = pipeline.attempt_recording(
+        config, "/replay.rpy", str(tmp_path / "out.mp4"), None, None,
+        diagnostics_dir="/diag", attempt=1, log=lambda msg: None,
+    )
+
+    assert result["content_end_sec"] == result["total_record_sec"] == pytest.approx(60.0)

@@ -107,18 +107,22 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 - `SLOW_MOTION_TIME_SCALE`（2）: 録画フェーズが実時間で何倍かかるか。ジョブページの
   進捗バジェット（`apps/web/src/hooks/jobProgressBudget.ts`）と録画のハードタイム
   アウト（`worker/recording/pipeline.py`）が同じ係数を使う。
+- `EC2_SLOW_MOTION_SUPPORTED_GAME_IDS`（th20のみ）/ `supportsEc2SlowMotion()`: EC2環境で
+  低速録画を有効化するタイトル一覧。この設定を変更することでタイトルごとの有効/無効を
+  素早く切り替えられる（Issue #245）。
 - `SLOW_MOTION_DEFAULT_GAME_IDS`（th20のみ）/ `defaultSlowMotionFor()`: 既定でオンに
-  するタイトル。**自宅ワーカーが使えなければ常にfalse**（そもそも選べないため）。
-- `isSlowMotionRecording(options, workerKind)`: **`options.slowMotion`はユーザーの希望に
-  すぎない**。オファーが時間内にclaimされずEC2へフォールバックした場合は等倍録画に
-  なるため、`workerKind`まで見て「実際に低速録画で走るか」を判定する。割り当てが
-  未確定（`null`）の間は低速録画とみなす——ジョブページの残り時間推定が、割り当て確定の
-  瞬間に大きく飛ぶのを避けるため。`GET /jobs/{jobId}`の`slowMotion`はこの結果を返す。
+  するタイトル。自宅ワーカーまたはEC2で低速録画が利用可能であればオンになる。
+- `isSlowMotionRecording(options, workerKind, game)`: **`options.slowMotion`はユーザーの希望に
+  すぎない**。オファーが時間内にclaimされずEC2へフォールバックした場合は、EC2低速録画対応
+  タイトル（`supportsEc2SlowMotion(game)`）でなければ等倍録画になるため、`workerKind`と
+  `game`まで見て「実際に低速録画で走るか」を判定する。割り当てが未確定（`null`）の間は
+  低速録画とみなす——ジョブページの残り時間推定が、割り当て確定の瞬間に大きく飛ぶのを避けるため。
+  `GET /jobs/{jobId}`の`slowMotion`はこの結果を返す。
 
-**低速録画は自宅ワーカー限定**（EC2では録画時間＝Spot料金が倍になるため）。この制約は
-ワーカー側の分岐ではなく、起動側が`FPS_LIMIT_TARGET_HZ`を渡すかどうかで表現する
-（`apps/api/src/workerEnv.ts`、
-[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
+**低速録画の制御は起動側が渡す環境変数で表現する**（ワーカーコンテナ側は自分がどこで動いているかを
+知らず、`FPS_LIMIT_TARGET_HZ` の有無だけを見る。`apps/api/src/workerEnv.ts`、
+[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)・
+[`docs/decisions/0045`](../../docs/decisions/0045-ec2-slow-motion-for-th20.md)）。
 
 契約の詳細と運用は`apps/api/README.md`「自宅ワーカーへのジョブ割り当て」・
 `home-worker/README.md`を参照。

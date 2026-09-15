@@ -30,9 +30,21 @@ ul.supportedTitles {
 li.supportedTitle {
   display: flex;
   align-items: center;
+  break-inside: avoid;
   gap: 0.2rem;
   opacity: 0.2;
-  white-space: pre;
+  line-height: 1em;
+  hyphens: manual;
+
+  span {
+    margin: 0.2rem 0;
+  }
+}
+
+@media (max-width: 768px) {
+  li.supportedTitle {
+    font-size: 0.8rem;
+  }
 }
 
 li.supportedTitle .supportedTitleIcon {

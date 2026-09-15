@@ -58,6 +58,34 @@ def test_game_config_derives_pulse_source_from_pulse_sink():
     assert config.pulse_source == "sattori_job_abc.monitor"
 
 
+def test_game_config_gpu_fields_default_to_disabled():
+    # Issue #241: GPU描画必須タイトル(th06nc)専用のフィールド。既存9タイトルは
+    # 触れないため既定値のまま。
+    config = make_config()
+
+    assert config.gpu_display is False
+    assert config.dxvk_dll_overrides is None
+    assert config.crtc_mode is None
+    assert config.poll_side_stream is False
+    assert config.extra_instance_files == ()
+
+
+def test_game_config_build_env_sets_winedlloverrides_when_dxvk_specified():
+    config = make_config(dxvk_dll_overrides="d3d11,dxgi,d3d10core=n")
+
+    env = config.build_env()
+
+    assert env["WINEDLLOVERRIDES"] == "d3d11,dxgi,d3d10core=n"
+
+
+def test_game_config_build_env_omits_winedlloverrides_by_default():
+    config = make_config()
+
+    env = config.build_env()
+
+    assert "WINEDLLOVERRIDES" not in env
+
+
 def test_game_config_still_detect_exclude_rect_defaults_to_none():
     config = make_config()
 

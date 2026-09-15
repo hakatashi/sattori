@@ -5,6 +5,8 @@
 - **環境**: このリポジトリ（開発マシン）上のWine+Xvfbによるローカル録画。`worker/games/th07/`（`ver 1.00b`、touhou-recorder側の`th07_ver100b`と同一バイナリ）を使用
 - **結論**: **th07を含む全5タイトルでscore_monitorが実機で正しく動作することを確認した。判定ロジックも、リプレイ終了直後の新種のゴミ値パターンに対して頑健化した**
 
+> **注**: 本レポートに記述されている `worker/recording_common.py` は、2026-08-31 の PR #206 / [`0041`](../decisions/0041-worker-recording-package-split.md) により `worker/recording/` パッケージへ分割されました。
+
 ## 目的
 
 前回の検証（上記リンク）で、Sattoriが配布するth07.exe（`ver 1.00b`）がtouhou-recorder側の

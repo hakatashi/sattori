@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { GAME_IDS } from "@sattori/shared";
 import { ReplayHelpPage } from "./ReplayHelpPage.tsx";
 
 describe("ReplayHelpPage", () => {
@@ -10,25 +11,37 @@ describe("ReplayHelpPage", () => {
     Object.assign(navigator, { clipboard: { writeText } });
   });
 
-  it("既定では東方紅魔郷とth20の場所を表示する（th06はSteam版が無いのでSteamのパスは出さない）", () => {
+  it("既定では東方紅魔郷の場所を表示する（th06はSteam版が無いのでSteamのパスは出さない）", () => {
     render(<ReplayHelpPage />);
 
     expect(screen.getByRole("heading", { name: "東方Project作品のリプレイファイルの保存場所" })).toBeTruthy();
+    expect(screen.getAllByRole("group")).toHaveLength(1);
     expect(screen.getByText(/「東方紅魔郷」をインストールしたフォルダ/)).toBeTruthy();
     expect(screen.getByText("C:\\Program Files (x86)\\東方紅魔郷\\replay")).toBeTruthy();
     expect(screen.getByText("%LOCALAPPDATA%\\VirtualStore\\Program Files (x86)\\東方紅魔郷\\replay")).toBeTruthy();
     expect(screen.queryByText("C:\\Program Files (x86)\\Steam\\steamapps\\common\\th06\\replay")).toBeNull();
-    expect(screen.getByText("%APPDATA%\\ShanghaiAlice\\th20\\replay")).toBeTruthy();
+    expect(screen.queryByText("%APPDATA%\\ShanghaiAlice\\th20\\replay")).toBeNull();
   });
 
-  it("th06c(紅魔郷リメイク)はSteamライブラリ配下のゲームディレクトリを案内する", () => {
+  it("すべての作品の選択ボタンが1つのボタングループに含まれる", () => {
     render(<ReplayHelpPage />);
 
-    expect(screen.getByText(/「東方紅魔郷: Classic」はSteamでのみ配信/)).toBeTruthy();
+    const group = screen.getByRole("group");
+    for (const gameId of GAME_IDS) {
+      expect(group.querySelector(`button img[src="/icons/${gameId}.png"]`)).toBeTruthy();
+    }
+  });
+
+  it("th06c(紅魔郷リメイク)を選択するとSteamライブラリ配下のゲームディレクトリを案内する", () => {
+    render(<ReplayHelpPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /東方紅魔郷: Classic/ }));
+
+    expect(screen.getByText(/「東方紅魔郷: Classic」のリプレイファイルの取り出しは、現在Steam版でのみ確認されています/)).toBeTruthy();
     expect(screen.getByText("C:\\Program Files (x86)\\Steam\\steamapps\\common\\th06c\\replay")).toBeTruthy();
   });
 
-  it("録画非対応タイトル(東方風神録)もリストに表示し、選択するとSteamのパスも出す", () => {
+  it("録画非対応タイトル(東方風神録)も選択するとSteamのパスも出す", () => {
     render(<ReplayHelpPage />);
 
     expect(screen.getByRole("button", { name: /東方風神録/ })).toBeTruthy();
@@ -40,7 +53,7 @@ describe("ReplayHelpPage", () => {
     expect(screen.getByText("C:\\Program Files (x86)\\Steam\\steamapps\\common\\th10\\replay")).toBeTruthy();
   });
 
-  it("録画非対応タイトル(ダブルスポイラー以降)もappDataグループに表示する", () => {
+  it("録画非対応タイトル(ダブルスポイラー以降)を選択すると%APPDATA%のパスを表示する", () => {
     render(<ReplayHelpPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /ダブルスポイラー/ }));

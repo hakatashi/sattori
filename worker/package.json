@@ -1,0 +1,13 @@
+{
+  "name": "@sattori/worker",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "東方リプレイを録画・変換するPythonワーカー",
+  "scripts": {
+    "test": "pytest"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.11"
+  }
+}

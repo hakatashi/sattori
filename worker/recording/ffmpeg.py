@@ -2,12 +2,19 @@
 
 映像と音声を別プロセスで録画して後から結合する理由(reports/26)と、`-copyts` による
 A/V同期の実測補正(reports/28)は `recording/__init__.py` の冒頭にまとめてある。
+
+**この中のffmpeg呼び出しは全て`-nostdin`必須**(`stdin=subprocess.DEVNULL`と併用)。
+`-nostdin`が無いとffmpegが対話的キー操作のためstdinを読もうとし、`timeout`
+(`--foreground`無し)配下でプロセスグループがバックグラウンド化されている状態で
+標準入力が実端末を指していると、SIGTTINでプロセスグループ全体(ゲーム本体含む)が
+停止する(2026-09-15、`recording/vision.py`のgrab_frame()参照)。ここのffprobeは
+対話的stdin操作をしないため対象外。
 """
 import re
 import subprocess
 
 
-def build_video_ffmpeg_cmd(config, x, y, w, h, video_output):
+def build_video_ffmpeg_cmd(config, x, y, w, h, video_output, side_stream_path=None):
     """映像のみを録画するffmpegコマンド(音声は別プロセス、reports/26参照)。
     `-copyts`で実際の絶対キャプチャ開始時刻(wallclockベースのepoch秒)を出力ファイルの
     start_timeとして保持する。mux時にこれを使ってA/V同期を補正する(reports/28参照)。
@@ -20,13 +27,31 @@ def build_video_ffmpeg_cmd(config, x, y, w, h, video_output):
     ウォーターマークは convert.py 側(`-copyts`を使わない通常のファイル入力
     同士の合成で、かつどのみち720p変換のために既に発生する再エンコード1回に
     相乗りできる)で行う。
+
+    `side_stream_path`(`config.poll_side_stream`使用時のみ)を指定すると、
+    `-filter_complex`の`split`で本番録画用の出力とは別に、8fpsの静止画連番出力
+    (`-f image2 -update 1`で同一ファイルへ継続上書き)を追加する。終了検知・進捗
+    スクショ用の定期ポーリング(`vision.grab_frame()`)が毎回新規ffmpegプロセスを
+    起動して本番のx11grabキャプチャと競合し、周期的なコマ落ちを起こす問題への対処
+    (GPU描画・高解像度のth06ncで顕在化、touhou-recorder reports/81 §9)。
+    未指定時は従来通りのコマンド文字列と完全に一致する。
     """
-    return [
-        "ffmpeg", "-y", "-copyts",
+    base_cmd = [
+        "ffmpeg", "-y", "-nostdin", "-copyts",
         "-f", "x11grab", "-draw_mouse", "0", "-video_size", f"{w}x{h}", "-framerate", "60",
         "-i", f"{config.display}+{x},{y}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
-        video_output,
+    ]
+    if not side_stream_path:
+        return base_cmd + [
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+            video_output,
+        ]
+    return base_cmd + [
+        "-filter_complex", "[0:v]split=2[vmain][vpoll];[vpoll]fps=8[vpollout]",
+        "-map", "[vmain]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-pix_fmt", "yuv420p", video_output,
+        "-map", "[vpollout]", "-f", "image2", "-update", "1", "-flush_packets", "1",
+        "-qscale:v", "5", side_stream_path,
     ]
 
 
@@ -34,7 +59,7 @@ def build_audio_ffmpeg_cmd(config, audio_output):
     """音声のみを録画するffmpegコマンド(別プロセス、reports/26参照)。
     `-copyts`はbuild_video_ffmpeg_cmd()と同じ理由(reports/28参照)。"""
     return [
-        "ffmpeg", "-y", "-copyts", "-f", "pulse", "-i", config.pulse_source,
+        "ffmpeg", "-y", "-nostdin", "-copyts", "-f", "pulse", "-i", config.pulse_source,
         "-c:a", "aac", "-b:a", "192k", audio_output,
     ]
 
@@ -79,7 +104,7 @@ def mux_audio_video(video_path, audio_path, output_path, env, log=print):
     else:
         log("WARNING: -copytsのstart_time取得に失敗したため、A/V同期補正をスキップします")
 
-    cmd = ["ffmpeg", "-y"]
+    cmd = ["ffmpeg", "-y", "-nostdin"]
     if video_offset:
         cmd += ["-itsoffset", f"{video_offset:.6f}"]
     cmd += ["-i", video_path]
@@ -87,7 +112,7 @@ def mux_audio_video(video_path, audio_path, output_path, env, log=print):
         cmd += ["-itsoffset", f"{audio_offset:.6f}"]
     cmd += ["-i", audio_path, "-c", "copy", "-shortest", output_path]
     log(f"mux実行: {' '.join(cmd)}")
-    result = subprocess.run(cmd, env=env, capture_output=True)
+    result = subprocess.run(cmd, env=env, stdin=subprocess.DEVNULL, capture_output=True)
     if result.returncode != 0:
         log(f"WARNING: mux失敗 (returncode={result.returncode}): {result.stderr[-2000:].decode(errors='replace')}")
     return result.returncode == 0
@@ -115,10 +140,10 @@ def measure_duplicate_rate(video_path, start_sec, duration_sec):
 
         decimate_result = subprocess.run(
             [
-                "ffmpeg", "-i", video_path, "-ss", str(start_sec), "-t", str(duration_sec),
+                "ffmpeg", "-nostdin", "-i", video_path, "-ss", str(start_sec), "-t", str(duration_sec),
                 "-vf", "mpdecimate", "-vsync", "0", "-an", "-f", "null", "-",
             ],
-            capture_output=True, text=True,
+            stdin=subprocess.DEVNULL, capture_output=True, text=True,
         )
         matches = re.findall(r"frame=\s*(\d+)", decimate_result.stderr)
         if not matches:

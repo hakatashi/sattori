@@ -112,11 +112,11 @@ def extract_poster_frame(input_path, output_path, *, position_ratio=POSTER_POSIT
         return False
     seek_seconds = max(0.0, duration * position_ratio)
     cmd = [
-        "ffmpeg", "-y", "-ss", str(seek_seconds), "-i", input_path,
+        "ffmpeg", "-y", "-nostdin", "-ss", str(seek_seconds), "-i", input_path,
         "-frames:v", "1", "-q:v", "2", output_path,
     ]
     try:
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, stdin=subprocess.DEVNULL, capture_output=True)
         return True
     except subprocess.CalledProcessError as err:
         log(f"WARNING: poster画像の生成に失敗しました: {err}")
@@ -190,7 +190,7 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
         audio_maps = []
         audio_codec = ["-an"]
 
-    cmd = ["ffmpeg", "-y", "-i", input_path]
+    cmd = ["ffmpeg", "-y", "-nostdin", "-i", input_path]
     if watermark_path:
         # ウォーターマーク webm の VP9 アルファは libvpx 経由デコーダでないと
         # 不透明扱いになる(reports/18)。-c:v libvpx-vp9 を明示する。
@@ -247,14 +247,14 @@ def convert_for_delivery(input_path, output_path, *, time_scale=1.0, watermark_p
     )
 
     if on_progress is None:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, stdin=subprocess.DEVNULL)
         return
 
     # stderr を stdout にマージしてログへ流す(進捗追跡のため stdout をパイプで
     # 読む必要があるが、変換失敗時の診断情報(ffmpegのエラー出力)を捨てないため)。
     proc = subprocess.Popen(
         [*cmd[:-1], "-progress", "pipe:1", "-nostats", cmd[-1]],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     ffmpeg_log_file = open(ffmpeg_log_path, "w") if ffmpeg_log_path else None
     last_reported = 0.0

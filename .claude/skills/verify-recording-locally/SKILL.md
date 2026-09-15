@@ -18,6 +18,16 @@ S3/DynamoDB/Step Functions を一切介さずこのマシン上の Docker で動
 の外側タイムアウトラッパーだけでは防ぎきれないリスクがあるため、コンテナの`--rm`による
 確実な後始末を優先する)。
 
+## 0.0 対象外: GPU描画必須タイトル(th06nc等)
+
+**th06nc(東方紅魔郷: New Classic、Issue #241)はこの手順の対象外**。このマシンには
+GPUを使ったヘッドレス描画環境(Xorg+NVIDIA GRIDドライバ)が無く、CPU系ワーカーイメージ
+（このSkillが検証対象とするもの）にもGPU用の依存が入っていない。ローカルで
+`GAME=th06nc`のコンテナを動かしても`Xvfb+wined3d+llvmpipe`の経路に落ち、60fpsに
+遠く届かず「録画が壊れている」ように見えるが、**これはth06ncの既知の制約であり
+バグではない**（`worker/docs/titles/th06nc.md`参照）。th06ncの実機検証は必ずAWSの
+GPUインスタンス（g6f.xlarge、本番リージョンeu-south-2）で行うこと。
+
 ## 0. 前提: sattori-home-worker が停止していることを確認する
 
 自宅ワーカーは常駐デーモンとして本番ジョブを受け付け続けており、検証用コンテナと
@@ -171,4 +181,11 @@ sudo rm -rf "$D/assets"   # 本番キャッシュではなく§4で複製した�
   [`decisions/0040`](../../docs/decisions/0040-home-worker-title-assets-cache.md)
 - ホスト直接実行(コンテナを使わない経路)の手順 →
   [`docs/runbooks/worker-local-recording.md`](../../docs/runbooks/worker-local-recording.md) §2
+- **特定のジョブの再現ではなく、MOD変更後に決まった短いリプレイで機械的に退行が無いか
+  確認したいだけなら** `worker/tests/mod_integration/run.py`
+  （`worker/README.md` §14、[`decisions/0049`](../../docs/decisions/0049-mod-integration-test-local-only.md)）
+  の方が速い。こちらはDockerコンテナを介さず、`worker/games/`・`worker/prefixes/`に
+  ゲーム資産・WINEPREFIXを展開済みの環境でホスト直接実行する
+  （`docs/runbooks/worker-local-recording.md` §2と同じ経路）。実機検証の代わりには
+  ならない点はこのスキルと同じ
 - 録画パイプラインの構成・各モジュールの役割 → `worker/docs/recording-package.md`

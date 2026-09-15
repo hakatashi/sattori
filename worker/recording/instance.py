@@ -24,6 +24,21 @@ def ensure_xvfb(config, env, log=print):
     time.sleep(1.0)
 
 
+def ensure_display(config, env, log=print):
+    """`config.gpu_display`に応じて、ヘッドレス画面の初期化方法を切り替える
+    (Issue #241)。GPU描画必須タイトル(th06nc)以外は従来通り`ensure_xvfb()`のまま。
+
+    `gpu_display.py`のimportをここで遅延させているのは、GPU系タイトルを使わない
+    実行環境(CPU専用の既存9タイトル用ワーカーイメージ)にXorg/nvidia関連の依存が
+    無くても、このモジュール自体のimportで壊れないようにするため。
+    """
+    if config.gpu_display:
+        from .gpu_display import ensure_gpu_display
+        ensure_gpu_display(config, env, log=log)
+    else:
+        ensure_xvfb(config, env, log=log)
+
+
 def resolve_appdata_dir(config):
     """th125以降のエンジン(th20)がcfg/リプレイを読む`%APPDATA%/ShanghaiAlice/{title}/`の
     実体パスを、**実行中のUNIXユーザーから**組み立てる。
@@ -88,6 +103,9 @@ def prepare_instance(config, replay_path, log=print):
         apply_vpatch_ini_overrides(
             f"{config.instance_dir}/vpatch.ini", config.vpatch_ini_overrides, log=log,
         )
+    for src, dest_rel in config.extra_instance_files:
+        subprocess.run(["cp", src, f"{config.instance_dir}/{dest_rel}"], check=True)
+        log(f"追加ファイルを上書きコピーしました: {src} -> {dest_rel}")
     if os.path.exists(config.log_path):
         os.remove(config.log_path)
     log(f"instance 準備完了 (対象リプレイを {config.canonical_slot} として配置)")
