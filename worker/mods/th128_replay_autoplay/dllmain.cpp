@@ -70,9 +70,11 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     }
 
     // タイトル画面表示後、最大10秒程度までキー入力を受け付けないことがある
-    // (ユーザー申告、touhou-recorder reports/70)。他タイトル(th10: 6000ms)より長めに取る。
-    Log("Buffering 8000ms (scaled) for title screen load...");
-    ScaledSleep(8000);
+    // (ユーザー申告、touhou-recorder reports/70)という懸念から当初8000msを取っていたが、
+    // sattori本体での実機検証(docs/reports/2026-09-16-th128-title-screen-wait-reduction-verification.md)
+    // で2000msでもシーケンスが安定して成功することを確認し、短縮した。
+    Log("Buffering 2000ms (scaled) for title screen load...");
+    ScaledSleep(2000);
 
     Log("Step 1: Down x1 (select 'Replay' on main menu)");
     PressKey(DIK_DOWN);
