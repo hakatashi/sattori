@@ -37,9 +37,11 @@ def test_build_video_ffmpeg_cmd_with_side_stream_adds_split_filter():
 
 def test_build_video_ffmpeg_cmd_without_side_stream_matches_legacy_command():
     # side_stream_path未指定時は既存9タイトルのコマンド文字列と完全一致すること
-    # (Issue #241対応による回帰が無いことの確認)。
+    # (Issue #241対応による回帰が無いことの確認。`-nostdin`はSIGTTIN対策で
+    # 2026-09-15に追加した分だけ差分がある、recording/ffmpeg.pyのモジュール
+    # docstring参照)。
     config = make_config()
-    legacy = ["ffmpeg", "-y", "-copyts",
+    legacy = ["ffmpeg", "-y", "-nostdin", "-copyts",
               "-f", "x11grab", "-draw_mouse", "0", "-video_size", "640x480", "-framerate", "60",
               "-i", f"{config.display}+0,0",
               "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
