@@ -14,9 +14,9 @@
     "seconds": null
   },
   "recordedAt": 1788500686,
-  "character": null,
-  "characterNameJa": null,
-  "characterNameEn": null,
+  "character": "Cirno",
+  "characterNameJa": "チルノ",
+  "characterNameEn": "Cirno",
   "difficulty": "Hard",
   "stage": "RouteB-1",
   "score": 22666770,
