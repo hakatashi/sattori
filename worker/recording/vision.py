@@ -50,12 +50,23 @@ def _to_gray_thumbnail(color):
 
 def grab_frame(config, env, x, y, w, h):
     """終了検知用のグレースケール縮小画像と、進捗スクリーンショット用のカラー画像を
-    同じffmpegキャプチャから作る(1回のキャプチャで両方をまかない、追加コストを出さない)。"""
+    同じffmpegキャプチャから作る(1回のキャプチャで両方をまかない、追加コストを出さない)。
+
+    `-nostdin`必須。ホスト直接実行(`tests/mod_integration/run.py`等)を対話端末から
+    `timeout`(`--foreground`無し)経由で起動すると、標準入力は端末のptyを指したまま
+    プロセスグループだけがバックグラウンド化される。`-nostdin`が無いとffmpegが対話的
+    キー操作のためstdinを読もうとし、それがバックグラウンドプロセスグループからの
+    制御端末read検出としてカーネルにSIGTTINで**プロセスグループ全体**(ゲーム本体
+    含む)を停止させられてしまう(2026-09-15、VSCode統合ターミナルからのth06実行で
+    実機確認。`ps`でゲーム本体が`T`状態・wchan`do_signal_stop`になっているのを観測)。
+    このポーリングは毎秒この関数を新規プロセスで呼ぶため、一度でも発生すると
+    `SIGCONT`が来ないまま画面全体が固まったように見え、最終的に外側の
+    `timeout --kill-after=`頼みのタイムアウトでしか復旧できない。"""
     cmd = [
-        "ffmpeg", "-y", "-f", "x11grab", "-draw_mouse", "0", "-video_size", f"{w}x{h}",
+        "ffmpeg", "-y", "-nostdin", "-f", "x11grab", "-draw_mouse", "0", "-video_size", f"{w}x{h}",
         "-i", f"{config.display}+{x},{y}", "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-",
     ]
-    result = subprocess.run(cmd, env=env, capture_output=True)
+    result = subprocess.run(cmd, env=env, stdin=subprocess.DEVNULL, capture_output=True)
     color = Image.open(io.BytesIO(result.stdout)).convert("RGB")
     return _to_gray_thumbnail(color), color
 
@@ -98,10 +109,10 @@ def grab_frame_from_video(video_path, at_sec):
     try:
         result = subprocess.run(
             [
-                "ffmpeg", "-y", "-ss", str(at_sec), "-i", video_path,
+                "ffmpeg", "-y", "-nostdin", "-ss", str(at_sec), "-i", video_path,
                 "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-",
             ],
-            capture_output=True, timeout=30,
+            stdin=subprocess.DEVNULL, capture_output=True, timeout=30,
         )
         if result.returncode != 0 or not result.stdout:
             return None

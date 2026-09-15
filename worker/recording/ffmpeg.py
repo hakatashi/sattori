@@ -2,6 +2,13 @@
 
 映像と音声を別プロセスで録画して後から結合する理由(reports/26)と、`-copyts` による
 A/V同期の実測補正(reports/28)は `recording/__init__.py` の冒頭にまとめてある。
+
+**この中のffmpeg呼び出しは全て`-nostdin`必須**(`stdin=subprocess.DEVNULL`と併用)。
+`-nostdin`が無いとffmpegが対話的キー操作のためstdinを読もうとし、`timeout`
+(`--foreground`無し)配下でプロセスグループがバックグラウンド化されている状態で
+標準入力が実端末を指していると、SIGTTINでプロセスグループ全体(ゲーム本体含む)が
+停止する(2026-09-15、`recording/vision.py`のgrab_frame()参照)。ここのffprobeは
+対話的stdin操作をしないため対象外。
 """
 import re
 import subprocess
@@ -30,7 +37,7 @@ def build_video_ffmpeg_cmd(config, x, y, w, h, video_output, side_stream_path=No
     未指定時は従来通りのコマンド文字列と完全に一致する。
     """
     base_cmd = [
-        "ffmpeg", "-y", "-copyts",
+        "ffmpeg", "-y", "-nostdin", "-copyts",
         "-f", "x11grab", "-draw_mouse", "0", "-video_size", f"{w}x{h}", "-framerate", "60",
         "-i", f"{config.display}+{x},{y}",
     ]
@@ -52,7 +59,7 @@ def build_audio_ffmpeg_cmd(config, audio_output):
     """音声のみを録画するffmpegコマンド(別プロセス、reports/26参照)。
     `-copyts`はbuild_video_ffmpeg_cmd()と同じ理由(reports/28参照)。"""
     return [
-        "ffmpeg", "-y", "-copyts", "-f", "pulse", "-i", config.pulse_source,
+        "ffmpeg", "-y", "-nostdin", "-copyts", "-f", "pulse", "-i", config.pulse_source,
         "-c:a", "aac", "-b:a", "192k", audio_output,
     ]
 
@@ -97,7 +104,7 @@ def mux_audio_video(video_path, audio_path, output_path, env, log=print):
     else:
         log("WARNING: -copytsのstart_time取得に失敗したため、A/V同期補正をスキップします")
 
-    cmd = ["ffmpeg", "-y"]
+    cmd = ["ffmpeg", "-y", "-nostdin"]
     if video_offset:
         cmd += ["-itsoffset", f"{video_offset:.6f}"]
     cmd += ["-i", video_path]
@@ -105,7 +112,7 @@ def mux_audio_video(video_path, audio_path, output_path, env, log=print):
         cmd += ["-itsoffset", f"{audio_offset:.6f}"]
     cmd += ["-i", audio_path, "-c", "copy", "-shortest", output_path]
     log(f"mux実行: {' '.join(cmd)}")
-    result = subprocess.run(cmd, env=env, capture_output=True)
+    result = subprocess.run(cmd, env=env, stdin=subprocess.DEVNULL, capture_output=True)
     if result.returncode != 0:
         log(f"WARNING: mux失敗 (returncode={result.returncode}): {result.stderr[-2000:].decode(errors='replace')}")
     return result.returncode == 0
@@ -133,10 +140,10 @@ def measure_duplicate_rate(video_path, start_sec, duration_sec):
 
         decimate_result = subprocess.run(
             [
-                "ffmpeg", "-i", video_path, "-ss", str(start_sec), "-t", str(duration_sec),
+                "ffmpeg", "-nostdin", "-i", video_path, "-ss", str(start_sec), "-t", str(duration_sec),
                 "-vf", "mpdecimate", "-vsync", "0", "-an", "-f", "null", "-",
             ],
-            capture_output=True, text=True,
+            stdin=subprocess.DEVNULL, capture_output=True, text=True,
         )
         matches = re.findall(r"frame=\s*(\d+)", decimate_result.stderr)
         if not matches:
