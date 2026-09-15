@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-16",
+    ja: "妖精大戦争 (th128) のリプレイファイル選択時にプレイヤーキャラクター（チルノ）を表示するよう修正",
+    en: "Fixed the replay selection screen to show the player character (Cirno) for Fairy Wars (th128) replays",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/262",
+  },
+  {
+    date: "2026-09-16",
     ja: "妖精大戦争 (th128) の録画に対応",
     en: "Added recording support for Fairy Wars (th128)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/78",
