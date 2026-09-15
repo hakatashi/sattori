@@ -103,7 +103,7 @@ version word at offset 0x04.
 | `th11` | 東方地霊殿 (SA) | Verified with `test-fixtures/` + screenshots |
 | `th12` | 東方星蓮船 (UFO) | Verified with checked-in replays in `test-fixtures/` (covering all six characters and Hard/Extra/Lunatic) + Silent Selene samples |
 | `th125` | ダブルスポイラー (DS) | Verified with checked-in replays in `test-fixtures/` |
-| `th128` | 妖精大戦争 (GFW) | Verified with checked-in replays in `test-fixtures/` (covering Route A/B/C and Hard/Lunatic) + Silent Selene samples; **Extra difficulty is unverified and known-buggy for `cleared`/`splits[].lives`/`splits[].bombs`**, see "Notes on th128" below |
+| `th128` | 妖精大戦争 (GFW) | Verified with checked-in replays in `test-fixtures/` (covering Route A/B/C, Hard/Lunatic, and an Extra game over) + Silent Selene samples (incl. real Extra clears, not checked in); see "Notes on th128" below |
 | `th13` | 東方神霊廟 (TD) | Verified with `test-fixtures/` + screenshots |
 | `th14` | 東方輝針城 (DDC) | Same as above |
 | `th143` | 弾幕アマノジャク (ISC) | Verified with checked-in replays in `test-fixtures/` |
@@ -237,39 +237,40 @@ reverse-engineerings that agree exactly on field names/offsets —
 [`th128.ksy`](https://github.com/puresign-tokyo/l-uploader/blob/main/backend/src/parsers/threp-ksy/th128.ksy)
 (see "Related work" below) — though neither project actually reads these
 fields into its own output, so their *meaning* is this package's own
-verification, done against the 4 checked-in `test-fixtures/th128/*.rpy`
-replays and real in-game observation of each (reached stage, clear/game over,
-and the sequence of stages passed through).
+verification, done against the 5 checked-in `test-fixtures/th128/*.rpy`
+replays (4 Route A/B/C + 1 Extra game over) and real in-game observation of
+each (reached stage, clear/game over, and the sequence of stages passed
+through), plus real Extra-clear replays fetched from Silent Selene for the
+`cleared` fix below (not checked in as fixtures — third-party player data).
 
-- `cleared` is bit `0x10` of the header's `cleared` field (offset `0x68` in
-  the decompressed body); the low bits otherwise just duplicate the last
-  split's raw `stage` id, already exposed directly (see below). Confirmed
-  against all 4 fixtures: `3`/`4`/`11` (ended in game over) vs. `19 = 3 |
-  0x10` (the one fixture that reached "B1 All" and actually cleared).
-  **Known bug: this heuristic gives a false positive for Extra difficulty.**
-  A real Extra-mode replay (Sattori's `worker/tests/fixtures/mod-integration/
-  th128/th128_10.rpy`, recorded 2026-09-16, HakataMatrix) that actually ended
-  in a game over (confirmed by the player and by real-machine hit-timing
-  telemetry showing repeated hits right up to the point recording stopped,
-  with no clear screen) has this package report `cleared: true`. Root cause:
-  Extra's own raw `stage` id in this replay is `16` (`0x10`), so the field's
-  raw value at offset `0x68` is exactly `16` — the bit this heuristic checks
-  is set by the stage id itself, not by an actual "cleared" flag OR'd in, the
-  way it is for the route ids (`1`-`11`) the heuristic was validated against.
-  This package has no independent way to tell the two cases apart for Extra
-  mode yet (no reference project reads this field either), so **treat
-  `cleared` as unverified — and likely wrong — for any th128 replay whose
-  `stage`/`difficulty` is `"Extra"`** until a real Extra clear replay is
-  captured to find a reliable flag. The same investigation also found
-  `splits[0].lives`/`splits[0].bombs` on that replay reporting the pristine
-  starting values (`200`/`0`) despite the run using a bomb and taking
-  multiple hits — Extra mode only ever produces a single split covering the
-  whole run, and whatever these fixed offsets capture for it clearly isn't
-  the end-of-run cumulative state they hold for route mode's splits. This is
-  unresolved (not just unverified); `score` (read from the USER-section ANSI
-  string, not this reverse-engineered body) is unaffected and was
-  independently confirmed correct via real-machine score telemetry for the
-  same replay.
+- `cleared` compares the header's `cleared` field (offset `0x68` in the
+  decompressed body) against the last split's raw `stage` id, already
+  exposed directly (see below): when they're equal the run ended without
+  clearing (the field just duplicates the last stage reached), and when they
+  differ the run ended in an actual clear. An earlier version of this
+  heuristic instead checked a single bit (`& 0x10`), on the assumption that a
+  clear always ORs in `0x10` on top of the last stage id — true for the 4
+  Route A/B/C fixtures (`3`/`4`/`11` ended in game over vs. `19 = 3 | 0x10`
+  for the one that reached "B1 All"), but **wrong for Extra**: Extra's own
+  raw `stage` id is itself `16` (`0x10`), so a game-over Extra run already
+  has that bit set and the old heuristic reported `cleared: true` for every
+  Extra replay regardless of outcome (confirmed via a real Extra game-over
+  recording, Sattori's `worker/tests/fixtures/mod-integration/th128/
+  th128_10.rpy`, 2026-09-16, HakataMatrix). Fetching real Extra-clear replays
+  from [Silent Selene](https://www.silentselene.net/) showed the field
+  becomes `23 = 16 | 0x07` on a clear — a *different* bit pattern than Route
+  mode's `| 0x10`, which is why comparing against the last stage id (instead
+  of assuming which bit means "cleared") is the general fix: it's confirmed
+  correct for both the Route fixtures and Extra, cleared and not. The same
+  investigation also found `splits[0].lives`/`splits[0].bombs` reporting the
+  pristine starting values (`200`/`0`) on every Extra replay checked,
+  regardless of clear/game-over outcome or how many bombs/hits actually
+  occurred — initially mistaken for a bug, but this is expected: per
+  `ReplayStageSplit.stage`'s doc comment, splits are a snapshot taken *at the
+  start* of the stage (mirrors `score`, which is "the value at the end of the
+  previous stage"), same as every route-mode fixture's first split, which
+  likewise always reads `200`/`0`. Extra just never produces a second split to
+  show any post-start change, since it's a single uninterrupted stage.
 - `splits[].stage` is the raw in-game stage id, read as-is like every other
   title's `stage` field (no string label resolution) — **not** a contiguous
   1/2/3 counter, because th128's routing (Route A/A2/B/B2/C/C2, branching

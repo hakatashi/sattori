@@ -100,21 +100,6 @@ wineserverコールドスタートによる録画失敗しやすさは`worker/do
 重複フレーム率計測不能（`None`）を異常として扱っていない問題も、th06nc対応と合わせて
 修正していない（実機観測後に必要性を判断する）。
 
-### th128のExtra難易度はクリア判定(`cleared`)が信頼できない(replay-parserの既知バグ)
-
-`packages/replay-parser`の`cleared`判定はデコード後ボディのオフセット`0x68`のビット`0x10`を
-見る方式で、Route A/B/C(Hard/Lunatic)の4本の実リプレイでのみ検証済みだった。Extra難易度の
-実リプレイ(`worker/tests/fixtures/mod-integration/th128/th128_10.rpy`、2026-09-16録画)で
-検証したところ、**実際はゲームオーバーで終わった録画なのに`cleared: true`と誤判定される
-ことを確認した**。原因はExtraの生ステージIDそのものが`16`(`0x10`)であるため、ビット`0x10`
-を「クリアフラグ」ではなく「ステージID自身の値」として誤検出すること
-（詳細は[`packages/replay-parser/README.md`](../packages/replay-parser/README.md)
-「Notes on th128」）。同じ調査で`splits[0].lives`/`splits[0].bombs`もExtraでは初期値のまま
-(未使用のボム・無被弾)を返す不具合も見つかっており、原因は未特定。**アップロード時の
-解析プレビュー（`ReplayPreview.tsx`）・管理画面のジョブ詳細のどちらもこの値をそのまま
-表示するため、th128のExtra難易度リプレイでは「クリア」表示を信用しないこと**。`score`は
-別経路（USERセクションのANSI文字列）で読んでおり影響を受けない。
-
 ### th09はリプレイずれの事後検知が機能しない
 
 th09（東方花映塚）はスコアのRVAが未特定のため、他タイトルが使うスコア突き合わせによる
