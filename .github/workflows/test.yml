@@ -28,6 +28,13 @@ jobs:
           node-version: "24"
           cache: pnpm
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: worker/requirements-dev.txt
+
       # ドキュメントのサイズ上限（docs/documentation-guidelines.md §6.1）。依存パッケージを
       # 使わないので install より前に置き、超過していれば真っ先に落ちるようにしてある。
       - name: Check documentation size
@@ -35,6 +42,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install Python dependencies
+        run: pip install -r worker/requirements-dev.txt
 
       - name: Build
         run: pnpm build
@@ -44,26 +54,6 @@ jobs:
 
       - name: Test
         run: pnpm test
-
-  worker-test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: worker/requirements-dev.txt
-
-      - name: Install dependencies
-        run: pip install -r worker/requirements-dev.txt
-
-      - name: Test
-        working-directory: worker
-        run: pytest
 
   # 録画用MOD(*_hook.dll)がmingw-w64クロスビルドで壊れていないかの簡易確認。
   # 実機注入テストの代わりにはならない(.claude/skills/build-mods/SKILL.md)。
