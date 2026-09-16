@@ -41,6 +41,7 @@ GAME_SCORE_MULTIPLIERS = {
     "th10": 10,
     "th11": 10,
     "th12": 10,
+    "th15": 10,
     "th20": 10,
     "th128": 10,
 }

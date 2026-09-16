@@ -15,6 +15,10 @@ describe("requiresGpuRecording", () => {
     expect(requiresGpuRecording("th06nc")).toBe(true);
   });
 
+  it("th15(GPU描画必須)は true", () => {
+    expect(requiresGpuRecording("th15")).toBe(true);
+  });
+
   it("既存のCPU系タイトルは false", () => {
     expect(requiresGpuRecording("th06")).toBe(false);
     expect(requiresGpuRecording("th06c")).toBe(false);

@@ -202,6 +202,10 @@ describe("estimateJobCost", () => {
       makeJob({ spotPricePerHour: null, instanceType: null, game: "th06nc" }),
       new Date("2026-08-02T00:00:00.000Z"),
     );
+    const th15 = estimateJobCost(
+      makeJob({ spotPricePerHour: null, instanceType: null, game: "th15" }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
 
     expect(th11.spotPriceSource).toBe("fallback-game");
     expect(th11.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
@@ -212,6 +216,8 @@ describe("estimateJobCost", () => {
     expect(th20.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
     expect(th06nc.spotPriceSource).toBe("fallback-game");
     expect(th06nc.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
+    expect(th15.spotPriceSource).toBe("fallback-game");
+    expect(th15.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
   });
 
   it("配信量は720p版1回ぶん、保管量は両方の合計とする", () => {

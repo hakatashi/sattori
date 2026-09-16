@@ -136,9 +136,12 @@ const TH128_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
 ];
 
 /**
- * th06nc専用の候補インスタンスタイプ（Issue #241）。GPU描画（Xorg+NVIDIA GRIDドライバ+
- * DXVK）が必須なため、CPU系タイトルとは全く別のインスタンスファミリを使う
- * （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
+ * GPU描画必須タイトル（th06nc・th15、`GPU_RECORDING_GAME_IDS`）専用の候補インスタンス
+ * タイプ（Issue #241・#82）。GPU描画（Xorg+NVIDIA GRIDドライバ）が必須なため、CPU系
+ * タイトルとは全く別のインスタンスファミリを使う
+ * （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。th06ncはDXVK
+ * （D3D11→Vulkan）、th15はwined3d（D3D9→OpenGL、DXVKはVulkan機能不足で起動できない、
+ * touhou-recorder reports/82）と描画経路は異なるが、必要なインスタンスファミリは同じ。
  *
  * `g6f.xlarge`（NVIDIA L4の1/8スライス、4vCPU/16GiB）を第一候補とし、Spot枯渇耐性
  * （Issue #29）および1080p録画（touhou-recorder reports/81 §9.9.3で推奨）のために
@@ -161,6 +164,7 @@ function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
     case "th128":
       return TH128_CANDIDATE_INSTANCE_TYPES;
     case "th06nc":
+    case "th15":
       return GPU_CANDIDATE_INSTANCE_TYPES;
     default:
       return DEFAULT_CANDIDATE_INSTANCE_TYPES;
