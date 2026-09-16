@@ -75,8 +75,8 @@ HIT_TIMING_TOLERANCE_SECONDS = 3.0
 # expected_hit_offsets_seconds は、残機(lives)のRVAが判明しているタイトルにのみ
 # 存在するキー(未特定のth06c/th06ncには無い、docs/mods.md §3)。この検証リプレイを
 # 1度実機録画し、ScoreMonitorログ上で残機が減少した時点の、最初のサンプルからの
-# 経過秒数を`read_lives_drop_offsets()`で観測した基準値(2026-09-15、HakataMatrix)。
-# リプレイを差し替えたら実機録画して採り直すこと。
+# 経過秒数を`read_lives_drop_offsets()`で観測した基準値(2026-09-15、th128は2026-09-16、
+# いずれもHakataMatrix)。リプレイを差し替えたら実機録画して採り直すこと。
 TITLES = {
     "th06": {
         "replay": "th6_10.rpy",
@@ -145,6 +145,13 @@ TITLES = {
         "expected_duration_seconds": 6722 / 60,
         "display": ":95",
         "expected_hit_offsets_seconds": [122.1, 127.1, 133.2],
+    },
+    "th128": {
+        "replay": "th128_10.rpy",
+        "expected_score": 5_080_020,
+        "expected_duration_seconds": 9690 / 60,
+        "display": ":102",
+        "expected_hit_offsets_seconds": [142.1, 149.2, 157.2, 164.2, 169.2],
     },
 }
 

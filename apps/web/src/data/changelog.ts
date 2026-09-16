@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-16",
+    ja: "妖精大戦争 (th128) の録画に対応",
+    en: "Added recording support for Fairy Wars (th128)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/78",
+    important: true,
+  },
+  {
     date: "2026-09-14",
     ja: "東方紅魔郷: New Classic (th06nc) のスペルプラクティスのリプレイファイル選択時にスペルカード名を表示するよう修正",
     en: "Fixed the replay selection screen to show the spell card name for Spell Practice replays of the Embodiment of Scarlet Devil: New Classic (th06nc)",

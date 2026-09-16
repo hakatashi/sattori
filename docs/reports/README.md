@@ -12,8 +12,11 @@
 
 | 検証日 | 内容 | 結論 |
 | --- | --- | --- |
+| [2026-09-16](2026-09-16-th128-title-screen-wait-reduction-verification.md) | th128のメニュー操作シーケンス冒頭「タイトル画面ロード待ち」を8000msから2000msへ短縮する妥当性を検証(PR #235) | 2000msでもフル尺録画・記録スコア完全一致・シーケンス正常完了を確認。8000msの根拠だった不具合(キー入力を受け付けない)は8000ms・2000msいずれの試行でも再現せず |
 | [2026-09-12](2026-09-12-th06nc-recording-verification.md) | th06nc(東方紅魔郷: New Classic)のGPU用カスタムAMI構築・CDKデプロイ・タイトル資産アップロード・E2E検証(Issue #241) | AMI構築・デプロイ・資産アップロード・ローカルMOD機能検証は成功。**本番E2E録画(720p/1080p)はeu-south-2のg6f.xlargeスポット在庫の長時間枯渇によりリトライ全滅で未完了**(sattori側の不具合ではない)。GRIDドライバがnouveauと競合する新知見あり |
 | [2026-09-10](2026-09-10-th06c-recording-verification.md) | th06c(東方紅魔郷: Classic)録画対応(Issue #240)をローカル実機検証・本番AWS環境でのE2E検証 | 64bit専用MOD・Steamworks APIスタブ・終了検知テンプレート照合いずれも成功。フル尺録画で重複フレーム率0.1%・スコア完全一致(デシンクなし)。Webアップロード→録画→CloudFront DLのE2Eも成功。副次的に終了検知方式のログラベルが常に「画面静止検知」になるバグを発見・修正 |
+| [2026-09-09](2026-09-09-th128-wineprefix-recovery-verification.md) | th128のWINEPREFIXを`setup_wineprefix.sh`のみで作り直しても録画が壊れないか検証(Issue #78フォローアップ) | touhou-recorder製の原本と同じくフル尺録画・スコア完全一致・重複フレーム率1.3%を確認。th06/07/08と同様、原本に依存せず復旧可能 |
+| [2026-09-09](2026-09-09-th128-local-recording-verification.md) | th128（妖精大戦争）録画対応(Issue #78)をsattori本体の`record_th128.py`でローカル実機検証 | フル尺録画(1回目の試行で成功、重複フレーム率1.3%)・thprac必須運用・終了検知(画面静止)・スコア完全一致いずれも成功 |
 | [2026-09-05](2026-09-05-home-worker-upload-bandwidth.md) | 自宅ワーカーの配信用動画アップロード速度を本番CloudWatch Logs×DynamoDBの突き合わせで実測(Issue #202フォローアップ) | 100MB超のファイルでは10〜12MB/s(80〜99Mbps)に収束する安定した実測値。進捗バー・残り時間推定の悲観バジェットの根拠にした |
 | [2026-09-03](2026-09-03-convert-faststart-verification.md) | 配信用変換への`-movflags +faststart`追加(Issue #90)をローカルで検証 | moov atomは先頭へ移動、変換時間の増分は誤差範囲、映像・音声のデコード結果は完全一致(尺・A/V同期に影響なし) |
 | [2026-09-02](2026-09-02-th09-local-recording-verification.md) | th09（東方花映塚）録画対応(Issue #73)をsattori本体の`record_th09.py`でローカル実機検証 | Match/Storyモード双方でフル尺録画・終了検知・残機(life)監視が成功。リプレイファイル名接頭辞が`th9_`(`th09_`ではない)である誤りを発見・修正 |

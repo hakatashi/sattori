@@ -248,7 +248,10 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
  * th12（DIK経由の入力注入とth11型メニュー構造のハイブリッド仕様・ウィンドウ最小化
  * バグ対策・VsyncPatch常時有効化、touhou-recorder reports/61〜67、Issue #76）、
  * th09（対戦形式(1P/2P split-screen)・DIK経由の入力注入・ud0000タブ方式・
- * スコアRVA未特定のためlifeのみ監視、touhou-recorder reports/68〜69、Issue #73）に続き、
+ * スコアRVA未特定のためlifeのみ監視、touhou-recorder reports/68〜69、Issue #73）、
+ * th128（TH10エンジンベースの外伝作品・DIK経由の入力注入・thprac必須（無いと
+ * リプレイ選択直後にゲーム本体がフリーズする既知バグがある）、touhou-recorder
+ * reports/70〜73、Issue #78）に続き、
  * th06c（東方紅魔郷: Classic。th06の完全な再実装でth06c.exeがPE32+/x86-64、
  * Steamworks APIスタブ必須、GetProcAddressフックによる入力注入、touhou-recorder
  * reports/74〜77、Issue #240）に続き、th06nc（東方紅魔郷: New Classic。th06cと同系統
@@ -257,11 +260,11 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
  * でのみ録画できる、touhou-recorder reports/78〜81、Issue #241）を追加した。
  * th06とはリプレイのバージョンが非互換（`packages/replay-parser`がバージョン語で判別）
  * なため別`GameId`として扱う。
- * PoC（touhou-recorder）で E2E 実証済みなのはこの10本のみで、他タイトルは
+ * PoC（touhou-recorder）で E2E 実証済みなのはこの11本のみで、他タイトルは
  * MOD 移植（録画対応）が未着手（AGENTS.md 参照）。
  */
 export const SUPPORTED_GAME_IDS: readonly GameId[] = [
-  "th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th20",
+  "th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th20", "th128",
 ];
 
 export function isSupportedGame(game: GameId): boolean {
