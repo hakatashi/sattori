@@ -12,6 +12,7 @@
 
 | 検証日 | 内容 | 結論 |
 | --- | --- | --- |
+| [2026-09-17](2026-09-17-th15-production-e2e-attempt.md) | th15の本番AWS環境でのE2E検証を試みるも未完了(Issue #82) | sattori既存バグ2件(GPU系Dockerfileにwine32が無い・Launch Templateの`$Default`固定)を発見・修正。GPU用AMIへの32bit互換ドライバ追加はXorg起動失敗を招き、th06nc保護のため旧AMIへロールバックして中断。根本原因は次回へ引き継ぎ |
 | [2026-09-17](2026-09-17-th15-local-recording-verification.md) | th15(東方紺珠伝)録画対応(Issue #82)をsattori本体の`record_th15.py`でローカル実機検証 | 短尺リプレイでMOD・録画パイプライン結合(メニュー自動操作・スコア監視・終了検知)が成功。記録スコア完全一致・重複フレーム率2.1%。**GPU描画経路(本番のg6f系)自体はこのマシンにNVIDIA GPUが無く未検証**(th06ncと同じ制約) |
 | [2026-09-16](2026-09-16-th128-title-screen-wait-reduction-verification.md) | th128のメニュー操作シーケンス冒頭「タイトル画面ロード待ち」を8000msから2000msへ短縮する妥当性を検証(PR #235) | 2000msでもフル尺録画・記録スコア完全一致・シーケンス正常完了を確認。8000msの根拠だった不具合(キー入力を受け付けない)は8000ms・2000msいずれの試行でも再現せず |
 | [2026-09-12](2026-09-12-th06nc-recording-verification.md) | th06nc(東方紅魔郷: New Classic)のGPU用カスタムAMI構築・CDKデプロイ・タイトル資産アップロード・E2E検証(Issue #241) | AMI構築・デプロイ・資産アップロード・ローカルMOD機能検証は成功。**本番E2E録画(720p/1080p)はeu-south-2のg6f.xlargeスポット在庫の長時間枯渇によりリトライ全滅で未完了**(sattori側の不具合ではない)。GRIDドライバがnouveauと競合する新知見あり |

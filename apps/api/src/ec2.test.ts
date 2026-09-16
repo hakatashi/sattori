@@ -247,7 +247,7 @@ describe("launchRecordingInstance", () => {
     const versionCall = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[0];
     expect(versionCall?.args[0].input).toMatchObject({
       LaunchTemplateId: "lt-xxxx",
-      SourceVersion: "$Default",
+      SourceVersion: "$Latest",
     });
 
     const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
@@ -358,7 +358,7 @@ describe("launchRecordingInstance", () => {
     const versionCall = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[0];
     expect(versionCall?.args[0].input).toMatchObject({
       LaunchTemplateId: "lt-gpu-xxxx",
-      SourceVersion: "$Default",
+      SourceVersion: "$Latest",
     });
 
     const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
@@ -399,7 +399,7 @@ describe("launchRecordingInstance", () => {
     const versionCall = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[0];
     expect(versionCall?.args[0].input).toMatchObject({
       LaunchTemplateId: "lt-gpu-xxxx",
-      SourceVersion: "$Default",
+      SourceVersion: "$Latest",
     });
     const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
     const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
