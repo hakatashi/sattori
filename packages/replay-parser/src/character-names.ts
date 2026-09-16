@@ -222,6 +222,11 @@ const TH125: CharacterTable = {
   Aya: { ja: "文", en: "Aya" },
 };
 
+/** th128 (妖精大戦争, GFW) has only one playable character, Cirno. */
+const TH128: CharacterTable = {
+  Cirno: { ja: "チルノ", en: "Cirno" },
+};
+
 const CHARACTER_TABLES: Partial<Record<ReplayGameId, CharacterTable>> = {
   th06: TH06_TH07_SHARED,
   // Both 2026 remakes keep th06's four shot types, in the same order and with
@@ -235,6 +240,7 @@ const CHARACTER_TABLES: Partial<Record<ReplayGameId, CharacterTable>> = {
   th11: TH11,
   th12: TH12,
   th125: TH125,
+  th128: TH128,
   th13: TH13,
   th14: TH14,
   th15: TH15,
