@@ -1,6 +1,6 @@
 ---
 name: upload-title-assets
-description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th06c/th06nc/th07/th08/th09/th10/th11/th12/th20/th128）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
+description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をまとめた資産アーカイブを作って S3 の TitleAssetsBucket へアップロードする手順（th06/th06c/th06nc/th07/th08/th09/th10/th11/th12/th15/th20/th128）。WINEPREFIX の新規作成（setup_wineprefix.sh）も含む。「タイトル資産をアップロードして」「th08 のゲームデータを差し替えたい」「WINEPREFIX を作り直したい」等で使う。tar のオプションやタイトルごとの同梱物に落とし穴があるため、必ずこの手順に従うこと。
 ---
 
 # タイトル資産（ゲームデータ）の S3 アップロード
@@ -248,6 +248,32 @@ tar -czf /tmp/th12-assets.tar.gz \
   mods/th12_replay_autoplay/build/th12_hook.dll
 aws s3 cp /tmp/th12-assets.tar.gz \
   "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th12/assets.tar.gz"
+```
+
+### th15（東方紺珠伝、GPU描画必須）
+
+`games/th15`・`prefixes/th15-wined3d-gl` は `touhou-recorder` の同名ディレクトリから
+`rsync` でコピーする（`worker/docs/titles/th15.md`参照）。
+
+1. **cfg（`th15.cfg`、ウィンドウモードのもの）を `games/th15/` 直下に必ず同梱する**。
+   ワーカーがこれを WINEPREFIX 内の `%APPDATA%/ShanghaiAlice/th15/` へコピーする元になる。
+   無いと初回起動時の解像度選択ダイアログで止まり録画に失敗する（th20と同じ理由）。
+2. thprac は**同梱不要**（デシンク対策としての実機での必要性が確認されていない、
+   touhou-recorder reports/82）。
+3. **th06ncと異なりDXVK関連ファイルは不要**。th15はwined3d（OpenGL）のままGPUを使う
+   （`worker/docs/titles/th15.md`「GPU描画は必須ではないが」節参照）ため、
+   WINEPREFIXは標準の`th15-wined3d-gl`（32bit、th06/07/08等と同じ作り方）でよく、
+   `setup_wineprefix.sh`の特殊な引数は不要。
+
+```bash
+tar -czf /tmp/th15-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" \
+  games/th15 \
+  prefixes/th15-wined3d-gl \
+  mods/common/build/injector.exe \
+  mods/th15_replay_autoplay/build/th15_hook.dll
+aws s3 cp /tmp/th15-assets.tar.gz \
+  "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th15/assets.tar.gz"
 ```
 
 ### th20（東方錦上京）

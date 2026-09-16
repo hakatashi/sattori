@@ -38,6 +38,7 @@
 | th10 東方風神録 | `record_th10.py` | [docs/titles/th10.md](docs/titles/th10.md) | テンプレート照合(絞り込み領域) | 640x480 |
 | th11 東方地霊殿 | `record_th11.py` | [docs/titles/th11.md](docs/titles/th11.md) | 画面静止のみ | 640x480 |
 | th12 東方星蓮船 | `record_th12.py` | [docs/titles/th12.md](docs/titles/th12.md) | 画面静止のみ | 640x480 |
+| th15 東方紺珠伝 | `record_th15.py` | [docs/titles/th15.md](docs/titles/th15.md) | 画面静止のみ | **1280x960(GPU描画必須)** |
 | th20 東方錦上京 | `record_th20.py` | [docs/titles/th20.md](docs/titles/th20.md) | 画面静止のみ | 1280x960 |
 | th128 妖精大戦争 | `record_th128.py` | [docs/titles/th128.md](docs/titles/th128.md) | 画面静止のみ | 640x480 |
 

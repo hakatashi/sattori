@@ -194,6 +194,15 @@ describe("buildUserData", () => {
     expect(decoded).not.toContain("systemctl disable --now ecs");
   });
 
+  it("GPU描画必須タイトル(th15)もth06ncと同じGPU系ECRイメージを使う（Issue #82）", () => {
+    const decoded = Buffer.from(
+      buildUserData(config, { ...job, game: "th15" }, "task-token-abc"),
+      "base64",
+    ).toString("utf-8");
+    expect(decoded).toContain(config.workerGpuImage);
+    expect(decoded).not.toContain(config.workerImage);
+  });
+
   it("CPU系タイトルは--gpus allを付けず、ECSエージェント停止処理も行う", () => {
     const decoded = Buffer.from(buildUserData(config, job, "task-token-abc"), "base64").toString(
       "utf-8",
@@ -369,6 +378,37 @@ describe("launchRecordingInstance", () => {
     for (const call of ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)) {
       expect(call.args[0].input.LaunchTemplateId).not.toBe("lt-xxxx");
     }
+  });
+
+  it("th15ジョブもth06ncと同じGPU専用Launch Template・GPU系インスタンスタイプで起動する（Issue #82）", async () => {
+    ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
+      LaunchTemplateVersion: { VersionNumber: 5 },
+    });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [
+        {
+          InstanceIds: ["i-0123456789abcdef0"],
+          InstanceType: "g6f.xlarge",
+          AvailabilityZone: "ap-northeast-1a",
+        },
+      ],
+    });
+
+    await launchRecordingInstance(config, { ...job, game: "th15" }, "task-token-abc");
+
+    const versionCall = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[0];
+    expect(versionCall?.args[0].input).toMatchObject({
+      LaunchTemplateId: "lt-gpu-xxxx",
+      SourceVersion: "$Default",
+    });
+    const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
+    const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    expect(overrides).toEqual(
+      expect.arrayContaining([
+        { SubnetId: "subnet-aaaa", InstanceType: "g6f.xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "g6f.2xlarge" },
+      ]),
+    );
   });
 
   it("インスタンスが起動できなかった場合は Errors を含めて例外を投げる", async () => {

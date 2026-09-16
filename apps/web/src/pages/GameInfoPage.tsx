@@ -38,6 +38,7 @@ const TITLE_INFO: TitleInfo[] = [
   { id: "th10", version: "ver 1.00a", vpatchRev: 4, th10BugfixOption: true },
   { id: "th11", version: "ver 1.00a" },
   { id: "th12", version: "ver 1.00b", vpatchRev: 7, th12ScoreOverflowFix: true },
+  { id: "th15", version: "ver 1.00b" },
   { id: "th20", version: "ver 1.00c", thpracVersion: "2.3.0.3", thpracPurpose: "desync" },
   { id: "th128", version: "ver 1.00a", thpracVersion: "2.3.0.3", thpracPurpose: "freezeFix" },
 ];

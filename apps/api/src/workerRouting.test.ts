@@ -163,4 +163,13 @@ describe("selectHomeWorker", () => {
       selectHomeWorker([worker], { game: "th06nc" }, policy as GameRoutingPolicy, NOW),
     ).toBeNull();
   });
+
+  it("th15(GPU専用タイトル)も自宅ワーカーの空き・宣言に関わらず常にnull（Issue #82）", () => {
+    const policy = GAME_ROUTING_POLICIES.th15;
+    expect(policy?.offerToHomeWorker).toBe(false);
+    const worker = heartbeat({ supportedGames: ["th15"] });
+    expect(
+      selectHomeWorker([worker], { game: "th15" }, policy as GameRoutingPolicy, NOW),
+    ).toBeNull();
+  });
 });

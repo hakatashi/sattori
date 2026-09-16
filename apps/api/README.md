@@ -131,7 +131,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | th12 | `TH12_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th128 | `TH128_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th20 | `TH20_CANDIDATE_INSTANCE_TYPES` | `c7i.4xlarge` のみ |
-| th06nc | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.xlarge` のみ（GPU描画必須、Issue #241） |
+| th06nc・th15 | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.xlarge` / `g6f.2xlarge`（GPU描画必須、Issue #241・#82） |
 
 > **候補を足す・変える前に
 > [`docs/decisions/0016`](../../docs/decisions/0016-ec2-fleet-instance-type-diversification.md)
@@ -139,7 +139,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 > 「同スペック帯だから安全」が繰り返し裏切られている経緯）。インスタンスの起動を
 > CDK側へ移さない理由は [`0002`](../../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)。
 
-**th06nc（`requiresGpuRecording()`がtrueのタイトル）だけは別系統**——GPU用の
+**th06nc・th15（`requiresGpuRecording()`がtrueのタイトル）だけは別系統**——GPU用の
 Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決ではなく
 事前構築したカスタムAMIを固定参照）・別ECRイメージ（`config.workerGpuImage`）を
 使い、`buildUserData()`が`docker run`に`--gpus all`を追加する

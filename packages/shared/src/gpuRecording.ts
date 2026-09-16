@@ -22,10 +22,18 @@ import type { GameId } from "./games.js";
  *   明示指定されることを防ぐ）。
  *
  * 将来th20等の既存CPU系タイトルをGPU化する場合はこの配列に足すだけでよい構造だが、
- * **今回はth06ncのみを対象とし、th20の録画経路は一切変更しない**（Issue #241の
- * スコープ外）。
+ * **既存のCPU系タイトルの録画経路は一切変更しない**（Issue #241のスコープ外）。
+ *
+ * th15（東方紺珠伝、Issue #82）もこのリストに含まれる。ただしth06ncとは理由が
+ * 異なる——th06ncはD3D11描画がXvfb+llvmpipeでは原理的に60fpsへ届かない
+ * （GPUが無いと録画自体が成立しない）のに対し、th15はwined3d(D3D9→OpenGL)で
+ * メニュー・大半のステージはソフトウェア描画でも60fps付近を維持できる。
+ * Extraステージの高負荷演出区間でのみCPUコア数の追加では解消しない処理落ちが
+ * 発生し、GPU（wined3d+OpenGL、DXVKではない）に切り替えることでこれが解消する
+ * ことを実機検証で確認した（touhou-recorder reports/82）ため、品質を優先して
+ * GPU系インスタンス（g6f系）に固定している。
  */
-export const GPU_RECORDING_GAME_IDS: readonly GameId[] = ["th06nc"];
+export const GPU_RECORDING_GAME_IDS: readonly GameId[] = ["th06nc", "th15"];
 
 /** このタイトルの録画にGPU系インスタンスが必須か。 */
 export function requiresGpuRecording(game: GameId): boolean {
