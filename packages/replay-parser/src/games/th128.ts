@@ -1,4 +1,5 @@
 import { ByteReader } from "../byte-reader.js";
+import { localizeCharacterName } from "../character-names.js";
 import { ReplayCorruptError } from "../errors.js";
 import { decompress, readBufferedUint32LE, xorBlockDecode } from "../lzss.js";
 import { jumpToUser, parseScoreWithTrailingZero } from "../userdata.js";
@@ -112,6 +113,8 @@ export function parseTh128(original: Uint8Array): ParsedReplay {
     stageOffset += readBufferedUint32LE(decodedata, stageOffset + 0x8) + 0x90;
   }
   const cleared = clearField !== lastRawStage;
+  const character = "Cirno";
+  const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName("th128", character);
 
   return {
     game: "th128",
@@ -128,9 +131,9 @@ export function parseTh128(original: Uint8Array): ParsedReplay {
     // Cross-validated against `date` for all 4 checked-in fixtures: matches
     // down to the minute in JST (UTC+9) every time.
     recordedAt: readBufferedUint32LE(decodedata, 0xc),
-    character: null,
-    characterNameJa: null,
-    characterNameEn: null,
+    character,
+    characterNameJa,
+    characterNameEn,
     difficulty: normalizeText(difficulty),
     stage: normalizeText(stage),
     score,
