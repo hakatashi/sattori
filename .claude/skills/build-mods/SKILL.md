@@ -1,6 +1,6 @@
 ---
 name: build-mods
-description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th06c・th06nc・th09・th10・th11・th12・th20）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th20 は `-static` が必須、th06c/th06nc は64bitクロスビルドとSteamworks APIスタブが必要など、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
+description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th06c・th06nc・th09・th10・th11・th12・th20・th128）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th20 は `-static` が必須、th06c/th06nc は64bitクロスビルドとSteamworks APIスタブが必要など、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
 ---
 
 # MOD（`*_hook.dll`）・injector.exe のビルド
@@ -128,6 +128,18 @@ make -C worker/mods th20
 make -C worker/mods th06
 make -C worker/mods th07
 make -C worker/mods th08
+```
+
+### th128
+
+th128はth10/th12と同じPressKey（DIK経由）を使う（`InstallKeyboardStateHook`は不要）。
+低速録画フック（Presentの間引き・DirectSound周波数スケーリング）を実装済みだが
+`SLOW_MOTION_SUPPORTED_GAME_IDS`未登録のためユーザーには未公開（`worker/docs/titles/th128.md`）。
+`dllmain.cpp`がこれらのフックを呼ぶため、ビルド時は`fps_limiter_hook.cpp`・
+`dsound_hook.cpp`を含める必要がある（th20と異なり`-static`は不要）。
+
+```bash
+make -C worker/mods th128
 ```
 
 ## 関連

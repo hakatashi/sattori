@@ -55,10 +55,14 @@ skillの手順をタイトル分だけ再実行し、アーカイブを一から
    - ゲーム本体・th11/th20のWINEPREFIXは別リポジトリ`touhou-recorder`（PoC）の
      `games/<title>`・`prefixes/<title>-wined3d-gl`が原本（`upload-title-assets`
      skill §2参照）。このマシン（HakataMatrix）のローカルクローンに存在する前提。
-   - th06/07/08のWINEPREFIXは無ければ`setup_wineprefix.sh`で作り直せる
+   - th06/07/08/128のWINEPREFIXは無ければ`setup_wineprefix.sh`で作り直せる
      （同skill §3）。ただしth08はver1.00d相当のゲームデータが前提
      （`worker/docs/titles/th08.md`）——ゲーム本体自体の原本はtouhou-recorderにも
-     無く、手元の正規購入データが唯一の原本になる。
+     無く、手元の正規購入データが唯一の原本になる。th128は
+     [`docs/reports/2026-09-09-th128-wineprefix-recovery-verification.md`](../reports/2026-09-09-th128-wineprefix-recovery-verification.md)
+     で、`setup_wineprefix.sh`のみで作り直したWINEPREFIXでもフル尺録画・スコア
+     完全一致が成功することを実機確認済み（touhou-recorder製の原本に依存する
+     追加のレジストリ設定等は不要）。
    - MOD（`*_hook.dll`）はソースがこのリポジトリの`mods/`配下にあるため、
      `build-mods` skillで再ビルドできる（原本消失の心配は無い）。
 2. `upload-title-assets` skillの手順をth06/07/08/11/th20の全タイトルについて

@@ -51,7 +51,7 @@ COPY assets/replay_end_templates/ /app/assets/replay_end_templates/
 
 # ワーカーのソース(リポジトリ管理)
 COPY recording/ /app/recording/
-COPY record_th06.py record_th06c.py record_th07.py record_th08.py record_th09.py record_th10.py record_th11.py record_th12.py record_th20.py entrypoint.py status.py convert.py interruption_watcher.py task_heartbeat.py progress_reporter.py title_assets.py pulse.py /app/
+COPY record_th06.py record_th06c.py record_th07.py record_th08.py record_th09.py record_th10.py record_th11.py record_th12.py record_th20.py record_th128.py entrypoint.py status.py convert.py interruption_watcher.py task_heartbeat.py progress_reporter.py title_assets.py pulse.py /app/
 
 RUN mkdir -p /app/instances /app/runs
 

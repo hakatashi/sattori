@@ -100,7 +100,8 @@
     "th10BugfixOption": "Marisa B's shot power bug fix option is available (BugFixTh10Power3)",
     "th12ScoreOverflowFix": "Score overflow bug fix at 2.1 billion points applied",
     "thpracApplied": "thprac v{{version}} applied",
-    "thpracPurpose": "Applied during recording to mitigate replay desync"
+    "thpracPurposeDesync": "Applied during recording to mitigate replay desync",
+    "thpracPurposeFreezeFix": "Applied during recording to work around a bug that freezes the game right after selecting a replay"
   },
   "uploadForm": {
     "supportedTitlesLabel": "Currently supported titles ({{count}})",

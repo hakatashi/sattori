@@ -44,12 +44,13 @@
   (reports/50、Issue #103)。`recording.modlog.check_replay_desync()`が録画成功直後にMODログの
   スコア推移と`replayInfo.score`を突き合わせてリプレイずれ(デシンク)の疑いを判定する
   (`JobRecord.desyncDetected`、自動リトライはしない)。RVAはタイトル毎に`dllmain.cpp`で指定
-  (baseRva+baseIsPointer+フィールドオフセット/幅の汎用設計)。th09を除く7タイトルで実機
+  (baseRva+baseIsPointer+フィールドオフセット/幅の汎用設計)。th09を除く8タイトルで実機
   動作確認済み
   ([`docs/reports/2026-08-25-th07-score-monitor-fix.md`](../../docs/reports/2026-08-25-th07-score-monitor-fix.md)、
   `docs/known-limitations.md`参照。th07だけはSattoriが配布するth07.exeが当初の検証環境と
   バイナリが異なりゲームデータのバージョン差でRVAの再特定を要した。th10はtouhou-recorder
-  reports/57、th12はtouhou-recorder reports/62で別途確認)。**th09だけはスコアのRVAが
+  reports/57、th12はtouhou-recorder reports/62、th128はtouhou-recorder reports/71で
+  別途確認)。**th09だけはスコアのRVAが
   未特定のため`scoreWidth=0`でスコア読み取りを無効化し、life(残機)のみ監視する**
   ([titles/th09.md](titles/th09.md)参照) |
 | `mods/common/score_probe_hook.*` / `stage_probe_hook.*` | RVA特定用の診断専用コード(本番ビルドには

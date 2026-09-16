@@ -35,6 +35,7 @@ TARGET_TH10       := th10_replay_autoplay/build/th10_hook.dll
 TARGET_TH11       := th11_replay_autoplay/build/th11_hook.dll
 TARGET_TH12       := th12_replay_autoplay/build/th12_hook.dll
 TARGET_TH20       := th20_replay_autoplay/build/th20_hook.dll
+TARGET_TH128      := th128_replay_autoplay/build/th128_hook.dll
 
 ALL_TARGETS := \
 	$(TARGET_INJECTOR32) \
@@ -50,11 +51,12 @@ ALL_TARGETS := \
 	$(TARGET_TH10) \
 	$(TARGET_TH11) \
 	$(TARGET_TH12) \
-	$(TARGET_TH20)
+	$(TARGET_TH20) \
+	$(TARGET_TH128)
 
 .PHONY: all clean \
 	injector injector64 steam_api64 steam_api64_th06nc \
-	th06 th06c th06nc th07 th08 th09 th10 th11 th12 th20
+	th06 th06c th06nc th07 th08 th09 th10 th11 th12 th20 th128
 
 all: $(ALL_TARGETS)
 
@@ -73,6 +75,7 @@ th10: $(TARGET_TH10)
 th11: $(TARGET_TH11)
 th12: $(TARGET_TH12)
 th20: $(TARGET_TH20)
+th128: $(TARGET_TH128)
 
 clean:
 	rm -rf common/build
@@ -88,6 +91,7 @@ clean:
 	rm -rf th11_replay_autoplay/build
 	rm -rf th12_replay_autoplay/build
 	rm -rf th20_replay_autoplay/build
+	rm -rf th128_replay_autoplay/build
 
 # 1. injector（32bit / 64bit）
 $(TARGET_INJECTOR32): common/injector.cpp
@@ -157,3 +161,9 @@ $(TARGET_TH09): th09_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_D3D8
 $(TARGET_TH20): th20_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_DSOUND) $(SRC_FPS_DISP)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -static -o $@ $^
+
+# 8. th128 hook（32bit、D3D9フレームレート制限・DirectSound周波数フック）
+$(TARGET_TH128): th128_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_DSOUND)
+	@mkdir -p $(@D)
+	$(CXX32) $(DLL_FLAGS) -o $@ $^
+

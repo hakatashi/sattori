@@ -20,7 +20,8 @@ import time
 # "ScoreMonitor: score=N stage=N lives=N graze=N epoch_ms=N" 行から、リプレイ
 # 再生終了時点のゲーム内スコア(生値)を読み取る。th06/07/08/11/20は実機検証済み
 # (touhou-recorder reports/53_phase53_score_monitor_all_titles.md)。th10は別途
-# reports/57で実機検証済み(mods/th10_replay_autoplay/dllmain.cpp参照)。
+# reports/57で実機検証済み(mods/th10_replay_autoplay/dllmain.cpp参照)。th128は
+# reports/71で実機検証済み(mods/th128_replay_autoplay/dllmain.cpp参照)。
 SCORE_MONITOR_RE = re.compile(
     r"ScoreMonitor: score=(\d+) stage=(-?\d+) lives=(-?\d+) graze=(-?\d+) epoch_ms=(\d+)"
 )
@@ -41,6 +42,7 @@ GAME_SCORE_MULTIPLIERS = {
     "th11": 10,
     "th12": 10,
     "th20": 10,
+    "th128": 10,
 }
 
 # th07/th08(ポインタ間接参照方式)は、状態構造体が未初期化/解放済みの一瞬だけ
