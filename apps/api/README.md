@@ -138,6 +138,9 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 > を必ず読むこと**（各候補の実機検証の裏付け・th20が1タイプしかない理由・
 > 「同スペック帯だから安全」が繰り返し裏切られている経緯）。インスタンスの起動を
 > CDK側へ移さない理由は [`0002`](../../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)。
+> `CreateLaunchTemplateVersion`の`SourceVersion`に`$Default`ではなく`$Latest`を使う
+> 理由（CDKでLaunch Templateを変更してもジョブ起動に反映されないバグの修正）は
+> [`0051`](../../docs/decisions/0051-launch-template-source-version-latest-not-default.md)。
 
 **th06nc・th15（`requiresGpuRecording()`がtrueのタイトル）だけは別系統**——GPU用の
 Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決ではなく

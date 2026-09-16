@@ -406,7 +406,16 @@ export async function launchRecordingInstance(
   const version = await ec2.send(
     new CreateLaunchTemplateVersionCommand({
       LaunchTemplateId: launchTemplateId,
-      SourceVersion: "$Default",
+      // "$Default"ではなく"$Latest"を使う。CDKの`CfnLaunchTemplate`はAMI・SG等の
+      // プロパティ変更のたびに新しいバージョンを作るが、そのバージョンを
+      // `DefaultVersionNumber`へ自動的には昇格しない(`ModifyLaunchTemplate`の
+      // 明示呼び出しが要る、CDK側にその仕組みは無い)。"$Default"のままだと、
+      // スタック作成時点の最初のバージョンが永久にデフォルトのまま固定され、
+      // 以降のCDKデプロイでAMIを変えてもジョブ起動には一切反映されない
+      // (Issue #82実機検証で発覚。GPU用AMIを更新したがジョブが古いAMIのまま
+      // 起動し続けていた)。"$Latest"なら直前のCDKデプロイが作った最新バージョンを
+      // 毎回確実に継承する(`docs/decisions/0051-launch-template-source-version-latest-not-default.md`)。
+      SourceVersion: "$Latest",
       LaunchTemplateData: { UserData: userData },
     }),
   );
