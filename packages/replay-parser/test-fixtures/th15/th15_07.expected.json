@@ -1,0 +1,142 @@
+{
+  "game": "th15",
+  "gameTitle": "東方紺珠伝 ～ Legacy of Lunatic Kingdom.",
+  "formatVersion": null,
+  "player": "koyi",
+  "date": "26/09/15 16:31",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 9,
+    "date": 15,
+    "hours": 16,
+    "minutes": 31,
+    "seconds": null
+  },
+  "recordedAt": 1789457487,
+  "character": "Reimu",
+  "characterNameJa": "霊夢",
+  "characterNameEn": "Reimu",
+  "difficulty": "Hard",
+  "stage": "Stage All Clear",
+  "score": 417201130,
+  "cleared": true,
+  "loadout": null,
+  "splits": [
+    {
+      "stage": 1,
+      "score": 0,
+      "power": "1.00",
+      "piv": 10000,
+      "lives": {
+        "count": 2,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 3,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 0,
+      "additional": null,
+      "frameCount": 14332
+    },
+    {
+      "stage": 2,
+      "score": 27831480,
+      "power": "3.03",
+      "piv": 19880,
+      "lives": {
+        "count": 5,
+        "pieces": 1,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 3578,
+      "additional": null,
+      "frameCount": 16275
+    },
+    {
+      "stage": 3,
+      "score": 66693410,
+      "power": "4.00",
+      "piv": 34630,
+      "lives": {
+        "count": 7,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 8018,
+      "additional": null,
+      "frameCount": 18507
+    },
+    {
+      "stage": 4,
+      "score": 116934920,
+      "power": "4.00",
+      "piv": 51170,
+      "lives": {
+        "count": 5,
+        "pieces": 2,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 1,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 11767,
+      "additional": null,
+      "frameCount": 19279
+    },
+    {
+      "stage": 5,
+      "score": 190168680,
+      "power": "4.00",
+      "piv": 63440,
+      "lives": {
+        "count": 6,
+        "pieces": 1,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 14211,
+      "additional": null,
+      "frameCount": 27509
+    },
+    {
+      "stage": 6,
+      "score": 311236420,
+      "power": "4.00",
+      "piv": 79100,
+      "lives": {
+        "count": 4,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 17777,
+      "additional": null,
+      "frameCount": 24914
+    }
+  ],
+  "frameCount": 120816
+}
