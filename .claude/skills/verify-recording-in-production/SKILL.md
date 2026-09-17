@@ -147,21 +147,42 @@ curl -s -X POST "$API/magic-links" -H "content-type: application/json" -d "{
 }"
 ```
 
-`jobId`はAPIレスポンスには含まれない(`decisions/0004`、jobId自体が認可の秘密値)。
-**メール本文のリンクからしか分からない。** DynamoDBを直接scanしたりSSMの管理画面
-トークンを取得して`/admin/jobs`を使ったりする経路は、この用途では権限上ブロック
-される想定で試みるべきではない(実ユーザーと同じ経路で検証することが本来の目的
-でもある)。Gmail連携がある場合は以下のように探す:
+**上記が`HTTP 429`(同一メールアドレスでの24時間あたり送信回数の上限、
+`RATE_LIMIT_MAX_REQUESTS_PER_DAY`、`apps/api/src/rateLimit.ts`)を返した場合**、検証を
+繰り返すたびに宛先を変える必要はない。DynamoDBの`EmailRateLimitTable`を直接編集して
+制限を解除してよい(このE2Eテストの範囲では、レート制限そのものの動作検証は目的では
+ないため)。テーブル名は`JobsTable`と異なり`sattori-env.sh`が解決しないため、
+CloudFormationのリソースIDから引く。キーはメールアドレスをそのまま使わず
+`normalizeEmailForRateLimit()`と同じ正規化(小文字化 + ローカル部の`+`以降を除去)を
+した`normalizedEmail`なので注意する:
 
+```bash
+RATE_LIMIT_TABLE=$(aws cloudformation describe-stack-resource --region "$SATTORI_REGION" \
+  --stack-name SattoriStack --logical-resource-id EmailRateLimitTable \
+  --query 'StackResourceDetail.PhysicalResourceId' --output text)
+
+aws dynamodb delete-item --region "$SATTORI_REGION" \
+  --table-name "$RATE_LIMIT_TABLE" \
+  --key '{"normalizedEmail":{"S":"<正規化後のメールアドレス>"}}'
 ```
-search_threads(query: "subject:録画を開始するリンク newer_than:10m")
-→ 該当メッセージのidをget_message(messageFormat: PLAIN_TEXT)で開き、
-  本文中の https://sattori.hakatashi.com/jobs/<jobId> からjobIdを取り出す
+
+`jobId`はAPIレスポンスには含まれない(`decisions/0004`、jobId自体が認可の秘密値)。
+本来はメール本文のリンクからしか分からないが、**このE2Eテストの範囲はバックエンドの
+録画パイプライン検証であり、メールの疎通・正常性確認は範囲外**なので、DynamoDBの
+`JobsTable`を直接scanして`jobId`を確認してよい。`replayKey`(手順3で取得した値)か
+`email`(手順3で指定した宛先)で絞り込む:
+
+```bash
+source scripts/sattori-env.sh
+JOB_ID=$(aws dynamodb scan --region "$SATTORI_REGION" \
+  --table-name "$SATTORI_JOBS_TABLE" \
+  --filter-expression "replayKey = :replayKey" \
+  --expression-attribute-values "{\":replayKey\":{\"S\":\"$REPLAY_KEY\"}}" \
+  --query 'Items[0].jobId.S' --output text)
 ```
 
 ```bash
-# 4. 録画を開始する
-JOB_ID=<メールから取得したjobId>
+# 4. 録画を開始する(JOB_IDは手順3のDynamoDB scanで取得した値)
 curl -s -X POST "$API/jobs/$JOB_ID/start" -w "\nHTTP:%{http_code}\n"
 
 # 5. ポーリングで状態を確認する(GetJobResponse。desyncDetected/timedOutも含む)
@@ -180,6 +201,17 @@ aws ec2 describe-instances --region "$SATTORI_REGION" \
 
 長時間(フル尺録画は数十分)かかるため、Monitorツール等で状態変化(`status`の
 遷移)をポーリングし、`done`/`failed`になったら結果を確認する。
+
+**ジョブが不健全な状態(fps暴走・ハング等)に陥り緊急停止したい場合**は、管理画面
+(`/admin`)相当の権限が要る`POST /admin/jobs/{jobId}/stop`(`apps/api/src/handlers/admin/stopJob.ts`)
+を使ってよい。認可トークンはSSMから都度取得する必要はなく、`.env`の`ADMIN_TOKEN`を
+そのまま使う:
+
+```bash
+source .env   # ADMIN_TOKEN を読み込む
+curl -s -X POST "$API/admin/jobs/$JOB_ID/stop" \
+  -H "authorization: Bearer $ADMIN_TOKEN" -w "\nHTTP:%{http_code}\n"
+```
 
 ## 6. 結果の検証
 
