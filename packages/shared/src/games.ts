@@ -257,14 +257,20 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
  * reports/74〜77、Issue #240）に続き、th06nc（東方紅魔郷: New Classic。th06cと同系統
  * だがGPU描画が必須——Xvfb+wined3d+llvmpipeのソフトウェア描画では60fpsに遠く届かず、
  * Xorg+NVIDIA GRIDドライバ+DXVK(D3D11→Vulkan)によるGPUインスタンス（g6f.xlarge）
- * でのみ録画できる、touhou-recorder reports/78〜81、Issue #241）を追加した。
+ * でのみ録画できる、touhou-recorder reports/78〜81、Issue #241）を追加し、
+ * th15（東方紺珠伝。th20と同世代（960p相当・%APPDATA%配下のcfg/replay）だが
+ * 入力ポーリング方式はth06/07/08/10と同じGetDeviceState、Extraステージの
+ * 高負荷演出のみCPUでは解消しない処理落ちがありGPU（wined3d+OpenGL、DXVKは
+ * 不使用）のg6f系インスタンスで録画する、touhou-recorder reports/82、Issue #82）
+ * を追加した。
  * th06とはリプレイのバージョンが非互換（`packages/replay-parser`がバージョン語で判別）
  * なため別`GameId`として扱う。
- * PoC（touhou-recorder）で E2E 実証済みなのはこの11本のみで、他タイトルは
+ * PoC（touhou-recorder）で E2E 実証済みなのはこの12本のみで、他タイトルは
  * MOD 移植（録画対応）が未着手（AGENTS.md 参照）。
  */
 export const SUPPORTED_GAME_IDS: readonly GameId[] = [
-  "th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th20", "th128",
+  "th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th15", "th20",
+  "th128",
 ];
 
 export function isSupportedGame(game: GameId): boolean {

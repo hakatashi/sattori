@@ -21,7 +21,7 @@ Sattori の「まだできていないこと」「できているが条件付き
 
 ## 1. 対応タイトルの拡大
 
-現在の対応タイトルは th06・th06c・th06nc・th07・th08・th09・th10・th11・th12・th20・th128 の11本。
+現在の対応タイトルは th06・th06c・th06nc・th07・th08・th09・th10・th11・th12・th15・th20・th128 の12本。
 
 リプレイパーサー自体は th06〜th20 の大半に対応済みで、**残作業は録画対応**
 （Wine 上での MOD 移植・実機検証）である。タイトルごとの状況は
@@ -99,6 +99,40 @@ wineserverコールドスタートによる録画失敗しやすさは`worker/do
 「既知の残課題」を参照。`worker/recording/pipeline.py`の`_record_with_retry()`が
 重複フレーム率計測不能（`None`）を異常として扱っていない問題も、th06nc対応と合わせて
 修正していない（実機観測後に必要性を判断する）。
+
+### th15（東方紺珠伝）は録画対応済み。ただしGPU専用インスタンスでのみ録画可能
+
+th15は録画対応済み（Issue #82、[`worker/docs/titles/th15.md`](../worker/docs/titles/th15.md)）。
+th06ncとは異なり**GPU描画が原理的に必須なわけではない**——wined3d(D3D9→OpenGL)描画で
+あり、Xvfb+llvmpipe(ソフトウェア描画)でもメニュー・通常ステージはネイティブfps付近で
+動作する。ただしExtraステージの高負荷演出区間ではCPUコア数を増やしても解消しない
+処理落ちが発生し、GPU（wined3d+OpenGLのまま、DXVKではない）に切り替えることで解消
+することを実機確認したため（touhou-recorder reports/82）、品質を優先してth06ncと
+同じ`g6f`系GPUインスタンスに固定している。低速録画でも同等の効果が代替手段として
+機能することを確認済みだが、本番ではth06ncと運用を揃えるためGPU固定とし低速録画は
+提供しない（`SLOW_MOTION_SUPPORTED_GAME_IDS`未登録）。自宅ワーカー（GPU非搭載）には
+常にオファーされない（[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
+
+**入力ポーリング方式はth11/th20のGetKeyboardStateではなく、th06/07/08/10と同じ
+GetDeviceStateである**。「TH10以降のエンジンはGetKeyboardState」という経験則は
+th15には当てはまらない（`worker/docs/titles/th15.md`）。
+
+このマシン（HakataMatrix、自宅ワーカー本体）にはNVIDIA GPUが無いため、th06ncと
+同じ理由でローカルでのGPU描画経路の検証はできない（`verify-recording-locally`
+skill §0.0）。ローカルでは`gpu_display=False`（Xvfb+wined3d）へ一時的に切り替えて
+MOD・録画パイプライン結合（メニュー自動操作・スコア監視・終了検知）のみ検証済み。
+
+sattori側のコード・AWSインフラを通したGPU E2E録画は本番環境（eu-south-2、
+g6f.2xlarge）で実機検証済み（Extraステージ`th15_08.rpy`、重複フレーム率0.2%、
+理論尺超過+0.8%、`docs/reports/2026-09-18-th15-gpu-32bit-llvmpipe-fallback-root-cause.md`）。
+検証の過程で、32bitタイトル(th15)特有の問題——nvidia-container-toolkitが32bit互換
+NVIDIAクライアントライブラリを自動マウントしないため、修正前はGPU描画が有効なはずの
+状態でMesaのソフトウェアレンダラ(llvmpipe)へ静かにフォールバックしていた——を発見・
+修正した（[`decisions/0053`](decisions/0053-mount-32bit-nvidia-client-libraries-for-wine.md)）。
+GPUによるExtraステージの処理落ち解消自体はtouhou-recorder側でも実機検証済み
+（reports/82、AWS g6f.2xlarge）。
+
+ステージ番号のRVAは未特定（`thprac_th15.cpp`にも単純な変数が見当たらない）。
 
 ### th09はリプレイずれの事後検知が機能しない
 
@@ -217,8 +251,8 @@ th09のジョブは`JobRecord.desyncDetected`が常にfalseになる（デシン
 2並列とも完走することは確認済み（詳細は
 [`reports/2026-08-09-home-worker-parallel-recording.md`](reports/2026-08-09-home-worker-parallel-recording.md)）。
 
-**th06nc（GPU描画必須タイトル、Issue #241）は自宅ワーカーへは常にオファーされない**
-（GPU非搭載が前提のため。`apps/api/src/workerRouting.ts`の
+**th06nc・th15（GPU描画必須タイトル、Issue #241・#82）は自宅ワーカーへは常にオファー
+されない**（GPU非搭載が前提のため。`apps/api/src/workerRouting.ts`の
 `offerToHomeWorker: false`、[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
 自宅マシンにGPUを搭載する予定がある場合でも、現状の実装は明示的な許可リストを持たない
 ため、対応させるには別途改修が要る。
@@ -333,7 +367,7 @@ IP 単位のレート制限・reCAPTCHA 等の追加 bot ゲートは、**メー
 常に効いてくるため `AGENTS.md` §3 にも要約を置いてある。
 
 - リージョンや候補インスタンスタイプを変える場合は**単価定数も併せて見直すこと**。
-  GPU系（`g6f.xlarge`、th06nc、Issue #241）はCPU系`.xlarge`帯とは全く異なる価格帯
+  GPU系（`g6f.xlarge`、th06nc・th15、Issue #241・#82）はCPU系`.xlarge`帯とは全く異なる価格帯
   （`gpu-xlarge`、暫定値$0.07/h）を別枠で持つ（`FALLBACK_SPOT_PRICE_USD_PER_HOUR`）。
 - 自宅ワーカー（Issue #49）が処理したジョブは EC2/EBS/IPv4 の課金が発生しないため 0 で
   計上する（自宅の電気代・回線費は AWS の請求に現れず按分する意味も無いので一切計上しない）。

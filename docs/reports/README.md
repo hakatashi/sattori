@@ -12,6 +12,10 @@
 
 | 検証日 | 内容 | 結論 |
 | --- | --- | --- |
+| [2026-09-18](2026-09-18-th15-gpu-32bit-llvmpipe-fallback-root-cause.md) | th15 GPU描画が実際には効かずllvmpipeへフォールバックしていた問題の根本原因調査(Issue #82) | nvidia-container-toolkitが32bit互換NVIDIAライブラリを自動マウントしないため、32bitのwineプロセスが`libGLX_nvidia.so.0`を見つけられず静かにソフトウェアレンダラへフォールバックしていた。該当ファイルの個別マウントで解消(`docs/decisions/0053`)。touhou-recorderの検証はコンテナを使わないため同問題に未遭遇だったことも判明 |
+| [2026-09-18](2026-09-18-th15-gpu-ami-xorg-libwfb-root-cause.md) | th15 GPU用AMIのXorg起動不能(`Need libwfb`)の根本原因調査(us-west-2、Issue #82) | 原因はAMI構築手順ではなく`apps/api/src/ec2.ts`の`docker run`マウント(`-v /usr/lib/xorg/modules:...`丸ごと)がコンテナ自身のXorgモジュールを隠すことだった。個別ファイルマウントに修正(`docs/decisions/0052`)し解消を確認。th06ncも含むGPU系ジョブ共通の問題 |
+| [2026-09-17](2026-09-17-th15-production-e2e-attempt.md) | th15の本番AWS環境でのE2E検証を試みるも未完了(Issue #82) | sattori既存バグ2件(GPU系Dockerfileにwine32が無い・Launch Templateの`$Default`固定)を発見・修正。GPU用AMIへの32bit互換ドライバ追加はXorg起動失敗を招き、th06nc保護のため旧AMIへロールバックして中断。根本原因は次回へ引き継ぎ |
+| [2026-09-17](2026-09-17-th15-local-recording-verification.md) | th15(東方紺珠伝)録画対応(Issue #82)をsattori本体の`record_th15.py`でローカル実機検証 | 短尺リプレイでMOD・録画パイプライン結合(メニュー自動操作・スコア監視・終了検知)が成功。記録スコア完全一致・重複フレーム率2.1%。**GPU描画経路(本番のg6f系)自体はこのマシンにNVIDIA GPUが無く未検証**(th06ncと同じ制約) |
 | [2026-09-16](2026-09-16-th128-title-screen-wait-reduction-verification.md) | th128のメニュー操作シーケンス冒頭「タイトル画面ロード待ち」を8000msから2000msへ短縮する妥当性を検証(PR #235) | 2000msでもフル尺録画・記録スコア完全一致・シーケンス正常完了を確認。8000msの根拠だった不具合(キー入力を受け付けない)は8000ms・2000msいずれの試行でも再現せず |
 | [2026-09-12](2026-09-12-th06nc-recording-verification.md) | th06nc(東方紅魔郷: New Classic)のGPU用カスタムAMI構築・CDKデプロイ・タイトル資産アップロード・E2E検証(Issue #241) | AMI構築・デプロイ・資産アップロード・ローカルMOD機能検証は成功。**本番E2E録画(720p/1080p)はeu-south-2のg6f.xlargeスポット在庫の長時間枯渇によりリトライ全滅で未完了**(sattori側の不具合ではない)。GRIDドライバがnouveauと競合する新知見あり |
 | [2026-09-10](2026-09-10-th06c-recording-verification.md) | th06c(東方紅魔郷: Classic)録画対応(Issue #240)をローカル実機検証・本番AWS環境でのE2E検証 | 64bit専用MOD・Steamworks APIスタブ・終了検知テンプレート照合いずれも成功。フル尺録画で重複フレーム率0.1%・スコア完全一致(デシンクなし)。Webアップロード→録画→CloudFront DLのE2Eも成功。副次的に終了検知方式のログラベルが常に「画面静止検知」になるバグを発見・修正 |

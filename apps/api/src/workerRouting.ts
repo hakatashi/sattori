@@ -107,6 +107,15 @@ export const GAME_ROUTING_POLICIES: Partial<Record<GameId, GameRoutingPolicy>> =
     requiredCapabilities: [],
     offerWindowSeconds: 0,
   },
+  th15: {
+    // GPU描画必須タイトル（`requiresGpuRecording()`、Issue #82）。th06ncと異なり
+    // 自宅ワーカー（CPU/ソフトウェア描画）でも大半のステージは録画できるが、
+    // Extraステージの高負荷演出区間の処理落ちがGPUでしか解消しないため
+    // （touhou-recorder reports/82）、品質を優先してth06ncと同じ扱いにする。
+    offerToHomeWorker: false,
+    requiredCapabilities: [],
+    offerWindowSeconds: 0,
+  },
 };
 
 /**
