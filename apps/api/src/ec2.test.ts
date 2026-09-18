@@ -189,7 +189,20 @@ describe("buildUserData", () => {
     ).toString("utf-8");
     expect(decoded).toContain(config.workerGpuImage);
     expect(decoded).not.toContain(config.workerImage);
-    expect(decoded).toContain("docker run --rm --gpus all --ipc=host -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=all -e VK_LOADER_DEBUG=all -v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro -v /tmp/.X11-unix:/tmp/.X11-unix -v /etc/vulkan/icd.d:/etc/vulkan/icd.d:ro");
+    expect(decoded).toContain("docker run --rm --gpus all --ipc=host -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=all -e VK_LOADER_DEBUG=all $GPU_NVIDIA_MOUNTS -v /tmp/.X11-unix:/tmp/.X11-unix -v /etc/vulkan/icd.d:/etc/vulkan/icd.d:ro");
+    // ディレクトリ丸ごとマウントするとコンテナ自身のxserver-xorg-core由来モジュール
+    // （wfb等）が隠れてXorgが起動できなくなる（Issue #82実機検証で判明）ため、
+    // 個別ファイルだけをシェル側で動的に列挙してマウントする。
+    expect(decoded).not.toContain("-v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro");
+    expect(decoded).toContain("/usr/lib/xorg/modules/drivers/nvidia_drv.so");
+    expect(decoded).toContain("/usr/lib/xorg/modules/extensions/libglxserver_nvidia.so*");
+    // 32bitタイトル(th15)のwineプロセスがGPUクライアントライブラリを見つけられず
+    // llvmpipeへ静かにフォールバックする不具合(Issue #82実機検証で判明)への対応。
+    // nvidia-container-toolkitは64bitライブラリしか自動マウントしないため、
+    // 32bit版は個別にファイル単位でマウントする。
+    expect(decoded).not.toContain("-v /usr/lib/i386-linux-gnu:/usr/lib/i386-linux-gnu:ro");
+    expect(decoded).toContain("/usr/lib/i386-linux-gnu/libGLX_nvidia.so*");
+    expect(decoded).toContain("/usr/lib/i386-linux-gnu/libnvidia-*.so*");
     // GPU用カスタムAMIはECS基盤ではないため、ECSエージェント停止処理は行わない。
     expect(decoded).not.toContain("systemctl disable --now ecs");
   });

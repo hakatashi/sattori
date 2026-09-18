@@ -148,6 +148,13 @@ Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決では
 使い、`buildUserData()`が`docker run`に`--gpus all`を追加する
 （[`docs/decisions/0046`](../../docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)〜
 [`0048`](../../docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)）。
+ホストのNVIDIA Xorgドライバ（`nvidia_drv.so`・`libglxserver_nvidia.so*`）・32bit
+クライアントライブラリ（`libGLX_nvidia.so*`等）はファイル単位で個別マウントする必要が
+ある。ディレクトリごとマウントするとコンテナ自身の`xserver-xorg-core`由来モジュール
+（`libwfb.so`等）や32bit版Mesaを隠してしまい、前者はXorg起動不能、後者は32bitタイトル
+(th15)がGPUを使えずllvmpipeへ静かにフォールバックする（nvidia-container-toolkitは
+32bit互換ライブラリを自動マウントしないため。[`0052`](../../docs/decisions/0052-gpu-xorg-driver-file-level-mount-not-directory.md)・
+[`0053`](../../docs/decisions/0053-mount-32bit-nvidia-client-libraries-for-wine.md)）。
 
 `CreateFleet`が実際に確保したインスタンスタイプ・AZは `result.Instances[0]` から
 そのまま取得でき、追加の`DescribeInstances`呼び出しは不要。`JobRecord.instanceType`/
