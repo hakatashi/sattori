@@ -189,9 +189,31 @@ describe("buildUserData", () => {
     ).toString("utf-8");
     expect(decoded).toContain(config.workerGpuImage);
     expect(decoded).not.toContain(config.workerImage);
-    expect(decoded).toContain("docker run --rm --gpus all --ipc=host -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=all -e VK_LOADER_DEBUG=all -v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro -v /tmp/.X11-unix:/tmp/.X11-unix -v /etc/vulkan/icd.d:/etc/vulkan/icd.d:ro");
+    expect(decoded).toContain("docker run --rm --gpus all --ipc=host -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=all -e VK_LOADER_DEBUG=all $GPU_NVIDIA_MOUNTS -v /tmp/.X11-unix:/tmp/.X11-unix -v /etc/vulkan/icd.d:/etc/vulkan/icd.d:ro");
+    // ディレクトリ丸ごとマウントするとコンテナ自身のxserver-xorg-core由来モジュール
+    // （wfb等）が隠れてXorgが起動できなくなる（Issue #82実機検証で判明）ため、
+    // 個別ファイルだけをシェル側で動的に列挙してマウントする。
+    expect(decoded).not.toContain("-v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro");
+    expect(decoded).toContain("/usr/lib/xorg/modules/drivers/nvidia_drv.so");
+    expect(decoded).toContain("/usr/lib/xorg/modules/extensions/libglxserver_nvidia.so*");
+    // 32bitタイトル(th15)のwineプロセスがGPUクライアントライブラリを見つけられず
+    // llvmpipeへ静かにフォールバックする不具合(Issue #82実機検証で判明)への対応。
+    // nvidia-container-toolkitは64bitライブラリしか自動マウントしないため、
+    // 32bit版は個別にファイル単位でマウントする。
+    expect(decoded).not.toContain("-v /usr/lib/i386-linux-gnu:/usr/lib/i386-linux-gnu:ro");
+    expect(decoded).toContain("/usr/lib/i386-linux-gnu/libGLX_nvidia.so*");
+    expect(decoded).toContain("/usr/lib/i386-linux-gnu/libnvidia-*.so*");
     // GPU用カスタムAMIはECS基盤ではないため、ECSエージェント停止処理は行わない。
     expect(decoded).not.toContain("systemctl disable --now ecs");
+  });
+
+  it("GPU描画必須タイトル(th15)もth06ncと同じGPU系ECRイメージを使う（Issue #82）", () => {
+    const decoded = Buffer.from(
+      buildUserData(config, { ...job, game: "th15" }, "task-token-abc"),
+      "base64",
+    ).toString("utf-8");
+    expect(decoded).toContain(config.workerGpuImage);
+    expect(decoded).not.toContain(config.workerImage);
   });
 
   it("CPU系タイトルは--gpus allを付けず、ECSエージェント停止処理も行う", () => {
@@ -238,7 +260,7 @@ describe("launchRecordingInstance", () => {
     const versionCall = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[0];
     expect(versionCall?.args[0].input).toMatchObject({
       LaunchTemplateId: "lt-xxxx",
-      SourceVersion: "$Default",
+      SourceVersion: "$Latest",
     });
 
     const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
@@ -349,7 +371,7 @@ describe("launchRecordingInstance", () => {
     const versionCall = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[0];
     expect(versionCall?.args[0].input).toMatchObject({
       LaunchTemplateId: "lt-gpu-xxxx",
-      SourceVersion: "$Default",
+      SourceVersion: "$Latest",
     });
 
     const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
@@ -369,6 +391,37 @@ describe("launchRecordingInstance", () => {
     for (const call of ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)) {
       expect(call.args[0].input.LaunchTemplateId).not.toBe("lt-xxxx");
     }
+  });
+
+  it("th15ジョブもth06ncと同じGPU専用Launch Template・GPU系インスタンスタイプで起動する（Issue #82）", async () => {
+    ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
+      LaunchTemplateVersion: { VersionNumber: 5 },
+    });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [
+        {
+          InstanceIds: ["i-0123456789abcdef0"],
+          InstanceType: "g6f.xlarge",
+          AvailabilityZone: "ap-northeast-1a",
+        },
+      ],
+    });
+
+    await launchRecordingInstance(config, { ...job, game: "th15" }, "task-token-abc");
+
+    const versionCall = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[0];
+    expect(versionCall?.args[0].input).toMatchObject({
+      LaunchTemplateId: "lt-gpu-xxxx",
+      SourceVersion: "$Latest",
+    });
+    const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
+    const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    expect(overrides).toEqual(
+      expect.arrayContaining([
+        { SubnetId: "subnet-aaaa", InstanceType: "g6f.xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "g6f.2xlarge" },
+      ]),
+    );
   });
 
   it("インスタンスが起動できなかった場合は Errors を含めて例外を投げる", async () => {

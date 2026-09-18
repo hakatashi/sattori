@@ -279,10 +279,10 @@ function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD
 
 /**
  * ゲームからサイズ帯を推定する。th11・th12・th128は`.2xlarge`帯、th20は`.4xlarge`帯、
- * th06ncはGPU系`gpu-xlarge`帯の候補リストを使う（`apps/api/src/ec2.ts`の
+ * th06nc・th15はGPU系`gpu-xlarge`帯の候補リストを使う（`apps/api/src/ec2.ts`の
  * `TH11_CANDIDATE_INSTANCE_TYPES` / `TH12_CANDIDATE_INSTANCE_TYPES` /
  * `TH128_CANDIDATE_INSTANCE_TYPES` / `TH20_CANDIDATE_INSTANCE_TYPES` /
- * `GPU_CANDIDATE_INSTANCE_TYPES`、touhou-recorder reports/40・46・73・80・81）。
+ * `GPU_CANDIDATE_INSTANCE_TYPES`、touhou-recorder reports/40・46・73・80・81・82）。
  *
  * インスタンスタイプがまだ記録されていない段階（`launching`）や、リトライで
  * リセットされた場合（`retryJob.ts`）に使われる。ここが実態とずれると、`ec2.ts`の
@@ -297,6 +297,7 @@ function sizeClassOfGame(game: GameId): keyof typeof FALLBACK_SPOT_PRICE_USD_PER
     case "th20":
       return "4xlarge";
     case "th06nc":
+    case "th15":
       return "gpu-xlarge";
     default:
       return "xlarge";

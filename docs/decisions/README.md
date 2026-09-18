@@ -61,6 +61,10 @@
 | [0047](0047-no-gpu-titles-for-home-worker.md) | 2026-09-12 | apps/api / home-worker | GPU描画必須タイトルは自宅ワーカーへ常にオファーしない | 有効 |
 | [0048](0048-separate-ecr-repo-for-gpu-workers.md) | 2026-09-12 | infra / worker / apps/api | GPU描画必須タイトル専用の別ECRリポジトリ（worker-gpu）を新設する | 有効 |
 | [0049](0049-mod-integration-test-local-only.md) | 2026-09-14 | worker | MODの実機注入統合テストを追加するが、ゲーム資産のライセンス・実行コストのためCIには組み込まず`worker/games/`がある環境限定のローカル実行に限定する | 有効 |
+| [0050](0050-th15-gpu-instance-despite-not-strictly-required.md) | 2026-09-17 | worker / apps/api / packages/shared | th15はGPU描画が原理的に必須ではないが、Extraステージの処理落ち対策としてth06ncと同じGPU系インスタンス(g6f系)に固定する | 有効 |
+| [0051](0051-launch-template-source-version-latest-not-default.md) | 2026-09-17 | apps/api | EC2 Launch Templateのバージョン継承元を`$Default`ではなく`$Latest`にする(CDKデプロイの変更が反映されないバグの修正) | 有効 |
+| [0052](0052-gpu-xorg-driver-file-level-mount-not-directory.md) | 2026-09-18 | apps/api | GPU用コンテナへのXorg NVIDIAドライバ受け渡しはディレクトリ丸ごとではなくファイル単位でマウントする(`Need libwfb`起動不能バグの修正) | 有効 |
+| [0053](0053-mount-32bit-nvidia-client-libraries-for-wine.md) | 2026-09-18 | apps/api | GPU用コンテナへ32bit版NVIDIAクライアントライブラリを個別マウントする(32bitタイトルがGPUを使えずllvmpipeへ静かにフォールバックするバグの修正) | 有効 |
 
 ## 書き方
 

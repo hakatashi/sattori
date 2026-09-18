@@ -287,9 +287,9 @@ export class SattoriStack extends Stack {
     // GPU描画必須タイトル(th06nc等、Issue #241)専用のワーカーイメージ。CPU系
     // (`workerRepo`)とはベースイメージ・依存パッケージが異なる別Dockerfile
     // (`worker/Dockerfile.gpu`)からビルドするため、リポジトリを分けてある
-    // （`docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md`）。今回はth06ncのみを
-    // 収録するが、将来th20等をGPU化する際の受け皿としても使える構造（GPU化しない限り
-    // 空のまま、既存th20の録画経路自体は今回変更しない）。
+    // （`docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md`）。現状th06nc・th15
+    // (Issue #241・#82)を収録するが、将来th20等をGPU化する際の受け皿としても使える構造
+    // （GPU化しない限り既存th20の録画経路自体は変更しない）。
     const workerGpuRepo = new ecr.Repository(this, "WorkerGpuRepo", {
       repositoryName: "sattori-worker-gpu",
       removalPolicy: RemovalPolicy.DESTROY,
@@ -416,7 +416,7 @@ export class SattoriStack extends Stack {
     workersTable.grant(homeWorkerRole, "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem");
     workerRepo.grantPull(homeWorkerRole);
     // workerGpuRepo(GPU描画必須タイトル専用)のpull権限は意図的に付与しない。自宅
-    // ワーカーはGPUを搭載していない前提で常にth06nc等をオファーされないが
+    // ワーカーはGPUを搭載していない前提で常にth06nc・th15等をオファーされないが
     // (`apps/api/src/workerRouting.ts`のoffer制御)、pull権限すら渡さないことも
     // 多層防御の1つになる(Issue #241、`docs/decisions/0047`)。
     // EC2ワーカーはdockerのawslogsドライバがログを送るが、自宅ではdockerデーモンに

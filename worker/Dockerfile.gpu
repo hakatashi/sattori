@@ -6,8 +6,13 @@
 # 既存の共通イメージ(`worker/Dockerfile`、CPU系9タイトル用)とは別のECRリポジトリ
 # (`sattori-worker-gpu`)へビルド・pushする(`docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md`)。
 # `recording/`パッケージ・`entrypoint.py`・各`record_thNN.py`は共通ソースのため
-# 両方のDockerfileでCOPYが重複するが、タイトル数がまだ1本(th06nc)なので
-# 抽象化は見送っている。変更時は両方のDockerfileを確認すること。
+# 両方のDockerfileでCOPYが重複するが、抽象化は見送っている。変更時は両方の
+# Dockerfileを確認すること。
+#
+# th06nc(64bit/PE32+)とth15(32bit)が混在するため、CPU系Dockerfileと同様
+# multiarch(i386)を有効化しwine32/wine64両方を導入する(Issue #82実機検証で、
+# wine64のみの状態でth15(32bit)を起動すると`it looks like wine32 is missing`
+# エラーで即失敗することを確認した)。
 #
 # 【重要・実機未検証】NVIDIAドライバ本体(Xorgのnvidia_drv.so等)はこのイメージには
 # 含めない。GPU用カスタムAMI(`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`)
@@ -16,6 +21,16 @@
 # ユーザースペースライブラリのバージョンを一致させる必要がある**(worker/docs/titles/
 # th06nc.md参照)。実機検証(g6f.xlarge)でXorgの起動に必要な要素が過不足なく
 # マウントされるかを確認し、不足があればこのDockerfileへ追加すること。
+#
+# 【重要・実機未検証】現行のGPU用カスタムAMI(th06nc(64bit)向けに構築)は、
+# NVIDIAドライバの32bit互換ライブラリ(`--compat32-libdir`でのインストール、
+# touhou-recorder reports/82参照)を含めずに構築されている可能性が高い。
+# th15(32bit)がwine32経由でNVIDIA GLX/Vulkanを実際に使えるかは、AMI側の
+# 32bit互換ライブラリの有無に依存するため未検証。無い場合、32bitプロセスは
+# GPU(NVIDIA)ではなくllvmpipe(上記i386 Mesaパッケージ、ソフトウェア描画)へ
+# 静かにフォールバックしうる——エラーにはならないがGPU導入の目的
+# (Extraステージの処理落ち解消、`docs/decisions/0050`)を達成できない。
+# 目視・fps表示で実際にGPUが使われているか確認すること。
 #
 # 重要: 以下はウォーターマーク素材・終了検知用テンプレート画像であり、リポジトリには
 # 含めない(.gitignore 済み)。docker build 前にビルドコンテキスト(worker/)配下へ
@@ -27,12 +42,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 
-RUN apt-get update && \
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
-      wine64 winetricks \
+      wine wine32 wine64 winetricks \
       xserver-xorg-core xserver-xorg-legacy x11-xserver-utils \
       xdotool openbox x11-utils procps rsync \
       libvulkan1 vulkan-tools mesa-utils mesa-vulkan-drivers \
+      libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 \
+      libgl1:amd64 libgl1:i386 \
+      libglx-mesa0:amd64 libglx-mesa0:i386 \
+      libegl-mesa0:amd64 libegl-mesa0:i386 \
       ffmpeg pulseaudio pulseaudio-utils \
       language-pack-ja \
       python3 python3-numpy python3-pil python3-pip \
@@ -63,7 +83,7 @@ COPY assets/replay_end_templates/ /app/assets/replay_end_templates/
 
 # ワーカーのソース(リポジトリ管理、CPU系Dockerfileと共通)
 COPY recording/ /app/recording/
-COPY record_th06.py record_th06c.py record_th06nc.py record_th07.py record_th08.py record_th09.py record_th10.py record_th11.py record_th12.py record_th20.py entrypoint.py status.py convert.py interruption_watcher.py task_heartbeat.py progress_reporter.py title_assets.py pulse.py /app/
+COPY record_th06.py record_th06c.py record_th06nc.py record_th07.py record_th08.py record_th09.py record_th10.py record_th11.py record_th12.py record_th15.py record_th20.py entrypoint.py status.py convert.py interruption_watcher.py task_heartbeat.py progress_reporter.py title_assets.py pulse.py /app/
 
 RUN mkdir -p /app/instances /app/runs
 

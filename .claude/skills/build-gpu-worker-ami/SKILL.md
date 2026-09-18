@@ -43,7 +43,16 @@ g6fはvGPU（仮想GPU）であり、通常のNVIDIAデータセンタードラ�
 `--no-sign-request`でのみ許可しているため、`aws s3 ls`/`cp`ともに`--no-sign-request`
 を付けること。
 
+**【重要・2026-09-18実機で新規判明】素のUbuntu 24.04 AMIには`cc`（gcc）・dkms・
+カーネルヘッダが入っておらず、先にインストールしないと`.run`インストーラが
+`ERROR: Unable to find the development tool 'cc'`で失敗する**（us-west-2での
+再現実験で確認、touhou-recorderのDLAMIベース環境には元から入っていたため
+気づかれていなかった）。
+
 ```bash
+sudo apt-get update
+sudo apt-get install -y build-essential dkms linux-headers-$(uname -r)
+
 # 既存のデータセンタードライバが入っていれば削除（holdされているので
 # --allow-change-held-packagesが要る）
 sudo apt-get -y --allow-change-held-packages remove --purge \
@@ -55,6 +64,26 @@ aws s3 ls s3://ec2-linux-nvidia-drivers/latest/ --no-sign-request
 aws s3 cp s3://ec2-linux-nvidia-drivers/latest/NVIDIA-Linux-x86_64-*-grid-aws.run /tmp/grid.run --no-sign-request
 sudo sh /tmp/grid.run --silent --dkms
 ```
+
+**32bitタイトル（th15等）を載せる場合は`--compat32-libdir`を付けて32bit互換
+クライアントライブラリも導入すること**（Issue #82実機検証で判明。無いとXorg自体は
+GPUを使えているように見えるのに、32bitのwineプロセスだけがエラーも出さず
+Mesaのソフトウェアレンダラ(llvmpipe)へ静かにフォールバックする——
+[`docs/decisions/0053`](../../../docs/decisions/0053-mount-32bit-nvidia-client-libraries-for-wine.md)、
+`worker/docs/titles/th15.md`）。64bit専用タイトルしか載せない場合は不要。
+
+```bash
+sudo dpkg --add-architecture i386
+sudo apt-get update
+sudo apt-get install -y libc6:i386
+sudo sh /tmp/grid.run --silent --dkms --compat32-libdir=/usr/lib/i386-linux-gnu
+```
+
+**既知の癖**: `--compat32-libdir`付きだとインストーラが内部でパスを`/usr`と
+結合し、32bitライブラリを`/usr/usr/lib/i386-linux-gnu/`に誤配置することがある
+（touhou-recorder reports/82）。`ls /usr/lib/i386-linux-gnu/*nvidia*`で配置を
+確認し、無ければ`cp -a /usr/usr/lib/i386-linux-gnu/* /usr/lib/i386-linux-gnu/ &&
+sudo ldconfig`で複製すること。
 
 導入後、`nvidia-smi`で`NVIDIA L4-3Q`（3072 MiB、vGPUプロファイル。インスタンスタイプ
 によりスライスサイズが変わる——g6f.2xlargeなら`L4-6Q`）のように認識されることを

@@ -392,6 +392,25 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
             save_progress_snapshot(
                 progress_dir, color_frame, elapsed / time_scale, expected_duration_seconds,
             )
+        if config.gpu_display and poll_count % PROGRESS_SNAPSHOT_EVERY_N_POLLS == 0:
+            # GPU用インスタンスで実際にGPUが使われているか(wineのwined3d/OpenGLが
+            # ホスト側に32bit版NVIDIAライブラリが渡っておらずllvmpipeへ静かに
+            # フォールバックしていないか)を録画中を通して確認する軽量ログ(Issue #82、
+            # `docs/decisions/0053-mount-32bit-nvidia-client-libraries-for-wine.md`)。
+            # utilization.gpuが録画中ずっと0%近辺のままなら、GPUが使われていない
+            # 強い兆候(CPU使用率・理論尺比較と合わせて確認すること)。
+            try:
+                util = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=utilization.gpu,utilization.memory,memory.used",
+                     "--format=csv,noheader"],
+                    env=env, capture_output=True, text=True, timeout=5,
+                )
+                if util.returncode == 0:
+                    log(f"[gpu_util] {util.stdout.strip()}")
+                else:
+                    log(f"[gpu_util] nvidia-smi exit={util.returncode}: {util.stderr.strip()[:200]}")
+            except Exception as e:
+                log(f"[gpu_util] nvidia-smi実行例外: {e}")
         if end_template is not None:
             # テンプレートが使えるゲームでは、画面静止を待たずに毎回テンプレート照合する
             # (静止待ちを挟むと、リプレイ選択画面に戻った後さらにSTILL_CONSECUTIVE_REQUIRED
