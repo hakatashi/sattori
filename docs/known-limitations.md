@@ -117,13 +117,20 @@ th06ncとは異なり**GPU描画が原理的に必須なわけではない**—�
 GetDeviceStateである**。「TH10以降のエンジンはGetKeyboardState」という経験則は
 th15には当てはまらない（`worker/docs/titles/th15.md`）。
 
-**本対応の時点ではsattori側のコード・AWSインフラを通したGPU E2E録画の実機検証は
-未実施**。このマシン（HakataMatrix、自宅ワーカー本体）にはNVIDIA GPUが無いため、
-th06ncと同じ理由でローカルでのGPU描画経路の検証ができない
-（`verify-recording-locally` skill §0.0）。ローカルでは`gpu_display=False`
-（Xvfb+wined3d）へ一時的に切り替えてMOD・録画パイプライン結合（メニュー自動操作・
-スコア監視・終了検知）のみ検証済み。GPUによるExtraステージの処理落ち解消自体は
-touhou-recorder側で実機検証済み（reports/82、AWS g6f.2xlarge）。
+このマシン（HakataMatrix、自宅ワーカー本体）にはNVIDIA GPUが無いため、th06ncと
+同じ理由でローカルでのGPU描画経路の検証はできない（`verify-recording-locally`
+skill §0.0）。ローカルでは`gpu_display=False`（Xvfb+wined3d）へ一時的に切り替えて
+MOD・録画パイプライン結合（メニュー自動操作・スコア監視・終了検知）のみ検証済み。
+
+sattori側のコード・AWSインフラを通したGPU E2E録画は本番環境（eu-south-2、
+g6f.2xlarge）で実機検証済み（Extraステージ`th15_08.rpy`、重複フレーム率0.2%、
+理論尺超過+0.8%、`docs/reports/2026-09-18-th15-gpu-32bit-llvmpipe-fallback-root-cause.md`）。
+検証の過程で、32bitタイトル(th15)特有の問題——nvidia-container-toolkitが32bit互換
+NVIDIAクライアントライブラリを自動マウントしないため、修正前はGPU描画が有効なはずの
+状態でMesaのソフトウェアレンダラ(llvmpipe)へ静かにフォールバックしていた——を発見・
+修正した（[`decisions/0053`](decisions/0053-mount-32bit-nvidia-client-libraries-for-wine.md)）。
+GPUによるExtraステージの処理落ち解消自体はtouhou-recorder側でも実機検証済み
+（reports/82、AWS g6f.2xlarge）。
 
 ステージ番号のRVAは未特定（`thprac_th15.cpp`にも単純な変数が見当たらない）。
 

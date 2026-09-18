@@ -237,10 +237,51 @@ systemctl disable --now ecs >/dev/null 2>&1 || true`;
 
   // GPU用カスタムAMIはnvidia-container-toolkit導入済み前提で、コンテナへGPUを
   // 渡すために`--gpus all`が必要（CPU系では付けない）。
-  // またホスト側のXorg NVIDIAドライバ(/usr/lib/xorg/modules)およびVulkan ICD設定を
-  // コンテナへマウントし、X11共有メモリ・PulseAudioのために--ipc=hostを付与する。
+  // またホスト側のXorg NVIDIAドライバ(nvidia_drv.so・libglxserver_nvidia.so)・
+  // 32bitクライアントライブラリ(libGLX_nvidia.so等)・Vulkan ICD設定をコンテナへ
+  // マウントし、X11共有メモリ・PulseAudioのために--ipc=hostを付与する。
+  //
+  // 【重要】ディレクトリ丸ごとマウントしてはいけない（旧実装のバグ、Issue #82実機
+  // 検証で判明）。bind mountはマウント先の既存内容を隠すため、コンテナ自身が
+  // 提供するファイル（`xserver-xorg-core`の`libwfb.so`・32bit版Mesa等）がホスト側の
+  // 内容（NVIDIA関連ファイルのみ）で丸ごと隠れてしまう
+  // （`docs/decisions/0052-gpu-xorg-driver-file-level-mount-not-directory.md`）。
+  // 個々のファイルだけを実行時にシェル側で列挙してマウントすることで、コンテナの
+  // 標準ファイルを維持したままNVIDIA用ファイルだけを追加する。
+  //
+  // 【重要】nvidia-container-toolkit(`--gpus all`)は64bit版のNVIDIAユーザー
+  // スペースライブラリ(`libnvidia-*.so`等、`/usr/lib/x86_64-linux-gnu/`)は自動で
+  // コンテナへマウントするが、**32bit互換ライブラリの自動マウントには対応していない**
+  // （既知の制約）。th15のような32bitタイトルではwineの32bitプロセスが
+  // `/usr/lib/i386-linux-gnu/libGLX_nvidia.so.0`等を見つけられず、エラーにはならずに
+  // Mesaのソフトウェアレンダラ(llvmpipe)へ静かにフォールバックする
+  // （GPU描画が効いているように見えて実際は効いていない状態になる。
+  // `docs/decisions/0053-mount-32bit-nvidia-client-libraries-for-wine.md`）。
+  // ホストAMI側に32bit互換ドライバ(`--compat32-libdir`)を導入したうえで、
+  // 該当ファイルを個別マウントすることで解消する（th06nc等64bit専用タイトルは
+  // 32bitプロセスを持たないため実害が無く、このマウントも空になるだけで無害）。
+  const gpuXorgMountSetup = isGpuJob
+    ? `
+# NVIDIA関連ファイルだけを個別にコンテナへマウントする準備（理由は docker run
+# 呼び出し部のコメント参照）。バージョン番号を含むファイル名は決め打ちにせず
+# グロブで拾う。ファイルが存在しない（64bit専用タイトル・32bit互換ドライバ未導入の
+# ホスト等）場合は単に無視する。
+GPU_NVIDIA_MOUNTS=""
+for f in \\
+  /usr/lib/xorg/modules/drivers/nvidia_drv.so \\
+  /usr/lib/xorg/modules/extensions/libglxserver_nvidia.so* \\
+  /usr/lib/i386-linux-gnu/libnvidia-*.so* \\
+  /usr/lib/i386-linux-gnu/libGLX_nvidia.so* \\
+  /usr/lib/i386-linux-gnu/libEGL_nvidia.so* \\
+  /usr/lib/i386-linux-gnu/libGLESv1_CM_nvidia.so* \\
+  /usr/lib/i386-linux-gnu/libGLESv2_nvidia.so*; do
+  if [ -e "$f" ]; then
+    GPU_NVIDIA_MOUNTS="$GPU_NVIDIA_MOUNTS -v $f:$f:ro"
+  fi
+done`
+    : "";
   const dockerRunFlags = isGpuJob
-    ? "--rm --gpus all --ipc=host -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=all -e VK_LOADER_DEBUG=all -v /usr/lib/xorg/modules:/usr/lib/xorg/modules:ro -v /tmp/.X11-unix:/tmp/.X11-unix -v /etc/vulkan/icd.d:/etc/vulkan/icd.d:ro"
+    ? "--rm --gpus all --ipc=host -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=all -e VK_LOADER_DEBUG=all $GPU_NVIDIA_MOUNTS -v /tmp/.X11-unix:/tmp/.X11-unix -v /etc/vulkan/icd.d:/etc/vulkan/icd.d:ro"
     : "--rm";
 
   // trap EXIT で必ず shutdown する（Spot 終了 = 課金停止）。ECR ログインや
@@ -262,6 +303,7 @@ notify_bootstrap_failure() {
     --cause "$1" >/dev/null 2>&1 || true
 }
 ${ecsDisableStep}
+${gpuXorgMountSetup}
 # プレーンな docker ホストとして使うため docker のみ明示起動。
 systemctl enable --now docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true
 # aws CLI が無い環境向けのフォールバック導入。
