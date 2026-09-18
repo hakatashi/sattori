@@ -16,7 +16,7 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
-    date: "2026-09-17",
+    date: "2026-09-19",
     ja: "東方紺珠伝 (th15) の録画に対応",
     en: "Added recording support for Legacy of Lunatic Kingdom (th15)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/82",
