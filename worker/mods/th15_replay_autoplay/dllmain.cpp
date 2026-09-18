@@ -70,10 +70,8 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
         return 1;
     }
 
-    // th20と同じく、タイトルロゴ演出からメニュー項目が実際に操作可能になるまで
-    // 長めの待機が必要(touhou-recorder reports/82で10000ms待機を実機確認)。
-    Log("Buffering 10000ms (scaled) for title screen logo animation...");
-    ScaledSleep(10000);
+    Log("Buffering 5000ms (scaled) for title screen logo animation...");
+    ScaledSleep(5000);
 
     Log("Step 1: Down x2 (select 'Replay' on main menu, skipping grayed-out 'Extra Start')");
     for (int i = 0; i < 2; i++) {
