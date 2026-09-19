@@ -65,6 +65,12 @@ export interface ApiConfig {
 export interface Ec2LaunchConfig {
   /** 起動先サブネット（複数AZ）。EC2 Fleet の Overrides に列挙し、AZ分散でSpot中断耐性を上げる。 */
   subnetIds: string[];
+  /**
+   * `subnetIds`と同じ順序・同じ長さで並んだ各サブネットのAZ名（インデックスで対応）。
+   * GPUジョブ(g6f系)を特定AZから暫定除外する際に使う（`EXCLUDED_GPU_AVAILABILITY_ZONE`、
+   * `ec2.ts`、Issue #267）。
+   */
+  subnetAvailabilityZones: string[];
   /** AWS リージョン。 */
   region: string;
   /**
@@ -122,6 +128,7 @@ export function loadConfig(): ApiConfig {
     analyticsEventsTable: required("ANALYTICS_EVENTS_TABLE"),
     ec2: {
       subnetIds: required("WORKER_SUBNET_IDS").split(","),
+      subnetAvailabilityZones: required("WORKER_SUBNET_AZS").split(","),
       region: process.env.AWS_REGION ?? "eu-south-2",
       launchTemplateId: required("WORKER_LAUNCH_TEMPLATE_ID"),
       gpuLaunchTemplateId: required("GPU_WORKER_LAUNCH_TEMPLATE_ID"),

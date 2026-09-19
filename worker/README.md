@@ -288,7 +288,7 @@ GPU用カスタムAMI(`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`)�
 ## 13. 既知の制約
 
 一覧と詳細は [`docs/known-limitations.md`](../docs/known-limitations.md)。録画パイプラインに
-関わるのは次の5点で、**なぜその割り切りなのか・何が未解決かはリンク先にある**。
+関わるのは次の7点で、**なぜその割り切りなのか・何が未解決かはリンク先にある**。
 
 - **デシンク(リプレイずれ)を録画時に予防する手段は無い**。th20 は thprac の導入で大半が
   解消したが([`titles/th20.md`](docs/titles/th20.md))、他タイトルには対処法がない。録画後の
@@ -299,6 +299,13 @@ GPU用カスタムAMI(`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`)�
   [`titles/th09.md`](docs/titles/th09.md))。
 - **タイムアウト打ち切り(検知方式がリプレイ終了検知ではなく録画時間の上限)も検知・警告のみで、
   自動リトライはしない**(Issue #161。`JobRecord.timedOut`に記録して同じ警告表示に乗せる。同 §3)。
+- **Wineクラッシュ(ゲーム本体の未処理例外)だけは検知して自動リトライする**(Issue #267)。
+  上記2つと違い非決定的でリトライにより解消しうるため。検知は`wine.log`に現れる`Unhandled`で
+  行い(`WINE_UNHANDLED_EXCEPTION_MARKER`)、`classification="crashed"`として破棄・リトライする。
+  **理論尺比による異常検知は使わない** —— デシンクと原理的に区別できず、回復不能なデシンクに
+  無駄なリトライを消費してしまうため([`decisions/0054`](../docs/decisions/0054-detect-wine-crash-via-wine-log-not-duration-ratio.md)、
+  同 §3)。クラッシュがなぜ起きるかは未特定で、GPUジョブは暫定的に`eu-south-2a`を避けている
+  ([`decisions/0055`](../docs/decisions/0055-exclude-eu-south-2a-from-gpu-fleet.md))。
 - **重複フレーム率の自動チェックは録画開始15〜45秒の30秒スポットしか見ていない**(Issue #93)。
   全編の代表値ではなく、背景が常時アニメーションするタイトルでは処理落ちを過小評価しうるため、
   リプレイのframeCount(60fps基準の理論尺)との比較も必ず併用すること(同 §3)。
