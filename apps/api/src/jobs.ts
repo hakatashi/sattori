@@ -357,3 +357,90 @@ export async function markJobLaunched(table: string, jobId: string): Promise<voi
     throw err;
   }
 }
+
+/**
+ * GPU vCPU容量リース（Issue #270）の待ち行列に関する更新。フィールドの意味は
+ * `JobRecord`のコメント・`docs/decisions/0056-gpu-vcpu-lease-and-queue.md`参照。
+ */
+
+export interface GpuQueueMarkResult {
+  /** 待機列に入れたか。`stopRequestedAt`があるジョブはfalse（条件付き更新が失敗）。 */
+  marked: boolean;
+  /** この待機エピソードの起点（ISO 8601）。タイムアウト判定の基準。 */
+  gpuQueueEnteredAt: string;
+}
+
+/**
+ * 待機列に入れる（冪等）。`gpuQueuedAt`（FIFO順の基準）と`gpuQueueEnteredAt`
+ * （タイムアウト判定の起点）は`if_not_exists`で1回だけセットし、以降の呼び出しでは
+ * 変わらない。`gpuQueueHeartbeatAt`は毎回更新する（死んだ待機者の自己修復用）。
+ *
+ * `stopRequestedAt`があるジョブ（管理画面から緊急停止済み）は待機列に入れない
+ * ——`ConditionExpression`が弾いた場合は`marked: false`を返し、呼び出し側は
+ * 通常の待機処理を続けない（どのみちStep Functions実行自体が停止されるため、
+ * この戻り値をどう扱うかは呼び出し側の安全弁でしかない）。
+ */
+export async function markGpuQueueWaiting(table: string, jobId: string): Promise<GpuQueueMarkResult> {
+  const now = new Date().toISOString();
+  try {
+    const result = await client.send(
+      new UpdateCommand({
+        TableName: table,
+        Key: { jobId },
+        UpdateExpression:
+          "SET gpuQueueState = :waiting, " +
+          "gpuQueuedAt = if_not_exists(gpuQueuedAt, :now), " +
+          "gpuQueueEnteredAt = if_not_exists(gpuQueueEnteredAt, :now), " +
+          "gpuQueueHeartbeatAt = :now, " +
+          "updatedAt = :now",
+        ConditionExpression: "attribute_not_exists(stopRequestedAt)",
+        ExpressionAttributeValues: { ":waiting": "waiting", ":now": now },
+        ReturnValues: "ALL_NEW",
+      }),
+    );
+    const gpuQueueEnteredAt = (result.Attributes as JobRecord | undefined)?.gpuQueueEnteredAt ?? now;
+    return { marked: true, gpuQueueEnteredAt };
+  } catch (err) {
+    if (err instanceof ConditionalCheckFailedException) {
+      return { marked: false, gpuQueueEnteredAt: now };
+    }
+    throw err;
+  }
+}
+
+/** 待機列での表示用の順位・推定待ち秒数を書き込む（`getJob`が転記するだけの値）。 */
+export async function updateGpuQueueDisplay(
+  table: string,
+  jobId: string,
+  position: number,
+  etaSeconds: number,
+): Promise<void> {
+  await client.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { jobId },
+      UpdateExpression: "SET gpuQueuePosition = :p, gpuQueueEtaSeconds = :e, updatedAt = :u",
+      ExpressionAttributeValues: { ":p": position, ":e": etaSeconds, ":u": new Date().toISOString() },
+    }),
+  );
+}
+
+/**
+ * 待機列から外す（枠取得・タイムアウト確定・管理画面からの緊急停止・非終端ジョブの
+ * 定期掃除で呼ぶ）。sparse GSI `GpuQueueIndex`のキー属性を含む一式をまとめて
+ * `REMOVE`する——これを怠ると死んだ待機者が投入順の列を塞ぎ続ける
+ * （head-of-line blocking）。存在しない属性のREMOVEは冪等に成功する。
+ */
+export async function clearGpuQueueState(table: string, jobId: string): Promise<void> {
+  await client.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { jobId },
+      UpdateExpression:
+        "REMOVE gpuQueueState, gpuQueuedAt, gpuQueueEnteredAt, gpuQueueHeartbeatAt, " +
+        "gpuQueuePosition, gpuQueueEtaSeconds " +
+        "SET updatedAt = :u",
+      ExpressionAttributeValues: { ":u": new Date().toISOString() },
+    }),
+  );
+}

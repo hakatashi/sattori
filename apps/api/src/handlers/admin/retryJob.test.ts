@@ -97,6 +97,29 @@ describe("buildRetryJob", () => {
     expect(retried.retriedFromJobId).toBe("job-1");
     expect(retried.retriedToJobId).toBeNull();
   });
+
+  it("GPU vCPU容量リースの待ち行列関連フィールドを引き継がない(Issue #270、忘れると新ジョブが待機中のまま他のGPUジョブの列を塞ぐ)", () => {
+    const waitingGpuJob: JobRecord = {
+      ...failedJob,
+      game: "th15",
+      gpuQueueState: "waiting",
+      gpuQueuedAt: "2026-07-31T00:00:00.000Z",
+      gpuQueueEnteredAt: "2026-07-31T00:00:00.000Z",
+      gpuQueueHeartbeatAt: "2026-07-31T00:01:00.000Z",
+      gpuQueuePosition: 2,
+      gpuQueueEtaSeconds: 600,
+    };
+
+    const retried = buildRetryJob(waitingGpuJob, "job-2", new Date("2026-08-01T00:00:00.000Z"));
+
+    expect(retried.gpuQueueState).toBeUndefined();
+    expect(retried.gpuQueuedAt).toBeUndefined();
+    expect(retried.gpuQueueEnteredAt).toBeUndefined();
+    expect(retried.gpuQueueHeartbeatAt).toBeUndefined();
+    expect(retried.gpuQueuePosition).toBeUndefined();
+    expect(retried.gpuQueueEtaSeconds).toBeUndefined();
+    expect("gpuQueueState" in retried).toBe(false);
+  });
 });
 
 describe("POST /admin/jobs/{jobId}/retry", () => {

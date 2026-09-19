@@ -34,6 +34,7 @@ import { HttpLambdaAuthorizer, HttpLambdaResponseType } from "aws-cdk-lib/aws-ap
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
 import {
+  GPU_QUEUE_INDEX,
   HOME_WORKER_OFFER_INDEX,
   LAUNCH_LAMBDA_TIMEOUT_SECONDS,
   ORPHAN_SWEEP_INTERVAL_MINUTES,
@@ -200,6 +201,22 @@ export class SattoriStack extends Stack {
       indexName: HOME_WORKER_OFFER_INDEX,
       partitionKey: { name: "homeWorkerOfferState", type: dynamodb.AttributeType.STRING },
       sortKey: { name: "homeWorkerOfferExpiresAt", type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // GPU vCPU容量リース（Issue #270）の投入順（FIFO）を守るための sparse GSI。
+    // PK=gpuQueueState(値は"waiting"の1種類のみ)、SK=gpuQueuedAt。オファー用GSIと
+    // 全く同じパターン——**待機中のジョブだけがこの属性を持つ**（枠取得・
+    // タイムアウト確定・緊急停止時にREMOVEする）ため、インデックス自体が「いま
+    // GPU枠を待っているジョブ一覧」になる。`AcquireGpuSlotFn`はこれをQueryして
+    // 先頭判定・順位計算を行う（`apps/api/src/gpuQueue.ts`）。ProjectionはALL
+    // ——推定待ち時間の計算に`estimatedDurationSeconds`が要るため
+    // （他のGSIと同じ理由でINCLUDEは避ける）。詳細は
+    // `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`。
+    jobsTable.addGlobalSecondaryIndex({
+      indexName: GPU_QUEUE_INDEX,
+      partitionKey: { name: "gpuQueueState", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "gpuQueuedAt", type: dynamodb.AttributeType.STRING },
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
