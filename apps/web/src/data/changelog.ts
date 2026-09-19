@@ -17,6 +17,13 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-19",
+    ja: "東方紅魔郷: New Classic・東方紺珠伝など高負荷な録画が混み合っているときに、録画が失敗する代わりに順番を待つよう改善。待ち順・おおよその待ち時間を表示するようにした",
+    en: "Improved handling when demanding titles like Embodiment of Scarlet Devil: New Classic and Legacy of Lunatic Kingdom are congested: recording now waits its turn instead of failing, and the queue position and estimated wait time are shown",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/270",
+    important: true,
+  },
+  {
+    date: "2026-09-19",
     ja: "録画対象のプロセスが途中でクラッシュした際に、中断を検知して自動的に録画をやり直すよう修正",
     en: "Fixed recording to automatically retry when the target process crashes during recording",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/267",

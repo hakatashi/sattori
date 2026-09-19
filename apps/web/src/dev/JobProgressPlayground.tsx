@@ -36,6 +36,8 @@ const BASE: Omit<
   slowMotion: false,
   desyncDetected: null,
   timedOut: null,
+  queuePosition: null,
+  queueEstimatedWaitSeconds: null,
 };
 
 function buildJob(overrides: Partial<GetJobResponse> & { status: JobStatus }): GetJobResponse {
@@ -58,6 +60,19 @@ function buildJob(overrides: Partial<GetJobResponse> & { status: JobStatus }): G
 const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: string }[] = [
   { title: "status: pending", job: buildJob({ status: "pending" }) },
   { title: "status: queued", job: buildJob({ status: "queued" }) },
+  {
+    title: "status: queued（GPU録画の待ち行列で待機中、Issue #270）",
+    job: buildJob({
+      status: "queued",
+      game: "th15",
+      queuePosition: 3,
+      queueEstimatedWaitSeconds: 45 * 60,
+    }),
+  },
+  {
+    title: "status: queued（GPU待ち行列・推定待ち時間が不明な場合）",
+    job: buildJob({ status: "queued", game: "th06nc", queuePosition: 1, queueEstimatedWaitSeconds: null }),
+  },
   { title: "status: launching", job: buildJob({ status: "launching" }) },
   {
     title: "status: recording（進捗・プレビュー画像あり）",

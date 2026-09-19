@@ -130,6 +130,23 @@ export function JobProgressView({ job, loadError }: ViewProps) {
             {overall.retrySuspected && (
               <span className={styles.retryHint}>{t("jobProgress.retryHint")}</span>
             )}
+            {/*
+              GPU録画の待ち行列（Issue #270）。GPU描画必須タイトル（th06nc・th15）が
+              eu-south-2のG系スポットクオータ制約により枠不足で待機している間だけ
+              値を持つ（`queuePosition`は`AcquireGpuSlot`が計算してJobRecordへ
+              書き込む値をそのまま転記したもの）。全体進捗バー自体は`queued`の間
+              0%のまま据え置く（待機は録画フェーズの進捗とは別の出来事のため）ので、
+              ここに独立した文言として出す。
+            */}
+            {status === "queued" && job.queuePosition !== null && (
+              <span className={styles.queueHint}>
+                {t("jobProgress.queuePosition", { position: job.queuePosition })}
+                {job.queueEstimatedWaitSeconds !== null &&
+                  t("jobProgress.queueEta", {
+                    minutes: Math.max(1, Math.round(job.queueEstimatedWaitSeconds / 60)),
+                  })}
+              </span>
+            )}
           </div>
         </div>
       )}

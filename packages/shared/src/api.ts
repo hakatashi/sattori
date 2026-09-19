@@ -170,6 +170,22 @@ export interface GetJobResponse {
    * `desyncDetected`と同時にtrueになりうる。その場合は両方の注意書きを並べて出す。
    */
   timedOut: boolean | null;
+  /**
+   * GPU録画の待ち行列（Issue #270）での順位（1始まり）。`JobRecord.gpuQueuePosition`
+   * をそのまま転記する。GPU描画必須タイトル（th06nc・th15）が枠不足で待機している
+   * 間だけ値を持ち、それ以外（非GPUタイトル・待機していない・まだ計算されていない
+   * 旧ジョブ）は null。ページBの`queued`表示で「N番目」を出すのに使う。
+   * `apps/api/src/handlers/sfn/acquireGpuSlot.ts`がポーリングのたびに書き込む
+   * （`progress`と同じ「ワーカー/枠取りループが書き、`getJob`は転記するだけ」
+   * というパターン）。
+   */
+  queuePosition: number | null;
+  /**
+   * GPU録画の待ち行列（Issue #270）が捌けるまでの推定秒数（保守的な見積もり）。
+   * `JobRecord.gpuQueueEtaSeconds`をそのまま転記する。`queuePosition`と同じ条件
+   * でのみ値を持つ。
+   */
+  queueEstimatedWaitSeconds: number | null;
 }
 
 /**
