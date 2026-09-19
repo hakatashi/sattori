@@ -43,6 +43,8 @@ function buildJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     slowMotion: false,
     desyncDetected: null,
     timedOut: null,
+    queuePosition: null,
+    queueEstimatedWaitSeconds: null,
     ...overrides,
   };
 }

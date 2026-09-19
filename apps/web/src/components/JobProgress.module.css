@@ -57,6 +57,12 @@
   color: var(--text-muted);
 }
 
+/* GPU録画の待ち行列(Issue #270)の順位・推定待ち時間。slowMotionHintと同じく
+   異常ではない事実の注記として控えめに出す。 */
+.queueHint {
+  color: var(--text-muted);
+}
+
 .grid {
   display: grid;
   grid-template-columns: 400px 1fr;
