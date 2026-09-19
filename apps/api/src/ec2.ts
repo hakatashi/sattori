@@ -9,7 +9,7 @@ import {
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import type { JobRecord } from "@sattori/shared";
-import { requiresGpuRecording, supportsEc2SlowMotion } from "@sattori/shared";
+import { requiresGpuRecording, supportsEc2SlowMotion, vcpusForInstanceType } from "@sattori/shared";
 import type { ApiConfig } from "./config.js";
 import { buildWorkerEnv } from "./workerEnv.js";
 
@@ -181,22 +181,60 @@ const GPU_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
   "g6f.2xlarge", // NVIDIA L4 1/4スライス (8vCPU/32GiB)。reports/81実測で1080p推奨・xlarge枯渇対策
 ];
 
-function getCandidateInstanceTypes(game: JobRecord["game"]): InstanceType[] {
-  switch (game) {
-    case "th11":
-      return TH11_CANDIDATE_INSTANCE_TYPES;
-    case "th12":
-      return TH12_CANDIDATE_INSTANCE_TYPES;
-    case "th20":
-      return TH20_CANDIDATE_INSTANCE_TYPES;
-    case "th128":
-      return TH128_CANDIDATE_INSTANCE_TYPES;
-    case "th06nc":
-    case "th15":
-      return GPU_CANDIDATE_INSTANCE_TYPES;
-    default:
-      return DEFAULT_CANDIDATE_INSTANCE_TYPES;
+/**
+ * `launchRecordingInstance()` の候補タイプ絞り込みに使う制約。GPU vCPU容量リース
+ * （Issue #270、`docs/decisions/0056-gpu-vcpu-lease-and-queue.md`）専用の値で、
+ * CPU系タイトルの候補には一切影響しない。
+ */
+export interface LaunchConstraints {
+  /**
+   * 確保済みリースのvCPU上限。GPUジョブでのみ意味を持ち、これを超えるvCPU数の
+   * インスタンスタイプ（`GPU_INSTANCE_TYPE_VCPUS`）を候補から除外する。
+   * `undefined` なら制約なし（従来どおり全候補。非GPU経路はこちら）。
+   */
+  maxVcpu?: number;
+}
+
+/** module-privateではなくexportする（`ec2.test.ts`から直接検証するため）。 */
+export function getCandidateInstanceTypes(
+  game: JobRecord["game"],
+  constraints: LaunchConstraints = {},
+): InstanceType[] {
+  const base = ((): InstanceType[] => {
+    switch (game) {
+      case "th11":
+        return TH11_CANDIDATE_INSTANCE_TYPES;
+      case "th12":
+        return TH12_CANDIDATE_INSTANCE_TYPES;
+      case "th20":
+        return TH20_CANDIDATE_INSTANCE_TYPES;
+      case "th128":
+        return TH128_CANDIDATE_INSTANCE_TYPES;
+      case "th06nc":
+      case "th15":
+        return GPU_CANDIDATE_INSTANCE_TYPES;
+      default:
+        return DEFAULT_CANDIDATE_INSTANCE_TYPES;
+    }
+  })();
+
+  // GPUジョブでもmaxVcpu未指定なら全候補(呼び出し側の安全弁)。CPU系タイトルは
+  // requiresGpuRecording()がfalseなのでこの絞り込みを一切通らない。
+  if (constraints.maxVcpu === undefined || !requiresGpuRecording(game)) {
+    return base;
   }
+  const filtered = base.filter(
+    (instanceType) => (vcpusForInstanceType(instanceType) ?? Infinity) <= constraints.maxVcpu!,
+  );
+  if (filtered.length === 0) {
+    // 理屈上到達不能(GPU候補の最小vCPU数はacquireGpuSlotの最小確保量と一致させて
+    // あるため、リースが実在すれば必ず1つは残る)。黙って全候補へフォールバックせず、
+    // 設計の前提が崩れたことをそのまま失敗させる。
+    throw new Error(
+      `GPUリースのvCPU上限(${constraints.maxVcpu})に収まる候補インスタンスタイプが無い`,
+    );
+  }
+  return filtered;
 }
 
 /**
@@ -467,9 +505,10 @@ export async function launchRecordingInstance(
   config: ApiConfig,
   job: JobRecord,
   taskToken: string,
+  constraints: LaunchConstraints = {},
 ): Promise<LaunchedInstance> {
   const userData = buildUserData(config, job, taskToken);
-  const candidateInstanceTypes = getCandidateInstanceTypes(job.game);
+  const candidateInstanceTypes = getCandidateInstanceTypes(job.game, constraints);
   const isGpuJob = requiresGpuRecording(job.game);
   const launchTemplateId = isGpuJob ? config.ec2.gpuLaunchTemplateId : config.ec2.launchTemplateId;
   // GPUジョブのみeu-south-2aを除外する(EXCLUDED_GPU_AVAILABILITY_ZONE参照、Issue #267)。
@@ -627,6 +666,12 @@ export interface TaggedInstance {
    * `orphanInstances.ts` 参照）。
    */
   launchTime: Date | null;
+  /**
+   * インスタンスタイプ。GPUリースのリコンサイラ（Issue #270、
+   * `handlers/sweepOrphanInstances.ts`）が実在インスタンスのvCPU合計を計算するために
+   * 使う。`DescribeInstances` が返さなかった場合のみ null。
+   */
+  instanceType: string | null;
 }
 
 /**
@@ -664,6 +709,7 @@ export async function listTaggedInstances(): Promise<TaggedInstance[]> {
           instanceId,
           jobId,
           launchTime: instance.LaunchTime ?? null,
+          instanceType: instance.InstanceType ?? null,
         });
       }
     }
