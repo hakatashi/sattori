@@ -151,6 +151,49 @@ def test_record_with_retry_discards_output_above_max_duplicate_rate(monkeypatch)
     assert success is False
 
 
+def test_record_with_retry_discards_and_retries_on_crashed_classification(monkeypatch):
+    """Wineクラッシュ(classification="crashed")はデシンクと異なり非決定的で
+    リトライにより解消しうる(同一リプレイの2ジョブが別地点でクラッシュした実例、
+    Issue #267)ため、理論尺・重複フレーム率チェックを待たず直ちに破棄してリトライ
+    すること。重複フレーム率チェックは無駄なので、破棄した試行では呼ばれないこと
+    も確認する。"""
+    config = make_config()
+    calls = []
+    dup_rate_calls = []
+
+    def fake_attempt(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return {"output_exists": True, "classification": "crashed", "total_record_sec": 30.0}
+        return {"output_exists": True, "classification": "good", "total_record_sec": 60.0}
+
+    def fake_measure_duplicate_rate(*args, **kwargs):
+        dup_rate_calls.append(1)
+        return 1.0
+
+    monkeypatch.setattr(pipeline, "attempt_recording", fake_attempt)
+    monkeypatch.setattr(pipeline, "measure_duplicate_rate", fake_measure_duplicate_rate)
+
+    logs = []
+    success = pipeline.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=3, log=logs.append)
+
+    assert success is True
+    assert len(calls) == 2
+    assert dup_rate_calls == [1]  # 破棄されたcrashed試行では呼ばれない(2回目のgoodでのみ呼ばれる)
+    assert any("WARNING" in msg and "クラッシュ" in msg for msg in logs)
+
+
+def test_record_with_retry_gives_up_after_max_attempts_when_always_crashed(monkeypatch):
+    config = make_config()
+    monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "crashed", "total_record_sec": 30.0,
+    })
+
+    success = pipeline.record_with_retry(config, "/replay.rpy", "/out.mp4", max_attempts=2, log=lambda msg: None)
+
+    assert success is False
+
+
 def test_record_with_retry_creates_and_destroys_job_sink(monkeypatch, fake_job_sink):
     # ジョブ専用sinkは録画開始時に作成し、終了時に必ず破棄する(Issue #48)。
     config = make_config(pulse_sink="sattori_job_abc")
@@ -324,7 +367,7 @@ def test_monitor_until_end_returns_last_captured_frame_on_freeze(monkeypatch):
     detection = pipeline._EndDetection(
         template=end_template, template_mask=None, template_mad_threshold=0.0, still_mask=None,
     )
-    detected, detected_by, frozen, last_color_frame = pipeline._monitor_until_end(
+    detected, detected_by, frozen, crashed, last_color_frame = pipeline._monitor_until_end(
         config, env, (0, 0, 640, 480), detection, time_scale=1.0,
         progress_dir=None, expected_duration_seconds=None, seen_lines=set(), log=lambda msg: None,
     )
@@ -332,6 +375,7 @@ def test_monitor_until_end_returns_last_captured_frame_on_freeze(monkeypatch):
     assert detected is False
     assert detected_by is None
     assert frozen is True
+    assert crashed is False
     assert last_color_frame == "color2"
 
 
@@ -365,7 +409,7 @@ def test_monitor_until_end_uses_side_stream_when_configured(monkeypatch):
     detection = pipeline._EndDetection(
         template=end_template, template_mask=None, template_mad_threshold=0.0, still_mask=None,
     )
-    detected, detected_by, frozen, last_color_frame = pipeline._monitor_until_end(
+    detected, detected_by, frozen, crashed, last_color_frame = pipeline._monitor_until_end(
         config, env, (0, 0, 640, 480), detection, time_scale=1.0,
         progress_dir=None, expected_duration_seconds=None, seen_lines=set(), log=lambda msg: None,
         side_stream_path="/side.jpg",
@@ -393,7 +437,7 @@ def test_monitor_until_end_skips_poll_when_side_stream_frame_unchanged(monkeypat
     detection = pipeline._EndDetection(
         template=end_template, template_mask=None, template_mad_threshold=0.0, still_mask=None,
     )
-    detected, detected_by, frozen, last_color_frame = pipeline._monitor_until_end(
+    detected, detected_by, frozen, crashed, last_color_frame = pipeline._monitor_until_end(
         config, env, (0, 0, 640, 480), detection, time_scale=1.0,
         progress_dir=None, expected_duration_seconds=None, seen_lines=set(), log=lambda msg: None,
         side_stream_path="/side.jpg",
@@ -404,6 +448,82 @@ def test_monitor_until_end_skips_poll_when_side_stream_frame_unchanged(monkeypat
     assert detected is False
 
 
+def test_monitor_until_end_detects_wine_crash_via_wine_log(monkeypatch, tmp_path):
+    """Wineクラッシュ後にゲーム画面がフリーズしても、静止検知(誤って"good"=正常終了
+    扱いになる)より先にwine.logの未処理例外を検知して打ち切ること。3182b7c9・
+    d18b4eb3の両インシデントを実機再現実験で確認した結果に基づく
+    (Issue #267、docs/reports/2026-09-19-th15-wine-crash-detection-verification.md)。"""
+    wine_log = tmp_path / "wine.log"
+    wine_log.write_bytes(b"Launching (suspended): ...\nProcess created. PID=216\n")
+    config = make_config(instance_dir=str(tmp_path))
+    env = config.build_env()
+    clock = _FakeClock()
+    monkeypatch.setattr(pipeline.time, "time", clock.time)
+    monkeypatch.setattr(pipeline.time, "sleep", clock.sleep)
+    monkeypatch.setattr(pipeline, "wait_for_log_marker", lambda *a, **k: 0.0)
+
+    gray = np.zeros((120, 160), dtype=np.float32)
+    grab_calls = {"n": 0}
+
+    def fake_grab_frame(*a, **k):
+        grab_calls["n"] += 1
+        # 1回目のフレーム取得と同時にwine.logへクラッシュを書き込む(実機では
+        # ゲームプロセスのクラッシュとフリーズしたフレームがほぼ同時に起きる)。
+        with open(wine_log, "a") as f:
+            f.write(
+                "0148:err:seh:NtRaiseException Unhandled exception code "
+                "c0000005 flags 0 addr 0x49e93e\n"
+            )
+        return gray, f"color{grab_calls['n']}"
+
+    monkeypatch.setattr(pipeline, "grab_frame", fake_grab_frame)
+
+    detection = pipeline._EndDetection(
+        template=None, template_mask=None, template_mad_threshold=0.0, still_mask=None,
+    )
+    detected, detected_by, frozen, crashed, last_color_frame = pipeline._monitor_until_end(
+        config, env, (0, 0, 640, 480), detection, time_scale=1.0,
+        progress_dir=None, expected_duration_seconds=None, seen_lines=set(), log=lambda msg: None,
+    )
+
+    assert crashed is True
+    assert detected is False
+    assert frozen is False
+    # wine.logのチェックはフレーム取得より前に行われるため、クラッシュ発生の
+    # 次周期(2回目)で検知が成立し、それ以上フレームを取得しない。
+    assert grab_calls["n"] == 1
+
+
+def test_monitor_until_end_ignores_wine_log_content_written_before_monitoring_starts(monkeypatch, tmp_path):
+    """wine.logの増分監視は監視開始時点までの内容を対象外とする。過去の試行由来の
+    "Unhandled"文字列が既に残っていても誤検知しないこと(_launch_game()はwine.logを
+    試行ごとに新規で開くため通常は起こらないが、念のための回帰テスト)。"""
+    wine_log = tmp_path / "wine.log"
+    wine_log.write_bytes(b"stale: Unhandled leftover from a previous run\n")
+    config = make_config(instance_dir=str(tmp_path))
+    env = config.build_env()
+    clock = _FakeClock()
+    monkeypatch.setattr(pipeline.time, "time", clock.time)
+    monkeypatch.setattr(pipeline.time, "sleep", clock.sleep)
+    monkeypatch.setattr(pipeline, "wait_for_log_marker", lambda *a, **k: 0.0)
+    monkeypatch.setattr(pipeline, "STILL_CONSECUTIVE_REQUIRED", 2)
+
+    gray = np.zeros((120, 160), dtype=np.float32)
+    monkeypatch.setattr(pipeline, "grab_frame", lambda *a, **k: (gray, "color"))
+
+    detection = pipeline._EndDetection(
+        template=None, template_mask=None, template_mad_threshold=0.0, still_mask=None,
+    )
+    detected, detected_by, frozen, crashed, last_color_frame = pipeline._monitor_until_end(
+        config, env, (0, 0, 640, 480), detection, time_scale=1.0,
+        progress_dir=None, expected_duration_seconds=None, seen_lines=set(), log=lambda msg: None,
+    )
+
+    assert crashed is False
+    assert detected is True
+    assert detected_by == "still"
+
+
 def test_attempt_recording_saves_diagnostics_snapshot_on_discarded_attempt(monkeypatch, tmp_path):
     config = make_config()
     monkeypatch.setattr(pipeline, "load_end_template", lambda path: None)
@@ -412,7 +532,7 @@ def test_attempt_recording_saves_diagnostics_snapshot_on_discarded_attempt(monke
     monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
     monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (False, None, True, "the-last-frame"),
+        pipeline, "_monitor_until_end", lambda *a, **k: (False, None, True, False, "the-last-frame"),
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
@@ -443,7 +563,7 @@ def test_attempt_recording_does_not_save_diagnostics_snapshot_on_good_classifica
     monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
     monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (True, "still", False, "the-last-frame"),
+        pipeline, "_monitor_until_end", lambda *a, **k: (True, "still", False, False, "the-last-frame"),
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
@@ -476,7 +596,7 @@ def test_attempt_recording_logs_template_match_as_the_detection_reason(monkeypat
     monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
     monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (True, "template", False, "the-last-frame"),
+        pipeline, "_monitor_until_end", lambda *a, **k: (True, "template", False, False, "the-last-frame"),
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
@@ -590,7 +710,7 @@ def test_attempt_recording_content_end_sec_excludes_still_confirmation_tail(monk
     monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
     monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (True, "still", False, "the-last-frame"),
+        pipeline, "_monitor_until_end", lambda *a, **k: (True, "still", False, False, "the-last-frame"),
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
@@ -617,7 +737,7 @@ def test_attempt_recording_content_end_sec_excludes_template_confirmation_tail(m
     monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
     monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (True, "template", False, "the-last-frame"),
+        pipeline, "_monitor_until_end", lambda *a, **k: (True, "template", False, False, "the-last-frame"),
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
@@ -644,7 +764,7 @@ def test_attempt_recording_content_end_sec_equals_total_record_sec_on_timeout(mo
     monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
     monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (False, None, True, "the-last-frame"),
+        pipeline, "_monitor_until_end", lambda *a, **k: (False, None, True, False, "the-last-frame"),
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)

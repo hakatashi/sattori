@@ -99,6 +99,24 @@ MAX_ATTEMPTS_DEFAULT = 3
 MAX_DUPLICATE_RATE_DEFAULT = 30.0
 
 
+# wine.log(injectorのstdout/stderr、_launch_game()参照)にWineが未処理例外を検知した
+# 際に出す文字列(Issue #267)。実機再現実験で確認した2パターンいずれにも含まれる:
+#   - ゲームプロセスごと消滅する型: "err:seh:NtRaiseException Unhandled exception
+#     code c0000005 flags 0 addr 0x..."
+#   - AeDebug設定によりwinedbgのクラッシュダイアログが出たままプロセスは生存し続ける型:
+#     "wine: Unhandled page fault on write access to ... starting debugger..."
+# どちらも「デシンク・正常なリプレイ終了」では出現しない(実機再現実験で確認済み、
+# docs/reports/2026-09-19-th15-wine-crash-detection-verification.md)。
+#
+# この検知が要る理由: 理論尺比(録画時間/リプレイ推定時間)による異常検知は、
+# デシンク(回復不能・ユーザーも織り込み済みの東方シリーズ共通の問題)と縮退するため
+# 使えない。デシンクをリトライしても直らない上、途中までの動画には価値がある。
+# プロセス生存監視・プロセスstate監視・winedbg出現監視は上記2パターンの一方しか
+# 検知できないことを実機再現実験で確認しており、wine.logのこの文字列だけが両方を
+# 網羅的に検知できる。
+WINE_UNHANDLED_EXCEPTION_MARKER = "Unhandled"
+
+
 def _log_failure_diagnostics(config, log):
     """起動失敗時・ウィンドウ検出失敗時の診断のため、wine.log / mod.log / DXVK log の末尾を出力する。"""
     wine_log = f"{config.instance_dir}/wine.log"
@@ -303,14 +321,19 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                        side_stream_path=None):
     """リプレイ終了(または異常)を検知するまでポーリングする。
 
-    戻り値: (detected, detected_by, frozen, last_color_frame)。**録画の停止はここでは
-    やらない**(呼び出し側が `_stop_and_mux()` で止める)。`detected_by`は`detected`が
-    Trueだった場合の検知方式("template" / "still")で、呼び出し側がログのサマリー行に
-    正しい方式を表示するために使う(未検知/frozen/timeoutの場合はNone。以前は`detected`
-    フラグだけを見て`elif detected:`で常に「画面静止検知」に固定していたため、
-    テンプレート照合で検知した場合もログのサマリーだけ誤って表示されるバグがあった
-    ——判定結果(classification)自体は正しかったため実害は表示のみ、
+    戻り値: (detected, detected_by, frozen, crashed, last_color_frame)。**録画の停止は
+    ここではやらない**(呼び出し側が `_stop_and_mux()` で止める)。`detected_by`は
+    `detected`がTrueだった場合の検知方式("template" / "still")で、呼び出し側がログの
+    サマリー行に正しい方式を表示するために使う(未検知/frozen/crashed/timeoutの場合は
+    None。以前は`detected`フラグだけを見て`elif detected:`で常に「画面静止検知」に
+    固定していたため、テンプレート照合で検知した場合もログのサマリーだけ誤って
+    表示されるバグがあった——判定結果(classification)自体は正しかったため実害は表示のみ、
     touhou-recorder reports/76でth06c対応中に発見、th06/07/08/09/10のログ全てに影響)。
+    `crashed`はwine.logにWineの未処理例外を検知したか(Issue #267、
+    `WINE_UNHANDLED_EXCEPTION_MARKER`参照)。ゲーム画面がフリーズしたまま静止検知が
+    誤って「リプレイ終了」と判定してしまう(3182b7c9・d18b4eb3のインシデントで判明、
+    docs/reports/2026-09-19-th15-wine-crash-detection-verification.md)ため、静止・
+    テンプレート照合より優先してチェックする。
     `last_color_frame`は直近に取得したカラー画像で、試行が破棄された際の診断用証跡
     (Issue #159、`save_diagnostics_snapshot()`)に使う。1回もフレームを取得できないまま
     終了した場合(grace期間中のタイムアウト等)はNone。
@@ -357,7 +380,12 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     detected = False
     detected_by = None
     frozen = False
+    crashed = False
     poll_count = 0
+    # wine.log(_launch_game()が作成する)の既読バイト数。監視開始時点までの内容
+    # (injector起動ログ等)は対象外とし、以降の増分だけを見る。
+    wine_log_path = f"{config.instance_dir}/wine.log"
+    wine_log_offset = os.path.getsize(wine_log_path) if os.path.exists(wine_log_path) else 0
     while True:
         elapsed = time.time() - gameplay_start
         if elapsed > timeout_sec:
@@ -367,6 +395,29 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
         if elapsed < post_start_grace_sec:
             time.sleep(POLL_INTERVAL_SEC)
             continue
+
+        # 画面静止・テンプレート照合より先にチェックする。Wineクラッシュ後は画面が
+        # フリーズしたまま静止検知の方が先に成立してしまい、"good"(正常終了)と
+        # 誤判定される(3182b7c9・d18b4eb3のインシデントで判明、Issue #267)。
+        if os.path.exists(wine_log_path):
+            try:
+                wine_log_size = os.path.getsize(wine_log_path)
+                if wine_log_size > wine_log_offset:
+                    with open(wine_log_path, "r", errors="replace") as f:
+                        f.seek(wine_log_offset)
+                        new_wine_log = f.read()
+                    wine_log_offset = wine_log_size
+                    if WINE_UNHANDLED_EXCEPTION_MARKER in new_wine_log:
+                        log(
+                            "ERROR: wine.log にWineの未処理例外を検知しました"
+                            "(ゲームプロセスのクラッシュ、Issue #267)。録画を打ち切ります\n"
+                            f"--- wine.log 新規出力 ---\n{new_wine_log.strip()}"
+                        )
+                        crashed = True
+                        break
+            except OSError:
+                # ログファイルの読み取り失敗自体でこの重要度の低い監視を止めない。
+                pass
 
         if side_stream_path:
             # 本番録画用ffmpegが出力しているサブストリームを読む(別プロセスの
@@ -408,7 +459,14 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                 if util.returncode == 0:
                     log(f"[gpu_util] {util.stdout.strip()}")
                 else:
-                    log(f"[gpu_util] nvidia-smi exit={util.returncode}: {util.stderr.strip()[:200]}")
+                    # NVMLの初期化失敗(例: "Failed to initialize NVML: Unknown Error")は
+                    # stderrではなく**stdout**に出る。stderrだけを記録していたため、
+                    # 本番のGPUクラッシュ調査時にこの行が常に空で原因を特定できな
+                    # かった(Issue #267)。
+                    log(
+                        f"[gpu_util] nvidia-smi exit={util.returncode}: "
+                        f"stdout={util.stdout.strip()[:200]!r} stderr={util.stderr.strip()[:200]!r}"
+                    )
             except Exception as e:
                 log(f"[gpu_util] nvidia-smi実行例外: {e}")
         if end_template is not None:
@@ -466,7 +524,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                     break
             prev_frame = frame
         time.sleep(POLL_INTERVAL_SEC)
-    return detected, detected_by, frozen, last_color_frame
+    return detected, detected_by, frozen, crashed, last_color_frame
 
 
 def _stop_and_mux(video, audio, output_path, env, log):
@@ -519,7 +577,9 @@ def _stop_and_mux(video, audio, output_path, env, log):
 def attempt_recording(config, replay_path, output_path, progress_dir, expected_duration_seconds,
                        diagnostics_dir=None, attempt=1, log=print):
     """録画を1回試行する。戻り値: dict(output_exists, classification, total_record_sec)。
-    classification は "good" / "timeout" / "setup_error" のいずれか。
+    classification は "good" / "crashed" / "timeout" / "setup_error" のいずれか。
+    "crashed" はwine.logにWineの未処理例外を検知した場合(Issue #267、
+    `WINE_UNHANDLED_EXCEPTION_MARKER`)で、呼び出し側は常に破棄してリトライする。
 
     classification が "good" 以外(=この試行が破棄される)なら、直近のフレームを
     診断用証跡として`diagnostics_dir`へ書き出す(Issue #159、`save_diagnostics_snapshot()`)。
@@ -582,7 +642,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     ), audio_target, audio_log_path, audio_log_file)
     record_start = time.time()
 
-    detected, detected_by, frozen, last_color_frame = _monitor_until_end(
+    detected, detected_by, frozen, crashed, last_color_frame = _monitor_until_end(
         config, env, geometry, detection, time_scale=time_scale,
         progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
         seen_lines=seen_lines, log=log, side_stream_path=side_stream_path,
@@ -594,6 +654,13 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     if detected:
         classification = "good"
         stop_reason = "リプレイ選択画面テンプレート照合" if detected_by == "template" else "画面静止検知"
+    elif crashed:
+        # デシンク(理論尺比較と縮退する回復不能な現象)とは異なり、Wineクラッシュは
+        # 非決定的でリトライにより解消しうる(同一リプレイの2ジョブが別地点で
+        # クラッシュした実例、Issue #267)ため、破棄してリトライする側に倒す
+        # (_record_with_retry()側で"crashed"を"good"と区別して常に破棄する)。
+        classification = "crashed"
+        stop_reason = "Wineクラッシュ検知(wine.log)"
     elif frozen:
         classification = "timeout"
         stop_reason = "画面固着の早期検知(タイムアウト相当)"
@@ -690,6 +757,13 @@ def _record_with_retry(config, replay_path, output_path, *,
             continue
         if not result["output_exists"]:
             log("WARNING: 出力ファイルが生成されなかったため、この試行は失敗として扱います")
+            continue
+
+        if result["classification"] == "crashed":
+            # Wineクラッシュはデシンクと異なり非決定的でリトライにより解消しうる
+            # (Issue #267)。重複フレーム率チェックを待たず直ちに破棄する
+            # (attempt_recording()側で既に診断スナップショットは保存済み)。
+            log(f"WARNING: 試行{attempt}中にWineがクラッシュしたため、この試行を破棄してリトライします")
             continue
 
         # 判定対象は**等倍へ戻す前の生データ**なので、閾値の方をスケールに合わせて
