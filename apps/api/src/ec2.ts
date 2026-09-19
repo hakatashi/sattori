@@ -540,7 +540,24 @@ export async function launchRecordingInstance(
   const launchedInstance = result.Instances?.[0];
   const instanceId = launchedInstance?.InstanceIds?.[0];
   if (!instanceId) {
+    const errorCodes = result.Errors?.map((e) => e.ErrorCode).filter((code) => code !== undefined) ?? [];
     const reason = result.Errors?.map((e) => `${e.ErrorCode}: ${e.ErrorMessage}`).join("; ");
+    // 失敗理由をCloudWatch Logsへ構造化して残す（Issue #270）。`errorCodes`は
+    // `InsufficientInstanceCapacity`（Spot在庫の一時的な枯渇）と
+    // `VcpuLimitExceeded`/`MaxSpotInstanceCountExceeded`（G系スポットのvCPUクオータ
+    // 超過、eu-south-2では現状8vCPU）を区別するためのもの。例外メッセージ自体にも
+    // 含めているが、CloudWatch Logs Insightsで集計・アラート判定するには構造化された
+    // フィールドが要る。
+    console.error(
+      JSON.stringify({
+        event: "create_fleet_failed",
+        jobId: job.jobId,
+        game: job.game,
+        isGpuJob,
+        candidateInstanceTypes,
+        errorCodes,
+      }),
+    );
     throw new Error(
       `EC2 Fleet でのインスタンス起動に失敗しました（InstanceId 不明）${reason ? `: ${reason}` : ""}`,
     );
