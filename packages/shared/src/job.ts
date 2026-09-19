@@ -328,6 +328,38 @@ export interface JobRecord {
    */
   stopRequestedAt?: string;
   /**
+   * GPU vCPU容量リース（Issue #270）の待ち行列に関するフィールド一式。
+   * `homeWorkerOfferState`等と同じ理由で `| null` ではなく optional にしてある
+   * （DynamoDBのNULL型はGSIキー属性として不適合。属性の有無を
+   * `attribute_not_exists()`で表現したいため）。詳細は
+   * `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`。
+   *
+   * - `gpuQueueState`: 待機中であることを示すマーカー。sparse GSI
+   *   `GpuQueueIndex`のパーティションキー（値は`"waiting"`のみ）。枠を確保した
+   *   時点・タイムアウト確定時にこの一式ごと`REMOVE`する。
+   * - `gpuQueuedAt`: **投入順（FIFO）の基準**。GSIのソートキー。
+   *   `attribute_not_exists(gpuQueuedAt)`条件付きで1回だけセットするため、
+   *   同じ待機エピソード内で順番が後退しない。
+   * - `gpuQueueEnteredAt`: **待機のタイムアウト判定の起点**。`gpuQueuedAt`とは
+   *   意図的に分離している——リトライで一度枠を得てから失敗し、再度待機列に
+   *   入る場合、`gpuQueuedAt`は新しい待機エピソードとして仕切り直すのが自然な
+   *   一方、これをタイムアウト起点にも使うと「100分待って起動→失敗→再入」で
+   *   即座にタイムアウトしてしまう。両者を分けることで、待機エピソードごとに
+   *   `GPU_QUEUE_MAX_WAIT_MINUTES`の猶予がリセットされる一貫した挙動になる。
+   * - `gpuQueueHeartbeatAt`: `AcquireGpuSlot`が呼ばれるたびに更新する生存証明。
+   *   これが陳腐化した待機者は先頭判定・順位計算から除外される
+   *   （head-of-line blocking対策）。
+   * - `gpuQueuePosition` / `gpuQueueEtaSeconds`: 表示用。待機中は
+   *   `AcquireGpuSlot`が毎回計算して書き込む（`progress`と同じ「ワーカー/枠取り
+   *   ループが書き、`getJob`は転記するだけ」というパターン）。
+   */
+  gpuQueueState?: "waiting";
+  gpuQueuedAt?: string;
+  gpuQueueEnteredAt?: string;
+  gpuQueueHeartbeatAt?: string;
+  gpuQueuePosition?: number;
+  gpuQueueEtaSeconds?: number;
+  /**
    * `POST /magic-links` 押下時点でユーザーが選択していた表示言語
    * （`RequestMagicLinkRequest.language` をそのまま転記）。マジックリンク
    * メール・完了メールの文面出し分けと、メール本文に載せるジョブページリンクの

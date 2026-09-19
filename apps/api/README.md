@@ -61,8 +61,11 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 2. **`sfn/acquireGpuSlot.ts`**（GPU vCPU容量リース、Issue #270）が最初に呼ばれる。
    GPU描画必須タイトル（th06nc・th15）のみ`GpuSlotsTable`でvCPU容量を会計し、
    空きが無ければ`WaitForGpuSlot`（アダプティブな間隔）を挟んで自分自身へ戻る
-   ループを回す。非GPUジョブは`GpuSlotsTable`に一切触れず即座に通過する。
-   詳細・設計根拠は
+   ループを回す。投入順（FIFO）は`JobsTable`のsparse GSI`GpuQueueIndex`
+   （PK=`gpuQueueState`, SK=`gpuQueuedAt`）で守り、列の先頭でなければ枠取りを
+   試みない（`apps/api/src/gpuQueue.ts`）。心拍（`gpuQueueHeartbeatAt`）が陳腐化
+   した待機者は先頭判定から除外する（head-of-line blocking対策）。非GPUジョブは
+   `GpuSlotsTable`にも`gpuQueue*`属性にも一切触れず即座に通過する。詳細・設計根拠は
    [`0056`](../../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
 3. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト150分・ハートビート
    タイムアウト15分）がワーカーを1台**割り当て**る。割り当て先は自宅ワーカー

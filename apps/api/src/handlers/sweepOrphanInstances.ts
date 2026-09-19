@@ -1,4 +1,7 @@
 import { SFNClient } from "@aws-sdk/client-sfn";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { GPU_QUEUE_INDEX, GPU_QUEUE_WAITING, isHeartbeatStale } from "@sattori/shared";
 import { required } from "../config.js";
 import { listTaggedInstances, terminateInstance } from "../ec2.js";
 import type { TaggedInstance } from "../ec2.js";
@@ -14,13 +17,14 @@ import {
   releaseGpuSlot,
   repairGpuLeaseVcpu,
 } from "../gpuSlots.js";
-import { getJob } from "../jobs.js";
+import { clearGpuQueueState, getJob } from "../jobs.js";
 import { groupInstancesByJobId, selectOrphanInstances } from "../orphanInstances.js";
 import type { OrphanCandidate } from "../orphanInstances.js";
 import { buildExecutionArn, getExecutionLiveness } from "../stepFunctions.js";
 import type { ExecutionLiveness } from "../stepFunctions.js";
 
 const sfn = new SFNClient({});
+const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 /** 1回の掃除の結果。CloudWatch Logsに残す運用把握用のサマリ。 */
 export interface SweepResult {
@@ -38,6 +42,8 @@ export interface SweepResult {
   leasesRepaired: number;
   /** リースが無い生存GPUインスタンスに対し、補完リースを作成した数。 */
   leasesCompensated: number;
+  /** 心拍が陳腐化した待機列(GpuQueueIndex)のエントリを剥がした数。 */
+  staleQueueEntriesCleared: number;
 }
 
 /**
@@ -73,6 +79,7 @@ export const handler = async (): Promise<SweepResult> => {
     leasesReclaimed: 0,
     leasesRepaired: 0,
     leasesCompensated: 0,
+    staleQueueEntriesCleared: 0,
   };
 
   for (const [jobId, jobInstances] of byJobId) {
@@ -107,7 +114,7 @@ export const handler = async (): Promise<SweepResult> => {
     }
   }
 
-  await reconcileGpuSlots(gpuSlotsTable, stateMachineArn, instances, livenessCache, result);
+  await reconcileGpuSlots(jobsTable, gpuSlotsTable, stateMachineArn, instances, livenessCache, result);
 
   console.log(JSON.stringify({ event: "orphan_sweep_completed", ...result }));
   return result;
@@ -148,6 +155,7 @@ async function getCachedExecutionLiveness(
  * 孤児インスタンス掃除本体は継続させたいので、ここで例外を投げない）。
  */
 async function reconcileGpuSlots(
+  jobsTable: string,
   gpuSlotsTable: string,
   stateMachineArn: string,
   instances: TaggedInstance[],
@@ -216,6 +224,45 @@ async function reconcileGpuSlots(
       unleased.launchTime ?? now,
     );
     result.leasesCompensated += 1;
+  }
+
+  // 4. 心拍が陳腐化した待機列(GpuQueueIndex)エントリの剥がし
+  // （head-of-line blocking対策の最終網。`AcquireGpuSlot`の先頭判定・順位計算は
+  // 都度stale除外するため誤動作はしないが、取り残された属性がsparse GSIに残り
+  // 続けるのを防ぐ）。実行が生きていない場合のみ剥がす——起動直後で心拍がまだ
+  // 新鮮でないだけの正常なジョブを誤って剥がさないための安全策。
+  try {
+    const waiting = await ddb.send(
+      new QueryCommand({
+        TableName: jobsTable,
+        IndexName: GPU_QUEUE_INDEX,
+        KeyConditionExpression: "gpuQueueState = :waiting",
+        ExpressionAttributeValues: { ":waiting": GPU_QUEUE_WAITING },
+      }),
+    );
+    for (const item of (waiting.Items ?? []) as Array<{ jobId: string; gpuQueueHeartbeatAt?: string }>) {
+      const heartbeatMs = item.gpuQueueHeartbeatAt ? Date.parse(item.gpuQueueHeartbeatAt) : NaN;
+      const ageSeconds = Number.isNaN(heartbeatMs)
+        ? Number.POSITIVE_INFINITY
+        : (now.getTime() - heartbeatMs) / 1000;
+      if (!isHeartbeatStale(ageSeconds)) {
+        continue;
+      }
+      const executionLiveness = await getCachedExecutionLiveness(livenessCache, stateMachineArn, item.jobId);
+      if (executionLiveness === null || executionLiveness === "running") {
+        continue;
+      }
+      await clearGpuQueueState(jobsTable, item.jobId);
+      result.staleQueueEntriesCleared += 1;
+      console.warn(JSON.stringify({ event: "gpu_queue_stale_entry_cleared", jobId: item.jobId }));
+    }
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "gpu_queue_reconcile_list_failed",
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
   }
 }
 

@@ -11,7 +11,7 @@ const REQUIRED_ENV: Record<string, string> = {
 };
 
 /** GPUリース回収の期待値(このPRの対象範囲外のテストでは常に0件)。 */
-const NO_GPU_RECONCILE = { leasesReclaimed: 0, leasesRepaired: 0, leasesCompensated: 0 };
+const NO_GPU_RECONCILE = { leasesReclaimed: 0, leasesRepaired: 0, leasesCompensated: 0, staleQueueEntriesCleared: 0 };
 
 const ec2Mock = mockClient(EC2Client);
 const sfnMock = mockClient(SFNClient);
@@ -48,6 +48,10 @@ beforeEach(() => {
   // gpuReconcile.test.ts、DynamoDB操作の単体は gpuSlots.test.ts で検証する。
   // ここでは「掃除ハンドラが正しく繋ぎ込んでいるか」だけをE2Eで確認する。
   ddbMock.on(QueryCommand).resolves({ Items: [] });
+  // 待機列(GpuQueueIndex)のQueryは、各テストが汎用マッチャ(`.on(QueryCommand)`)で
+  // GpuSlotsTable向けの応答を上書きしても引きずられないよう、IndexNameで
+  // 明示的に区別する（aws-sdk-client-mockは指定条件が具体的なスタブを優先する）。
+  ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({ Items: [] });
   ddbMock.on(TransactWriteCommand).resolves({});
 });
 

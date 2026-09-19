@@ -3,7 +3,8 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import type { JobRecord, JobStatus } from "@sattori/shared";
 import { required } from "../config.js";
-import { updateJobStatus } from "../jobs.js";
+import { releaseGpuSlot } from "../gpuSlots.js";
+import { clearGpuQueueState, updateJobStatus } from "../jobs.js";
 import { isStalledJob } from "../stalledJobs.js";
 import { buildExecutionArn, getExecutionLiveness } from "../stepFunctions.js";
 
@@ -61,6 +62,7 @@ export interface StalledJobSweepResult {
 export const handler = async (): Promise<StalledJobSweepResult> => {
   const jobsTable = required("JOBS_TABLE");
   const stateMachineArn = required("STATE_MACHINE_ARN");
+  const gpuSlotsTable = required("GPU_SLOTS_TABLE");
 
   const perStatus = await Promise.all(
     TARGET_STATUSES.map((status) => queryJobsByStatus(jobsTable, status)),
@@ -113,6 +115,23 @@ export const handler = async (): Promise<StalledJobSweepResult> => {
       );
       if (updated) {
         result.failed += 1;
+        // GPU vCPU容量リース（Issue #270）の後始末。待機中（`AcquireGpuSlot`の
+        // ループ内でstalledになった）ジョブは`gpuQueueState`一式も剥がす
+        // ——怠ると死んだ待機者が投入順の列を塞ぎ続ける（head-of-line blocking）。
+        // どちらも冪等かつ取り逃してもリコンサイラが回収するため、失敗しても
+        // ここでは握りつぶす（本来の掃除処理を止めない）。
+        try {
+          await releaseGpuSlot(gpuSlotsTable, job.jobId);
+          await clearGpuQueueState(jobsTable, job.jobId);
+        } catch (err) {
+          console.error(
+            JSON.stringify({
+              event: "stalled_job_gpu_cleanup_failed",
+              jobId: job.jobId,
+              message: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
       }
     } catch (err) {
       console.error(

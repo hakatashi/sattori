@@ -515,6 +515,21 @@ describe("SattoriStack", () => {
       });
     });
 
+    it("JobsTableに投入順(FIFO)用のsparse GSI(PK=gpuQueueState, SK=gpuQueuedAt, Projection=ALL)が存在する", () => {
+      template.hasResourceProperties("AWS::DynamoDB::Table", {
+        GlobalSecondaryIndexes: Match.arrayWith([
+          Match.objectLike({
+            IndexName: "GpuQueueIndex",
+            KeySchema: [
+              { AttributeName: "gpuQueueState", KeyType: "HASH" },
+              { AttributeName: "gpuQueuedAt", KeyType: "RANGE" },
+            ],
+            Projection: { ProjectionType: "ALL" },
+          }),
+        ]),
+      });
+    });
+
     it("ステートマシンの開始状態はAcquireGpuSlotである(Launchより前)", () => {
       expect(definition).toContain('"StartAt":"AcquireGpuSlot"');
     });
