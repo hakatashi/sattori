@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CreateFleetCommand,
   CreateLaunchTemplateVersionCommand,
@@ -475,6 +475,30 @@ describe("launchRecordingInstance", () => {
     await expect(launchRecordingInstance(config, job, "task-token-abc")).rejects.toThrow(
       /InsufficientCapacity/,
     );
+  });
+
+  it("起動失敗時にErrorCodeを含む構造化ログを残す(Issue #270、クオータ超過とSpot在庫枯渇の切り分け用)", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
+      LaunchTemplateVersion: { VersionNumber: 1 },
+    });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [],
+      Errors: [{ ErrorCode: "VcpuLimitExceeded", ErrorMessage: "quota exceeded" }],
+    });
+
+    await expect(launchRecordingInstance(config, job, "task-token-abc")).rejects.toThrow();
+
+    const logged = errorSpy.mock.calls
+      .map((call) => call[0] as string)
+      .map((line) => JSON.parse(line))
+      .find((entry) => entry.event === "create_fleet_failed");
+    expect(logged).toMatchObject({
+      event: "create_fleet_failed",
+      jobId: job.jobId,
+      errorCodes: ["VcpuLimitExceeded"],
+    });
+    errorSpy.mockRestore();
   });
 });
 
