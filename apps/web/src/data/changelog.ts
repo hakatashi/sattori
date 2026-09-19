@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-19",
+    ja: "録画が途中で中断した場合に、そのまま完成した動画として扱われてしまう不具合を修正（中断を検知して自動的に録画をやり直すようになりました）",
+    en: "Fixed an issue where a recording that was interrupted partway through could still be delivered as a completed video (interruptions are now detected and the recording is automatically retried)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/267",
+  },
+  {
+    date: "2026-09-19",
     ja: "東方紺珠伝 (th15) の録画に対応",
     en: "Added recording support for Legacy of Lunatic Kingdom (th15)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/82",
