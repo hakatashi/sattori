@@ -498,6 +498,12 @@ export class SattoriStack extends Stack {
       TITLE_ASSETS_BUCKET: titleAssetsBucket.bucketName,
       WORKER_LOG_GROUP: workerLogGroup.logGroupName,
       WORKER_SUBNET_IDS: workerSubnets.map((subnet) => subnet.subnetId).join(","),
+      // WORKER_SUBNET_IDSと同じ順序で並んだ各サブネットのAZ名。GPUジョブ(g6f系)を
+      // 特定AZから暫定除外する際にapps/api/src/ec2.tsが使う(Issue #267、
+      // `EXCLUDED_GPU_AVAILABILITY_ZONE`)。CPU系ジョブは引き続き全AZを使うため、
+      // サブネット自体(=このVPC構成)は変更しない——除外はEC2 Fleetの Overrides
+      // 組み立て時にランタイムでフィルタするだけ。
+      WORKER_SUBNET_AZS: workerSubnets.map((subnet) => subnet.availabilityZone).join(","),
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
       GPU_WORKER_LAUNCH_TEMPLATE_ID: gpuWorkerLaunchTemplate.ref,
       EMAIL_RATE_LIMIT_TABLE: emailRateLimitTable.tableName,

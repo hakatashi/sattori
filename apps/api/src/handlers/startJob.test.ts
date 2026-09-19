@@ -23,6 +23,7 @@ const REQUIRED_ENV: Record<string, string> = {
   TITLE_ASSETS_BUCKET: "title-assets-bucket",
   WORKER_LOG_GROUP: "/sattori/worker",
   WORKER_SUBNET_IDS: "subnet-xxxx,subnet-yyyy",
+  WORKER_SUBNET_AZS: "eu-south-2a,eu-south-2b",
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
   GPU_WORKER_LAUNCH_TEMPLATE_ID: "lt-gpu-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
