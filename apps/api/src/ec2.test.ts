@@ -42,6 +42,9 @@ const config: ApiConfig = {
   analyticsEventsTable: "sattori-analytics-events",
   ec2: {
     subnetIds: ["subnet-aaaa", "subnet-bbbb"],
+    // subnet-aaaa=eu-south-2a(GPUジョブから除外されるAZ、Issue #267)、
+    // subnet-bbbb=eu-south-2b。
+    subnetAvailabilityZones: ["eu-south-2a", "eu-south-2b"],
     region: "ap-northeast-1",
     launchTemplateId: "lt-xxxx",
     gpuLaunchTemplateId: "lt-gpu-xxxx",
@@ -379,14 +382,17 @@ describe("launchRecordingInstance", () => {
       LaunchTemplateSpecification: { LaunchTemplateId: "lt-gpu-xxxx", Version: "5" },
     });
     const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    // subnet-aaaa(eu-south-2a)はGPUジョブから暫定除外される(Issue #267)ため、
+    // subnet-bbbb(eu-south-2b)のみがOverridesに含まれる。
     expect(overrides).toEqual(
       expect.arrayContaining([
-        { SubnetId: "subnet-aaaa", InstanceType: "g6f.xlarge" },
         { SubnetId: "subnet-bbbb", InstanceType: "g6f.xlarge" },
-        { SubnetId: "subnet-aaaa", InstanceType: "g6f.2xlarge" },
         { SubnetId: "subnet-bbbb", InstanceType: "g6f.2xlarge" },
       ]),
     );
+    for (const override of overrides) {
+      expect(override.SubnetId).not.toBe("subnet-aaaa");
+    }
     // CPU系Launch Templateは一切参照しない
     for (const call of ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)) {
       expect(call.args[0].input.LaunchTemplateId).not.toBe("lt-xxxx");
@@ -416,12 +422,45 @@ describe("launchRecordingInstance", () => {
     });
     const fleetCall = ec2Mock.commandCalls(CreateFleetCommand)[0];
     const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    // subnet-aaaa(eu-south-2a)はGPUジョブから暫定除外される(Issue #267)。
     expect(overrides).toEqual(
       expect.arrayContaining([
-        { SubnetId: "subnet-aaaa", InstanceType: "g6f.xlarge" },
-        { SubnetId: "subnet-aaaa", InstanceType: "g6f.2xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "g6f.xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "g6f.2xlarge" },
       ]),
     );
+    for (const override of overrides) {
+      expect(override.SubnetId).not.toBe("subnet-aaaa");
+    }
+  });
+
+  it("GPUジョブはeu-south-2a相当のAZを除外し、CPU系ジョブは影響を受けない（Issue #267）", async () => {
+    ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
+      LaunchTemplateVersion: { VersionNumber: 5 },
+    });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-0123456789abcdef0"] }],
+    });
+
+    await launchRecordingInstance(config, { ...job, game: "th06nc" }, "task-token-abc");
+    const gpuOverrides =
+      ec2Mock.commandCalls(CreateFleetCommand)[0]?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    expect(gpuOverrides.some((o) => o.SubnetId === "subnet-aaaa")).toBe(false);
+    expect(gpuOverrides.some((o) => o.SubnetId === "subnet-bbbb")).toBe(true);
+
+    ec2Mock.reset();
+    ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
+      LaunchTemplateVersion: { VersionNumber: 5 },
+    });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-0123456789abcdef1"] }],
+    });
+
+    // CPU系ジョブ(th07)はeu-south-2a相当のsubnet-aaaaを引き続き候補に含む
+    await launchRecordingInstance(config, { ...job, game: "th07" }, "task-token-def");
+    const cpuOverrides =
+      ec2Mock.commandCalls(CreateFleetCommand)[0]?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    expect(cpuOverrides.some((o) => o.SubnetId === "subnet-aaaa")).toBe(true);
   });
 
   it("インスタンスが起動できなかった場合は Errors を含めて例外を投げる", async () => {
