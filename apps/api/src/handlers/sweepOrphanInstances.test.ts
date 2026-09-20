@@ -155,6 +155,37 @@ describe("sweepOrphanInstances handler（GPU vCPU容量リースのリコンサ�
     expect(result).toMatchObject({ leasesCompensated: 1 });
   });
 
+  it("孤児としてterminateされたGPUインスタンスには補完リースを作成しない", async () => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [
+        {
+          Instances: [
+            {
+              InstanceId: "i-gpu-orphan",
+              LaunchTime: OLD_LAUNCH_TIME,
+              InstanceType: "g6f.2xlarge",
+              Tags: [{ Key: "sattori:jobId", Value: "gpu-job-orphan" }],
+            },
+          ],
+        },
+      ],
+    });
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ddbMock.on(GetCommand).resolves({ Item: undefined });
+    ddbMock.on(QueryCommand).resolves({ Items: [] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "FAILED" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      orphans: 1,
+      terminated: 1,
+      leasesCompensated: 0,
+    });
+  });
+
   it("CPU系インスタンスはGPUリコンサイラの対象にならない", async () => {
     ec2Mock.on(DescribeInstancesCommand).resolves({
       Reservations: [{ Instances: [taggedInstance("i-cpu", "job-1")] }],

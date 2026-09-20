@@ -54,6 +54,12 @@ describe("reservableVcpu", () => {
     expect(reservableVcpu(3)).toBeNull();
     expect(reservableVcpu(0)).toBeNull();
   });
+
+  it("minVcpuを指定した場合はその値未満ならnull(リトライ時に8vCPUを要求する用途)", () => {
+    expect(reservableVcpu(4, 8)).toBeNull();
+    expect(reservableVcpu(7, 8)).toBeNull();
+    expect(reservableVcpu(8, 8)).toBe(8);
+  });
 });
 
 describe("nextPollIntervalSeconds", () => {
