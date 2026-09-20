@@ -14,6 +14,7 @@ import {
   buildUserData,
   fetchSpotPrice,
   findJobInstanceIds,
+  getCandidateInstanceTypes,
   launchRecordingInstance,
   listTaggedInstances,
   terminateInstance,
@@ -40,6 +41,7 @@ const config: ApiConfig = {
   sesConfigurationSetName: "sattori-config-set",
   webBaseUrl: "https://sattori.hakatashi.com",
   analyticsEventsTable: "sattori-analytics-events",
+  gpuSlotsTable: "sattori-gpu-slots",
   ec2: {
     subnetIds: ["subnet-aaaa", "subnet-bbbb"],
     // subnet-aaaa=eu-south-2a(GPUジョブから除外されるAZ、Issue #267)、
@@ -225,6 +227,34 @@ describe("buildUserData", () => {
     );
     expect(decoded).not.toContain("--gpus all");
     expect(decoded).toContain("systemctl disable --now ecs");
+  });
+});
+
+describe("getCandidateInstanceTypes", () => {
+  it("maxVcpu未指定ならGPUタイトルも全候補を返す(既存の挙動を維持)", () => {
+    expect(getCandidateInstanceTypes("th15")).toEqual(["g6f.xlarge", "g6f.2xlarge"]);
+    expect(getCandidateInstanceTypes("th06nc")).toEqual(["g6f.xlarge", "g6f.2xlarge"]);
+  });
+
+  it("maxVcpu=4ならGPUタイトルはg6f.xlargeのみに絞られる", () => {
+    expect(getCandidateInstanceTypes("th15", { maxVcpu: 4 })).toEqual(["g6f.xlarge"]);
+  });
+
+  it("maxVcpu=8ならGPUタイトルは両方の候補を返す", () => {
+    expect(getCandidateInstanceTypes("th15", { maxVcpu: 8 })).toEqual(["g6f.xlarge", "g6f.2xlarge"]);
+  });
+
+  it("CPU系タイトルはmaxVcpuを渡されても一切変わらない(GPUリース制約が漏れない)", () => {
+    expect(getCandidateInstanceTypes("th11", { maxVcpu: 4 })).toEqual(
+      getCandidateInstanceTypes("th11"),
+    );
+    expect(getCandidateInstanceTypes("th07", { maxVcpu: 4 })).toEqual(
+      getCandidateInstanceTypes("th07"),
+    );
+  });
+
+  it("候補が空になる制約(理屈上到達不能)は例外を投げる", () => {
+    expect(() => getCandidateInstanceTypes("th15", { maxVcpu: 1 })).toThrow(/GPUリース/);
   });
 });
 
@@ -463,6 +493,24 @@ describe("launchRecordingInstance", () => {
     expect(cpuOverrides.some((o) => o.SubnetId === "subnet-aaaa")).toBe(true);
   });
 
+  it("GPUリースのvCPU制約(constraints.maxVcpu)に応じてOverridesの候補タイプが絞られる(Issue #270)", async () => {
+    ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
+      LaunchTemplateVersion: { VersionNumber: 1 },
+    });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-0123456789abcdef0"], InstanceType: "g6f.xlarge" }],
+    });
+
+    await launchRecordingInstance(config, { ...job, game: "th15" }, "task-token-abc", {
+      maxVcpu: 4,
+    });
+
+    const overrides =
+      ec2Mock.commandCalls(CreateFleetCommand)[0]?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    const instanceTypes = new Set(overrides.map((o) => o.InstanceType));
+    expect(instanceTypes).toEqual(new Set(["g6f.xlarge"]));
+  });
+
   it("インスタンスが起動できなかった場合は Errors を含めて例外を投げる", async () => {
     ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
       LaunchTemplateVersion: { VersionNumber: 1 },
@@ -571,6 +619,7 @@ describe("listTaggedInstances", () => {
             {
               InstanceId: "i-aaa",
               LaunchTime: launchTime,
+              InstanceType: "g6f.xlarge",
               Tags: [
                 { Key: "Name", Value: "sattori-recorder" },
                 { Key: "sattori:jobId", Value: "job-1" },
@@ -591,9 +640,10 @@ describe("listTaggedInstances", () => {
     });
 
     await expect(listTaggedInstances()).resolves.toEqual([
-      { instanceId: "i-aaa", jobId: "job-1", launchTime },
-      // LaunchTimeが返らなかった場合はnull（判定側が「たった今起動した」扱いにする）。
-      { instanceId: "i-bbb", jobId: "job-2", launchTime: null },
+      { instanceId: "i-aaa", jobId: "job-1", launchTime, instanceType: "g6f.xlarge" },
+      // LaunchTime・InstanceTypeが返らなかった場合はnull
+      // （判定側が「たった今起動した」扱いにする。GPUリコンサイラも同様に扱う）。
+      { instanceId: "i-bbb", jobId: "job-2", launchTime: null, instanceType: null },
     ]);
     expect(ec2Mock.commandCalls(DescribeInstancesCommand)[0]?.args[0].input.Filters).toEqual([
       { Name: "tag-key", Values: ["sattori:jobId"] },

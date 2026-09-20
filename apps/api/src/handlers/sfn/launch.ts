@@ -1,7 +1,9 @@
+import { requiresGpuRecording, vcpusForInstanceType } from "@sattori/shared";
 import type { JobRecord, WorkerHeartbeat } from "@sattori/shared";
 import { loadConfig } from "../../config.js";
 import type { ApiConfig } from "../../config.js";
 import { launchRecordingInstance } from "../../ec2.js";
+import { getGpuLease, shrinkGpuLease } from "../../gpuSlots.js";
 import {
   getHomeWorkerAssignment,
   listWorkerHeartbeats,
@@ -65,7 +67,21 @@ export const handler = async (event: LaunchTaskEvent): Promise<void> => {
     return;
   }
 
-  const instance = await launchRecordingInstance(config, job, event.taskToken);
+  const isGpuJob = requiresGpuRecording(job.game);
+  let maxVcpu: number | undefined;
+  if (isGpuJob) {
+    // GPU vCPU容量リース（Issue #270）。`AcquireGpuSlot`ステートが既に確保済みの
+    // はずだが、SFnのペイロードには乗せず自分のjobIdで読み直す（デプロイ中の
+    // 飛行中の実行との互換性・「リースが実在すること」の直前再確認を兼ねる。
+    // 詳細は `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`）。
+    const lease = await getGpuLease(config.gpuSlotsTable, event.jobId);
+    if (!lease) {
+      throw new Error(`GPUジョブ ${event.jobId} のvCPUリースが見つかりません`);
+    }
+    maxVcpu = lease.vcpu;
+  }
+
+  const instance = await launchRecordingInstance(config, job, event.taskToken, { maxVcpu });
   // **`instanceId` の永続化を他の更新より先に行う**（Issue #23）。`CreateFleet` が
   // 返った時点で課金は始まっており、ここでLambdaがタイムアウトすると誰も
   // terminateできない孤児が残る。この窓は原理的には消せない（起動と記録は
@@ -77,6 +93,24 @@ export const handler = async (event: LaunchTaskEvent): Promise<void> => {
   await updateJobWorkerKind(config.jobsTable, event.jobId, "ec2");
   // コスト推定の課金起点（Issue #60）。リトライで再入しても最初の1回しか記録されない。
   await markJobLaunched(config.jobsTable, event.jobId);
+
+  // 実際に確保できたインスタンスタイプに合わせてリースを縮小する（例:
+  // 8vCPU仮予約→g6f.xlargeが取れたので4へ）。これにより残ったvCPUで別のジョブが
+  // 並列に走れる（ADR 0046「2台分の並列運用余地」）。縮小の失敗はジョブを
+  // 落とす理由にならない（`shrinkGpuLease`内でログのみに残し、リコンサイラが補正する）。
+  if (isGpuJob && maxVcpu !== undefined && instance.instanceType) {
+    const actualVcpu = vcpusForInstanceType(instance.instanceType);
+    if (actualVcpu !== null) {
+      await shrinkGpuLease(
+        config.gpuSlotsTable,
+        event.jobId,
+        maxVcpu,
+        actualVcpu,
+        instance.instanceType,
+        instance.instanceId,
+      );
+    }
+  }
 };
 
 /**

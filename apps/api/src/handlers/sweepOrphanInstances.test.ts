@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DescribeInstancesCommand, EC2Client, TerminateInstancesCommand } from "@aws-sdk/client-ec2";
 import { DescribeExecutionCommand, SFNClient } from "@aws-sdk/client-sfn";
-import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 
 const REQUIRED_ENV: Record<string, string> = {
   JOBS_TABLE: "sattori-jobs",
   STATE_MACHINE_ARN: "arn:aws:states:eu-south-2:123456789012:stateMachine:RecordingStateMachine",
+  GPU_SLOTS_TABLE: "sattori-gpu-slots",
 };
+
+/** GPUリース回収の期待値(このPRの対象範囲外のテストでは常に0件)。 */
+const NO_GPU_RECONCILE = { leasesReclaimed: 0, leasesRepaired: 0, leasesCompensated: 0 };
 
 const ec2Mock = mockClient(EC2Client);
 const sfnMock = mockClient(SFNClient);
@@ -40,6 +44,189 @@ beforeEach(() => {
   ddbMock.reset();
   ec2Mock.on(TerminateInstancesCommand).resolves({});
   ddbMock.on(GetCommand).resolves({ Item: undefined });
+  // GPUリース台帳(GpuSlotsTable)は既定で空。GPUリコンサイラの判定ロジック自体は
+  // gpuReconcile.test.ts、DynamoDB操作の単体は gpuSlots.test.ts で検証する。
+  // ここでは「掃除ハンドラが正しく繋ぎ込んでいるか」だけをE2Eで確認する。
+  ddbMock.on(QueryCommand).resolves({ Items: [] });
+  ddbMock.on(TransactWriteCommand).resolves({});
+});
+
+/** GPUリース回収テスト用の猶予超過な起動時刻。 */
+const OLD_GPU_LEASE_ACQUIRED_AT = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+
+function gpuQuotaItem(usedVcpu: number) {
+  return { slotKey: "gpu", itemKey: "#quota", usedVcpu };
+}
+
+function gpuLeaseItem(jobId: string, vcpu: number, acquiredAt = OLD_GPU_LEASE_ACQUIRED_AT) {
+  return {
+    slotKey: "gpu",
+    itemKey: `job#${jobId}`,
+    jobId,
+    vcpu,
+    acquiredAt,
+    expiresAt: new Date(Date.now() + 160 * 60 * 1000).toISOString(),
+    expectedFinishAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+  };
+}
+
+describe("sweepOrphanInstances handler（GPU vCPU容量リースのリコンサイラ、Issue #270）", () => {
+  it("生存GPUインスタンスが無く実行も終わったリースを回収する", async () => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({});
+    ddbMock
+      .on(QueryCommand)
+      .resolves({ Items: [gpuQuotaItem(4), gpuLeaseItem("gpu-job-1", 4)] });
+    // releaseGpuSlot()内部のGetCommand(存在確認)。QueryCommandの結果と整合させる。
+    ddbMock.on(GetCommand).resolves({ Item: gpuLeaseItem("gpu-job-1", 4) });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "FAILED" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({ leasesReclaimed: 1, leasesRepaired: 0, leasesCompensated: 0 });
+    // releaseGpuSlot()はGetCommandでリースを確認してからTransactWriteCommandを発行する。
+    expect(ddbMock.commandCalls(TransactWriteCommand).length).toBeGreaterThan(0);
+  });
+
+  it("実行が生きているリースは回収しない(起動直前の可能性があるため)", async () => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({});
+    ddbMock
+      .on(QueryCommand)
+      .resolves({ Items: [gpuQuotaItem(4), gpuLeaseItem("gpu-job-1", 4)] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "RUNNING" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({ leasesReclaimed: 0 });
+  });
+
+  it("実測vCPUとリースが食い違うものを補正する", async () => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [
+        {
+          Instances: [
+            {
+              InstanceId: "i-gpu",
+              LaunchTime: OLD_LAUNCH_TIME,
+              InstanceType: "g6f.xlarge",
+              Tags: [{ Key: "sattori:jobId", Value: "gpu-job-1" }],
+            },
+          ],
+        },
+      ],
+    });
+    // リースは8vCPU(仮予約のまま)だが実際に確保できたのはg6f.xlarge(4vCPU)
+    // = shrinkGpuLease失敗を想定したドリフト。
+    ddbMock.on(QueryCommand).resolves({ Items: [gpuQuotaItem(8), gpuLeaseItem("gpu-job-1", 8)] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "RUNNING" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({ leasesRepaired: 1, leasesReclaimed: 0 });
+  });
+
+  it("リースの無い生存GPUインスタンスに補完リースを作成する", async () => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [
+        {
+          Instances: [
+            {
+              InstanceId: "i-gpu",
+              LaunchTime: OLD_LAUNCH_TIME,
+              InstanceType: "g6f.2xlarge",
+              Tags: [{ Key: "sattori:jobId", Value: "gpu-job-2" }],
+            },
+          ],
+        },
+      ],
+    });
+    ddbMock.on(QueryCommand).resolves({ Items: [] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "RUNNING" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({ leasesCompensated: 1 });
+  });
+
+  it("孤児としてterminateされたGPUインスタンスには補完リースを作成しない", async () => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [
+        {
+          Instances: [
+            {
+              InstanceId: "i-gpu-orphan",
+              LaunchTime: OLD_LAUNCH_TIME,
+              InstanceType: "g6f.2xlarge",
+              Tags: [{ Key: "sattori:jobId", Value: "gpu-job-orphan" }],
+            },
+          ],
+        },
+      ],
+    });
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ddbMock.on(GetCommand).resolves({ Item: undefined });
+    ddbMock.on(QueryCommand).resolves({ Items: [] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "FAILED" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      orphans: 1,
+      terminated: 1,
+      leasesCompensated: 0,
+    });
+  });
+
+  it("CPU系インスタンスはGPUリコンサイラの対象にならない", async () => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [{ Instances: [taggedInstance("i-cpu", "job-1")] }],
+    });
+    ddbMock.on(QueryCommand).resolves({ Items: [] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "FAILED" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject(NO_GPU_RECONCILE);
+  });
+
+  it("GPUリース台帳の列挙に失敗しても孤児インスタンス掃除は続行する", async () => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [{ Instances: [taggedInstance("i-orphan", "job-1")] }],
+    });
+    ddbMock.on(QueryCommand).rejects(new Error("throttled"));
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "FAILED" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({ terminated: 1, ...NO_GPU_RECONCILE });
+  });
+
+  it("実行の生死問い合わせは孤児インスタンス掃除とGPUリコンサイラで共有(重複呼び出しを避ける)", async () => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [{ Instances: [taggedInstance("i-orphan", "gpu-job-1")] }],
+    });
+    ddbMock
+      .on(QueryCommand)
+      .resolves({ Items: [gpuQuotaItem(4), gpuLeaseItem("gpu-job-1", 4)] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "FAILED" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    await handler();
+
+    // 同一jobId("gpu-job-1")に対するDescribeExecutionは1回だけ
+    // (孤児インスタンス掃除ループとGPUリース回収ループがキャッシュを共有する)。
+    const calls = sfnMock
+      .commandCalls(DescribeExecutionCommand)
+      .filter((call) => call.args[0].input.executionArn?.endsWith(":gpu-job-1"));
+    expect(calls).toHaveLength(1);
+  });
 });
 
 describe("sweepOrphanInstances handler", () => {
@@ -52,7 +239,7 @@ describe("sweepOrphanInstances handler", () => {
     const { handler } = await import("./sweepOrphanInstances.js");
     const result = await handler();
 
-    expect(result).toEqual({ scanned: 1, orphans: 1, terminated: 1, skippedJobs: 0 });
+    expect(result).toEqual({ scanned: 1, orphans: 1, terminated: 1, skippedJobs: 0, ...NO_GPU_RECONCILE });
     expect(terminatedIds()).toEqual(["i-orphan"]);
     // 実行の生死はjobIdから決定的に導ける実行ARNへ問い合わせる（executionArnはDBに持たない）。
     expect(sfnMock.commandCalls(DescribeExecutionCommand)[0]?.args[0].input.executionArn).toBe(
@@ -89,7 +276,7 @@ describe("sweepOrphanInstances handler", () => {
     const { handler } = await import("./sweepOrphanInstances.js");
     const result = await handler();
 
-    expect(result).toEqual({ scanned: 1, orphans: 0, terminated: 0, skippedJobs: 1 });
+    expect(result).toEqual({ scanned: 1, orphans: 0, terminated: 0, skippedJobs: 1, ...NO_GPU_RECONCILE });
     expect(terminatedIds()).toEqual([]);
   });
 
@@ -107,7 +294,7 @@ describe("sweepOrphanInstances handler", () => {
     const { handler } = await import("./sweepOrphanInstances.js");
     const result = await handler();
 
-    expect(result).toEqual({ scanned: 2, orphans: 2, terminated: 1, skippedJobs: 0 });
+    expect(result).toEqual({ scanned: 2, orphans: 2, terminated: 1, skippedJobs: 0, ...NO_GPU_RECONCILE });
     expect(terminatedIds()).toEqual(["i-fail", "i-ok"]);
   });
 
@@ -137,7 +324,7 @@ describe("sweepOrphanInstances handler", () => {
     const { handler } = await import("./sweepOrphanInstances.js");
     const result = await handler();
 
-    expect(result).toEqual({ scanned: 1, orphans: 0, terminated: 0, skippedJobs: 1 });
+    expect(result).toEqual({ scanned: 1, orphans: 0, terminated: 0, skippedJobs: 1, ...NO_GPU_RECONCILE });
     expect(terminatedIds()).toEqual([]);
   });
 
@@ -154,7 +341,7 @@ describe("sweepOrphanInstances handler", () => {
     const { handler } = await import("./sweepOrphanInstances.js");
     const result = await handler();
 
-    expect(result).toEqual({ scanned: 0, orphans: 0, terminated: 0, skippedJobs: 0 });
+    expect(result).toEqual({ scanned: 0, orphans: 0, terminated: 0, skippedJobs: 0, ...NO_GPU_RECONCILE });
     expect(sfnMock.commandCalls(DescribeExecutionCommand)).toHaveLength(0);
   });
 });

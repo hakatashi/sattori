@@ -1,6 +1,7 @@
 import { isTerminalStatus } from "@sattori/shared";
 import { loadConfig } from "../../config.js";
 import { findJobInstanceIds, terminateInstance } from "../../ec2.js";
+import { releaseGpuSlot } from "../../gpuSlots.js";
 import { releaseHomeWorkerAssignment } from "../../homeWorker.js";
 import { getJob, updateJobStatus } from "../../jobs.js";
 import { MAX_ATTEMPTS, MAX_ATTEMPTS_DETERMINISTIC } from "../../retryPolicy.js";
@@ -118,6 +119,22 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
         }),
       );
     }
+  }
+
+  // GPU vCPU容量リース（Issue #270）の返却。`releaseGpuSlot()`はリースが存在しなくても
+  // 冪等に成功するため、非GPUジョブに対しても無条件に呼んで安全（GetItem 1回が
+  // 増えるだけ）。取りこぼしはリコンサイラ（`handlers/sweepOrphanInstances.ts`）が
+  // 期限切れ回収で拾う。
+  try {
+    await releaseGpuSlot(config.gpuSlotsTable, event.jobId);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "release_gpu_slot_failed",
+        jobId: event.jobId,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
   }
 
   // terminate対象は `JobRecord.instanceId` だけに頼らず、タグ(`sattori:jobId`)からも

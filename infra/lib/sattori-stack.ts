@@ -259,6 +259,25 @@ export class SattoriStack extends Stack {
       timeToLiveAttribute: "ttl",
     });
 
+    // GPU録画ジョブ(th06nc・th15)のvCPU容量リース台帳（Issue #270）。eu-south-2の
+    // G系スポットクオータ(現状8vCPU)を`AcquireGpuSlot`/`ReleaseGpuSlot`(下記SFn)が
+    // 会計する。PK=slotKey(定数"gpu"のみ)・SK=itemKeyの単一パーティションに、
+    // カウンタアイテム(itemKey="#quota")とリースアイテム(itemKey="job#<jobId>")が
+    // 同居する。単一パーティションなのでQuery 1回でカウンタ+全リースを強一貫で読める
+    // (`apps/api/src/gpuSlots.ts`の`listGpuSlots()`)。揮発性の運用状態(失っても
+    // リコンサイラ`handlers/sweepOrphanInstances.ts`が実在GPUインスタンスとの
+    // 突き合わせで回復できる)のためRETAINにはしない。詳細は
+    // `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`。
+    const gpuSlotsTable = new dynamodb.Table(this, "GpuSlotsTable", {
+      partitionKey: { name: "slotKey", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "itemKey", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+      // 削除は最大48時間遅延しうるため回収の主手段にはしない保険。主な回収経路は
+      // `ReleaseGpuSlot`(成功時)・`HandleFailure`(失敗時)・リコンサイラ(期限切れ)。
+      timeToLiveAttribute: "ttl",
+    });
+
     // --- メール送信(SES, マジックリンク認証 Issue #9) -----------------------
     // webDomainName配下から送信する(no-reply@<webDomainName>)。ドメイン検証・DKIM・
     // EmailIdentity自体は`SattoriEdgeStack`(us-east-1、eu-south-2にはSESが存在しない
@@ -521,6 +540,9 @@ export class SattoriStack extends Stack {
       // 訪問者アナリティクス（Issue #142）の集計に使う（`admin/getAnalytics.ts`、Issue #149）。
       // `RecordAnalyticsEventFn`は下記の専用環境変数で別途同じ値を受け取る。
       ANALYTICS_EVENTS_TABLE: analyticsEventsTable.tableName,
+      // GPU録画ジョブのvCPU容量リース（Issue #270、`apps/api/src/gpuSlots.ts`）。
+      // 詳細は `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`。
+      GPU_SLOTS_TABLE: gpuSlotsTable.tableName,
     };
 
     // `environment`省略時は`commonEnv`を使う。管理画面のauthorizer(Issue #51)のように
@@ -664,10 +686,22 @@ export class SattoriStack extends Stack {
       timeout: Duration.seconds(LAUNCH_LAMBDA_TIMEOUT_SECONDS),
     });
     const handleFailureFn = makeHandler("HandleFailureFn", "sfn/handleFailure.ts");
+    // GPU vCPU容量リース（Issue #270）の枠取り・返却Lambda。`Launch`の手前・後に
+    // 独立したループ/ステートとして挟む（`docs/decisions/0056-gpu-vcpu-lease-and-queue.md`
+    // ——`Launch`の`waitForTaskToken`契約には触れない設計）。
+    const acquireGpuSlotFn = makeHandler("AcquireGpuSlotFn", "sfn/acquireGpuSlot.ts");
+    const releaseGpuSlotFn = makeHandler("ReleaseGpuSlotFn", "sfn/releaseGpuSlot.ts");
 
     jobsTable.grantReadWriteData(launchFn);
     // オファー可否の判断にハートビートを読む(書き込むのは自宅デーモンだけ)。
     workersTable.grantReadData(launchFn);
+    // GPUジョブは自分のリースを読み(`getGpuLease`)、CreateFleet成功後に縮小する
+    // (`shrinkGpuLease`)。`grantReadWriteData`はGet/Put/Update/Delete/Query/Scanの
+    // みを含み`dynamodb:TransactWriteItems`は含まないため(CDK `WRITE_DATA_ACTIONS`)、
+    // Transact系だけは`grant()`で個別に付与する——launchFn以下、GpuSlotsTableへ
+    // TransactWriteItemsを発行するLambda全てで同様に行う。
+    gpuSlotsTable.grantReadWriteData(launchFn);
+    gpuSlotsTable.grant(launchFn, "dynamodb:TransactWriteItems");
     // launchFn は EC2 Fleet を起動し、ワーカーロールを PassRole する。
     launchFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -702,6 +736,56 @@ export class SattoriStack extends Stack {
         resources: ["*"],
       }),
     );
+    // 失敗時にGPU vCPU容量リースを返却する(`releaseGpuSlot()`)。
+    gpuSlotsTable.grantReadWriteData(handleFailureFn);
+    gpuSlotsTable.grant(handleFailureFn, "dynamodb:TransactWriteItems");
+
+    // AcquireGpuSlot: GPUジョブの判定・待機列のタイムアウト確定に`JobsTable`を、
+    // 枠の会計に`GpuSlotsTable`を使う。非GPUジョブはどちらにも触れない。
+    jobsTable.grantReadWriteData(acquireGpuSlotFn);
+    gpuSlotsTable.grantReadWriteData(acquireGpuSlotFn);
+    gpuSlotsTable.grant(acquireGpuSlotFn, "dynamodb:TransactWriteItems");
+
+    // ReleaseGpuSlot: リースの返却のみ。JobsTableには一切触れない。
+    gpuSlotsTable.grantReadWriteData(releaseGpuSlotFn);
+    gpuSlotsTable.grant(releaseGpuSlotFn, "dynamodb:TransactWriteItems");
+
+    // GPU vCPU容量リース（Issue #270）の枠取りループ。`Launch`の**手前**の独立した
+    // ループであり、`Launch`のwaitForTaskToken契約には触れない
+    // （`docs/decisions/0018-home-worker-pull-assignment.md`が却下した「オファー待ちを
+    // Waitステートで表現する」案とは異なる場所に挟んでいる。区別は
+    // `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`参照）。非GPUジョブは
+    // `AcquireGpuSlot`Lambdaが即座に`acquired: true`を返し、DynamoDBへの追加書き込み
+    // 無くこの区間を通過する。
+    const acquireGpuSlotTask = new tasks.LambdaInvoke(this, "AcquireGpuSlot", {
+      lambdaFunction: acquireGpuSlotFn,
+      payload: sfn.TaskInput.fromObject({
+        jobId: sfn.JsonPath.stringAt("$.jobId"),
+        attempt: sfn.JsonPath.numberAt("$.attempt"),
+        // 待機の上限判定の起点(`GPU_QUEUE_MAX_WAIT_MINUTES`)。実行開始時刻を使う
+        // (PR1時点ではまだ待機専用の状態をJobsTableに持たないため。詳細は
+        // `apps/api/src/handlers/sfn/acquireGpuSlot.ts`のコメント参照)。
+        executionStartTime: sfn.JsonPath.stringAt("$$.Execution.StartTime"),
+      }),
+      payloadResponseOnly: true,
+      resultPath: "$.slot",
+    });
+
+    const gpuQueueTimedOut = new sfn.Fail(this, "GpuQueueTimeout", {
+      error: "GpuQueueTimeout",
+      cause: "GPU録画の待ち時間の上限を超えました",
+    });
+
+    // 待機間隔はAcquireGpuSlot Lambdaがアダプティブに計算する
+    // (`nextPollIntervalSeconds()`、経過時間に応じて15秒→30秒→120秒と間伸びする)。
+    // 固定間隔にするとStep Functions Standard実行の履歴イベント上限(25,000件)に
+    // 120分待機×複数リトライで接近しうるため。
+    const waitForGpuSlot = new sfn.Wait(this, "WaitForGpuSlot", {
+      time: sfn.WaitTime.secondsPath("$.slot.waitSeconds"),
+    });
+
+    const gpuSlotAcquired = new sfn.Choice(this, "GpuSlotAcquired?");
+    waitForGpuSlot.next(acquireGpuSlotTask);
 
     const launchTask = new tasks.LambdaInvoke(this, "Launch", {
       lambdaFunction: launchFn,
@@ -774,7 +858,11 @@ export class SattoriStack extends Stack {
     const retryChoice = new sfn.Choice(this, "ShouldRetry?")
       .when(
         sfn.Condition.booleanEquals("$.handleFailureResult.shouldRetry", true),
-        incrementAttempt.next(launchTask),
+        // **`Launch`ではなく`AcquireGpuSlot`へ戻る**。`HandleFailure`は既にGPU
+        // vCPU容量リースを返却済みのため、`Launch`へ直接戻ると無リースで
+        // `CreateFleet`を試みてしまう(非GPUジョブは`AcquireGpuSlot`を素通りする
+        // だけなので実質的なコストはLambda 1回ぶん)。
+        incrementAttempt.next(acquireGpuSlotTask),
       )
       .otherwise(new sfn.Fail(this, "JobFailed"));
 
@@ -797,10 +885,39 @@ export class SattoriStack extends Stack {
     launchTask.addCatch(waitBeforeCheck.next(handleFailureTask).next(retryChoice), {
       resultPath: "$.error",
     });
-    launchTask.next(new sfn.Succeed(this, "JobSucceeded"));
+
+    const jobSucceeded = new sfn.Succeed(this, "JobSucceeded");
+
+    // Launch成功後にGPU vCPU容量リースを返却する（Issue #270）。非GPUジョブに
+    // 対しても無条件に呼ぶ（`releaseGpuSlot()`はリースが存在しなくても冪等に
+    // 成功するため、ステートマシン定義を「GPUかどうか」で分岐させずに済む）。
+    // **失敗してもジョブを失敗にしない**——録画自体は既に成功しているため、
+    // 数回リトライしてもなお失敗する場合は`Succeed`へ倒す。取りこぼしたリースは
+    // リコンサイラ（`handlers/sweepOrphanInstances.ts`）が最終的に回収する。
+    const releaseGpuSlotTask = new tasks.LambdaInvoke(this, "ReleaseGpuSlot", {
+      lambdaFunction: releaseGpuSlotFn,
+      payload: sfn.TaskInput.fromObject({ jobId: sfn.JsonPath.stringAt("$.jobId") }),
+      resultPath: sfn.JsonPath.DISCARD,
+    });
+    releaseGpuSlotTask.addRetry({
+      errors: ["States.ALL"],
+      maxAttempts: 3,
+      interval: Duration.seconds(5),
+      backoffRate: 2,
+    });
+    releaseGpuSlotTask.addCatch(jobSucceeded, { resultPath: "$.releaseGpuSlotError" });
+    releaseGpuSlotTask.next(jobSucceeded);
+
+    launchTask.next(releaseGpuSlotTask);
+
+    gpuSlotAcquired
+      .when(sfn.Condition.booleanEquals("$.slot.acquired", true), launchTask)
+      .when(sfn.Condition.booleanEquals("$.slot.timedOut", true), gpuQueueTimedOut)
+      .otherwise(waitForGpuSlot);
+    acquireGpuSlotTask.next(gpuSlotAcquired);
 
     const stateMachine = new sfn.StateMachine(this, "RecordingStateMachine", {
-      definitionBody: sfn.DefinitionBody.fromChainable(launchTask),
+      definitionBody: sfn.DefinitionBody.fromChainable(acquireGpuSlotTask),
       stateMachineType: sfn.StateMachineType.STANDARD,
     });
 
@@ -833,11 +950,13 @@ export class SattoriStack extends Stack {
     const sweepOrphanInstancesFn = makeHandler(
       "SweepOrphanInstancesFn",
       "sweepOrphanInstances.ts",
-      // commonEnvは使わない(必要なのはジョブレコードの参照と実行ARNの組み立てだけ)。
-      { JOBS_TABLE: jobsTable.tableName },
+      // commonEnvは使わない(必要なのはジョブレコードの参照と実行ARNの組み立て、
+      // GPU vCPU容量リースの台帳のみ)。
+      { JOBS_TABLE: jobsTable.tableName, GPU_SLOTS_TABLE: gpuSlotsTable.tableName },
       // 生存インスタンス1台につきDescribeExecution+GetItemを直列に引くため、
       // 既定の30秒では孤児が多数溜まった場合に足りない可能性がある。走査対象は
-      // 通常0〜数台なので、広げてもコストはほぼ増えない。
+      // 通常0〜数台なので、広げてもコストはほぼ増えない。GPU vCPU容量リースの
+      // リコンサイラ（Issue #270）も同じLambdaに相乗りしている。
       { timeout: Duration.minutes(3) },
     );
     jobsTable.grantReadData(sweepOrphanInstancesFn);
@@ -850,6 +969,9 @@ export class SattoriStack extends Stack {
         resources: ["*"],
       }),
     );
+    // GPU vCPU容量リースの期限切れ回収・vCPUドリフト補正・孤児リース補完（Issue #270）。
+    gpuSlotsTable.grantReadWriteData(sweepOrphanInstancesFn);
+    gpuSlotsTable.grant(sweepOrphanInstancesFn, "dynamodb:TransactWriteItems");
     // --- 非終端ジョブレコードの定期掃除(Issue #132) --------------------------
     // 上のインスタンス起点の掃除と対をなす、**ジョブレコードの`status`を起点にした**
     // 掃除役。起動直後にLambdaが死ぬ・後始末ハンドラ自体が例外を握り潰す・緊急停止の
@@ -974,6 +1096,9 @@ export class SattoriStack extends Stack {
       }),
     );
     adminStopJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
+    // 緊急停止時にGPU vCPU容量リースを返却する（Issue #270）。
+    gpuSlotsTable.grantReadWriteData(adminStopJobFn);
+    gpuSlotsTable.grant(adminStopJobFn, "dynamodb:TransactWriteItems");
 
     // 再実行は元ジョブを新しいjobIdへ複製して起動する（同一jobIdでの再起動は
     // startPendingJobの冪等性前提とStep Functionsの実行名の一意性を壊すため。

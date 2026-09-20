@@ -2,10 +2,23 @@ import { SFNClient } from "@aws-sdk/client-sfn";
 import { required } from "../config.js";
 import { listTaggedInstances, terminateInstance } from "../ec2.js";
 import type { TaggedInstance } from "../ec2.js";
+import {
+  isReclaimableLease,
+  isUnleasedInstanceNeedingLease,
+  observeGpuUsage,
+  selectDriftedLeases,
+} from "../gpuReconcile.js";
+import {
+  createCompensatingGpuLease,
+  listGpuSlots,
+  releaseGpuSlot,
+  repairGpuLeaseVcpu,
+} from "../gpuSlots.js";
 import { getJob } from "../jobs.js";
 import { groupInstancesByJobId, selectOrphanInstances } from "../orphanInstances.js";
 import type { OrphanCandidate } from "../orphanInstances.js";
 import { buildExecutionArn, getExecutionLiveness } from "../stepFunctions.js";
+import type { ExecutionLiveness } from "../stepFunctions.js";
 
 const sfn = new SFNClient({});
 
@@ -19,6 +32,12 @@ export interface SweepResult {
   terminated: number;
   /** 実行の生死や失敗のため判定を見送ったジョブ数。 */
   skippedJobs: number;
+  /** GPU vCPU容量リース（Issue #270）のうち、回収したリース数。 */
+  leasesReclaimed: number;
+  /** vCPU数のドリフトを補正したリース数。 */
+  leasesRepaired: number;
+  /** リースが無い生存GPUインスタンスに対し、補完リースを作成した数。 */
+  leasesCompensated: number;
 }
 
 /**
@@ -38,19 +57,28 @@ export interface SweepResult {
 export const handler = async (): Promise<SweepResult> => {
   const jobsTable = required("JOBS_TABLE");
   const stateMachineArn = required("STATE_MACHINE_ARN");
+  const gpuSlotsTable = required("GPU_SLOTS_TABLE");
 
   const instances = await listTaggedInstances();
   const byJobId = groupInstancesByJobId(instances);
+  // 実行の生死は孤児インスタンス掃除・GPUリース回収の両方が同じjobIdについて
+  // 問い合わせうるため、`DescribeExecution`呼び出しを重複させないようキャッシュする。
+  const livenessCache = new Map<string, ExecutionLiveness | null>();
 
   const result: SweepResult = {
     scanned: instances.length,
     orphans: 0,
     terminated: 0,
     skippedJobs: 0,
+    leasesReclaimed: 0,
+    leasesRepaired: 0,
+    leasesCompensated: 0,
   };
 
+  const terminatedIds = new Set<string>();
+
   for (const [jobId, jobInstances] of byJobId) {
-    const candidates = await selectForJob(jobsTable, stateMachineArn, jobId, jobInstances);
+    const candidates = await selectForJob(jobsTable, stateMachineArn, jobId, jobInstances, livenessCache);
     if (candidates === null) {
       result.skippedJobs += 1;
       continue;
@@ -68,6 +96,7 @@ export const handler = async (): Promise<SweepResult> => {
       try {
         await terminateInstance(candidate.instanceId);
         result.terminated += 1;
+        terminatedIds.add(candidate.instanceId);
       } catch (err) {
         console.error(
           JSON.stringify({
@@ -81,9 +110,122 @@ export const handler = async (): Promise<SweepResult> => {
     }
   }
 
+  // terminateに成功したインスタンスを除外したリストをリコンサイラへ渡す。
+  // これを怠ると、直前にterminateした孤児GPUインスタンスに対し「リースが無い生存
+  // インスタンス」として誤って補完リース(createCompensatingGpuLease)を作成してしまい、
+  // 存在しないインスタンスのために4〜8vCPUが最大10分間ブロックされてしまう。
+  const liveInstances = instances.filter((inst) => !terminatedIds.has(inst.instanceId));
+  await reconcileGpuSlots(gpuSlotsTable, stateMachineArn, liveInstances, livenessCache, result);
+
   console.log(JSON.stringify({ event: "orphan_sweep_completed", ...result }));
   return result;
 };
+
+/** `DescribeExecution`の結果をjobId単位でキャッシュしつつ問い合わせる。判定不能はnull。 */
+async function getCachedExecutionLiveness(
+  cache: Map<string, ExecutionLiveness | null>,
+  stateMachineArn: string,
+  jobId: string,
+): Promise<ExecutionLiveness | null> {
+  if (cache.has(jobId)) {
+    return cache.get(jobId) ?? null;
+  }
+  try {
+    const liveness = await getExecutionLiveness(sfn, buildExecutionArn(stateMachineArn, jobId));
+    cache.set(jobId, liveness);
+    return liveness;
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "sweep_describe_execution_failed",
+        jobId,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    cache.set(jobId, null);
+    return null;
+  }
+}
+
+/**
+ * GPU vCPU容量リース（Issue #270）のリコンサイラ。実在するGPUインスタンス
+ * （`instances`）を「事実」として`GpuSlotsTable`の台帳を補正する。判定ロジックは
+ * `gpuReconcile.ts`（純粋関数）、書き込みは`gpuSlots.ts`に集約してある。
+ *
+ * 台帳の列挙自体が失敗した場合はログのみに残して見送る（次回の掃除に委ねる。
+ * 孤児インスタンス掃除本体は継続させたいので、ここで例外を投げない）。
+ */
+async function reconcileGpuSlots(
+  gpuSlotsTable: string,
+  stateMachineArn: string,
+  instances: TaggedInstance[],
+  livenessCache: Map<string, ExecutionLiveness | null>,
+  result: SweepResult,
+): Promise<void> {
+  let leases;
+  try {
+    ({ leases } = await listGpuSlots(gpuSlotsTable));
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "gpu_reconcile_list_failed",
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    return;
+  }
+
+  const now = new Date();
+  const { vcpuByJobId, unleasedInstances } = observeGpuUsage(instances, leases);
+
+  // 1. vCPUドリフトの補正(shrinkGpuLease失敗の後始末)。生存インスタンスがある
+  // ジョブのリースのみが対象(selectDriftedLeasesはvcpuByJobIdに実測が無いジョブを
+  // 除外する)ため、下の回収ループとは互いに素な集合を扱う。
+  for (const drift of selectDriftedLeases(leases, vcpuByJobId)) {
+    await repairGpuLeaseVcpu(gpuSlotsTable, drift.jobId, drift.observedVcpu);
+    result.leasesRepaired += 1;
+  }
+
+  // 2. 期限切れ・孤児化したリースの回収(release/handleFailure失敗の後始末)。
+  for (const lease of leases) {
+    const hasLiveInstance = vcpuByJobId.has(lease.jobId);
+    const executionLiveness = await getCachedExecutionLiveness(livenessCache, stateMachineArn, lease.jobId);
+    if (executionLiveness === null) {
+      continue;
+    }
+    if (!isReclaimableLease({ lease, hasLiveInstance, executionLiveness, now })) {
+      continue;
+    }
+    try {
+      await releaseGpuSlot(gpuSlotsTable, lease.jobId);
+      result.leasesReclaimed += 1;
+      console.warn(JSON.stringify({ event: "gpu_lease_reclaimed", jobId: lease.jobId }));
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          event: "gpu_lease_reclaim_failed",
+          jobId: lease.jobId,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  }
+
+  // 3. リースが無い生存GPUインスタンスへの補完リース作成(acquireGpuSlot失敗の
+  // 後始末。安全側=クオータ超過側に倒す)。
+  for (const unleased of unleasedInstances) {
+    if (!isUnleasedInstanceNeedingLease(unleased.launchTime, now)) {
+      continue;
+    }
+    await createCompensatingGpuLease(
+      gpuSlotsTable,
+      unleased.jobId,
+      unleased.vcpu,
+      unleased.launchTime ?? now,
+    );
+    result.leasesCompensated += 1;
+  }
+}
 
 /**
  * 1ジョブぶんの孤児候補を求める。判定に必要な情報が揃わなかった場合は null を返し、
@@ -99,21 +241,10 @@ async function selectForJob(
   stateMachineArn: string,
   jobId: string,
   instances: TaggedInstance[],
+  livenessCache: Map<string, ExecutionLiveness | null>,
 ): Promise<OrphanCandidate[] | null> {
-  let executionLiveness;
-  try {
-    executionLiveness = await getExecutionLiveness(
-      sfn,
-      buildExecutionArn(stateMachineArn, jobId),
-    );
-  } catch (err) {
-    console.error(
-      JSON.stringify({
-        event: "orphan_sweep_describe_execution_failed",
-        jobId,
-        message: err instanceof Error ? err.message : String(err),
-      }),
-    );
+  const executionLiveness = await getCachedExecutionLiveness(livenessCache, stateMachineArn, jobId);
+  if (executionLiveness === null) {
     return null;
   }
 

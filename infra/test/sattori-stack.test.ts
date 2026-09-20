@@ -364,8 +364,9 @@ describe("SattoriStack", () => {
   });
 
   it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {
-    // Jobs/Workers(Issue #49)/EmailRateLimit/Settings(Issue #14)/AnalyticsEvents(Issue #142)
-    template.resourceCountIs("AWS::DynamoDB::Table", 5);
+    // Jobs/Workers(Issue #49)/EmailRateLimit/Settings(Issue #14)/AnalyticsEvents(Issue #142)/
+    // GpuSlots(Issue #270)
+    template.resourceCountIs("AWS::DynamoDB::Table", 6);
     template.hasResourceProperties("AWS::DynamoDB::Table", {
       KeySchema: [{ AttributeName: "normalizedEmail", KeyType: "HASH" }],
       TimeToLiveSpecification: { AttributeName: "ttl", Enabled: true },
@@ -464,7 +465,7 @@ describe("SattoriStack", () => {
     });
     // GSI追加はテーブル数を変えない(上のテーブル数アサーションと矛盾しないことの
     // 確認を兼ねる)。
-    template.resourceCountIs("AWS::DynamoDB::Table", 5);
+    template.resourceCountIs("AWS::DynamoDB::Table", 6);
   });
 
   it("JobsTableに自宅ワーカー(Issue #49)のオファー用sparse GSIが存在する", () => {
@@ -497,6 +498,83 @@ describe("SattoriStack", () => {
     // いるため、バックスラッシュを落としてから素朴に含有チェックする。
     const definition = JSON.stringify(Object.values(machines)[0]).replaceAll("\\", "");
     expect(definition).toContain('"HeartbeatSeconds":900');
+  });
+
+  describe("GPU vCPU容量リースのキューイング(Issue #270)", () => {
+    const machines = template.findResources("AWS::StepFunctions::StateMachine");
+    const definition = JSON.stringify(Object.values(machines)[0]).replaceAll("\\", "");
+
+    it("GpuSlotsTableがPK=slotKey/SK=itemKeyのオンデマンドテーブルとして存在する", () => {
+      template.hasResourceProperties("AWS::DynamoDB::Table", {
+        KeySchema: [
+          { AttributeName: "slotKey", KeyType: "HASH" },
+          { AttributeName: "itemKey", KeyType: "RANGE" },
+        ],
+        BillingMode: "PAY_PER_REQUEST",
+        TimeToLiveSpecification: { AttributeName: "ttl", Enabled: true },
+      });
+    });
+
+    it("ステートマシンの開始状態はAcquireGpuSlotである(Launchより前)", () => {
+      expect(definition).toContain('"StartAt":"AcquireGpuSlot"');
+    });
+
+    it("ReleaseGpuSlotがJobSucceededの手前にある(成功パスでのリース返却漏れの回帰防止)", () => {
+      // Launch成功時の遷移がReleaseGpuSlotを経由し、Succeed直結ではないこと。
+      expect(definition).toContain('"Launch":{');
+      const launchIndex = definition.indexOf('"Launch":{');
+      const launchBlock = definition.slice(launchIndex, launchIndex + 400);
+      expect(launchBlock).toContain('"Next":"ReleaseGpuSlot"');
+      expect(definition).toContain('"ReleaseGpuSlot":{');
+      const releaseIndex = definition.indexOf('"ReleaseGpuSlot":{');
+      const releaseBlock = definition.slice(releaseIndex, releaseIndex + 600);
+      expect(releaseBlock).toContain('"Next":"JobSucceeded"');
+    });
+
+    it("リトライ時はLaunchではなくAcquireGpuSlotへ戻る(HandleFailureが返却済みのリースで無リース起動しないため)", () => {
+      const incrementIndex = definition.indexOf('"IncrementAttempt":{');
+      const incrementBlock = definition.slice(incrementIndex, incrementIndex + 300);
+      expect(incrementBlock).toContain('"Next":"AcquireGpuSlot"');
+    });
+
+    it("WaitForGpuSlotはSecondsPathでアダプティブな待機秒数を使う(固定間隔にしない)", () => {
+      template.hasResourceProperties("AWS::StepFunctions::StateMachine", {});
+      expect(definition).toContain('"WaitForGpuSlot":{');
+      const waitIndex = definition.indexOf('"WaitForGpuSlot":{');
+      const waitBlock = definition.slice(waitIndex, waitIndex + 300);
+      expect(waitBlock).toContain('"SecondsPath":"$.slot.waitSeconds"');
+    });
+
+    it("待機の上限超過はGpuQueueTimeoutというFailステートへ倒れる", () => {
+      expect(definition).toContain('"GpuQueueTimeout":{"Type":"Fail"');
+    });
+
+    it("AcquireGpuSlotFnにEC2起動権限(ec2:*)が付与されていない(枠取りはDynamoDBの会計のみで完結する)", () => {
+      const policies = template.findResources("AWS::IAM::Policy", {
+        Properties: {
+          Roles: Match.arrayWith([
+            Match.objectLike({ Ref: Match.stringLikeRegexp("^AcquireGpuSlotFnServiceRole") }),
+          ]),
+        },
+      });
+      const actions = JSON.stringify(Object.values(policies));
+      expect(actions).not.toContain("ec2:");
+    });
+
+    it("AcquireGpuSlotFn・LaunchFn・HandleFailureFnにGpuSlotsTableへのTransactWriteItems権限が付与されている", () => {
+      for (const rolePrefix of ["AcquireGpuSlotFn", "LaunchFn", "HandleFailureFn", "ReleaseGpuSlotFn"]) {
+        template.hasResourceProperties("AWS::IAM::Policy", {
+          PolicyDocument: {
+            Statement: Match.arrayWith([
+              Match.objectLike({ Action: "dynamodb:TransactWriteItems" }),
+            ]),
+          },
+          Roles: Match.arrayWith([
+            Match.objectLike({ Ref: Match.stringLikeRegexp(`^${rolePrefix}ServiceRole`) }),
+          ]),
+        });
+      }
+    });
   });
 
   it("自宅ワーカー用のIAMロールがアカウント内からのAssumeRoleを許可している", () => {

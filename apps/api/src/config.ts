@@ -60,6 +60,12 @@ export interface ApiConfig {
    * (`POST /beacon`)は別途`loadAnalyticsConfig()`経由でこの値を読む（下記）。
    */
   analyticsEventsTable: string;
+  /**
+   * GPU録画ジョブのvCPU容量リース（Issue #270）を保持するDynamoDBテーブル名。
+   * `gpuSlots.ts`が読み書きする。詳細は
+   * `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`。
+   */
+  gpuSlotsTable: string;
 }
 
 export interface Ec2LaunchConfig {
@@ -126,6 +132,7 @@ export function loadConfig(): ApiConfig {
     sesConfigurationSetName: required("SES_CONFIGURATION_SET"),
     webBaseUrl: required("WEB_BASE_URL"),
     analyticsEventsTable: required("ANALYTICS_EVENTS_TABLE"),
+    gpuSlotsTable: required("GPU_SLOTS_TABLE"),
     ec2: {
       subnetIds: required("WORKER_SUBNET_IDS").split(","),
       subnetAvailabilityZones: required("WORKER_SUBNET_AZS").split(","),
