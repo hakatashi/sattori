@@ -1,6 +1,8 @@
 import {
   estimateQueueWaitSeconds,
   GPU_JOB_OVERHEAD_SECONDS,
+  GPU_MAX_INSTANCE_VCPU,
+  GPU_MIN_INSTANCE_VCPU,
   GPU_QUEUE_FALLBACK_DURATION_SECONDS,
   GPU_QUEUE_INDEX,
   GPU_QUEUE_WAITING,
@@ -147,7 +149,13 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
 
   if (head) {
     const { usedVcpu, leases } = await listGpuSlots(config.gpuSlotsTable);
-    const reserve = reservableVcpu(GPU_VCPU_QUOTA - usedVcpu);
+    // attempt > 1 の場合（前回のLaunchが失敗した再試行）、4vCPUでの起動（g6f.xlarge単独）が
+    // 在庫枯渇等で失敗した可能性がある。4vCPUのまま再試行を繰り返すとMAX_ATTEMPTS(10回≒27分)を
+    // 浪費して先行ジョブの完了(8vCPU回復)を待たずにretries_exhaustedで失敗してしまうため、
+    // リトライ時はクオータ全量(8vCPU)が空くまで待機列で待たせる。
+    // 初回(attempt === 1)は4vCPUの空きがあれば投機的に並列起動を試みる。
+    const minRequiredVcpu = event.attempt > 1 ? GPU_MAX_INSTANCE_VCPU : GPU_MIN_INSTANCE_VCPU;
+    const reserve = reservableVcpu(GPU_VCPU_QUOTA - usedVcpu, minRequiredVcpu);
     if (reserve !== null) {
       const expectedFinishAt = computeExpectedFinishAt(job.estimatedDurationSeconds, now);
       const result = await acquireGpuSlot(

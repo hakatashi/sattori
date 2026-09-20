@@ -96,12 +96,21 @@ export function vcpusForInstanceType(instanceType: string): number | null {
  * 8vCPU分の空きがあれば大きい方（両候補タイプが使える）、4vCPU分しか無ければ
  * 小さい方（`g6f.xlarge`のみ）、それ未満なら確保不可（null）。
  *
+ * `minVcpu` を指定すると要求下限を引き上げられる（リトライ時＝`attempt > 1` に
+ * 4vCPUでの投機的確保をやめ、クオータ全量8vCPUの空きを待つために使う）。
+ *
  * これはあくまで「どちらのタイプで試すか」の事前判断であり、実際の安全性は
  * `apps/api/src/gpuSlots.ts` の `TransactWriteItems` の `ConditionExpression` が
  * 保証する（この関数の呼び出しと実際の書き込みの間に競合が起きても、条件式が
  * 弾くので過剰確保は起きない）。
  */
-export function reservableVcpu(availableVcpu: number): number | null {
+export function reservableVcpu(
+  availableVcpu: number,
+  minVcpu: number = GPU_MIN_INSTANCE_VCPU,
+): number | null {
+  if (availableVcpu < minVcpu) {
+    return null;
+  }
   if (availableVcpu >= GPU_MAX_INSTANCE_VCPU) {
     return GPU_MAX_INSTANCE_VCPU;
   }

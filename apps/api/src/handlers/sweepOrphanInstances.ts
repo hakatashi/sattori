@@ -82,6 +82,8 @@ export const handler = async (): Promise<SweepResult> => {
     staleQueueEntriesCleared: 0,
   };
 
+  const terminatedIds = new Set<string>();
+
   for (const [jobId, jobInstances] of byJobId) {
     const candidates = await selectForJob(jobsTable, stateMachineArn, jobId, jobInstances, livenessCache);
     if (candidates === null) {
@@ -101,6 +103,7 @@ export const handler = async (): Promise<SweepResult> => {
       try {
         await terminateInstance(candidate.instanceId);
         result.terminated += 1;
+        terminatedIds.add(candidate.instanceId);
       } catch (err) {
         console.error(
           JSON.stringify({
@@ -114,7 +117,12 @@ export const handler = async (): Promise<SweepResult> => {
     }
   }
 
-  await reconcileGpuSlots(jobsTable, gpuSlotsTable, stateMachineArn, instances, livenessCache, result);
+  // terminateに成功したインスタンスを除外したリストをリコンサイラへ渡す。
+  // これを怠ると、直前にterminateした孤児GPUインスタンスに対し「リースが無い生存
+  // インスタンス」として誤って補完リース(createCompensatingGpuLease)を作成してしまい、
+  // 存在しないインスタンスのために4〜8vCPUが最大10分間ブロックされてしまう。
+  const liveInstances = instances.filter((inst) => !terminatedIds.has(inst.instanceId));
+  await reconcileGpuSlots(jobsTable, gpuSlotsTable, stateMachineArn, liveInstances, livenessCache, result);
 
   console.log(JSON.stringify({ event: "orphan_sweep_completed", ...result }));
   return result;
