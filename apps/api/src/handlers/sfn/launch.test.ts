@@ -6,7 +6,13 @@ import {
   EC2Client,
 } from "@aws-sdk/client-ec2";
 import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  ScanCommand,
+  TransactWriteCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import type { JobRecord, WorkerHeartbeat } from "@sattori/shared";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
@@ -32,6 +38,7 @@ const REQUIRED_ENV: Record<string, string> = {
   SES_CONFIGURATION_SET: "sattori-config-set",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
   ANALYTICS_EVENTS_TABLE: "sattori-analytics-events",
+  GPU_SLOTS_TABLE: "sattori-gpu-slots",
 };
 
 const ec2Mock = mockClient(EC2Client);
@@ -330,5 +337,125 @@ describe("sfn/launch handler（自宅ワーカーへのオファー、Issue #49�
 
     expect(offerCalls()).toHaveLength(0);
     expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+  });
+});
+
+describe("sfn/launch handler（GPU vCPU容量リース、Issue #270）", () => {
+  const gpuJob: JobRecord = createJobRecord({
+    game: "th15",
+    status: "queued",
+    createdAt: "2026-07-17T00:00:00.000Z",
+    updatedAt: "2026-07-17T00:00:00.000Z",
+    email: null,
+    pendingExpiresAt: null,
+  });
+
+  function gpuLeaseItem(vcpu: number) {
+    return {
+      slotKey: "gpu",
+      itemKey: "job#job-1",
+      jobId: "job-1",
+      vcpu,
+      acquiredAt: "2026-07-17T00:00:00.000Z",
+      expiresAt: "2026-07-17T03:00:00.000Z",
+      expectedFinishAt: "2026-07-17T00:30:00.000Z",
+    };
+  }
+
+  it("GPUジョブは自分のリースを読みvCPU上限に応じて候補タイプを絞る", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: gpuJob });
+    ddbMock
+      .on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE })
+      .resolves({ Item: gpuLeaseItem(4) });
+    ddbMock.on(UpdateCommand).resolves({});
+    ddbMock.on(TransactWriteCommand).resolves({});
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-gpu"], InstanceType: "g6f.xlarge", AvailabilityZone: "eu-south-2b" }],
+    });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    const overrides =
+      ec2Mock.commandCalls(CreateFleetCommand)[0]?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+    const instanceTypes = new Set(overrides.map((o) => o.InstanceType));
+    expect(instanceTypes).toEqual(new Set(["g6f.xlarge"]));
+  });
+
+  it("リースが確保できたvCPUより実際のインスタンスが小さければ縮小する", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: gpuJob });
+    ddbMock
+      .on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE })
+      .resolves({ Item: gpuLeaseItem(8) });
+    ddbMock.on(UpdateCommand).resolves({});
+    ddbMock.on(TransactWriteCommand).resolves({});
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-gpu"], InstanceType: "g6f.xlarge", AvailabilityZone: "eu-south-2b" }],
+    });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    const transactCalls = ddbMock.commandCalls(TransactWriteCommand);
+    expect(transactCalls).toHaveLength(1);
+    const leaseUpdate = transactCalls[0]?.args[0].input.TransactItems?.[0]?.Update;
+    expect(leaseUpdate?.ExpressionAttributeValues?.[":old"]).toBe(8);
+    expect(leaseUpdate?.ExpressionAttributeValues?.[":new"]).toBe(4);
+  });
+
+  it("実際のインスタンスタイプがリースのvCPUと一致すれば縮小しない", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: gpuJob });
+    ddbMock
+      .on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE })
+      .resolves({ Item: gpuLeaseItem(8) });
+    ddbMock.on(UpdateCommand).resolves({});
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-gpu"], InstanceType: "g6f.2xlarge", AvailabilityZone: "eu-south-2b" }],
+    });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("GPUジョブなのにリースが見つからなければ例外を投げる(Launchのcatchへ委ねる)", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: gpuJob });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({});
+
+    const { handler } = await import("./launch.js");
+    await expect(
+      handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" }),
+    ).rejects.toThrow(/vCPUリース/);
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(0);
+  });
+
+  it("非GPUジョブはGpuSlotsTableに一切触れない", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: job });
+    ddbMock.on(UpdateCommand).resolves({});
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.xlarge", AvailabilityZone: "eu-south-2a" }],
+    });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(ddbMock.commandCalls(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE })).toHaveLength(0);
   });
 });

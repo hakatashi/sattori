@@ -4,6 +4,7 @@ import { ADMIN_STOPPED_JOB_ERROR, isTerminalStatus } from "@sattori/shared";
 import type { AdminStopJobResponse } from "@sattori/shared";
 import { loadConfig, required } from "../../config.js";
 import { findJobInstanceIds, terminateInstance } from "../../ec2.js";
+import { releaseGpuSlot } from "../../gpuSlots.js";
 import { releaseHomeWorkerAssignment } from "../../homeWorker.js";
 import { error, json } from "../../http.js";
 import { getJob, markJobStopRequested, updateJobStatus } from "../../jobs.js";
@@ -198,6 +199,23 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         "EC2インスタンスの終了に失敗しました。Step Functions実行は停止済みのため、時間をおいて再度停止を実行してください",
       );
     }
+  }
+
+  // GPU vCPU容量リース（Issue #270）の返却。冪等かつ「取り逃してもリコンサイラが
+  // 最終的に回収する」性質の後始末なので、terminate・自宅ワーカー解除と違って
+  // **失敗してもここで打ち切らない**（GPU枠の一時的な塞ぎはジョブの正しさ
+  // そのものには影響しないため）。待機中（まだリースを確保していない）ジョブの
+  // 待ち行列状態の後始末は、投入順（FIFO）を導入する変更でここに追加する。
+  try {
+    await releaseGpuSlot(config.gpuSlotsTable, jobId);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "admin_release_gpu_slot_failed",
+        jobId,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
   }
 
   // 自宅ワーカー（Issue #49）への割り当ても解除する。EC2の`TerminateInstances`と

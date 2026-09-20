@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { DescribeInstancesCommand, EC2Client, TerminateInstancesCommand } from "@aws-sdk/client-ec2";
 import {
   DescribeExecutionCommand,
@@ -34,6 +34,7 @@ const REQUIRED_ENV: Record<string, string> = {
   SES_CONFIGURATION_SET: "sattori-config-set",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
   ANALYTICS_EVENTS_TABLE: "sattori-analytics-events",
+  GPU_SLOTS_TABLE: "sattori-gpu-slots",
   STATE_MACHINE_ARN: "arn:aws:states:us-east-1:123456789012:stateMachine:RecordingStateMachine",
 };
 
@@ -372,5 +373,64 @@ describe("POST /admin/jobs/{jobId}/stop", () => {
 
   it("jobIdが無ければ400を返す", async () => {
     expect((await invoke()).statusCode).toBe(400);
+  });
+});
+
+describe("POST /admin/jobs/{jobId}/stop（GPU vCPU容量リースの返却、Issue #270）", () => {
+  beforeEach(() => {
+    ddbMock.reset();
+    ec2Mock.reset();
+    sfnMock.reset();
+    for (const [key, value] of Object.entries(REQUIRED_ENV)) {
+      vi.stubEnv(key, value);
+    }
+    vi.stubEnv("AWS_REGION", "us-east-1");
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "RUNNING" });
+    ec2Mock.on(DescribeInstancesCommand).resolves({ Reservations: [] });
+    sfnMock.on(StopExecutionCommand).resolves({});
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+  });
+
+  it("terminate後にGPU vCPU容量リースを返却する", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: recordingJob });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+      Item: {
+        slotKey: "gpu",
+        itemKey: "job#job-1",
+        jobId: "job-1",
+        vcpu: 4,
+        acquiredAt: "a",
+        expiresAt: "b",
+        expectedFinishAt: "c",
+      },
+    });
+    ddbMock.on(TransactWriteCommand).resolves({});
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const res = await invoke("job-1");
+
+    expect(res.statusCode).toBe(200);
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(1);
+  });
+
+  it("リースが存在しない(非GPUジョブ)場合も200で成功する", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: recordingJob });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({});
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const res = await invoke("job-1");
+
+    expect(res.statusCode).toBe(200);
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("GPUリース返却の失敗は停止処理を打ち切らない(200のまま)", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: recordingJob });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).rejects(new Error("throttled"));
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const res = await invoke("job-1");
+
+    expect(res.statusCode).toBe(200);
   });
 });

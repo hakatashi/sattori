@@ -58,29 +58,42 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    Step Functions の実行を開始する（`attempt: INITIAL_ATTEMPT`、`retryPolicy.ts`）。
    条件不成立（既に起動済み）なら `JobAlreadyStartedError` を捕まえて現在の状態を
    冪等に返すだけで、Step Functionsは再起動しない。
-2. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト150分・ハートビート
+2. **`sfn/acquireGpuSlot.ts`**（GPU vCPU容量リース、Issue #270）が最初に呼ばれる。
+   GPU描画必須タイトル（th06nc・th15）のみ`GpuSlotsTable`でvCPU容量を会計し、
+   空きが無ければ`WaitForGpuSlot`（アダプティブな間隔）を挟んで自分自身へ戻る
+   ループを回す。非GPUジョブは`GpuSlotsTable`に一切触れず即座に通過する。
+   詳細・設計根拠は
+   [`0056`](../../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
+3. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト150分・ハートビート
    タイムアウト15分）がワーカーを1台**割り当て**る。割り当て先は自宅ワーカー
    （Issue #49、§3）かEC2 Fleetのどちらかで、EC2の場合は
    `launchRecordingInstance()`（`ec2.ts`）でSpotインスタンスを1台起動し、ジョブを
    `launching` に更新する（自宅ワーカーの場合は**claimと同じ条件付き更新の中で
    デーモンが**`launching`にする。理由は
-   [`0034`](../../docs/decisions/0034-launch-handlefailure-timing.md)）。
-   **このハンドラの戻り値はStep Functionsの実行結果に影響しない** — 成功/失敗の確定は
-   ワーカー自身が`taskToken`経由で`SendTaskSuccess`/`SendTaskFailure`を呼ぶことで行う。
-3. Spot中断・タイムアウト等で失敗すると、3分の待機（インフラ側の`WaitBeforeCheck`。
+   [`0034`](../../docs/decisions/0034-launch-handlefailure-timing.md)）。GPUジョブは
+   直前に確保したリースのvCPU量で候補インスタンスタイプを絞り
+   （`getCandidateInstanceTypes(game, { maxVcpu })`）、実際に確保できたタイプに
+   合わせてリースを縮小する。**このハンドラの戻り値はStep Functionsの実行結果に
+   影響しない** — 成功/失敗の確定はワーカー自身が`taskToken`経由で
+   `SendTaskSuccess`/`SendTaskFailure`を呼ぶことで行う。成功時は
+   **`sfn/releaseGpuSlot.ts`**がGPU vCPU容量リースを返却してから完了する。
+4. Spot中断・タイムアウト等で失敗すると、3分の待機（インフラ側の`WaitBeforeCheck`。
    理由は`0034`）を挟んで `sfn/handleFailure.ts` が呼ばれる。ジョブが待機中に
    `done` へ遷移していれば何もしない。未完了なら孤児化した可能性のあるインスタンスを
    `terminateInstance()` し（対象は§5参照）、自宅ワーカーへの割り当て・オファーを
-   `releaseHomeWorkerAssignment()`（`homeWorker.ts`）で解除したうえで、
-   `retryPolicy.ts` の `MAX_ATTEMPTS`（**10回**）未満なら
-   `shouldRetry: true` を返してリトライ、上限に達していればジョブを `failed` に確定する
+   `releaseHomeWorkerAssignment()`（`homeWorker.ts`）で、GPU vCPU容量リースを
+   `releaseGpuSlot()`（`gpuSlots.ts`）で解除したうえで、`retryPolicy.ts` の
+   `MAX_ATTEMPTS`（**10回**）未満なら`shouldRetry: true`を返してリトライ
+   （**`Launch`ではなく`AcquireGpuSlot`へ戻る**——リースを既に返却済みのため）、
+   上限に達していればジョブを `failed` に確定する
    （ワーカー自身が既に`failed`を書き込んでいれば上書きしない）。
-4. `handleFailure.ts` 自体がAWS APIの一時的な障害で例外を投げても、ジョブが
+5. `handleFailure.ts` 自体がAWS APIの一時的な障害で例外を投げても、ジョブが
    非終端状態のまま固まらないよう、インフラ側でリトライ＋最終的な`Fail`遷移が
    用意されている（`infra/README.md`参照）。ただしこの経路はジョブレコード自体を
    直接更新しないため、それでも取りこぼした場合は
    [`0031`](../../docs/decisions/0031-stalled-job-sweep-by-status.md)の定期掃除役が
-   拾う（Issue #132）。
+   拾う（Issue #132）。GPU vCPU容量リースの取りこぼしは
+   `handlers/sweepOrphanInstances.ts`のリコンサイラ（§5）が回収する。
 
 ## 3. 自宅ワーカーへのジョブ割り当て（`homeWorker.ts` / `workerRouting.ts`, Issue #49）
 
@@ -131,7 +144,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | th12 | `TH12_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th128 | `TH128_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th20 | `TH20_CANDIDATE_INSTANCE_TYPES` | `c7i.4xlarge` のみ |
-| th06nc・th15 | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.xlarge` / `g6f.2xlarge`（GPU描画必須、Issue #241・#82） |
+| th06nc・th15 | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.xlarge` / `g6f.2xlarge`（GPU描画必須、Issue #241・#82。確保済みvCPUリースに応じて`getCandidateInstanceTypes(game, { maxVcpu })`が絞り込む。Issue #270） |
 
 > **候補を足す・変える前に
 > [`docs/decisions/0016`](../../docs/decisions/0016-ec2-fleet-instance-type-diversification.md)
@@ -185,6 +198,14 @@ Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決では
 判定は `orphanInstances.ts` にあり、猶予15分（`ORPHAN_INSTANCE_GRACE_MINUTES`）・
 Step Functions実行の生死（`getExecutionLiveness()`）・実行中ジョブでは最新1台を保護、
 と徹底して安全側に倒してある。最悪の孤児寿命は「猶予15分 + 掃除間隔10分」＝25分。
+
+**同じLambda（`sweepOrphanInstances.ts`）にGPU vCPU容量リースのリコンサイラ
+（Issue #270）が相乗りしている。** `gpuReconcile.ts`（判定ロジック）が実在する
+GPUインスタンス（`listTaggedInstances()`の`instanceType`）とリース台帳
+（`gpuSlots.ts`の`listGpuSlots()`）を突き合わせ、①期限切れ・孤児化したリースの
+回収②`shrinkGpuLease()`失敗によるvCPUドリフトの補正③リースの無い生存インスタンスへの
+補完リース作成（安全側=クオータ超過側に倒す）を行う。詳細は
+[`0056`](../../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
 
 > **判定を緩める・走査の起点を変える前に
 > [`docs/decisions/0017`](../../docs/decisions/0017-orphan-sweep-from-aws-instances.md)
@@ -301,7 +322,8 @@ UserDataスクリプトがやること:
 `sweepOrphanInstances.ts`/`sweepStalledJobs.ts`専用の`STATE_MACHINE_ARN`、
 `admin/authorizer.ts`専用の`ADMIN_TOKEN_PARAMETER_NAME`、
 `admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定、
-`sweepOrphanInstances.ts`/`sweepStalledJobs.ts`専用の`JOBS_TABLE`単独指定、
+`sweepOrphanInstances.ts`/`sweepStalledJobs.ts`専用の`JOBS_TABLE`単独指定
+（前者は`GPU_SLOTS_TABLE`も、Issue #270）、
 `admin/getCosts.ts`専用のCloudFront実配信量取得用`CLOUDFRONT_DISTRIBUTION_ID`、
 Issue #163）から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
 `admin/getLogs.ts`・`RecordAnalyticsEventFn`以外の管理API用Lambdaは`commonEnv`を使う）。

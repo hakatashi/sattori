@@ -5,7 +5,7 @@ import {
   EC2Client,
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
-import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import type { JobRecord } from "@sattori/shared";
 import { MAX_ATTEMPTS, MAX_ATTEMPTS_DETERMINISTIC } from "../../retryPolicy.js";
@@ -32,6 +32,7 @@ const REQUIRED_ENV: Record<string, string> = {
   SES_CONFIGURATION_SET: "sattori-config-set",
   WEB_BASE_URL: "https://sattori.hakatashi.com",
   ANALYTICS_EVENTS_TABLE: "sattori-analytics-events",
+  GPU_SLOTS_TABLE: "sattori-gpu-slots",
 };
 
 const ec2Mock = mockClient(EC2Client);
@@ -377,5 +378,50 @@ describe("sfn/handleFailure handler", () => {
 
       expect(result).toEqual({ shouldRetry: true });
     });
+  });
+});
+
+describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #270）", () => {
+  it("失敗時にGPU vCPU容量リースを返却する", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: baseJob });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+      Item: {
+        slotKey: "gpu",
+        itemKey: "job#job-1",
+        jobId: "job-1",
+        vcpu: 4,
+        acquiredAt: "a",
+        expiresAt: "b",
+        expectedFinishAt: "c",
+      },
+    });
+    ddbMock.on(TransactWriteCommand).resolves({});
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+
+    const { handler } = await import("./handleFailure.js");
+    await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(1);
+  });
+
+  it("リースが存在しない(非GPUジョブ)場合も安全に呼べる", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: baseJob });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({});
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+
+    const { handler } = await import("./handleFailure.js");
+    const result = await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(result).toEqual({ shouldRetry: true });
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("GPUリース返却の失敗はリトライ判定を妨げない", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: baseJob });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).rejects(new Error("throttled"));
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+
+    const { handler } = await import("./handleFailure.js");
+    await expect(handler({ jobId: "job-1", attempt: 1 })).resolves.toEqual({ shouldRetry: true });
   });
 });

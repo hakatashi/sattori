@@ -14,6 +14,7 @@ function instance(instanceId: string, minutesAgo: number, jobId = "job-1"): Tagg
     instanceId,
     jobId,
     launchTime: new Date(NOW.getTime() - minutesAgo * 60 * 1000),
+    instanceType: null,
   };
 }
 
@@ -86,7 +87,7 @@ describe("selectOrphanInstances", () => {
   it("起動時刻が読めないインスタンスは常に残す（判定できないものは殺さない）", () => {
     const orphans = selectOrphanInstances({
       instances: [
-        { instanceId: "i-unknown", jobId: "job-1", launchTime: null },
+        { instanceId: "i-unknown", jobId: "job-1", launchTime: null, instanceType: null },
         instance("i-old", 120),
       ],
       executionLiveness: "finished",

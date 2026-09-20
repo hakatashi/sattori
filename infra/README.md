@@ -75,6 +75,13 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   がある。オファー中のジョブだけがこの属性を持つ（claim・撤回時にREMOVEする）ので、
   インデックス自体が「いまオファー中のジョブ一覧」になり、自宅デーモンは
   `JobsTable`全体をScanせずにポーリングできる。
+  `GpuSlotsTable`（PK=`slotKey`固定値・SK=`itemKey`、TTLあり）はGPU録画ジョブ
+  （th06nc・th15）のvCPU容量リース台帳（Issue #270）。カウンタアイテムと
+  リースアイテムが同一パーティションに同居し、確保・縮小・返却はすべて
+  `TransactWriteItems`で行う（`Table.grantReadWriteData()`は
+  `dynamodb:TransactWriteItems`を含まないため、書き込むLambdaには`grant()`で
+  個別付与している）。詳細は
+  [`docs/decisions/0056`](../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
 - **SES**: `EmailIdentity`（送信元ドメインのDKIM検証、マジックリンク・完了メール
   送信用）は**`SattoriEdgeStack`（us-east-1）側**にある（eu-south-2にはSESが存在
   しないため）。DKIM用CNAME・MAIL FROMドメイン用MX/TXT（下記、Issue #139 UX-5）は
@@ -148,11 +155,17 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   `cdk.json`の`context`に設定するか`-c gpuWorkerAmiId=ami-xxxx`で指定すること、
   AMI構築手順は`build-gpu-worker-ami` skill、
   [`docs/decisions/0046`](../docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)）。
-- **Step Functions**: `RecordingStateMachine`（Standard）。`Launch`
-  （`waitForTaskToken`、150分タイムアウト+**15分のハートビートタイムアウト**）→
+- **Step Functions**: `RecordingStateMachine`（Standard）。開始状態は`AcquireGpuSlot`
+  （GPU vCPU容量リース、Issue #270。非GPUジョブは即通過し空きが無ければ
+  `WaitForGpuSlot`→自分自身へ戻るループ、待機はリトライ回数を消費しない）→
+  `GpuSlotAcquired?`が`Launch`
+  （`waitForTaskToken`、150分タイムアウト+**15分のハートビートタイムアウト**）へ
+  進める。`Launch`成功後は`ReleaseGpuSlot`でリースを返却してから完了する。
   失敗時 `WaitBeforeCheck`（3分）→
   `HandleFailure` → `ShouldRetry?`（`shouldRetry`なら`IncrementAttempt`して
-  `Launch`へ、そうでなければ`Fail`）。`HandleFailure`自体が例外を投げても
+  **`Launch`ではなく`AcquireGpuSlot`へ**、そうでなければ`Fail`）。詳細・設計根拠は
+  [`docs/decisions/0056`](../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
+  `HandleFailure`自体が例外を投げても
   （DynamoDB/EC2 APIの一時的なスロットリング等）実行全体を即失敗させず、
   3回リトライ後になお失敗すれば`HandleFailureCrashed`へ倒して実行を必ず終端させる
   （孤児インスタンスが残る可能性はログに残す）。詳細は`apps/api/README.md`。
@@ -180,8 +193,13 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   `ses:SendEmail`。SESサンドボックス中は送信先IDも権限チェック対象になるため、
   Resourceはアカウント配下のSES identity全体`identity/*`に絞っている）、
   SweepOrphanInstances Lambdaロール（`ec2:DescribeInstances`/`ec2:TerminateInstances`
-  ＋`states:DescribeExecution`＋`JobsTable`読み取り、Issue #23）、SweepStalledJobs
+  ＋`states:DescribeExecution`＋`JobsTable`読み取り、Issue #23。GPU vCPU容量リースの
+  リコンサイラ（Issue #270）も同居するため`GpuSlotsTable`の読み書き＋
+  `dynamodb:TransactWriteItems`も持つ）、SweepStalledJobs
   Lambdaロール（`states:DescribeExecution`＋`JobsTable`読み書き、Issue #132）、
+  AcquireGpuSlot/ReleaseGpuSlot Lambdaロール（`GpuSlotsTable`読み書き＋
+  `dynamodb:TransactWriteItems`。前者のみ`JobsTable`読み書きも持つ。**EC2権限は
+  一切持たない**——枠取りはDynamoDBの会計のみで完結する。Issue #270）、
   **`HomeWorkerRole`**（自宅サーバーの常駐デーモンがassumeする最小権限ロール、
   Issue #49。信頼ポリシーはアカウント内プリンシパル、`maxSessionDuration`は4時間
   ＝ジョブ1本の最長所要時間より確実に長い値。実際に誰が使えるかは、手動で作る
@@ -207,9 +225,10 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   （dockerデーモンにAWS認証情報を持たせないため）、いずれも`{jobId}`という同じ
   ストリーム名で書き込む。重複フレーム診断のため失敗時も残す。
 - **Lambda**（`NodejsFunction`、CJS出力。ESM出力だとAWS SDK内部の動的
-  `require("node:https")`がLambda(ESM)で失敗するため）× 23: createUpload /
+  `require("node:https")`がLambda(ESM)で失敗するため）× 25: createUpload /
   parseReplay / requestMagicLink / startJob / getJob / getWorkerAvailability /
   recordAnalyticsEvent / sendCompletionEmail / sfn.launch / sfn.handleFailure /
+  sfn.acquireGpuSlot / sfn.releaseGpuSlot（Issue #270）/
   sweepOrphanInstances / sweepStalledJobs（Issue #132）/ admin.authorizer /
   admin.listJobs / admin.getJobDetail / admin.getExecution / admin.getLogs /
   admin.stopJob / admin.retryJob / admin.getCosts / admin.getAnalytics（Issue #149）/

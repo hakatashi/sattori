@@ -71,7 +71,9 @@ reports/81 §9.9.3の実測では、1080p録画は本来g6f.2xlarge（8vCPU）�
 いる。それでもeu-south-2のG系スポットクォータ（現状8vCPU＝g6f.xlarge換算で2台分の
 並列運用余地）を踏まえ、並列運用の余地を残すためユーザー判断で4vCPUのまま提供して
 いる（[`decisions/0046`](decisions/0046-gpu-ec2-instance-and-fixed-ami.md)）。1080p
-録画で処理落ちが疑われる場合はこの制約を踏まえて調査すること。
+録画で処理落ちが疑われる場合はこの制約を踏まえて調査すること。このクオータの範囲内で
+ジョブを順番待ちさせる仕組みは
+[`decisions/0056`](decisions/0056-gpu-vcpu-lease-and-queue.md)。
 
 同時発売の「東方紅魔郷: Classic」（th06c）も録画対応済み（Issue #240、
 [`worker/docs/titles/th06c.md`](../worker/docs/titles/th06c.md)、こちらはGPU不要）。
