@@ -164,9 +164,25 @@ describe("shrinkGpuLease", () => {
     expect(quotaUpdate?.ExpressionAttributeValues?.[":delta"]).toBe(4);
   });
 
-  it("縮小しない(newVcpu>=oldVcpu)場合は何もしない", async () => {
-    await shrinkGpuLease(TABLE, "job-1", 4, 4, "g6f.xlarge", "i-1");
+  it("vCPUが一致(newVcpu===oldVcpu)する場合はカウンタは触らずinstanceTypeとinstanceIdのみ記録する", async () => {
+    ddbMock.on(UpdateCommand).resolves({});
+    await shrinkGpuLease(TABLE, "job-1", 8, 8, "g6f.2xlarge", "i-1");
+
     expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+    const updateCalls = ddbMock.commandCalls(UpdateCommand);
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]?.args[0].input).toMatchObject({
+      TableName: TABLE,
+      Key: { slotKey: "gpu", itemKey: "job#job-1" },
+      UpdateExpression: "SET instanceType = :t, instanceId = :i",
+      ExpressionAttributeValues: { ":t": "g6f.2xlarge", ":i": "i-1" },
+    });
+  });
+
+  it("新vCPUが旧vCPUより大きい(newVcpu>oldVcpu)不正な呼び出しは何もしない", async () => {
+    await shrinkGpuLease(TABLE, "job-1", 4, 8, "g6f.2xlarge", "i-1");
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);
   });
 
   it("条件不一致は例外を投げずログのみに残す(縮小漏れはリコンサイラが補正する)", async () => {

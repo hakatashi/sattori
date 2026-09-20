@@ -81,7 +81,7 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
     expect(transactInput?.TransactItems?.[0]?.Put?.Item?.vcpu).toBe(8);
   });
 
-  it("GPUジョブで空きが無ければ待機を返す(acquired:false)", async () => {
+  it("GPUジョブで空きが無ければ待機を返す(acquired:false、待機秒数はnextPollIntervalSeconds)", async () => {
     ddbMock.on(GetCommand).resolves({ Item: gpuJob });
     ddbMock.on(QueryCommand).resolves({ Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 8 }] });
 
@@ -94,11 +94,12 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
 
     expect(result.acquired).toBe(false);
     expect(result.timedOut).toBe(false);
-    expect(result.waitSeconds).toBeGreaterThan(0);
+    // 待機開始直後(経過0秒)はnextPollIntervalSeconds(0)=15秒
+    expect(result.waitSeconds).toBe(15);
     expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
   });
 
-  it("残り4vCPUなら4vCPUのみ確保を試みる", async () => {
+  it("初回試行(attempt:1)で残り4vCPUなら4vCPUのみ確保を試みる(投機的並列化)", async () => {
     ddbMock.on(GetCommand).resolves({ Item: gpuJob });
     ddbMock.on(QueryCommand).resolves({ Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 4 }] });
     ddbMock.on(TransactWriteCommand).resolves({});
@@ -108,6 +109,33 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
 
     const transactInput = ddbMock.commandCalls(TransactWriteCommand)[0]?.args[0].input;
     expect(transactInput?.TransactItems?.[0]?.Put?.Item?.vcpu).toBe(4);
+  });
+
+  it("リトライ時(attempt>1)は4vCPUしか空いていなければ確保せず8vCPUが空くまで待機する", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: gpuJob });
+    ddbMock.on(QueryCommand).resolves({ Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 4 }] });
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 2, executionStartTime: new Date().toISOString() });
+
+    expect(result.acquired).toBe(false);
+    expect(result.timedOut).toBe(false);
+    expect(result.waitSeconds).toBe(15);
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("リトライ時(attempt>1)でも8vCPU空いていれば確保する", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: gpuJob });
+    ddbMock.on(QueryCommand).resolves({ Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 0 }] });
+    ddbMock.on(TransactWriteCommand).resolves({});
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 2, executionStartTime: new Date().toISOString() });
+
+    expect(result.acquired).toBe(true);
+    expect(result.timedOut).toBe(false);
+    const transactInput = ddbMock.commandCalls(TransactWriteCommand)[0]?.args[0].input;
+    expect(transactInput?.TransactItems?.[0]?.Put?.Item?.vcpu).toBe(8);
   });
 
   it("待機の上限(120分)を超えたらfailedを書きtimedOut:trueを返す", async () => {
