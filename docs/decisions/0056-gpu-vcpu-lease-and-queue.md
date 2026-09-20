@@ -53,6 +53,11 @@ AcquireGpuSlot (LambdaInvoke, 通常invoke, resultPath:"$.slot")
   `GPU_LEASE_ACTIVE_MINUTES`(180分)解放されず2本目が実質走らなくなる致命的な穴だった。
 - **リトライ時は`Launch`ではなく`AcquireGpuSlot`へ戻る**。`HandleFailure`が既にリースを
   返却しているため、`Launch`へ直接戻ると無リースで`CreateFleet`してしまう。
+  **さらにリトライ時（`attempt > 1`）は4vCPUでの投機的確保を行わず、クオータ全量（8vCPU）の
+  回復を待つ**。先行ジョブが`g6f.xlarge`（4vCPU）で走っている間に2本目が4vCPUで起動を
+  試み、`g6f.xlarge`のスポット在庫枯渇で失敗した場合、4vCPUのまま再試行を繰り返すと
+  `MAX_ATTEMPTS`（10回≒27分）を浪費して先行ジョブの完了（8vCPU回復で`g6f.2xlarge`が
+  使えるようになる）を待たずに`retries_exhausted`で死んでしまう逆転現象を防ぐため。
 - **待機はリトライ回数（`attempt`）を消費しない。** これが「30分でタイムアウト」問題の
   根本解決——`retryPolicy.ts`の`MAX_ATTEMPTS`は「起動を試みて失敗した回数」だけを
   数える本来の意味に戻る。

@@ -1,9 +1,11 @@
 import {
   GPU_JOB_OVERHEAD_SECONDS,
+  GPU_MAX_INSTANCE_VCPU,
+  GPU_MIN_INSTANCE_VCPU,
   GPU_QUEUE_FALLBACK_DURATION_SECONDS,
-  GPU_QUEUE_POLL_RAMP_2_SECONDS,
   GPU_VCPU_QUOTA,
   isQueueWaitTimedOut,
+  nextPollIntervalSeconds,
   requiresGpuRecording,
   reservableVcpu,
 } from "@sattori/shared";
@@ -65,7 +67,10 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
   }
 
   const now = new Date();
-  const elapsedSeconds = Math.max(0, (now.getTime() - Date.parse(event.executionStartTime)) / 1000);
+  const startTimeMs = Date.parse(event.executionStartTime);
+  const elapsedSeconds = Number.isNaN(startTimeMs)
+    ? 0
+    : Math.max(0, (now.getTime() - startTimeMs) / 1000);
   if (isQueueWaitTimedOut(elapsedSeconds)) {
     await updateJobStatus(
       config.jobsTable,
@@ -81,7 +86,13 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
   }
 
   const { usedVcpu } = await listGpuSlots(config.gpuSlotsTable);
-  const reserve = reservableVcpu(GPU_VCPU_QUOTA - usedVcpu);
+  // attempt > 1 の場合（前回のLaunchが失敗した再試行）、4vCPUでの起動（g6f.xlarge単独）が
+  // 在庫枯渇等で失敗した可能性がある。4vCPUのまま再試行を繰り返すとMAX_ATTEMPTS(10回≒27分)を
+  // 浪費して先行ジョブの完了(8vCPU回復)を待たずにretries_exhaustedで失敗してしまうため、
+  // リトライ時はクオータ全量(8vCPU)が空くまで待機列で待たせる。
+  // 初回(attempt === 1)は4vCPUの空きがあれば投機的に並列起動を試みる。
+  const minRequiredVcpu = event.attempt > 1 ? GPU_MAX_INSTANCE_VCPU : GPU_MIN_INSTANCE_VCPU;
+  const reserve = reservableVcpu(GPU_VCPU_QUOTA - usedVcpu, minRequiredVcpu);
   if (reserve === null) {
     console.log(
       JSON.stringify({ event: "gpu_slot_wait", jobId: event.jobId, attempt: event.attempt, usedVcpu }),
@@ -91,7 +102,7 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
       attempt: event.attempt,
       acquired: false,
       timedOut: false,
-      waitSeconds: GPU_QUEUE_POLL_RAMP_2_SECONDS,
+      waitSeconds: nextPollIntervalSeconds(elapsedSeconds),
     };
   }
 
@@ -107,7 +118,7 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
       attempt: event.attempt,
       acquired: false,
       timedOut: false,
-      waitSeconds: GPU_QUEUE_POLL_RAMP_2_SECONDS,
+      waitSeconds: nextPollIntervalSeconds(elapsedSeconds),
     };
   }
 
