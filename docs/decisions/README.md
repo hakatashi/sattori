@@ -66,8 +66,9 @@
 | [0052](0052-gpu-xorg-driver-file-level-mount-not-directory.md) | 2026-09-18 | apps/api | GPU用コンテナへのXorg NVIDIAドライバ受け渡しはディレクトリ丸ごとではなくファイル単位でマウントする(`Need libwfb`起動不能バグの修正) | 有効 |
 | [0053](0053-mount-32bit-nvidia-client-libraries-for-wine.md) | 2026-09-18 | apps/api | GPU用コンテナへ32bit版NVIDIAクライアントライブラリを個別マウントする(32bitタイトルがGPUを使えずllvmpipeへ静かにフォールバックするバグの修正) | 有効 |
 | [0054](0054-detect-wine-crash-via-wine-log-not-duration-ratio.md) | 2026-09-19 | worker | Wineクラッシュの検知は理論尺比ではなく`wine.log`の未処理例外(`Unhandled`)で行い、検知したら破棄・リトライする(理論尺比はデシンクと縮退するため使わない) | 有効 |
-| [0055](0055-exclude-eu-south-2a-from-gpu-fleet.md) | 2026-09-19 | apps/api / infra | GPUジョブのEC2 Fleet候補から`eu-south-2a`を暫定除外する(クラッシュ率が有意に高い、p=0.0021。CPU系は対象外) | 有効(暫定。原因特定後に撤回) |
+| [0055](0055-exclude-eu-south-2a-from-gpu-fleet.md) | 2026-09-19 | apps/api / infra | GPUジョブのEC2 Fleet候補から`eu-south-2a`を暫定除外する(クラッシュ率が有意に高い、p=0.0021。CPU系は対象外) | [0057](0057-revert-eu-south-2a-gpu-exclusion.md)によって撤回済み |
 | [0056](0056-gpu-vcpu-lease-and-queue.md) | 2026-09-19 | apps/api / infra | GPU録画ジョブのvCPU容量をDynamoDBでリースし、`Launch`の手前で待たせる(eu-south-2のG系スポットクオータ8vCPU下でのキューイング、Issue #270) | 有効 |
+| [0057](0057-revert-eu-south-2a-gpu-exclusion.md) | 2026-09-22 | apps/api / infra | [0055](0055-exclude-eu-south-2a-from-gpu-fleet.md)の`eu-south-2a`除外を撤回する(起動失敗の増加が実害化し、除外後もクラッシュが根絶されていないため) | 有効 |
 
 ## 書き方
 
