@@ -21,7 +21,6 @@ const REQUIRED_ENV: Record<string, string> = {
   TITLE_ASSETS_BUCKET: "title-assets-bucket",
   WORKER_LOG_GROUP: "/sattori/worker",
   WORKER_SUBNET_IDS: "subnet-aaaa,subnet-bbbb",
-  WORKER_SUBNET_AZS: "eu-south-2a,eu-south-2b",
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
   GPU_WORKER_LAUNCH_TEMPLATE_ID: "lt-gpu-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
@@ -103,6 +102,51 @@ describe("sfn/handleFailure handler", () => {
 
     const { handler } = await import("./handleFailure.js");
     const result = await handler({ jobId: "job-1", attempt: MAX_ATTEMPTS });
+
+    expect(result).toEqual({ shouldRetry: false });
+    expect(statusUpdates(ddbMock)[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
+      ":s": "failed",
+      ":ec": "retries_exhausted",
+    });
+  });
+
+  it("Spot容量不足(UnfulfillableCapacity)由来の失敗はcapacity_exhaustedにする(Issue #282)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: baseJob });
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const { handler } = await import("./handleFailure.js");
+    const result = await handler({
+      jobId: "job-1",
+      attempt: MAX_ATTEMPTS,
+      error: {
+        Error: "Error",
+        Cause: JSON.stringify({
+          errorType: "Error",
+          errorMessage:
+            "EC2 Fleet でのインスタンス起動に失敗しました（InstanceId 不明）: UnfulfillableCapacity: Unable to fulfill capacity due to your request configuration.",
+        }),
+      },
+    });
+
+    expect(result).toEqual({ shouldRetry: false });
+    expect(statusUpdates(ddbMock)[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
+      ":s": "failed",
+      ":ec": "capacity_exhausted",
+    });
+  });
+
+  it("容量不足以外(デシンク等)の失敗は従来どおりretries_exhaustedのままにする(Issue #282)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: baseJob });
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const { handler } = await import("./handleFailure.js");
+    const result = await handler({
+      jobId: "job-1",
+      attempt: MAX_ATTEMPTS,
+      error: { Error: "WorkerFailed", Cause: "th20: 検出タイムアウト" },
+    });
 
     expect(result).toEqual({ shouldRetry: false });
     expect(statusUpdates(ddbMock)[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
