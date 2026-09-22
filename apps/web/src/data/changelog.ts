@@ -16,6 +16,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-22",
+    ja: "録画ワーカーの起動が一時的に混雑している場合に、より分かりやすいエラーメッセージを表示するよう改善",
+    en: "Improved the error message shown when a recording worker temporarily can't be started due to congestion",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/282",
+  },
+  {
     date: "2026-09-19",
     ja: "録画対象のプロセスが途中でクラッシュした際に、中断を検知して自動的に録画をやり直すよう修正",
     en: "Fixed recording to automatically retry when the target process crashes during recording",

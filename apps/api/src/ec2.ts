@@ -25,34 +25,6 @@ export const JOB_ID_TAG_KEY = "sattori:jobId";
 const LIVE_INSTANCE_STATES = ["pending", "running", "stopping", "stopped"];
 
 /**
- * GPUジョブ(g6f系、`requiresGpuRecording()`)の起動先から暫定的に除外するAZ
- * （Issue #267）。
- *
- * th15 PR(#264)の本番E2E検証中、GPU(g6f.2xlarge)ワーカーで3件立て続けにWineが
- * クラッシュし、録画が途中で切れたまま`done`として配信された。DynamoDB横断調査で
- * GPUジョブをAZ別に層別したところ、`eu-south-2a`は6件中4件がクラッシュしたのに対し
- * `eu-south-2b`は16件中0件だった（Fisher正確検定 p=0.0021）。原因はハードウェア
- * 個体差・vGPUスライスの状態等、AZ側の環境要因の可能性が高いが未特定のまま。
- * 実機再現実験（`docs/reports/2026-09-19-th15-wine-crash-detection-verification.md`）
- * ではクラッシュそのものの再現はできたが、AZ差の原因究明はスコープ外。
- *
- * **CPU系ジョブはこの除外の対象外**（有意差が確認されているのはGPU系ジョブのみ。
- * `getCandidateInstanceTypes()`のCPU系候補は元々このAZを含む複数AZで実機検証
- * 済みであり、変更する理由が無い）。原因が特定でき次第、この除外は撤回すること。
- */
-const EXCLUDED_GPU_AVAILABILITY_ZONE = "eu-south-2a";
-
-/**
- * `config.ec2.subnetIds`のうち、`excludedAz`に属するサブネットを取り除いた一覧を返す。
- * `subnetAvailabilityZones`は`subnetIds`と同じ順序・同じ長さで並んでいる前提
- * （`infra/lib/sattori-stack.ts`の`WORKER_SUBNET_IDS`/`WORKER_SUBNET_AZS`参照）。
- */
-function subnetIdsExcludingAvailabilityZone(config: ApiConfig, excludedAz: string): string[] {
-  const { subnetIds, subnetAvailabilityZones } = config.ec2;
-  return subnetIds.filter((_subnetId, index) => subnetAvailabilityZones[index] !== excludedAz);
-}
-
-/**
  * Spot Fleet に含める候補インスタンスタイプ（th11・th12・th20以外の既定。th09・th10・th06cも
  * こちらに含まれる、touhou-recorder reports/60・68・77でc7i.xlarge実測$0.033/hour前後の
  * 品質確認済み）。
@@ -498,8 +470,8 @@ export async function fetchSpotPrice(
  * GPU描画必須タイトル（`requiresGpuRecording()`、Issue #241）は`config.ec2.
  * gpuLaunchTemplateId`（GPU用カスタムAMI固定）を使う。CPU系の`launchTemplateId`とは
  * 別のLaunch Templateであり、`CreateLaunchTemplateVersion`・`CreateFleet`の両方で
- * 参照先を切り替える。GPU系のOverridesは`eu-south-2a`を暫定除外する
- * （`EXCLUDED_GPU_AVAILABILITY_ZONE`、Issue #267）——CPU系ジョブの候補は変わらない。
+ * 参照先を切り替える（サブネット候補はCPU系と同じ全AZ、Issue #281で
+ * `eu-south-2a`の暫定除外[`decisions/0055`]を撤回済み）。
  */
 export async function launchRecordingInstance(
   config: ApiConfig,
@@ -511,10 +483,7 @@ export async function launchRecordingInstance(
   const candidateInstanceTypes = getCandidateInstanceTypes(job.game, constraints);
   const isGpuJob = requiresGpuRecording(job.game);
   const launchTemplateId = isGpuJob ? config.ec2.gpuLaunchTemplateId : config.ec2.launchTemplateId;
-  // GPUジョブのみeu-south-2aを除外する(EXCLUDED_GPU_AVAILABILITY_ZONE参照、Issue #267)。
-  const subnetIds = isGpuJob
-    ? subnetIdsExcludingAvailabilityZone(config, EXCLUDED_GPU_AVAILABILITY_ZONE)
-    : config.ec2.subnetIds;
+  const subnetIds = config.ec2.subnetIds;
 
   const version = await ec2.send(
     new CreateLaunchTemplateVersionCommand({

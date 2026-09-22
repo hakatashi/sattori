@@ -1,6 +1,6 @@
 # 0055. GPUジョブのEC2 Fleet候補から`eu-south-2a`を暫定除外する
 
-- **状態**: 有効（暫定。原因特定後に撤回すべき）
+- **状態**: 撤回済み（[0057](0057-revert-eu-south-2a-gpu-exclusion.md)）
 - **決定日**: 2026-09-19
 - **対象**: apps/api / infra
 - **関連**: Issue #267、`docs/reports/2026-09-19-th15-wine-crash-detection-verification.md`
