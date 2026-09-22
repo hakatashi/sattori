@@ -259,11 +259,12 @@ th09のジョブは`JobRecord.desyncDetected`が常にfalseになる（デシン
 
 **ただしクラッシュがなぜ起きるのかは分かっていない**。本番のGPU(`g6f`)ジョブを
 AZ別に層別すると`eu-south-2a`は6件中4件がクラッシュしたのに対し`eu-south-2b`は
-16件中0件で（Fisher正確検定 p=0.0021）、暫定対応としてGPUジョブのFleet候補から
-`eu-south-2a`を除外している（[`decisions/0055`](decisions/0055-exclude-eu-south-2a-from-gpu-fleet.md)）。
-ハードウェア個体差・vGPUスライスの状態などAZ側の環境要因が疑われるが機序は未特定で、
-**この除外は原因が判明し次第撤回すべき暫定措置**である。除外によりGPUジョブの使える
-AZが1つ減るため、`g6f`系のSpot枯渇による起動失敗が増えうる点にも注意。
+16件中0件で（Fisher正確検定 p=0.0021）、一時`eu-south-2a`をFleet候補から除外していた
+（[`decisions/0055`](decisions/0055-exclude-eu-south-2a-from-gpu-fleet.md)）。しかし
+除外後も`eu-south-2b`単独でクラッシュが発生し続けたのに対し、除外の副作用（`g6f`系の
+Spot枯渇による起動失敗）が実害化したため撤回した
+（[`decisions/0057`](decisions/0057-revert-eu-south-2a-gpu-exclusion.md)）。**AZ差の
+機序は依然未特定**で、Wineクラッシュ自体への対策は`wine.log`検知＋リトライ以外にない。
 
 検知手段の比較は
 [`reports/2026-09-19-th15-wine-crash-detection-verification.md`](reports/2026-09-19-th15-wine-crash-detection-verification.md)
