@@ -21,23 +21,28 @@ export interface QueueEntry {
   gpuQueueHeartbeatAt: string;
 }
 
-function heartbeatAgeSeconds(entry: QueueEntry, now: Date): number {
-  const heartbeatMs = Date.parse(entry.gpuQueueHeartbeatAt);
-  // 不正な値（壊れたデータ）は最も古い扱い＝staleとして安全側（除外）に倒す。
+/**
+ * 待機列エントリの心拍が陳腐化しているか。未設定・不正な値（壊れたデータ）は
+ * 最も古い扱い＝staleとして安全側（除外）に倒す。
+ */
+export function isQueueHeartbeatStale(gpuQueueHeartbeatAt: string | undefined, now: Date): boolean {
+  const heartbeatMs = gpuQueueHeartbeatAt ? Date.parse(gpuQueueHeartbeatAt) : Number.NaN;
   if (Number.isNaN(heartbeatMs)) {
-    return Number.POSITIVE_INFINITY;
+    return true;
   }
-  return (now.getTime() - heartbeatMs) / 1000;
+  return isHeartbeatStale((now.getTime() - heartbeatMs) / 1000);
 }
 
 /** 心拍が陳腐化していないエントリだけを残す。 */
 export function excludeStaleEntries(entries: readonly QueueEntry[], now: Date): QueueEntry[] {
-  return entries.filter((entry) => !isHeartbeatStale(heartbeatAgeSeconds(entry, now)));
+  return entries.filter((entry) => !isQueueHeartbeatStale(entry.gpuQueueHeartbeatAt, now));
 }
 
 /**
  * 自分より前にいる（`gpuQueuedAt`が古い）エントリを返す。`liveEntries`は事前に
- * `excludeStaleEntries()`を通しておくこと。
+ * `excludeStaleEntries()`を通しておくこと。`gpuQueuedAt`が同一ミリ秒で並んだ
+ * 場合は`jobId`で決定的に順序付ける（さもないと双方が互いを「前にいない」と見て
+ * 同時に先頭と判定してしまう）。
  */
 export function entriesAhead(jobId: string, liveEntries: readonly QueueEntry[]): QueueEntry[] {
   const mine = liveEntries.find((entry) => entry.jobId === jobId);
@@ -45,12 +50,22 @@ export function entriesAhead(jobId: string, liveEntries: readonly QueueEntry[]):
     return [];
   }
   return liveEntries.filter(
-    (entry) => entry.jobId !== jobId && entry.gpuQueuedAt < mine.gpuQueuedAt,
+    (entry) =>
+      entry.jobId !== jobId &&
+      (entry.gpuQueuedAt < mine.gpuQueuedAt ||
+        (entry.gpuQueuedAt === mine.gpuQueuedAt && entry.jobId < mine.jobId)),
   );
 }
 
-/** 自分が待機列の先頭か（stale除外後、自分より古い`gpuQueuedAt`が無いか）。 */
+/**
+ * 自分が待機列の先頭か（stale除外後、自分より古い`gpuQueuedAt`が無いか）。
+ * 自分自身がエントリに含まれていなければ順位を判定できないため、追い越しを
+ * 避けて先頭でない側（false）に倒す。
+ */
 export function isQueueHead(jobId: string, liveEntries: readonly QueueEntry[]): boolean {
+  if (!liveEntries.some((entry) => entry.jobId === jobId)) {
+    return false;
+  }
   return entriesAhead(jobId, liveEntries).length === 0;
 }
 

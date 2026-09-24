@@ -129,6 +129,46 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
     expect(displayUpdate?.args[0].input.ExpressionAttributeValues?.[":p"]).toBe(2);
   });
 
+  it("GSIの結果整合で自分がQuery結果に現れなくても先頭扱いせず、先行ジョブを追い越さない", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: gpuJob });
+    // markGpuQueueWaitingの書き込み結果(強整合)ではjob-1はjob-0より後に並んでいる。
+    ddbMock.on(UpdateCommand).resolves({ Attributes: { gpuQueuedAt: new Date().toISOString() } });
+    // 直後のQueryにはまだjob-1が反映されていない。
+    ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+      Items: [waitingEntry("job-0", -60)],
+    });
+    ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 0 }],
+    });
+    ddbMock.on(TransactWriteCommand).resolves({});
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(result.acquired).toBe(false);
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("枠を確保した際はgpuQueuedAtを残す(リトライで再入してもFIFO順を保つ)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: gpuJob });
+    ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+      Items: [waitingEntry("job-1", 0)],
+    });
+    ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 0 }],
+    });
+    ddbMock.on(TransactWriteCommand).resolves({});
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(result.acquired).toBe(true);
+    const removeCall = ddbMock
+      .commandCalls(UpdateCommand)
+      .find((call) => String(call.args[0].input.UpdateExpression).includes("REMOVE gpuQueueState"));
+    expect(String(removeCall?.args[0].input.UpdateExpression)).not.toContain("gpuQueuedAt");
+  });
+
   it("心拍が陳腐化した待機者(死んだ待機者)は先頭判定から除外される(head-of-line blocking対策)", async () => {
     ddbMock.on(GetCommand).resolves({ Item: gpuJob });
     ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
