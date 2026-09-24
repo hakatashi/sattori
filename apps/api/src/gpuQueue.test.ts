@@ -57,6 +57,20 @@ describe("entriesAhead / isQueueHead / queuePosition", () => {
     expect(entriesAhead("job-2", entries).map((e) => e.jobId)).toEqual(["job-1"]);
   });
 
+  it("gpuQueuedAtが同一ミリ秒ならjobIdで決定的に順序付ける(双方が先頭にならない)", () => {
+    const entries = [entry("job-b", 0), entry("job-a", 0)];
+    expect(isQueueHead("job-a", entries)).toBe(true);
+    expect(isQueueHead("job-b", entries)).toBe(false);
+    expect(queuePosition("job-a", entries)).toBe(1);
+    expect(queuePosition("job-b", entries)).toBe(2);
+  });
+
+  it("自分がエントリに含まれなければ先頭と判定しない(追い越し防止)", () => {
+    const entries = [entry("job-1", 0)];
+    expect(isQueueHead("job-2", entries)).toBe(false);
+    expect(isQueueHead("job-2", [])).toBe(false);
+  });
+
   it("自分より新しいgpuQueuedAtは順位に数えない", () => {
     const entries = [entry("job-1", 0), entry("job-2", 10)];
     expect(isQueueHead("job-1", entries)).toBe(true);

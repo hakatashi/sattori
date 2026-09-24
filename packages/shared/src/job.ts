@@ -337,15 +337,15 @@ export interface JobRecord {
    * - `gpuQueueState`: 待機中であることを示すマーカー。sparse GSI
    *   `GpuQueueIndex`のパーティションキー（値は`"waiting"`のみ）。枠を確保した
    *   時点・タイムアウト確定時にこの一式ごと`REMOVE`する。
-   * - `gpuQueuedAt`: **投入順（FIFO）の基準**。GSIのソートキー。
-   *   `attribute_not_exists(gpuQueuedAt)`条件付きで1回だけセットするため、
-   *   同じ待機エピソード内で順番が後退しない。
-   * - `gpuQueueEnteredAt`: **待機のタイムアウト判定の起点**。`gpuQueuedAt`とは
-   *   意図的に分離している——リトライで一度枠を得てから失敗し、再度待機列に
-   *   入る場合、`gpuQueuedAt`は新しい待機エピソードとして仕切り直すのが自然な
-   *   一方、これをタイムアウト起点にも使うと「100分待って起動→失敗→再入」で
-   *   即座にタイムアウトしてしまう。両者を分けることで、待機エピソードごとに
-   *   `GPU_QUEUE_MAX_WAIT_MINUTES`の猶予がリセットされる一貫した挙動になる。
+   * - `gpuQueuedAt`: **投入順（FIFO）の基準**。GSIのソートキー。ジョブにつき
+   *   1回だけセットし、枠を確保した時点でも消さない（`gpuQueueState`が消えれば
+   *   sparse GSIからは外れる）。リトライで一度枠を得てから失敗し再度待機列に
+   *   入っても、元の投入順のまま並び直せる。
+   * - `gpuQueueEnteredAt`: **待機のタイムアウト判定の起点**。待機エピソードごとに
+   *   リセットする。`gpuQueuedAt`とは意図的に分離している——投入順を保つ
+   *   `gpuQueuedAt`をタイムアウト起点にも使うと「100分待って起動→失敗→再入」で
+   *   即座にタイムアウトしてしまうため、待機エピソードごとに
+   *   `GPU_QUEUE_MAX_WAIT_MINUTES`の猶予をリセットする。
    * - `gpuQueueHeartbeatAt`: `AcquireGpuSlot`が呼ばれるたびに更新する生存証明。
    *   これが陳腐化した待機者は先頭判定・順位計算から除外される
    *   （head-of-line blocking対策）。

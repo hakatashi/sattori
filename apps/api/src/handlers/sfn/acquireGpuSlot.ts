@@ -76,20 +76,26 @@ function computeExpectedFinishAt(estimatedDurationSeconds: number | null, now: D
 async function queryWaitingJobs(
   table: string,
 ): Promise<{ jobId: string; gpuQueuedAt: string; gpuQueueHeartbeatAt: string; estimatedDurationSeconds: number | null }[]> {
-  const result = await client.send(
-    new QueryCommand({
-      TableName: table,
-      IndexName: GPU_QUEUE_INDEX,
-      KeyConditionExpression: "gpuQueueState = :waiting",
-      ExpressionAttributeValues: { ":waiting": GPU_QUEUE_WAITING },
-    }),
-  );
-  const items = (result.Items ?? []) as Array<{
+  const items: Array<{
     jobId: string;
     gpuQueuedAt: string;
     gpuQueueHeartbeatAt?: string;
     estimatedDurationSeconds?: number | null;
-  }>;
+  }> = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const page = await client.send(
+      new QueryCommand({
+        TableName: table,
+        IndexName: GPU_QUEUE_INDEX,
+        KeyConditionExpression: "gpuQueueState = :waiting",
+        ExpressionAttributeValues: { ":waiting": GPU_QUEUE_WAITING },
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+    items.push(...((page.Items ?? []) as typeof items));
+    exclusiveStartKey = page.LastEvaluatedKey;
+  } while (exclusiveStartKey);
   return items.map((item) => ({
     jobId: item.jobId,
     gpuQueuedAt: item.gpuQueuedAt,
@@ -144,6 +150,21 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
     gpuQueuedAt: w.gpuQueuedAt,
     gpuQueueHeartbeatAt: w.gpuQueueHeartbeatAt,
   }));
+  // GSIは結果整合なので、直前のmarkGpuQueueWaiting()の書き込みがまだ反映されず
+  // 自分がQuery結果に現れないことがある。そのままだとentriesAhead()が空を返して
+  // 「先頭」と誤判定し、先に並んでいるジョブを追い越してしまうため、自分のエントリは
+  // 書き込み結果（強整合）で補完・上書きする。
+  const selfEntry: QueueEntry = {
+    jobId: event.jobId,
+    gpuQueuedAt: mark.gpuQueuedAt,
+    gpuQueueHeartbeatAt: mark.gpuQueueHeartbeatAt,
+  };
+  const selfIndex = allEntries.findIndex((entry) => entry.jobId === event.jobId);
+  if (selfIndex === -1) {
+    allEntries.push(selfEntry);
+  } else {
+    allEntries[selfIndex] = selfEntry;
+  }
   const liveEntries = excludeStaleEntries(allEntries, now);
   const head = isQueueHead(event.jobId, liveEntries);
 
@@ -166,7 +187,8 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
         expectedFinishAt,
       );
       if (result.kind === "acquired") {
-        await clearGpuQueueState(config.jobsTable, event.jobId);
+        // gpuQueuedAtは残す（リトライで再入した際にFIFO順を保つため、ADR 0056）。
+        await clearGpuQueueState(config.jobsTable, event.jobId, { keepQueuedAt: true });
         console.log(
           JSON.stringify({
             event: "gpu_slot_acquired",
