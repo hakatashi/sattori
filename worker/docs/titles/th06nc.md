@@ -103,10 +103,14 @@ touhou-recorder側の初期実装が踏んだ地雷は、sattori側の共通実�
 - メニューカーソル位置のRVAは**未特定**。環境変数`TH06NC_MENU_DOWNS`（既定3回）に
   よる固定回数のDownでフォールバックする（未解放セーブデータでも"Replay"に到達
   することを実機確認済み、reports/78 §10）。
-- スコアRVA: `kScoreRva = 0x004F2798`（内部即時値）、`kScoreDisplayRva = 0x004F2790`
-  （画面表示用の追いかけ値）。**th06cとは内部値/表示値の前後関係が逆**
+- スコアRVA（ver 1.0.6）: `kScoreRva = 0x0053D3E8`（内部即時値）、`kScoreDisplayRva =
+  0x0053D3E0`（画面表示用の追いかけ値）。**th06cとは内部値/表示値の前後関係が逆**
   （reports/79 §6.1）。デシンク判定には内部値側を使う
   （`worker/recording/modlog.py`の`GAME_SCORE_MULTIPLIERS["th06nc"] = 1`、等倍）。
+- **スコアRVAはゲームのバージョンごとに変わる**。ver 1.0.6より前は`0x004F2798`/
+  `0x004F2790`で、ver 1.0.6でexeが再ビルドされ`.data`セクションごと移動した
+  （[`docs/reports/2026-09-28-th06nc-v1.0.6-update-verification.md`](../../../docs/reports/2026-09-28-th06nc-v1.0.6-update-verification.md)）。
+  ゲーム更新時は`verify-game-update` skillで必ず再確認すること。
 - ステージ番号・残機・グレイズのRVAは未特定。
 
 ## 低速録画・自宅ワーカーはスコープ外

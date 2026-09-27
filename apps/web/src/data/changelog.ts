@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-28",
+    ja: "東方紅魔郷: New Classic (th06nc) の録画に使用するゲームのバージョンを ver 1.0.6 に更新",
+    en: "Updated the game version used for recording the Embodiment of Scarlet Devil: New Classic (th06nc) to ver 1.0.6",
+  },
+  {
     date: "2026-09-22",
     ja: "録画ワーカーの起動が一時的に混雑している場合に、より分かりやすいエラーメッセージを表示するよう改善",
     en: "Improved the error message shown when a recording worker temporarily can't be started due to congestion",
