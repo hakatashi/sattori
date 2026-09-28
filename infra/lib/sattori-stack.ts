@@ -277,7 +277,7 @@ export class SattoriStack extends Stack {
     });
 
     // GPU録画ジョブ(th06nc・th15)のvCPU容量リース台帳（Issue #270）。eu-south-2の
-    // G系スポットクオータ(現状8vCPU)を`AcquireGpuSlot`/`ReleaseGpuSlot`(下記SFn)が
+    // G系スポットクオータ(32vCPU、`GPU_VCPU_QUOTA`)を`AcquireGpuSlot`/`ReleaseGpuSlot`(下記SFn)が
     // 会計する。PK=slotKey(定数"gpu"のみ)・SK=itemKeyの単一パーティションに、
     // カウンタアイテム(itemKey="#quota")とリースアイテム(itemKey="job#<jobId>")が
     // 同居する。単一パーティションなのでQuery 1回でカウンタ+全リースを強一貫で読める
@@ -534,12 +534,6 @@ export class SattoriStack extends Stack {
       TITLE_ASSETS_BUCKET: titleAssetsBucket.bucketName,
       WORKER_LOG_GROUP: workerLogGroup.logGroupName,
       WORKER_SUBNET_IDS: workerSubnets.map((subnet) => subnet.subnetId).join(","),
-      // WORKER_SUBNET_IDSと同じ順序で並んだ各サブネットのAZ名。GPUジョブ(g6f系)を
-      // 特定AZから暫定除外する際にapps/api/src/ec2.tsが使う(Issue #267、
-      // `EXCLUDED_GPU_AVAILABILITY_ZONE`)。CPU系ジョブは引き続き全AZを使うため、
-      // サブネット自体(=このVPC構成)は変更しない——除外はEC2 Fleetの Overrides
-      // 組み立て時にランタイムでフィルタするだけ。
-      WORKER_SUBNET_AZS: workerSubnets.map((subnet) => subnet.availabilityZone).join(","),
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
       GPU_WORKER_LAUNCH_TEMPLATE_ID: gpuWorkerLaunchTemplate.ref,
       EMAIL_RATE_LIMIT_TABLE: emailRateLimitTable.tableName,

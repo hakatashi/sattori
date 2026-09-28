@@ -23,8 +23,15 @@ describe("GPU_INSTANCE_TYPE_VCPUS", () => {
     expect(GPU_MAX_INSTANCE_VCPU).toBe(8);
   });
 
-  it("最大vCPUがクオータと一致する(g6f.2xlarge単独でクオータを使い切れる)", () => {
-    expect(GPU_MAX_INSTANCE_VCPU).toBe(GPU_VCPU_QUOTA);
+  it("クオータで最大候補タイプ(g6f.2xlarge)が少なくとも1台起動できる", () => {
+    // 下回るとリトライ時(attempt>1)のminVcpu=GPU_MAX_INSTANCE_VCPU要求が永久に満たせない。
+    expect(GPU_VCPU_QUOTA).toBeGreaterThanOrEqual(GPU_MAX_INSTANCE_VCPU);
+  });
+
+  it("クオータが全候補タイプのvCPU数で割り切れる(使えない端数が残らない)", () => {
+    for (const vcpu of Object.values(GPU_INSTANCE_TYPE_VCPUS)) {
+      expect(GPU_VCPU_QUOTA % vcpu).toBe(0);
+    }
   });
 });
 
