@@ -18,13 +18,13 @@ import type { GameId } from "./games.js";
  *
  * ## 既知の品質トレードオフ
  *
- * eu-south-2のG系スポットクォータは現状8vCPUで、g6f.xlarge（4vCPU）なら2台の並列運用
- * 余地がある。1080p録画はtouhou-recorder reports/81 §9.9.3の実測では本来
- * g6f.2xlarge（8vCPU）が推奨——4vCPUでは実効fpsが54.87まで悪化し重複フレーム率が
- * 7.9%まで増える——だが、並列録画の余地を残すため、ユーザー判断で1080pもg6f.xlarge
- * （4vCPU）のまま提供している（`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
- * 1080p録画で処理落ちが疑われる場合はこの制約を踏まえて調査すること
- * （`docs/known-limitations.md`）。
+ * 1080p録画はtouhou-recorder reports/81 §9.9.3の実測では本来g6f.2xlarge（8vCPU）が
+ * 推奨——4vCPUでは実効fpsが54.87まで悪化し重複フレーム率が7.9%まで増える——だが、
+ * 1080pもg6f.xlarge（4vCPU）で起動しうる（`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
+ * 当時のeu-south-2のG系スポットクォータ（8vCPU）で並列録画の余地を残すためのユーザー
+ * 判断だった。クォータは32vCPUに引き上げられたため、1080pをg6f.2xlargeに固定する
+ * 見直しをIssue #286で検討している。1080p録画で処理落ちが疑われる場合はこの制約を
+ * 踏まえて調査すること（`docs/known-limitations.md`）。
  */
 export const HIGH_RESOLUTION_RECORDING_SUPPORTED_GAME_IDS: readonly GameId[] = ["th06nc"];
 
