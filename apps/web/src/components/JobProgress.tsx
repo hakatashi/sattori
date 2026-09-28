@@ -132,7 +132,7 @@ export function JobProgressView({ job, loadError }: ViewProps) {
             )}
             {/*
               GPU録画の待ち行列（Issue #270）。GPU描画必須タイトル（th06nc・th15）が
-              eu-south-2のG系スポットクオータ制約により枠不足で待機している間だけ
+              G系スポットクオータ（`GPU_VCPU_QUOTA`）を使い切って待機している間だけ
               値を持つ（`queuePosition`は`AcquireGpuSlot`が計算してJobRecordへ
               書き込む値をそのまま転記したもの）。全体進捗バー自体は`queued`の間
               0%のまま据え置く（待機は録画フェーズの進捗とは別の出来事のため）ので、

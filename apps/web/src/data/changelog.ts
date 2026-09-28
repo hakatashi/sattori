@@ -17,6 +17,13 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-29",
+    ja: "東方紅魔郷: New Classic・東方紺珠伝など高負荷な録画が混み合っているときに、録画が失敗する代わりに順番を待つよう改善。待ち順・おおよその待ち時間を表示するようにした",
+    en: "Improved handling when demanding titles like Embodiment of Scarlet Devil: New Classic and Legacy of Lunatic Kingdom are congested: recording now waits its turn instead of failing, and the queue position and estimated wait time are shown",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/270",
+    important: true,
+  },
+  {
+    date: "2026-09-29",
     ja: "録画時にサーバーの空きを待つ時間が発生した際、録画を受付順に処理するよう修正",
     en: "Fixed recordings to be processed in the order they were received when waiting for an available server",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/276",
@@ -38,13 +45,6 @@ export const changelogEntries: ChangelogEntry[] = [
     ja: "録画にGPUを使用するタイトルで、サーバーの空きを待っている間にタイムアウトが発生して失敗する問題を修正",
     en: "Fixed an issue where recordings of titles that use a GPU could fail with a timeout while waiting for an available server",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/275",
-  },
-  {
-    date: "2026-09-19",
-    ja: "東方紅魔郷: New Classic・東方紺珠伝など高負荷な録画が混み合っているときに、録画が失敗する代わりに順番を待つよう改善。待ち順・おおよその待ち時間を表示するようにした",
-    en: "Improved handling when demanding titles like Embodiment of Scarlet Devil: New Classic and Legacy of Lunatic Kingdom are congested: recording now waits its turn instead of failing, and the queue position and estimated wait time are shown",
-    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/270",
-    important: true,
   },
   {
     date: "2026-09-19",
