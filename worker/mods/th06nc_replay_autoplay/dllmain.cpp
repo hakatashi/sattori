@@ -18,8 +18,10 @@
 //     AppID差分のため`th06nc_steam_stub/`として別ビルドする。
 //   * メニューカーソル位置のRVAは未特定のため、環境変数`TH06NC_MENU_DOWNS`
 //     (既定3回)による固定回数のDownでフォールバックする。
-//   * スコアのRVAは特定済み(kScoreRva = 0x004F2798、内部即時値。th06cとは
-//     内部値/表示値の前後関係が逆)。
+//   * スコアのRVAは特定済み(kScoreRva = 0x0053D3E8、内部即時値。th06cとは
+//     内部値/表示値の前後関係が逆)。**ゲームのバージョンごとに変わる**
+//     (ver 1.0.6で0x004F2798から移動、docs/reports/2026-09-28-th06nc-v1.0.6-
+//     update-verification.md)。
 //
 // メニュー操作シーケンス:
 //   タイトル画面(ロード後5秒ほどでキー入力可能) -> Enter(メニュー表示) ->
@@ -416,11 +418,13 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         // GAME_SCORE_MULTIPLIERSにth06nc=1を登録済み)。
         {
             ScoreMonitorConfig sm;
-            // th06ncとth06cとは内部値/表示値の前後関係が逆で、0x004F2798が
-            // 即時に加算される内部スコア、0x004F2790がそれを追いかける画面表示用の
-            // 値(touhou-recorder reports/79で実機確認)。デシンク判定には
-            // 内部スコア側を使う。
-            sm.baseRva = 0x004F2798;
+            // th06ncとth06cとは内部値/表示値の前後関係が逆で、0x0053D3E8が
+            // 即時に加算される内部スコア、0x0053D3E0がそれを追いかける画面表示用の
+            // 値(touhou-recorder reports/79で実機確認した関係がver 1.0.6でも同じ)。
+            // デシンク判定には内部スコア側を使う。ver 1.0.6より前のexeでは
+            // 0x004F2798/0x004F2790だった——ゲーム更新でexeが再ビルドされると
+            // ずれるので、更新時は`verify-game-update` skillで必ず再確認すること。
+            sm.baseRva = 0x0053D3E8;
             sm.baseIsPointer = false;
             sm.scoreOffset = 0;
             sm.scoreWidth = 4;
