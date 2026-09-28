@@ -65,14 +65,15 @@ Issue #101のスコープ）。Issue #101でth09を対応させる際はMOD側�
 **低速録画はスコープ外**（D3D11経路の新規実装が必要、th06cと同じ扱い。
 `SLOW_MOTION_SUPPORTED_GAME_IDS`未登録のため自動的に塞がれる）。
 
-**1080p録画オプションはg6f.xlarge（4vCPU）のまま提供している**。touhou-recorder
+**1080p録画オプションもg6f.xlarge（4vCPU）で起動しうる**。touhou-recorder
 reports/81 §9.9.3の実測では、1080p録画は本来g6f.2xlarge（8vCPU）が推奨——
 4vCPUでは実効fpsが54.87まで悪化し重複フレーム率が7.9%まで増える——ことが確認されて
-いる。それでもeu-south-2のG系スポットクォータ（現状8vCPU＝g6f.xlarge換算で2台分の
-並列運用余地）を踏まえ、並列運用の余地を残すためユーザー判断で4vCPUのまま提供して
-いる（[`decisions/0046`](decisions/0046-gpu-ec2-instance-and-fixed-ami.md)）。1080p
-録画で処理落ちが疑われる場合はこの制約を踏まえて調査すること。このクオータの範囲内で
-ジョブを順番待ちさせる仕組みは
+いる。xlargeを候補に残したのは、当時のeu-south-2のG系スポットクォータ（8vCPU＝
+g6f.xlarge換算で2台分）で並列運用の余地を残すためのユーザー判断だった
+（[`decisions/0046`](decisions/0046-gpu-ec2-instance-and-fixed-ami.md)）。クォータは
+2026-09に**32vCPU**へ引き上げられており、1080pをg6f.2xlargeに固定する見直しは
+Issue #286。1080p録画で処理落ちが疑われる場合はこの制約を踏まえて調査すること。
+クオータ（`GPU_VCPU_QUOTA`）の範囲内でジョブを順番待ちさせる仕組みは
 [`decisions/0056`](decisions/0056-gpu-vcpu-lease-and-queue.md)。
 
 同時発売の「東方紅魔郷: Classic」（th06c）も録画対応済み（Issue #240、

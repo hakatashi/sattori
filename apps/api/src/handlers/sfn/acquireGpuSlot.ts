@@ -89,7 +89,8 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
   // attempt > 1 の場合（前回のLaunchが失敗した再試行）、4vCPUでの起動（g6f.xlarge単独）が
   // 在庫枯渇等で失敗した可能性がある。4vCPUのまま再試行を繰り返すとMAX_ATTEMPTS(10回≒27分)を
   // 浪費して先行ジョブの完了(8vCPU回復)を待たずにretries_exhaustedで失敗してしまうため、
-  // リトライ時はクオータ全量(8vCPU)が空くまで待機列で待たせる。
+  // リトライ時は最大候補タイプ分(GPU_MAX_INSTANCE_VCPU=8vCPU、g6f.2xlargeも選べる量)が
+  // 空くまで待機列で待たせる。
   // 初回(attempt === 1)は4vCPUの空きがあれば投機的に並列起動を試みる。
   const minRequiredVcpu = event.attempt > 1 ? GPU_MAX_INSTANCE_VCPU : GPU_MIN_INSTANCE_VCPU;
   const reserve = reservableVcpu(GPU_VCPU_QUOTA - usedVcpu, minRequiredVcpu);
