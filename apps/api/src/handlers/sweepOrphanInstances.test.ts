@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DescribeInstancesCommand, EC2Client, TerminateInstancesCommand } from "@aws-sdk/client-ec2";
 import { DescribeExecutionCommand, SFNClient } from "@aws-sdk/client-sfn";
-import { DynamoDBDocumentClient, GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  QueryCommand,
+  TransactWriteCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -155,6 +161,37 @@ describe("sweepOrphanInstances handler（GPU vCPU容量リースのリコンサ�
     expect(result).toMatchObject({ leasesCompensated: 1 });
   });
 
+  it("孤児としてterminateされたGPUインスタンスには補完リースを作成しない", async () => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({
+      Reservations: [
+        {
+          Instances: [
+            {
+              InstanceId: "i-gpu-orphan",
+              LaunchTime: OLD_LAUNCH_TIME,
+              InstanceType: "g6f.2xlarge",
+              Tags: [{ Key: "sattori:jobId", Value: "gpu-job-orphan" }],
+            },
+          ],
+        },
+      ],
+    });
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ddbMock.on(GetCommand).resolves({ Item: undefined });
+    ddbMock.on(QueryCommand).resolves({ Items: [] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "FAILED" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      orphans: 1,
+      terminated: 1,
+      leasesCompensated: 0,
+    });
+  });
+
   it("CPU系インスタンスはGPUリコンサイラの対象にならない", async () => {
     ec2Mock.on(DescribeInstancesCommand).resolves({
       Reservations: [{ Instances: [taggedInstance("i-cpu", "job-1")] }],
@@ -199,6 +236,76 @@ describe("sweepOrphanInstances handler（GPU vCPU容量リースのリコンサ�
       .commandCalls(DescribeExecutionCommand)
       .filter((call) => call.args[0].input.executionArn?.endsWith(":gpu-job-1"));
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe("sweepOrphanInstances handler（GPU待機列の陳腐化エントリ掃除、Issue #270）", () => {
+  const STALE_HEARTBEAT_AT = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+  function queueItem(jobId: string, gpuQueueHeartbeatAt: string | undefined = STALE_HEARTBEAT_AT) {
+    return { jobId, gpuQueueState: "waiting", gpuQueuedAt: STALE_HEARTBEAT_AT, gpuQueueHeartbeatAt };
+  }
+
+  /** `clearGpuQueueState()`が呼ばれたjobIdを呼び出し順に並べる。 */
+  function clearedJobIds(): string[] {
+    return ddbMock
+      .commandCalls(UpdateCommand)
+      .filter((call) => call.args[0].input.UpdateExpression?.includes("REMOVE gpuQueueState"))
+      .map((call) => String(call.args[0].input.Key?.jobId));
+  }
+
+  beforeEach(() => {
+    ec2Mock.on(DescribeInstancesCommand).resolves({});
+    ddbMock.on(UpdateCommand).resolves({});
+  });
+
+  it("心拍が陳腐化し実行も終わったエントリを剥がす", async () => {
+    ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({ Items: [queueItem("dead-job")] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "ABORTED" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({ staleQueueEntriesCleared: 1 });
+    expect(clearedJobIds()).toEqual(["dead-job"]);
+  });
+
+  it("心拍が陳腐化していても実行が生きているエントリは剥がさない", async () => {
+    ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({ Items: [queueItem("slow-job")] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "RUNNING" });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({ staleQueueEntriesCleared: 0 });
+    expect(clearedJobIds()).toEqual([]);
+  });
+
+  it("心拍が新鮮なエントリは実行の生死を問い合わせずに残す", async () => {
+    ddbMock
+      .on(QueryCommand, { IndexName: "GpuQueueIndex" })
+      .resolves({ Items: [queueItem("live-job", new Date().toISOString())] });
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({ staleQueueEntriesCleared: 0 });
+    expect(sfnMock.commandCalls(DescribeExecutionCommand)).toHaveLength(0);
+    expect(clearedJobIds()).toEqual([]);
+  });
+
+  it("1件の剥がしに失敗しても後続エントリの剥がしは続ける", async () => {
+    ddbMock
+      .on(QueryCommand, { IndexName: "GpuQueueIndex" })
+      .resolves({ Items: [queueItem("dead-job-1"), queueItem("dead-job-2")] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "FAILED" });
+    ddbMock.on(UpdateCommand, { Key: { jobId: "dead-job-1" } }).rejects(new Error("throttled"));
+
+    const { handler } = await import("./sweepOrphanInstances.js");
+    const result = await handler();
+
+    expect(result).toMatchObject({ staleQueueEntriesCleared: 1 });
+    expect(clearedJobIds()).toEqual(["dead-job-1", "dead-job-2"]);
   });
 });
 

@@ -16,6 +16,30 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-09-29",
+    ja: "録画時にサーバーの空きを待つ時間が発生した際、録画を受付順に処理するよう修正",
+    en: "Fixed recordings to be processed in the order they were received when waiting for an available server",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/276",
+  },
+  {
+    date: "2026-09-28",
+    ja: "東方紅魔郷: New Classic (th06nc) の録画に使用するゲームのバージョンを ver 1.0.6 に更新",
+    en: "Updated the game version used for recording the Embodiment of Scarlet Devil: New Classic (th06nc) to ver 1.0.6",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/285",
+  },
+  {
+    date: "2026-09-22",
+    ja: "録画ワーカーの起動が一時的に混雑している場合に、より分かりやすいエラーメッセージを表示するよう改善",
+    en: "Improved the error message shown when a recording worker temporarily can't be started due to congestion",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/282",
+  },
+  {
+    date: "2026-09-20",
+    ja: "録画にGPUを使用するタイトルで、サーバーの空きを待っている間にタイムアウトが発生して失敗する問題を修正",
+    en: "Fixed an issue where recordings of titles that use a GPU could fail with a timeout while waiting for an available server",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/275",
+  },
+  {
     date: "2026-09-19",
     ja: "東方紅魔郷: New Classic・東方紺珠伝など高負荷な録画が混み合っているときに、録画が失敗する代わりに順番を待つよう改善。待ち順・おおよその待ち時間を表示するようにした",
     en: "Improved handling when demanding titles like Embodiment of Scarlet Devil: New Classic and Legacy of Lunatic Kingdom are congested: recording now waits its turn instead of failing, and the queue position and estimated wait time are shown",

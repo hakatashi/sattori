@@ -1,7 +1,7 @@
 import { SFNClient } from "@aws-sdk/client-sfn";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
-import { GPU_QUEUE_INDEX, GPU_QUEUE_WAITING, isHeartbeatStale } from "@sattori/shared";
+import { GPU_QUEUE_INDEX, GPU_QUEUE_WAITING } from "@sattori/shared";
 import { required } from "../config.js";
 import { listTaggedInstances, terminateInstance } from "../ec2.js";
 import type { TaggedInstance } from "../ec2.js";
@@ -17,6 +17,7 @@ import {
   releaseGpuSlot,
   repairGpuLeaseVcpu,
 } from "../gpuSlots.js";
+import { isQueueHeartbeatStale } from "../gpuQueue.js";
 import { clearGpuQueueState, getJob } from "../jobs.js";
 import { groupInstancesByJobId, selectOrphanInstances } from "../orphanInstances.js";
 import type { OrphanCandidate } from "../orphanInstances.js";
@@ -82,6 +83,8 @@ export const handler = async (): Promise<SweepResult> => {
     staleQueueEntriesCleared: 0,
   };
 
+  const terminatedIds = new Set<string>();
+
   for (const [jobId, jobInstances] of byJobId) {
     const candidates = await selectForJob(jobsTable, stateMachineArn, jobId, jobInstances, livenessCache);
     if (candidates === null) {
@@ -101,6 +104,7 @@ export const handler = async (): Promise<SweepResult> => {
       try {
         await terminateInstance(candidate.instanceId);
         result.terminated += 1;
+        terminatedIds.add(candidate.instanceId);
       } catch (err) {
         console.error(
           JSON.stringify({
@@ -114,7 +118,12 @@ export const handler = async (): Promise<SweepResult> => {
     }
   }
 
-  await reconcileGpuSlots(jobsTable, gpuSlotsTable, stateMachineArn, instances, livenessCache, result);
+  // terminateに成功したインスタンスを除外したリストをリコンサイラへ渡す。
+  // これを怠ると、直前にterminateした孤児GPUインスタンスに対し「リースが無い生存
+  // インスタンス」として誤って補完リース(createCompensatingGpuLease)を作成してしまい、
+  // 存在しないインスタンスのために4〜8vCPUが最大10分間ブロックされてしまう。
+  const liveInstances = instances.filter((inst) => !terminatedIds.has(inst.instanceId));
+  await reconcileGpuSlots(jobsTable, gpuSlotsTable, stateMachineArn, liveInstances, livenessCache, result);
 
   console.log(JSON.stringify({ event: "orphan_sweep_completed", ...result }));
   return result;
@@ -231,31 +240,23 @@ async function reconcileGpuSlots(
   // 都度stale除外するため誤動作はしないが、取り残された属性がsparse GSIに残り
   // 続けるのを防ぐ）。実行が生きていない場合のみ剥がす——起動直後で心拍がまだ
   // 新鮮でないだけの正常なジョブを誤って剥がさないための安全策。
+  let waiting: Array<{ jobId: string; gpuQueueHeartbeatAt?: string }>;
   try {
-    const waiting = await ddb.send(
-      new QueryCommand({
-        TableName: jobsTable,
-        IndexName: GPU_QUEUE_INDEX,
-        KeyConditionExpression: "gpuQueueState = :waiting",
-        ExpressionAttributeValues: { ":waiting": GPU_QUEUE_WAITING },
-      }),
-    );
-    for (const item of (waiting.Items ?? []) as Array<{ jobId: string; gpuQueueHeartbeatAt?: string }>) {
-      const heartbeatMs = item.gpuQueueHeartbeatAt ? Date.parse(item.gpuQueueHeartbeatAt) : NaN;
-      const ageSeconds = Number.isNaN(heartbeatMs)
-        ? Number.POSITIVE_INFINITY
-        : (now.getTime() - heartbeatMs) / 1000;
-      if (!isHeartbeatStale(ageSeconds)) {
-        continue;
-      }
-      const executionLiveness = await getCachedExecutionLiveness(livenessCache, stateMachineArn, item.jobId);
-      if (executionLiveness === null || executionLiveness === "running") {
-        continue;
-      }
-      await clearGpuQueueState(jobsTable, item.jobId);
-      result.staleQueueEntriesCleared += 1;
-      console.warn(JSON.stringify({ event: "gpu_queue_stale_entry_cleared", jobId: item.jobId }));
-    }
+    waiting = [];
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+    do {
+      const page = await ddb.send(
+        new QueryCommand({
+          TableName: jobsTable,
+          IndexName: GPU_QUEUE_INDEX,
+          KeyConditionExpression: "gpuQueueState = :waiting",
+          ExpressionAttributeValues: { ":waiting": GPU_QUEUE_WAITING },
+          ExclusiveStartKey: exclusiveStartKey,
+        }),
+      );
+      waiting.push(...((page.Items ?? []) as typeof waiting));
+      exclusiveStartKey = page.LastEvaluatedKey;
+    } while (exclusiveStartKey);
   } catch (err) {
     console.error(
       JSON.stringify({
@@ -263,6 +264,30 @@ async function reconcileGpuSlots(
         message: err instanceof Error ? err.message : String(err),
       }),
     );
+    return;
+  }
+  // 1件の失敗で後続エントリの剥がしが止まらないよう、エントリごとに独立して扱う。
+  for (const item of waiting) {
+    if (!isQueueHeartbeatStale(item.gpuQueueHeartbeatAt, now)) {
+      continue;
+    }
+    try {
+      const executionLiveness = await getCachedExecutionLiveness(livenessCache, stateMachineArn, item.jobId);
+      if (executionLiveness === null || executionLiveness === "running") {
+        continue;
+      }
+      await clearGpuQueueState(jobsTable, item.jobId);
+      result.staleQueueEntriesCleared += 1;
+      console.warn(JSON.stringify({ event: "gpu_queue_stale_entry_cleared", jobId: item.jobId }));
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          event: "gpu_queue_stale_entry_clear_failed",
+          jobId: item.jobId,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
   }
 }
 

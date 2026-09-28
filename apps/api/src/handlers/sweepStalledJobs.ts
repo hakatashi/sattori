@@ -120,17 +120,23 @@ export const handler = async (): Promise<StalledJobSweepResult> => {
         // ——怠ると死んだ待機者が投入順の列を塞ぎ続ける（head-of-line blocking）。
         // どちらも冪等かつ取り逃してもリコンサイラが回収するため、失敗しても
         // ここでは握りつぶす（本来の掃除処理を止めない）。
-        try {
-          await releaseGpuSlot(gpuSlotsTable, job.jobId);
-          await clearGpuQueueState(jobsTable, job.jobId);
-        } catch (err) {
-          console.error(
-            JSON.stringify({
-              event: "stalled_job_gpu_cleanup_failed",
-              jobId: job.jobId,
-              message: err instanceof Error ? err.message : String(err),
-            }),
-          );
+        // 片方の失敗でもう片方を取り逃さないよう、それぞれ独立に試みる。
+        const cleanups = [
+          () => releaseGpuSlot(gpuSlotsTable, job.jobId),
+          () => clearGpuQueueState(jobsTable, job.jobId),
+        ];
+        for (const cleanup of cleanups) {
+          try {
+            await cleanup();
+          } catch (err) {
+            console.error(
+              JSON.stringify({
+                event: "stalled_job_gpu_cleanup_failed",
+                jobId: job.jobId,
+                message: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
         }
       }
     } catch (err) {

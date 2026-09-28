@@ -49,6 +49,42 @@ export interface HandleFailureEvent {
 const SPOT_INTERRUPTED_CAUSE_PREFIX = "SpotInterrupted:";
 
 /**
+ * `launchRecordingInstance()`（`ec2.ts`）がFleet起動失敗時に例外メッセージへ埋め込む
+ * AWSのエラーコード（Issue #282）。Spot/vCPUクオータの一時的な容量不足を示すもので、
+ * ユーザーへ「サービス側の不具合」ではなく「一時的な混雑」であることを伝えるために
+ * `retries_exhausted`とは別の`errorCode`（`capacity_exhausted`）へ振り分ける判定に使う。
+ */
+const CAPACITY_ERROR_CODES = [
+  "UnfulfillableCapacity",
+  "InsufficientInstanceCapacity",
+  "MaxSpotInstanceCountExceeded",
+  "VcpuLimitExceeded",
+];
+
+/**
+ * `event.error.Cause`（Step FunctionsがLambda例外をシリアライズしたJSON文字列。
+ * `{"errorType":...,"errorMessage":...,"trace":[...]}`）に容量不足系のAWSエラーコードが
+ * 含まれているかを判定する（Issue #282）。`Cause`がJSONでない場合（想定外の形式）は
+ * 安全側に倒して`false`を返す。
+ */
+function isCapacityFailure(error: HandleFailureEvent["error"]): boolean {
+  if (!error?.Cause) {
+    return false;
+  }
+  let errorMessage: string;
+  try {
+    const parsed = JSON.parse(error.Cause) as { errorMessage?: unknown };
+    if (typeof parsed.errorMessage !== "string") {
+      return false;
+    }
+    errorMessage = parsed.errorMessage;
+  } catch {
+    return false;
+  }
+  return CAPACITY_ERROR_CODES.some((code) => errorMessage.includes(code));
+}
+
+/**
  * 再試行しても解決しない「決定的な失敗」かどうかを判定する（Issue #131）。
  * `worker/README.md` §13 の通り、デシンク等が原因の失敗は同一リプレイなら毎回
  * 同じ箇所で再現するため、フルの `MAX_ATTEMPTS` まで再試行しても時間とコストの
@@ -199,12 +235,18 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
   // ことに対する保険で、その後の後始末中にワーカーが完走して書いた `done` を上書きしない
   // （Issue #129）。
   if (!shouldRetry && job && !isTerminalStatus(job.status)) {
+    // Spot/vCPUクオータの容量不足由来なら、ユーザーに「一時的な混雑」であることが伝わる
+    // 専用のerrorCode（`capacity_exhausted`）を使う（Issue #282）。それ以外（デシンク等の
+    // 決定的失敗）は従来どおり`retries_exhausted`のまま。
+    const capacityFailure = isCapacityFailure(event.error);
     await updateJobStatus(
       config.jobsTable,
       event.jobId,
       "failed",
-      "録画に複数回失敗しました。時間をおいて再試行してください",
-      { unlessDone: true, errorCode: "retries_exhausted" },
+      capacityFailure
+        ? "現在一時的にサーバーが混雑しているため、録画ワーカーを起動できませんでした。時間をおいて再試行してください"
+        : "録画に複数回失敗しました。時間をおいて再試行してください",
+      { unlessDone: true, errorCode: capacityFailure ? "capacity_exhausted" : "retries_exhausted" },
     );
   }
 

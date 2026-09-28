@@ -8,6 +8,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
+import { GPU_VCPU_QUOTA } from "@sattori/shared";
 import {
   acquireGpuSlot,
   createCompensatingGpuLease,
@@ -57,16 +58,16 @@ describe("acquireGpuSlot", () => {
     expect(updateItem?.ConditionExpression).toBe(
       "attribute_not_exists(usedVcpu) OR usedVcpu <= :limit",
     );
-    expect(updateItem?.ExpressionAttributeValues?.[":limit"]).toBe(0); // QUOTA(8) - reserve(8)
+    expect(updateItem?.ExpressionAttributeValues?.[":limit"]).toBe(GPU_VCPU_QUOTA - 8);
   });
 
-  it("残4vCPUなら4vCPUのみ確保できる", async () => {
+  it("4vCPUの確保ではカウンタの上限条件がクオータ-4になる", async () => {
     ddbMock.on(TransactWriteCommand).resolves({});
     const result = await acquireGpuSlot(TABLE, "job-1", 4, now, finish);
     expect(result.kind).toBe("acquired");
     const updateItem = ddbMock.commandCalls(TransactWriteCommand)[0]?.args[0].input.TransactItems?.[1]
       ?.Update;
-    expect(updateItem?.ExpressionAttributeValues?.[":limit"]).toBe(4); // QUOTA(8) - reserve(4)
+    expect(updateItem?.ExpressionAttributeValues?.[":limit"]).toBe(GPU_VCPU_QUOTA - 4);
   });
 
   it("カウンタの条件不成立(空き容量不足)は no_capacity を返す", async () => {
@@ -164,9 +165,25 @@ describe("shrinkGpuLease", () => {
     expect(quotaUpdate?.ExpressionAttributeValues?.[":delta"]).toBe(4);
   });
 
-  it("縮小しない(newVcpu>=oldVcpu)場合は何もしない", async () => {
-    await shrinkGpuLease(TABLE, "job-1", 4, 4, "g6f.xlarge", "i-1");
+  it("vCPUが一致(newVcpu===oldVcpu)する場合はカウンタは触らずinstanceTypeとinstanceIdのみ記録する", async () => {
+    ddbMock.on(UpdateCommand).resolves({});
+    await shrinkGpuLease(TABLE, "job-1", 8, 8, "g6f.2xlarge", "i-1");
+
     expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+    const updateCalls = ddbMock.commandCalls(UpdateCommand);
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]?.args[0].input).toMatchObject({
+      TableName: TABLE,
+      Key: { slotKey: "gpu", itemKey: "job#job-1" },
+      UpdateExpression: "SET instanceType = :t, instanceId = :i",
+      ExpressionAttributeValues: { ":t": "g6f.2xlarge", ":i": "i-1" },
+    });
+  });
+
+  it("新vCPUが旧vCPUより大きい(newVcpu>oldVcpu)不正な呼び出しは何もしない", async () => {
+    await shrinkGpuLease(TABLE, "job-1", 4, 8, "g6f.2xlarge", "i-1");
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);
   });
 
   it("条件不一致は例外を投げずログのみに残す(縮小漏れはリコンサイラが補正する)", async () => {

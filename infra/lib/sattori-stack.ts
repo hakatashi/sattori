@@ -277,7 +277,7 @@ export class SattoriStack extends Stack {
     });
 
     // GPU録画ジョブ(th06nc・th15)のvCPU容量リース台帳（Issue #270）。eu-south-2の
-    // G系スポットクオータ(現状8vCPU)を`AcquireGpuSlot`/`ReleaseGpuSlot`(下記SFn)が
+    // G系スポットクオータ(32vCPU、`GPU_VCPU_QUOTA`)を`AcquireGpuSlot`/`ReleaseGpuSlot`(下記SFn)が
     // 会計する。PK=slotKey(定数"gpu"のみ)・SK=itemKeyの単一パーティションに、
     // カウンタアイテム(itemKey="#quota")とリースアイテム(itemKey="job#<jobId>")が
     // 同居する。単一パーティションなのでQuery 1回でカウンタ+全リースを強一貫で読める
@@ -534,12 +534,6 @@ export class SattoriStack extends Stack {
       TITLE_ASSETS_BUCKET: titleAssetsBucket.bucketName,
       WORKER_LOG_GROUP: workerLogGroup.logGroupName,
       WORKER_SUBNET_IDS: workerSubnets.map((subnet) => subnet.subnetId).join(","),
-      // WORKER_SUBNET_IDSと同じ順序で並んだ各サブネットのAZ名。GPUジョブ(g6f系)を
-      // 特定AZから暫定除外する際にapps/api/src/ec2.tsが使う(Issue #267、
-      // `EXCLUDED_GPU_AVAILABILITY_ZONE`)。CPU系ジョブは引き続き全AZを使うため、
-      // サブネット自体(=このVPC構成)は変更しない——除外はEC2 Fleetの Overrides
-      // 組み立て時にランタイムでフィルタするだけ。
-      WORKER_SUBNET_AZS: workerSubnets.map((subnet) => subnet.availabilityZone).join(","),
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
       GPU_WORKER_LAUNCH_TEMPLATE_ID: gpuWorkerLaunchTemplate.ref,
       EMAIL_RATE_LIMIT_TABLE: emailRateLimitTable.tableName,
@@ -779,10 +773,6 @@ export class SattoriStack extends Stack {
       payload: sfn.TaskInput.fromObject({
         jobId: sfn.JsonPath.stringAt("$.jobId"),
         attempt: sfn.JsonPath.numberAt("$.attempt"),
-        // 待機の上限判定の起点(`GPU_QUEUE_MAX_WAIT_MINUTES`)。実行開始時刻を使う
-        // (PR1時点ではまだ待機専用の状態をJobsTableに持たないため。詳細は
-        // `apps/api/src/handlers/sfn/acquireGpuSlot.ts`のコメント参照)。
-        executionStartTime: sfn.JsonPath.stringAt("$$.Execution.StartTime"),
       }),
       payloadResponseOnly: true,
       resultPath: "$.slot",
@@ -976,7 +966,9 @@ export class SattoriStack extends Stack {
       // リコンサイラ（Issue #270）も同じLambdaに相乗りしている。
       { timeout: Duration.minutes(3) },
     );
-    jobsTable.grantReadData(sweepOrphanInstancesFn);
+    // 読み取りに加え、陳腐化した待機列エントリの剥がし（`clearGpuQueueState`、
+    // Issue #270）でUpdateItemを行うため読み書き権限が要る。
+    jobsTable.grantReadWriteData(sweepOrphanInstancesFn);
     // 実行の生死はジョブのstatusでは代用できない(`apps/api/src/stepFunctions.ts`)。
     stateMachine.grantExecution(sweepOrphanInstancesFn, "states:DescribeExecution");
     sweepOrphanInstancesFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
@@ -1002,10 +994,13 @@ export class SattoriStack extends Stack {
     const sweepStalledJobsFn = makeHandler(
       "SweepStalledJobsFn",
       "sweepStalledJobs.ts",
-      { JOBS_TABLE: jobsTable.tableName },
+      // GPU vCPU容量リースの返却・待機列の後始末（Issue #270）に`GpuSlotsTable`も使う。
+      { JOBS_TABLE: jobsTable.tableName, GPU_SLOTS_TABLE: gpuSlotsTable.tableName },
       { timeout: Duration.minutes(3) },
     );
     jobsTable.grantReadWriteData(sweepStalledJobsFn);
+    gpuSlotsTable.grantReadWriteData(sweepStalledJobsFn);
+    gpuSlotsTable.grant(sweepStalledJobsFn, "dynamodb:TransactWriteItems");
     stateMachine.grantExecution(sweepStalledJobsFn, "states:DescribeExecution");
     sweepStalledJobsFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
 

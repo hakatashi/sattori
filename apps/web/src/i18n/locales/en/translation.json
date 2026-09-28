@@ -246,6 +246,7 @@
     "http_error": "The request failed ({{status}})",
     "retries_exhausted": "Recording failed multiple times. Please try again later",
     "gpu_queue_timeout": "The GPU recording queue was too busy and the wait time limit was exceeded. Please try again later",
+    "capacity_exhausted": "The recording worker couldn't be started because the server is temporarily busy. Please try again later",
     "recording_failed": "An error occurred while recording",
     "admin_stopped": "Stopped by an administrator",
     "stalled": "The recording process stopped responding for an extended period. Please upload your replay file again"

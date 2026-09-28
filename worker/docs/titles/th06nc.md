@@ -103,10 +103,14 @@ touhou-recorder側の初期実装が踏んだ地雷は、sattori側の共通実�
 - メニューカーソル位置のRVAは**未特定**。環境変数`TH06NC_MENU_DOWNS`（既定3回）に
   よる固定回数のDownでフォールバックする（未解放セーブデータでも"Replay"に到達
   することを実機確認済み、reports/78 §10）。
-- スコアRVA: `kScoreRva = 0x004F2798`（内部即時値）、`kScoreDisplayRva = 0x004F2790`
-  （画面表示用の追いかけ値）。**th06cとは内部値/表示値の前後関係が逆**
+- スコアRVA（ver 1.0.6）: `kScoreRva = 0x0053D3E8`（内部即時値）、`kScoreDisplayRva =
+  0x0053D3E0`（画面表示用の追いかけ値）。**th06cとは内部値/表示値の前後関係が逆**
   （reports/79 §6.1）。デシンク判定には内部値側を使う
   （`worker/recording/modlog.py`の`GAME_SCORE_MULTIPLIERS["th06nc"] = 1`、等倍）。
+- **スコアRVAはゲームのバージョンごとに変わる**。ver 1.0.6より前は`0x004F2798`/
+  `0x004F2790`で、ver 1.0.6でexeが再ビルドされ`.data`セクションごと移動した
+  （[`docs/reports/2026-09-28-th06nc-v1.0.6-update-verification.md`](../../../docs/reports/2026-09-28-th06nc-v1.0.6-update-verification.md)）。
+  ゲーム更新時は`verify-game-update` skillで必ず再確認すること。
 - ステージ番号・残機・グレイズのRVAは未特定。
 
 ## 低速録画・自宅ワーカーはスコープ外
@@ -142,10 +146,12 @@ X11キャプチャを1本に統一する（`recording/ffmpeg.py`の`build_video_
 th06ncは720p/1080pをユーザーが選べる（Issue #241、`packages/shared/src/
 highResolutionRecording.ts`）。reports/81 §9.9.3の実測では、1080p録画は本来
 g6f.2xlarge（8vCPU）が推奨——g6f.xlarge（4vCPU）では実効fpsが54.87まで悪化し、
-重複フレーム率が7.9%まで増える——だが、eu-south-2のG系スポットクォータが
-現状8vCPU（g6f.xlarge換算で2台分の並列運用余地）であることを踏まえ、**1080pも
-g6f.xlargeのまま提供する**とユーザー判断で決定した（`decisions/0046`）。
-1080p録画で処理落ちが疑われる場合はこの制約を踏まえて調査すること。
+重複フレーム率が7.9%まで増える——だが、当時のeu-south-2のG系スポットクォータが
+8vCPU（g6f.xlarge換算で2台分の並列運用余地）だったことを踏まえ、**1080pも
+g6f.xlargeで起動しうる**ままにするとユーザー判断で決定した（`decisions/0046`）。
+クォータは2026-09に32vCPUへ引き上げられたため、1080pをg6f.2xlargeに固定する
+見直しをIssue #286で検討している。1080p録画で処理落ちが疑われる場合はこの制約を
+踏まえて調査すること。
 
 ## 既知の残課題
 
