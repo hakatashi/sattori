@@ -65,14 +65,15 @@ Issue #101のスコープ）。Issue #101でth09を対応させる際はMOD側�
 **低速録画はスコープ外**（D3D11経路の新規実装が必要、th06cと同じ扱い。
 `SLOW_MOTION_SUPPORTED_GAME_IDS`未登録のため自動的に塞がれる）。
 
-**1080p録画オプションはg6f.xlarge（4vCPU）のまま提供している**。touhou-recorder
+**1080p録画オプションもg6f.xlarge（4vCPU）で起動しうる**。touhou-recorder
 reports/81 §9.9.3の実測では、1080p録画は本来g6f.2xlarge（8vCPU）が推奨——
 4vCPUでは実効fpsが54.87まで悪化し重複フレーム率が7.9%まで増える——ことが確認されて
-いる。それでもeu-south-2のG系スポットクォータ（現状8vCPU＝g6f.xlarge換算で2台分の
-並列運用余地）を踏まえ、並列運用の余地を残すためユーザー判断で4vCPUのまま提供して
-いる（[`decisions/0046`](decisions/0046-gpu-ec2-instance-and-fixed-ami.md)）。1080p
-録画で処理落ちが疑われる場合はこの制約を踏まえて調査すること。このクオータの範囲内で
-ジョブを順番待ちさせる仕組みは
+いる。xlargeを候補に残したのは、当時のeu-south-2のG系スポットクォータ（8vCPU＝
+g6f.xlarge換算で2台分）で並列運用の余地を残すためのユーザー判断だった
+（[`decisions/0046`](decisions/0046-gpu-ec2-instance-and-fixed-ami.md)）。クォータは
+2026-09に**32vCPU**へ引き上げられており、1080pをg6f.2xlargeに固定する見直しは
+Issue #286。1080p録画で処理落ちが疑われる場合はこの制約を踏まえて調査すること。
+クオータ（`GPU_VCPU_QUOTA`）の範囲内でジョブを順番待ちさせる仕組みは
 [`decisions/0056`](decisions/0056-gpu-vcpu-lease-and-queue.md)。
 
 同時発売の「東方紅魔郷: Classic」（th06c）も録画対応済み（Issue #240、
@@ -259,11 +260,12 @@ th09のジョブは`JobRecord.desyncDetected`が常にfalseになる（デシン
 
 **ただしクラッシュがなぜ起きるのかは分かっていない**。本番のGPU(`g6f`)ジョブを
 AZ別に層別すると`eu-south-2a`は6件中4件がクラッシュしたのに対し`eu-south-2b`は
-16件中0件で（Fisher正確検定 p=0.0021）、暫定対応としてGPUジョブのFleet候補から
-`eu-south-2a`を除外している（[`decisions/0055`](decisions/0055-exclude-eu-south-2a-from-gpu-fleet.md)）。
-ハードウェア個体差・vGPUスライスの状態などAZ側の環境要因が疑われるが機序は未特定で、
-**この除外は原因が判明し次第撤回すべき暫定措置**である。除外によりGPUジョブの使える
-AZが1つ減るため、`g6f`系のSpot枯渇による起動失敗が増えうる点にも注意。
+16件中0件で（Fisher正確検定 p=0.0021）、一時`eu-south-2a`をFleet候補から除外していた
+（[`decisions/0055`](decisions/0055-exclude-eu-south-2a-from-gpu-fleet.md)）。しかし
+除外後も`eu-south-2b`単独でクラッシュが発生し続けたのに対し、除外の副作用（`g6f`系の
+Spot枯渇による起動失敗）が実害化したため撤回した
+（[`decisions/0057`](decisions/0057-revert-eu-south-2a-gpu-exclusion.md)）。**AZ差の
+機序は依然未特定**で、Wineクラッシュ自体への対策は`wine.log`検知＋リトライ以外にない。
 
 検知手段の比較は
 [`reports/2026-09-19-th15-wine-crash-detection-verification.md`](reports/2026-09-19-th15-wine-crash-detection-verification.md)

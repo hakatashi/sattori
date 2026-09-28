@@ -254,7 +254,36 @@ export async function shrinkGpuLease(
   instanceType: string,
   instanceId: string,
 ): Promise<void> {
-  if (newVcpu >= oldVcpu) {
+  if (newVcpu > oldVcpu) {
+    return;
+  }
+  if (newVcpu === oldVcpu) {
+    // vCPUの縮小は不要だが、起動したインスタンス情報を記録して台帳の
+    // トレーサビリティを保つ（QUOTA_ITEM_KEYの更新は不要なため単一Updateで済む）。
+    try {
+      await client.send(
+        new UpdateCommand({
+          TableName: table,
+          Key: { slotKey: SLOT_PARTITION_KEY, itemKey: leaseItemKey(jobId) },
+          UpdateExpression: "SET instanceType = :t, instanceId = :i",
+          ConditionExpression: "attribute_exists(itemKey)",
+          ExpressionAttributeValues: {
+            ":t": instanceType,
+            ":i": instanceId,
+          },
+        }),
+      );
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          event: "gpu_lease_instance_info_update_failed",
+          jobId,
+          instanceType,
+          instanceId,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
     return;
   }
   const delta = oldVcpu - newVcpu;

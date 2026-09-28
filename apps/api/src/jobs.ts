@@ -368,6 +368,10 @@ export interface GpuQueueMarkResult {
   marked: boolean;
   /** この待機エピソードの起点（ISO 8601）。タイムアウト判定の基準。 */
   gpuQueueEnteredAt: string;
+  /** FIFO順の基準（ISO 8601）。GSIの結果整合で自分がQuery結果に現れない場合の補完に使う。 */
+  gpuQueuedAt: string;
+  /** 今回書き込んだ心拍（ISO 8601）。 */
+  gpuQueueHeartbeatAt: string;
 }
 
 /**
@@ -398,11 +402,16 @@ export async function markGpuQueueWaiting(table: string, jobId: string): Promise
         ReturnValues: "ALL_NEW",
       }),
     );
-    const gpuQueueEnteredAt = (result.Attributes as JobRecord | undefined)?.gpuQueueEnteredAt ?? now;
-    return { marked: true, gpuQueueEnteredAt };
+    const attributes = result.Attributes as JobRecord | undefined;
+    return {
+      marked: true,
+      gpuQueueEnteredAt: attributes?.gpuQueueEnteredAt ?? now,
+      gpuQueuedAt: attributes?.gpuQueuedAt ?? now,
+      gpuQueueHeartbeatAt: now,
+    };
   } catch (err) {
     if (err instanceof ConditionalCheckFailedException) {
-      return { marked: false, gpuQueueEnteredAt: now };
+      return { marked: false, gpuQueueEnteredAt: now, gpuQueuedAt: now, gpuQueueHeartbeatAt: now };
     }
     throw err;
   }
@@ -430,16 +439,30 @@ export async function updateGpuQueueDisplay(
  * 定期掃除で呼ぶ）。sparse GSI `GpuQueueIndex`のキー属性を含む一式をまとめて
  * `REMOVE`する——これを怠ると死んだ待機者が投入順の列を塞ぎ続ける
  * （head-of-line blocking）。存在しない属性のREMOVEは冪等に成功する。
+ *
+ * `keepQueuedAt: true`（枠取得時）は`gpuQueuedAt`だけを残す。`gpuQueuedAt`は
+ * 「1回だけセット」するFIFO順の基準で、リトライ（`HandleFailure`後の再入）で
+ * 再び待機列に入った際に元の順位を保つため（ADR 0056）。PK`gpuQueueState`が
+ * 消えればsparse GSIからは外れるので、SKだけ残しても列は塞がない。
  */
-export async function clearGpuQueueState(table: string, jobId: string): Promise<void> {
+export async function clearGpuQueueState(
+  table: string,
+  jobId: string,
+  options: { keepQueuedAt?: boolean } = {},
+): Promise<void> {
+  const removed = [
+    "gpuQueueState",
+    ...(options.keepQueuedAt ? [] : ["gpuQueuedAt"]),
+    "gpuQueueEnteredAt",
+    "gpuQueueHeartbeatAt",
+    "gpuQueuePosition",
+    "gpuQueueEtaSeconds",
+  ];
   await client.send(
     new UpdateCommand({
       TableName: table,
       Key: { jobId },
-      UpdateExpression:
-        "REMOVE gpuQueueState, gpuQueuedAt, gpuQueueEnteredAt, gpuQueueHeartbeatAt, " +
-        "gpuQueuePosition, gpuQueueEtaSeconds " +
-        "SET updatedAt = :u",
+      UpdateExpression: `REMOVE ${removed.join(", ")} SET updatedAt = :u`,
       ExpressionAttributeValues: { ":u": new Date().toISOString() },
     }),
   );

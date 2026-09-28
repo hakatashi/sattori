@@ -142,11 +142,10 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   除外していたが（Issue #29。VPCの`availabilityZones`明示指定での除外は
   CloudFormationのサブネット差し替えでCIDR重複エラーになり不可だったための対応）、
   eu-south-2にはレガシーAZが無いため現在はCDK側でのフィルタリングは行っていない。
-  ただし**GPUジョブ（`g6f`系）だけは`eu-south-2a`を実行時に除外する**（Wineクラッシュ率が
-  有意に高い、[`docs/decisions/0055`](../docs/decisions/0055-exclude-eu-south-2a-from-gpu-fleet.md)）。
-  除外は`apps/api/src/ec2.ts`がFleetの`Overrides`を組み立てる際のランタイムフィルタで、
-  VPC構成は変更しない。そのために`WORKER_SUBNET_IDS`と**同じ順序**で各サブネットのAZ名を
-  並べた`WORKER_SUBNET_AZS`を併せて渡している（どちらも同じ`workerSubnets`配列から生成）。
+  GPUジョブ（`g6f`系）も`eu-south-2a`を一時除外していたが（Wineクラッシュ率が有意に
+  高い、[`docs/decisions/0055`](../docs/decisions/0055-exclude-eu-south-2a-from-gpu-fleet.md)）、
+  起動失敗（Spot容量不足）の増加が実害化したため撤回し、GPUジョブもCPU系と同じ全AZを
+  候補にしている（[`docs/decisions/0057`](../docs/decisions/0057-revert-eu-south-2a-gpu-exclusion.md)）。
 - **EC2 Launch Template**: ワーカー起動の基点（AMI/インスタンスタイプ/IAM/SG固定）。
   ジョブ固有のUserDataは**CDKではなく実行時にAWS SDKで**`CreateLaunchTemplateVersion`
   により上書きする（ここでのUserDataはプレースホルダで実際に使われることはない）。

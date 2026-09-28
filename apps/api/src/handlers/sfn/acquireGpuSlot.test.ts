@@ -8,7 +8,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import type { JobRecord } from "@sattori/shared";
+import { GPU_VCPU_QUOTA, type JobRecord } from "@sattori/shared";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -21,7 +21,6 @@ const REQUIRED_ENV: Record<string, string> = {
   TITLE_ASSETS_BUCKET: "title-assets-bucket",
   WORKER_LOG_GROUP: "/sattori/worker",
   WORKER_SUBNET_IDS: "subnet-aaaa,subnet-bbbb",
-  WORKER_SUBNET_AZS: "eu-south-2a,eu-south-2b",
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
   GPU_WORKER_LAUNCH_TEMPLATE_ID: "lt-gpu-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
@@ -119,12 +118,54 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
 
     expect(result.acquired).toBe(false);
     expect(result.timedOut).toBe(false);
+    // 待機開始直後(経過0秒)はnextPollIntervalSeconds(0)=15秒
+    expect(result.waitSeconds).toBe(15);
     expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
     // 順位(2番目)・ETAの表示用フィールドを書き込む。
     const displayUpdate = ddbMock
       .commandCalls(UpdateCommand)
       .find((call) => call.args[0].input.ExpressionAttributeValues?.[":p"] !== undefined);
     expect(displayUpdate?.args[0].input.ExpressionAttributeValues?.[":p"]).toBe(2);
+  });
+
+  it("GSIの結果整合で自分がQuery結果に現れなくても先頭扱いせず、先行ジョブを追い越さない", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: gpuJob });
+    // markGpuQueueWaitingの書き込み結果(強整合)ではjob-1はjob-0より後に並んでいる。
+    ddbMock.on(UpdateCommand).resolves({ Attributes: { gpuQueuedAt: new Date().toISOString() } });
+    // 直後のQueryにはまだjob-1が反映されていない。
+    ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+      Items: [waitingEntry("job-0", -60)],
+    });
+    ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 0 }],
+    });
+    ddbMock.on(TransactWriteCommand).resolves({});
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(result.acquired).toBe(false);
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("枠を確保した際はgpuQueuedAtを残す(リトライで再入してもFIFO順を保つ)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: gpuJob });
+    ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+      Items: [waitingEntry("job-1", 0)],
+    });
+    ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 0 }],
+    });
+    ddbMock.on(TransactWriteCommand).resolves({});
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(result.acquired).toBe(true);
+    const removeCall = ddbMock
+      .commandCalls(UpdateCommand)
+      .find((call) => String(call.args[0].input.UpdateExpression).includes("REMOVE gpuQueueState"));
+    expect(String(removeCall?.args[0].input.UpdateExpression)).not.toContain("gpuQueuedAt");
   });
 
   it("心拍が陳腐化した待機者(死んだ待機者)は先頭判定から除外される(head-of-line blocking対策)", async () => {
@@ -153,14 +194,69 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       Items: [waitingEntry("job-1", 0)],
     });
     ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
-      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 8 }],
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA }],
     });
 
     const { handler } = await import("./acquireGpuSlot.js");
     const result = await handler({ jobId: "job-1", attempt: 1 });
 
     expect(result.acquired).toBe(false);
-    expect(result.waitSeconds).toBeGreaterThan(0);
+    expect(result.waitSeconds).toBe(15);
+  });
+
+  it("初回試行(attempt:1)で残り4vCPUなら4vCPUのみ確保を試みる(投機的並列化)", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: gpuJob });
+    ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+      Items: [waitingEntry("job-1", 0)],
+    });
+    ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA - 4 }],
+    });
+    ddbMock.on(TransactWriteCommand).resolves({});
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(result.acquired).toBe(true);
+    const transactInput = ddbMock.commandCalls(TransactWriteCommand)[0]?.args[0].input;
+    expect(transactInput?.TransactItems?.[0]?.Put?.Item?.vcpu).toBe(4);
+  });
+
+  it("リトライ時(attempt>1)は4vCPUしか空いていなければ確保せず8vCPUが空くまで待機する", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: gpuJob });
+    ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+      Items: [waitingEntry("job-1", 0)],
+    });
+    ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA - 4 }],
+    });
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 2 });
+
+    expect(result.acquired).toBe(false);
+    expect(result.timedOut).toBe(false);
+    expect(result.waitSeconds).toBe(15);
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("リトライ時(attempt>1)でも8vCPU空いていれば確保する", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: gpuJob });
+    ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+      Items: [waitingEntry("job-1", 0)],
+    });
+    ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 0 }],
+    });
+    ddbMock.on(TransactWriteCommand).resolves({});
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 2 });
+
+    expect(result.acquired).toBe(true);
+    expect(result.timedOut).toBe(false);
+    const transactInput = ddbMock.commandCalls(TransactWriteCommand)[0]?.args[0].input;
+    expect(transactInput?.TransactItems?.[0]?.Put?.Item?.vcpu).toBe(8);
   });
 
   it("gpuQueuedAtは2回目以降の呼び出しでも変わらない(if_not_existsで1回だけセット)", async () => {
@@ -169,7 +265,7 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       Items: [waitingEntry("job-1", 0)],
     });
     ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
-      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 8 }],
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA }],
     });
 
     const { handler } = await import("./acquireGpuSlot.js");

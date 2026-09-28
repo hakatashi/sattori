@@ -5,6 +5,7 @@ import {
   GPU_JOB_OVERHEAD_SECONDS,
   GPU_MAX_INSTANCE_VCPU,
   GPU_MIN_INSTANCE_VCPU,
+  GPU_QUEUE_ESTIMATE_PARALLELISM,
   GPU_QUEUE_FALLBACK_DURATION_SECONDS,
   GPU_QUEUE_MAX_WAIT_MINUTES,
   GPU_QUEUE_POLL_MAX_SECONDS,
@@ -23,8 +24,15 @@ describe("GPU_INSTANCE_TYPE_VCPUS", () => {
     expect(GPU_MAX_INSTANCE_VCPU).toBe(8);
   });
 
-  it("最大vCPUがクオータと一致する(g6f.2xlarge単独でクオータを使い切れる)", () => {
-    expect(GPU_MAX_INSTANCE_VCPU).toBe(GPU_VCPU_QUOTA);
+  it("クオータで最大候補タイプ(g6f.2xlarge)が少なくとも1台起動できる", () => {
+    // 下回るとリトライ時(attempt>1)のminVcpu=GPU_MAX_INSTANCE_VCPU要求が永久に満たせない。
+    expect(GPU_VCPU_QUOTA).toBeGreaterThanOrEqual(GPU_MAX_INSTANCE_VCPU);
+  });
+
+  it("クオータが全候補タイプのvCPU数で割り切れる(使えない端数が残らない)", () => {
+    for (const vcpu of Object.values(GPU_INSTANCE_TYPE_VCPUS)) {
+      expect(GPU_VCPU_QUOTA % vcpu).toBe(0);
+    }
   });
 });
 
@@ -53,6 +61,12 @@ describe("reservableVcpu", () => {
   it("最小要求量未満の空きはnull(確保不可)", () => {
     expect(reservableVcpu(3)).toBeNull();
     expect(reservableVcpu(0)).toBeNull();
+  });
+
+  it("minVcpuを指定した場合はその値未満ならnull(リトライ時に8vCPUを要求する用途)", () => {
+    expect(reservableVcpu(4, 8)).toBeNull();
+    expect(reservableVcpu(7, 8)).toBeNull();
+    expect(reservableVcpu(8, 8)).toBe(8);
   });
 });
 
@@ -115,11 +129,19 @@ describe("isHeartbeatStale", () => {
   });
 });
 
-describe("estimateQueueWaitSeconds", () => {
+describe("GPU_QUEUE_ESTIMATE_PARALLELISM", () => {
+  it("クオータを最大候補タイプのvCPU数で割った並列数(最低1)", () => {
+    expect(GPU_QUEUE_ESTIMATE_PARALLELISM).toBe(
+      Math.max(1, Math.floor(GPU_VCPU_QUOTA / GPU_MAX_INSTANCE_VCPU)),
+    );
+  });
+});
+
+describe("estimateQueueWaitSeconds（並列1: 直列の見積もり）", () => {
   const now = Date.parse("2026-09-19T00:00:00Z");
 
   it("前方ジョブなし・実行中リースなしなら0", () => {
-    expect(estimateQueueWaitSeconds([], [], now)).toBe(0);
+    expect(estimateQueueWaitSeconds([], [], now, 1)).toBe(0);
   });
 
   it("前方ジョブの所要時間合計にオーバーヘッドを加算する", () => {
@@ -127,26 +149,28 @@ describe("estimateQueueWaitSeconds", () => {
       [{ estimatedDurationSeconds: 600 }, { estimatedDurationSeconds: 300 }],
       [],
       now,
+      1,
     );
     expect(result).toBe(600 + GPU_JOB_OVERHEAD_SECONDS + 300 + GPU_JOB_OVERHEAD_SECONDS);
   });
 
   it("estimatedDurationSecondsがnullならフォールバック値を使う", () => {
-    const result = estimateQueueWaitSeconds([{ estimatedDurationSeconds: null }], [], now);
+    const result = estimateQueueWaitSeconds([{ estimatedDurationSeconds: null }], [], now, 1);
     expect(result).toBe(GPU_QUEUE_FALLBACK_DURATION_SECONDS + GPU_JOB_OVERHEAD_SECONDS);
   });
 
-  it("実行中リースの中で最も早く空く時刻までの残り時間を加算する(並列1で保守的に見積もる)", () => {
+  it("実行中リースの中で最も早く空く時刻までの残り時間を加算する", () => {
     const result = estimateQueueWaitSeconds(
       [],
       [{ expectedFinishAtMs: now + 300_000 }, { expectedFinishAtMs: now + 900_000 }],
       now,
+      1,
     );
     expect(result).toBe(300);
   });
 
   it("空く時刻が過去でも負にならない", () => {
-    const result = estimateQueueWaitSeconds([], [{ expectedFinishAtMs: now - 60_000 }], now);
+    const result = estimateQueueWaitSeconds([], [{ expectedFinishAtMs: now - 60_000 }], now, 1);
     expect(result).toBe(0);
   });
 
@@ -155,7 +179,75 @@ describe("estimateQueueWaitSeconds", () => {
       [{ estimatedDurationSeconds: 600 }],
       [{ expectedFinishAtMs: now + 120_000 }],
       now,
+      1,
     );
     expect(result).toBe(120 + 600 + GPU_JOB_OVERHEAD_SECONDS);
+  });
+});
+
+describe("estimateQueueWaitSeconds（並列P: リストスケジューリング）", () => {
+  const now = Date.parse("2026-09-19T00:00:00Z");
+  // オーバーヘッド込みでちょうど20分になる録画時間。
+  const twentyMinJob = { estimatedDurationSeconds: 20 * 60 - GPU_JOB_OVERHEAD_SECONDS };
+  const leasesFinishingIn = (...minutes: number[]) =>
+    minutes.map((m) => ({ expectedFinishAtMs: now + m * 60_000 }));
+
+  it("前方3本・実行中4本(残り5/10/15/20分)・並列4なら、4本目の枠が空く20分後", () => {
+    // 直列(並列1)だと 5 + 20×3 = 65分になる。
+    const result = estimateQueueWaitSeconds(
+      [twentyMinJob, twentyMinJob, twentyMinJob],
+      leasesFinishingIn(20, 5, 15, 10),
+      now,
+      4,
+    );
+    expect(result).toBe(20 * 60);
+  });
+
+  it("前方ジョブが枠数を超えると、前方ジョブの終了を待つ", () => {
+    // 枠: [5,10,15,20] → 前方4本で [25,30,35,40] → 5本目は25分後に空いた枠に載り [30,35,40,45]
+    const result = estimateQueueWaitSeconds(
+      Array.from({ length: 5 }, () => twentyMinJob),
+      leasesFinishingIn(5, 10, 15, 20),
+      now,
+      4,
+    );
+    expect(result).toBe(30 * 60);
+  });
+
+  it("先頭(前方ジョブなし)は並列数によらず最も早く空くリースの残り時間", () => {
+    const leases = leasesFinishingIn(7, 3, 12, 9, 30);
+    expect(estimateQueueWaitSeconds([], leases, now, 4)).toBe(
+      estimateQueueWaitSeconds([], leases, now, 1),
+    );
+    expect(estimateQueueWaitSeconds([], leases, now, 4)).toBe(3 * 60);
+  });
+
+  it("リースが枠数に満たなければ残りの枠は即空きとして扱う", () => {
+    const result = estimateQueueWaitSeconds(
+      [twentyMinJob],
+      leasesFinishingIn(10, 10),
+      now,
+      4,
+    );
+    expect(result).toBe(0);
+  });
+
+  it("リースが枠数を超える場合は早く空く順にP本だけを使う", () => {
+    // 並列2: 枠 [5,10]（25分・40分のリースは無視）→ 前方2本で [25,30] → 25分後
+    const result = estimateQueueWaitSeconds(
+      [twentyMinJob, twentyMinJob],
+      leasesFinishingIn(40, 5, 25, 10),
+      now,
+      2,
+    );
+    expect(result).toBe(25 * 60);
+  });
+
+  it("並列数を省略するとGPU_QUEUE_ESTIMATE_PARALLELISMを使う", () => {
+    const ahead = [twentyMinJob, twentyMinJob, twentyMinJob];
+    const leases = leasesFinishingIn(5, 10, 15, 20);
+    expect(estimateQueueWaitSeconds(ahead, leases, now)).toBe(
+      estimateQueueWaitSeconds(ahead, leases, now, GPU_QUEUE_ESTIMATE_PARALLELISM),
+    );
   });
 });
