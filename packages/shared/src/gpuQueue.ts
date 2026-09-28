@@ -4,11 +4,12 @@
  *
  * ## なぜ要るのか
  *
- * eu-south-2 の G系スポットインスタンスのvCPUクオータは現状 **8vCPU** しかない
- * （32vCPUへの引き上げ申請は進行中だがAWSサポートから1週間以上応答が無く、望みは
- * 薄い）。GPU描画必須タイトル（`GPU_RECORDING_GAME_IDS`、`gpuRecording.ts`）は
- * `g6f.xlarge`(4vCPU) / `g6f.2xlarge`(8vCPU) で起動するため、同時に走れるのは実質
- * 1〜2本のみ。この定数モジュールと `apps/api/src/gpuSlots.ts`（DynamoDBでの
+ * eu-south-2 の G系スポットインスタンスのvCPUクオータ（`L-3819A6DF`「All G and VT
+ * Spot Instance Requests」）は **32vCPU**（当初8vCPUだったが、2026-09にAWSサポートへの
+ * 引き上げ申請が通った）。GPU描画必須タイトル（`GPU_RECORDING_GAME_IDS`、
+ * `gpuRecording.ts`）は `g6f.xlarge`(4vCPU) / `g6f.2xlarge`(8vCPU) で起動するため、
+ * 同時に走れるのは4〜8本。それを超えて来たジョブは失敗させず待たせる必要がある。
+ * この定数モジュールと `apps/api/src/gpuSlots.ts`（DynamoDBでの
  * vCPU会計）・`apps/api/src/gpuQueue.ts`（順位・ETA計算）が、このクオータの範囲内で
  * ジョブを正しく並べて待たせる仕組みの土台になる。詳細な設計は
  * `docs/decisions/0056-gpu-vcpu-lease-and-queue.md` を参照。
@@ -21,8 +22,13 @@
  * 引き上げが実際に通った場合は `GPU_VCPU_QUOTA` をここで書き換えてデプロイするだけでよい。
  */
 
-/** eu-south-2 の G系スポットインスタンスのvCPUクオータ。 */
-export const GPU_VCPU_QUOTA = 8;
+/**
+ * eu-south-2 の G系スポットインスタンスのvCPUクオータ。実際の値は
+ * `aws service-quotas get-service-quota --region eu-south-2 --service-code ec2
+ * --quota-code L-3819A6DF` で確認できる。AWS側の値と食い違うと、こちらが大きければ
+ * `CreateFleet`がクオータ超過で失敗し、小さければ空きがあるのに待たせてしまう。
+ */
+export const GPU_VCPU_QUOTA = 32;
 
 /** GPU候補インスタンスタイプ（`apps/api/src/ec2.ts` の `GPU_CANDIDATE_INSTANCE_TYPES`
  *  と対で使う）ごとのvCPU数。 */
@@ -97,7 +103,7 @@ export function vcpusForInstanceType(instanceType: string): number | null {
  * 小さい方（`g6f.xlarge`のみ）、それ未満なら確保不可（null）。
  *
  * `minVcpu` を指定すると要求下限を引き上げられる（リトライ時＝`attempt > 1` に
- * 4vCPUでの投機的確保をやめ、クオータ全量8vCPUの空きを待つために使う）。
+ * 4vCPUでの投機的確保をやめ、最大候補タイプ分＝8vCPUの空きを待つために使う）。
  *
  * これはあくまで「どちらのタイプで試すか」の事前判断であり、実際の安全性は
  * `apps/api/src/gpuSlots.ts` の `TransactWriteItems` の `ConditionExpression` が

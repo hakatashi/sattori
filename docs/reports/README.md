@@ -12,6 +12,7 @@
 
 | 検証日 | 内容 | 結論 |
 | --- | --- | --- |
+| [2026-09-28](2026-09-28-th06nc-v1.0.6-update-verification.md) | th06nc ver 1.0.6(ゲーム側アップデート)のリプレイ互換性とMOD動作のローカル検証 | リプレイ形式は不変で旧版・新版リプレイとも新版で再生・スコア一致。**ただしMODのスコアRVAが`0x004F2798`→`0x0053D3E8`へ移動しており修正が必要だった**。Steam版の正規`steam_api64.dll`も戻っていた。GPU描画での録画品質は未検証 |
 | [2026-09-19](2026-09-19-th15-wine-crash-detection-verification.md) | GPUワーカーで発生したWineクラッシュ3件の原因調査と、録画中に検知する手段の実機比較(Issue #267) | 3件とも`g6f`×`eu-south-2a`で、フリーズ画面を静止検知が誤って「リプレイ終了」と判定していた(AZ別のクラッシュ率は2a:6件中4件・2b:16件中0件、p=0.0021)。**th15 PR #264の変更が原因ではない**(同型事例が旧AMI環境の9/13にも発生)。意図的にアクセス違反を起こす再現実験で本番の2形態(プロセス消滅型・ダイアログ残存型)を両方再現し、**`wine.log`の`Unhandled`だけが両方を検知でき正常時に誤検知しない**ことを確認(プロセス生存・state・`winedbg`監視はいずれも一方のみ) |
 | [2026-09-18](2026-09-18-th15-gpu-32bit-llvmpipe-fallback-root-cause.md) | th15 GPU描画が実際には効かずllvmpipeへフォールバックしていた問題の根本原因調査(Issue #82) | nvidia-container-toolkitが32bit互換NVIDIAライブラリを自動マウントしないため、32bitのwineプロセスが`libGLX_nvidia.so.0`を見つけられず静かにソフトウェアレンダラへフォールバックしていた。該当ファイルの個別マウントで解消(`docs/decisions/0053`)。touhou-recorderの検証はコンテナを使わないため同問題に未遭遇だったことも判明 |
 | [2026-09-18](2026-09-18-th15-gpu-ami-xorg-libwfb-root-cause.md) | th15 GPU用AMIのXorg起動不能(`Need libwfb`)の根本原因調査(us-west-2、Issue #82) | 原因はAMI構築手順ではなく`apps/api/src/ec2.ts`の`docker run`マウント(`-v /usr/lib/xorg/modules:...`丸ごと)がコンテナ自身のXorgモジュールを隠すことだった。個別ファイルマウントに修正(`docs/decisions/0052`)し解消を確認。th06ncも含むGPU系ジョブ共通の問題 |

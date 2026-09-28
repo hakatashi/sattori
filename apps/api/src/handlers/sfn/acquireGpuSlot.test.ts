@@ -8,7 +8,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import type { JobRecord } from "@sattori/shared";
+import { GPU_VCPU_QUOTA, type JobRecord } from "@sattori/shared";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -21,7 +21,6 @@ const REQUIRED_ENV: Record<string, string> = {
   TITLE_ASSETS_BUCKET: "title-assets-bucket",
   WORKER_LOG_GROUP: "/sattori/worker",
   WORKER_SUBNET_IDS: "subnet-aaaa,subnet-bbbb",
-  WORKER_SUBNET_AZS: "eu-south-2a,eu-south-2b",
   WORKER_LAUNCH_TEMPLATE_ID: "lt-xxxx",
   GPU_WORKER_LAUNCH_TEMPLATE_ID: "lt-gpu-xxxx",
   EMAIL_RATE_LIMIT_TABLE: "email-rate-limit",
@@ -195,7 +194,7 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       Items: [waitingEntry("job-1", 0)],
     });
     ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
-      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 8 }],
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA }],
     });
 
     const { handler } = await import("./acquireGpuSlot.js");
@@ -211,7 +210,7 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       Items: [waitingEntry("job-1", 0)],
     });
     ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
-      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 4 }],
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA - 4 }],
     });
     ddbMock.on(TransactWriteCommand).resolves({});
 
@@ -229,7 +228,7 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       Items: [waitingEntry("job-1", 0)],
     });
     ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
-      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 4 }],
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA - 4 }],
     });
 
     const { handler } = await import("./acquireGpuSlot.js");
@@ -266,7 +265,7 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       Items: [waitingEntry("job-1", 0)],
     });
     ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
-      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 8 }],
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA }],
     });
 
     const { handler } = await import("./acquireGpuSlot.js");
