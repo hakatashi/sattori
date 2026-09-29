@@ -34,6 +34,7 @@ import { HttpLambdaAuthorizer, HttpLambdaResponseType } from "aws-cdk-lib/aws-ap
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
 import {
+  GPU_QUEUE_INDEX,
   HOME_WORKER_OFFER_INDEX,
   LAUNCH_LAMBDA_TIMEOUT_SECONDS,
   ORPHAN_SWEEP_INTERVAL_MINUTES,
@@ -200,6 +201,22 @@ export class SattoriStack extends Stack {
       indexName: HOME_WORKER_OFFER_INDEX,
       partitionKey: { name: "homeWorkerOfferState", type: dynamodb.AttributeType.STRING },
       sortKey: { name: "homeWorkerOfferExpiresAt", type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // GPU vCPU容量リース（Issue #270）の投入順（FIFO）を守るための sparse GSI。
+    // PK=gpuQueueState(値は"waiting"の1種類のみ)、SK=gpuQueuedAt。オファー用GSIと
+    // 全く同じパターン——**待機中のジョブだけがこの属性を持つ**（枠取得・
+    // タイムアウト確定・緊急停止時にREMOVEする）ため、インデックス自体が「いま
+    // GPU枠を待っているジョブ一覧」になる。`AcquireGpuSlotFn`はこれをQueryして
+    // 先頭判定・順位計算を行う（`apps/api/src/gpuQueue.ts`）。ProjectionはALL
+    // ——推定待ち時間の計算に`estimatedDurationSeconds`が要るため
+    // （他のGSIと同じ理由でINCLUDEは避ける）。詳細は
+    // `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`。
+    jobsTable.addGlobalSecondaryIndex({
+      indexName: GPU_QUEUE_INDEX,
+      partitionKey: { name: "gpuQueueState", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "gpuQueuedAt", type: dynamodb.AttributeType.STRING },
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
@@ -756,10 +773,6 @@ export class SattoriStack extends Stack {
       payload: sfn.TaskInput.fromObject({
         jobId: sfn.JsonPath.stringAt("$.jobId"),
         attempt: sfn.JsonPath.numberAt("$.attempt"),
-        // 待機の上限判定の起点(`GPU_QUEUE_MAX_WAIT_MINUTES`)。実行開始時刻を使う
-        // (PR1時点ではまだ待機専用の状態をJobsTableに持たないため。詳細は
-        // `apps/api/src/handlers/sfn/acquireGpuSlot.ts`のコメント参照)。
-        executionStartTime: sfn.JsonPath.stringAt("$$.Execution.StartTime"),
       }),
       payloadResponseOnly: true,
       resultPath: "$.slot",
@@ -953,7 +966,9 @@ export class SattoriStack extends Stack {
       // リコンサイラ（Issue #270）も同じLambdaに相乗りしている。
       { timeout: Duration.minutes(3) },
     );
-    jobsTable.grantReadData(sweepOrphanInstancesFn);
+    // 読み取りに加え、陳腐化した待機列エントリの剥がし（`clearGpuQueueState`、
+    // Issue #270）でUpdateItemを行うため読み書き権限が要る。
+    jobsTable.grantReadWriteData(sweepOrphanInstancesFn);
     // 実行の生死はジョブのstatusでは代用できない(`apps/api/src/stepFunctions.ts`)。
     stateMachine.grantExecution(sweepOrphanInstancesFn, "states:DescribeExecution");
     sweepOrphanInstancesFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
@@ -979,10 +994,13 @@ export class SattoriStack extends Stack {
     const sweepStalledJobsFn = makeHandler(
       "SweepStalledJobsFn",
       "sweepStalledJobs.ts",
-      { JOBS_TABLE: jobsTable.tableName },
+      // GPU vCPU容量リースの返却・待機列の後始末（Issue #270）に`GpuSlotsTable`も使う。
+      { JOBS_TABLE: jobsTable.tableName, GPU_SLOTS_TABLE: gpuSlotsTable.tableName },
       { timeout: Duration.minutes(3) },
     );
     jobsTable.grantReadWriteData(sweepStalledJobsFn);
+    gpuSlotsTable.grantReadWriteData(sweepStalledJobsFn);
+    gpuSlotsTable.grant(sweepStalledJobsFn, "dynamodb:TransactWriteItems");
     stateMachine.grantExecution(sweepStalledJobsFn, "states:DescribeExecution");
     sweepStalledJobsFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
 

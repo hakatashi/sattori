@@ -163,28 +163,48 @@ export interface ActiveLease {
 }
 
 /**
- * 待ち行列でのETA（推定待ち秒数）を計算する。前方の待機ジョブ（stale除外済み）の
- * 所要時間合計に、最も早く空く実行中リースの残り時間を加える——**保守的に並列1で
- * 直列に見積もる**（並列2を仮定して短く出すと外したときの失望が大きい）。
+ * ETA計算で仮定する並列数。全リースが最大候補タイプ（`GPU_MAX_INSTANCE_VCPU`）で
+ * 埋まっている前提の保守側の見積もり（32vCPU / 8vCPU = 4）。`g6f.xlarge`(4vCPU)の
+ * リースが混ざると実際の並列数はこれより多いが、枠を少なく数える＝長めに出るだけなので
+ * 許容する。
+ */
+export const GPU_QUEUE_ESTIMATE_PARALLELISM = Math.max(
+  1,
+  Math.floor(GPU_VCPU_QUOTA / GPU_MAX_INSTANCE_VCPU),
+);
+
+/**
+ * 待ち行列でのETA（推定待ち秒数）を計算する。並列数 `parallelism` の枠に対する
+ * リストスケジューリングで見積もる——実行中リースの残り時間が短い順に枠を埋め
+ * （リースが枠数に満たなければ残りは即空き）、前方の待機ジョブ（stale除外済み）を
+ * 投入順に「最も早く空く枠」へ載せていき、最後に最も早く空く枠の時刻を自分の開始時刻とする。
  *
- * 実行中リースが無い（＝今すぐ空きがある）場合は前方ジョブの所要時間合計のみを返す。
+ * `parallelism = 1` なら「最も早く空くリースの残り時間 + 前方ジョブの所要時間合計」
+ * という直列の見積もりと一致する。クオータが8vCPUだった頃はこの直列の式を使っていたが、
+ * 32vCPUでは前方ジョブが並列に捌けるため、2番目以降の待機者に対して最大で数倍
+ * 悲観的な値を出してしまっていた。
  */
 export function estimateQueueWaitSeconds(
   aheadJobs: readonly QueueAheadJob[],
   activeLeases: readonly ActiveLease[],
   nowMs: number,
+  parallelism: number = GPU_QUEUE_ESTIMATE_PARALLELISM,
 ): number {
-  const aheadSeconds = aheadJobs.reduce(
-    (sum, job) =>
-      sum +
-      (job.estimatedDurationSeconds ?? GPU_QUEUE_FALLBACK_DURATION_SECONDS) +
-      GPU_JOB_OVERHEAD_SECONDS,
-    0,
-  );
-  if (activeLeases.length === 0) {
-    return aheadSeconds;
+  const slotCount = Math.max(1, Math.floor(parallelism));
+  // 各枠が空く時刻（nowからの秒数）。常に昇順に保つ。
+  const slots = activeLeases
+    .map((lease) => Math.max(0, Math.round((lease.expectedFinishAtMs - nowMs) / 1000)))
+    .sort((a, b) => a - b)
+    .slice(0, slotCount);
+  while (slots.length < slotCount) {
+    slots.unshift(0);
   }
-  const earliestFinishMs = Math.min(...activeLeases.map((lease) => lease.expectedFinishAtMs));
-  const remainingSeconds = Math.max(0, Math.round((earliestFinishMs - nowMs) / 1000));
-  return remainingSeconds + aheadSeconds;
+  for (const job of aheadJobs) {
+    const start = slots.shift() ?? 0;
+    const duration =
+      (job.estimatedDurationSeconds ?? GPU_QUEUE_FALLBACK_DURATION_SECONDS) + GPU_JOB_OVERHEAD_SECONDS;
+    slots.push(start + duration);
+    slots.sort((a, b) => a - b);
+  }
+  return slots[0] ?? 0;
 }

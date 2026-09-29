@@ -74,7 +74,10 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   `HomeWorkerOfferIndex`（PK=`homeWorkerOfferState`, SK=`homeWorkerOfferExpiresAt`）
   がある。オファー中のジョブだけがこの属性を持つ（claim・撤回時にREMOVEする）ので、
   インデックス自体が「いまオファー中のジョブ一覧」になり、自宅デーモンは
-  `JobsTable`全体をScanせずにポーリングできる。
+  `JobsTable`全体をScanせずにポーリングできる。同じパターンで**sparse GSI**
+  `GpuQueueIndex`（PK=`gpuQueueState`, SK=`gpuQueuedAt`）も持つ——GPU vCPU容量
+  リースの投入順（FIFO、Issue #270）を守るためのもので、待機中のジョブだけが
+  属性を持つ（枠取得・タイムアウト確定・緊急停止時にREMOVE）。
   `GpuSlotsTable`（PK=`slotKey`固定値・SK=`itemKey`、TTLあり）はGPU録画ジョブ
   （th06nc・th15）のvCPU容量リース台帳（Issue #270）。カウンタアイテムと
   リースアイテムが同一パーティションに同居し、確保・縮小・返却はすべて

@@ -1,11 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DescribeExecutionCommand, SFNClient } from "@aws-sdk/client-sfn";
-import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  QueryCommand,
+  TransactWriteCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 
 const REQUIRED_ENV: Record<string, string> = {
   JOBS_TABLE: "sattori-jobs",
   STATE_MACHINE_ARN: "arn:aws:states:eu-south-2:123456789012:stateMachine:RecordingStateMachine",
+  GPU_SLOTS_TABLE: "sattori-gpu-slots",
 };
 
 const sfnMock = mockClient(SFNClient);
@@ -27,6 +34,9 @@ beforeEach(() => {
   ddbMock.reset();
   ddbMock.on(QueryCommand).resolves({ Items: [] });
   ddbMock.on(UpdateCommand).resolves({});
+  // GPU vCPU容量リースの返却(releaseGpuSlot)内部のGetCommand。既定はリース無し
+  // （＝非GPUジョブ相当）としてTransactWriteCommandを発行させない。
+  ddbMock.on(GetCommand).resolves({ Item: undefined });
 });
 
 describe("sweepStalledJobs handler", () => {
@@ -108,6 +118,49 @@ describe("sweepStalledJobs handler", () => {
 
     const { handler } = await import("./sweepStalledJobs.js");
     await expect(handler()).rejects.toThrow("ProvisionedThroughputExceededException");
+  });
+
+  it("failed確定時にGPU vCPU容量リースと待ち行列状態を後始末する(Issue #270)", async () => {
+    ddbMock
+      .on(QueryCommand, { ExpressionAttributeValues: { ":status": "recording" } })
+      .resolves({ Items: [jobRecord("job-1", "recording", OLD_UPDATED_AT)] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "FAILED" });
+    ddbMock.on(GetCommand).resolves({
+      Item: {
+        slotKey: "gpu",
+        itemKey: "job#job-1",
+        jobId: "job-1",
+        vcpu: 4,
+        acquiredAt: "a",
+        expiresAt: "b",
+        expectedFinishAt: "c",
+      },
+    });
+    ddbMock.on(TransactWriteCommand).resolves({});
+
+    const { handler } = await import("./sweepStalledJobs.js");
+    const result = await handler();
+
+    expect(result).toEqual({ scanned: 1, stalled: 1, failed: 1, skippedJobs: 0 });
+    // releaseGpuSlot(リース有り)→TransactWriteCommand、clearGpuQueueState→UpdateCommand
+    // の両方が呼ばれる。
+    const removeCall = ddbMock
+      .commandCalls(UpdateCommand)
+      .find((call) => String(call.args[0].input.UpdateExpression).includes("REMOVE gpuQueueState"));
+    expect(removeCall).toBeDefined();
+  });
+
+  it("GPU後始末が失敗してもfailed確定そのものは成功として扱う", async () => {
+    ddbMock
+      .on(QueryCommand, { ExpressionAttributeValues: { ":status": "recording" } })
+      .resolves({ Items: [jobRecord("job-1", "recording", OLD_UPDATED_AT)] });
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: "FAILED" });
+    ddbMock.on(GetCommand).rejects(new Error("throttled"));
+
+    const { handler } = await import("./sweepStalledJobs.js");
+    const result = await handler();
+
+    expect(result).toEqual({ scanned: 1, stalled: 1, failed: 1, skippedJobs: 0 });
   });
 
   it("pendingは問い合わせ対象に含まない", async () => {
