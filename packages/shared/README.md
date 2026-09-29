@@ -47,8 +47,8 @@ pending → queued → launching → recording → converting → uploading → 
   24時間（bot/濫用対策としての期限。アップロード用S3の自動削除とは独立）以内に
   起動されなければ受付期限切れとして扱う（`JobRecord.pendingExpiresAt`）。
 - `queued` 以降はワーカー・Step Functionsが書き込む。GPU描画必須タイトル
-  （th06nc・th15）はeu-south-2のG系スポットクオータ制約（現状8vCPU）により
-  `queued`のまま実際に**GPU vCPU容量が空くのを待つ**ことがある（Issue #270、
+  （th06nc・th15）はeu-south-2のG系スポットクオータ（32vCPU、`GPU_VCPU_QUOTA`）を
+  使い切っている間、`queued`のまま実際に**GPU vCPU容量が空くのを待つ**ことがある（Issue #270、
   `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`）。それ以外のタイトルでは
   `queued`はStep Functions実行の起動直後の一瞬の通過点でしかない。`converting` は録画完了
   （生動画チェックポイントアップロード済み）〜配信用変換までを指す。`uploading` は

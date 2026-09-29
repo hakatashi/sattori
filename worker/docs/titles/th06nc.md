@@ -146,10 +146,12 @@ X11キャプチャを1本に統一する（`recording/ffmpeg.py`の`build_video_
 th06ncは720p/1080pをユーザーが選べる（Issue #241、`packages/shared/src/
 highResolutionRecording.ts`）。reports/81 §9.9.3の実測では、1080p録画は本来
 g6f.2xlarge（8vCPU）が推奨——g6f.xlarge（4vCPU）では実効fpsが54.87まで悪化し、
-重複フレーム率が7.9%まで増える——だが、eu-south-2のG系スポットクォータが
-現状8vCPU（g6f.xlarge換算で2台分の並列運用余地）であることを踏まえ、**1080pも
-g6f.xlargeのまま提供する**とユーザー判断で決定した（`decisions/0046`）。
-1080p録画で処理落ちが疑われる場合はこの制約を踏まえて調査すること。
+重複フレーム率が7.9%まで増える——だが、当時のeu-south-2のG系スポットクォータが
+8vCPU（g6f.xlarge換算で2台分の並列運用余地）だったことを踏まえ、**1080pも
+g6f.xlargeで起動しうる**ままにするとユーザー判断で決定した（`decisions/0046`）。
+クォータは2026-09に32vCPUへ引き上げられたため、1080pをg6f.2xlargeに固定する
+見直しをIssue #286で検討している。1080p録画で処理落ちが疑われる場合はこの制約を
+踏まえて調査すること。
 
 ## 既知の残課題
 

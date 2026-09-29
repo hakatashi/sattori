@@ -8,6 +8,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
+import { GPU_VCPU_QUOTA } from "@sattori/shared";
 import {
   acquireGpuSlot,
   createCompensatingGpuLease,
@@ -57,16 +58,16 @@ describe("acquireGpuSlot", () => {
     expect(updateItem?.ConditionExpression).toBe(
       "attribute_not_exists(usedVcpu) OR usedVcpu <= :limit",
     );
-    expect(updateItem?.ExpressionAttributeValues?.[":limit"]).toBe(0); // QUOTA(8) - reserve(8)
+    expect(updateItem?.ExpressionAttributeValues?.[":limit"]).toBe(GPU_VCPU_QUOTA - 8);
   });
 
-  it("残4vCPUなら4vCPUのみ確保できる", async () => {
+  it("4vCPUの確保ではカウンタの上限条件がクオータ-4になる", async () => {
     ddbMock.on(TransactWriteCommand).resolves({});
     const result = await acquireGpuSlot(TABLE, "job-1", 4, now, finish);
     expect(result.kind).toBe("acquired");
     const updateItem = ddbMock.commandCalls(TransactWriteCommand)[0]?.args[0].input.TransactItems?.[1]
       ?.Update;
-    expect(updateItem?.ExpressionAttributeValues?.[":limit"]).toBe(4); // QUOTA(8) - reserve(4)
+    expect(updateItem?.ExpressionAttributeValues?.[":limit"]).toBe(GPU_VCPU_QUOTA - 4);
   });
 
   it("カウンタの条件不成立(空き容量不足)は no_capacity を返す", async () => {

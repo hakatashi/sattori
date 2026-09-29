@@ -145,8 +145,8 @@ const TH128_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
  *
  * `g6f.xlarge`（NVIDIA L4の1/8スライス、4vCPU/16GiB）を第一候補とし、Spot枯渇耐性
  * （Issue #29）および1080p録画（touhou-recorder reports/81 §9.9.3で推奨）のために
- * `g6f.2xlarge`（8vCPU/32GiB）も候補に含める。eu-south-2のG系スポットクォータは現状
- * 8vCPU（32vCPUへの追加申請は別issueで進行中、スコープ外）。
+ * `g6f.2xlarge`（8vCPU/32GiB）も候補に含める。eu-south-2のG系スポットクォータは
+ * 32vCPU（`packages/shared/src/gpuQueue.ts`の`GPU_VCPU_QUOTA`）。
  */
 const GPU_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
   "g6f.xlarge", // NVIDIA L4 1/8スライス (4vCPU/16GiB)。reports/80・81実測、第一候補
@@ -553,7 +553,7 @@ export async function launchRecordingInstance(
     // 失敗理由をCloudWatch Logsへ構造化して残す（Issue #270）。`errorCodes`は
     // `InsufficientInstanceCapacity`（Spot在庫の一時的な枯渇）と
     // `VcpuLimitExceeded`/`MaxSpotInstanceCountExceeded`（G系スポットのvCPUクオータ
-    // 超過、eu-south-2では現状8vCPU）を区別するためのもの。例外メッセージ自体にも
+    // 超過、eu-south-2では32vCPU）を区別するためのもの。例外メッセージ自体にも
     // 含めているが、CloudWatch Logs Insightsで集計・アラート判定するには構造化された
     // フィールドが要る。
     console.error(

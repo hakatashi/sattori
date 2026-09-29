@@ -260,7 +260,7 @@ export class SattoriStack extends Stack {
     });
 
     // GPU録画ジョブ(th06nc・th15)のvCPU容量リース台帳（Issue #270）。eu-south-2の
-    // G系スポットクオータ(現状8vCPU)を`AcquireGpuSlot`/`ReleaseGpuSlot`(下記SFn)が
+    // G系スポットクオータ(32vCPU、`GPU_VCPU_QUOTA`)を`AcquireGpuSlot`/`ReleaseGpuSlot`(下記SFn)が
     // 会計する。PK=slotKey(定数"gpu"のみ)・SK=itemKeyの単一パーティションに、
     // カウンタアイテム(itemKey="#quota")とリースアイテム(itemKey="job#<jobId>")が
     // 同居する。単一パーティションなのでQuery 1回でカウンタ+全リースを強一貫で読める
