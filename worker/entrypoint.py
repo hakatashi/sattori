@@ -64,7 +64,7 @@ from convert import (
 )
 from interruption_watcher import InterruptionWatcher
 from progress_reporter import ProgressReporter
-from recording import slow_motion_scale
+from recording import gpu_worker, recording_time_scale
 from status import get_job, update_progress, update_status
 from task_heartbeat import TaskHeartbeat
 from title_assets import ensure_title_assets
@@ -112,9 +112,9 @@ TIMEOUT_RESULT_PATH = f"{WORK_DIR}/timeout_result.json"
 OUTPUT_KEY = f"videos/{JOB_ID}.mp4"
 OUTPUT_KEY_DELIVERY = f"videos/{JOB_ID}_720p.mp4"
 OUTPUT_KEY_POSTER = f"videos/{JOB_ID}_poster.jpg"
-# 生データのチェックポイントに添えるS3オブジェクトメタデータのキー。低速録画
-# (Issue #68)の生データは実時間が `time_scale` 倍に伸びており、等倍へ戻すには
-# その倍率が要る。**環境変数から取り直してはいけない**: 自宅ワーカーが低速で
+# 生データのチェックポイントに添えるS3オブジェクトメタデータのキー。倍速録画
+# (Issue #288)・低速録画(Issue #68)の生データは実時間が `time_scale` 倍に伸縮しており、
+# 等倍へ戻すにはその倍率が要る。**環境変数から取り直してはいけない**: 自宅ワーカーが低速で
 # 録画した後にリトライがEC2へ回ると、EC2側には`FPS_LIMIT_TARGET_HZ`が渡らないため、
 # 半分の速度の動画をそのまま配信してしまう。倍率は生データ自身に添えて運ぶ。
 TIME_SCALE_METADATA_KEY = "sattori-time-scale"
@@ -407,9 +407,9 @@ def record(s3):
 
     # 変換前に生動画をチェックポイントとしてアップロードする。以降Spot中断で
     # リトライになっても、次の試行はここから(変換のみ)再開できる。
-    # 低速録画(Issue #68)ならこの生データは実時間が伸びた状態なので、等倍へ戻すのに
+    # 倍速・低速録画ならこの生データは実時間が伸縮した状態なので、等倍へ戻すのに
     # 要る倍率をオブジェクトメタデータとして添える(`TIME_SCALE_METADATA_KEY`参照)。
-    time_scale = slow_motion_scale()
+    time_scale = recording_time_scale()
     output_bytes = upload_video(
         s3, OUTPUT_VIDEO, OUTPUT_KEY, metadata={TIME_SCALE_METADATA_KEY: str(time_scale)},
     )
@@ -462,14 +462,14 @@ def read_timeout_result():
 def convert_and_upload(s3, time_scale):
     """録画結果を配信用の1本へ変換し、S3とDynamoDBへ反映する。
 
-    **録画後の再エンコードはこの1パスだけ**で、等倍への戻し(低速録画)・解像度合わせ・
+    **録画後の再エンコードはこの1パスだけ**で、等倍への戻し(倍速・低速録画)・解像度合わせ・
     ウォーターマーク合成をまとめて行う(`convert.py`)。
 
     出力が1本になるか2本になるかは録画の内容で決まる(`needs_separate_raw_output()`):
 
     - **2本**(th06/07/08/11の等倍録画): 生データがそのまま「元解像度版」として通用する。
       既にチェックポイントとしてアップロード済みなので、変換結果を別キーへ足すだけ。
-    - **1本**(th20・低速録画): 生データを別に出す意味が無い(解像度が同じでウォーター
+    - **1本**(th20・倍速・低速録画): 生データを別に出す意味が無い(解像度が同じでウォーター
       マークの有無しか違わない)か、半分の速度でそのままでは配信できない。変換結果だけを
       配信し、**役目を終えた生データはS3から消す**(消さないとジョブあたりの保管量が
       倍のまま残り、CloudFrontの無料枠を圧迫する。AGENTS.md §6)。
@@ -494,6 +494,8 @@ def convert_and_upload(s3, time_scale):
             watermark_path=WATERMARK_ASSET if WATERMARK else None,
             on_progress=on_convert_progress, log=log,
             ffmpeg_log_path=FFMPEG_UPSCALE_LOG,
+            # GPUワーカーでは変換もNVENCへオフロードする(Issue #288、convert.py参照)。
+            gpu_encode=gpu_worker(),
         )
     finally:
         # 変換の成否にかかわらずアップロードする(失敗時こそ診断に必要なため)。
@@ -587,7 +589,7 @@ def main():
                 time_scale = read_checkpoint_time_scale(s3)
             else:
                 record(s3)
-                time_scale = slow_motion_scale()
+                time_scale = recording_time_scale()
 
             convert_and_upload(s3, time_scale)
 

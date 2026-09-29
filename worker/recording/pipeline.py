@@ -20,7 +20,9 @@ from .artifacts import (
     write_desync_result,
     write_timeout_result,
 )
+from . import sync_marker
 from .ffmpeg import (
+    audio_intermediate_extension,
     build_audio_ffmpeg_cmd,
     build_video_ffmpeg_cmd,
     measure_duplicate_rate,
@@ -29,7 +31,16 @@ from .ffmpeg import (
 from .instance import build_injector_cmd, ensure_display, prepare_instance
 from .modlog import check_replay_desync, wait_for_log_marker
 from .process import attach_thprac, find_live_game_pid, kill_wine_and_wait
-from .timing import duplicate_rate_threshold_for_raw, scaled_poll_count, slow_motion_scale
+from .timing import (
+    audio_capture_rate_hz,
+    duplicate_rate_threshold_for_raw,
+    is_speedup,
+    recording_time_scale,
+    scaled_confirmation_count,
+    scaled_poll_count,
+    scaled_timeout_sec,
+    speedup_multiplier,
+)
 from .vision import (
     END_TEMPLATE_MAD_THRESHOLD,
     STILL_MAD_THRESHOLD,
@@ -48,9 +59,9 @@ from .window import (
 )
 
 
-# 連続回数はいずれも「等倍録画での秒数」をポーリング回数で表したもの。低速録画では
+# 連続回数はいずれも「等倍録画での秒数」をポーリング回数で表したもの。低速・倍速録画では
 # _monitor_until_end() が time_scale 倍して使う(ポーリング間隔は実時間駆動なので、
-# 回数を据え置くとゲーム内時間で必要な静止の長さが縮んでしまう)。
+# 回数を据え置くとゲーム内時間で必要な静止の長さが伸び縮みしてしまう)。
 STILL_CONSECUTIVE_REQUIRED = 8  # 8 * POLL_INTERVAL_SEC = 16秒(等倍録画時)
 POLL_INTERVAL_SEC = 2.0
 POST_START_GRACE_SEC = 15.0
@@ -58,9 +69,10 @@ TIMEOUT_SEC = 60 * 60
 
 
 # テンプレート照合そのものの説明と閾値は `recording/vision.py` にある。
-END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録画時。上記の通り
-                                       # 低速録画では time_scale 倍される)。動画圧縮ノイズ等に
-                                       # よる単発の偶然一致を弾くため連続一致を要求する(reports/34)
+END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録画時。低速録画では
+                                       # time_scale 倍されるが、倍速録画でも2回より減らさない)。
+                                       # 動画圧縮ノイズ等による単発の偶然一致を弾くため連続一致を
+                                       # 要求する(reports/34、scaled_confirmation_count())
 
 
 # 終了検知(画面静止/テンプレート照合)は「連続で一致した」ことを確認するためにこの秒数
@@ -72,8 +84,8 @@ END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録�
 # detected_byごとの確認待ちポーリング回数で、attempt_recording()が重複フレーム率
 # チェック用の実質的なコンテンツ終了秒を逆算するのに使う。
 _CONFIRMATION_TAIL_POLL_COUNT_BY_DETECTION_METHOD = {
-    "still": STILL_CONSECUTIVE_REQUIRED,
-    "template": END_TEMPLATE_CONSECUTIVE_REQUIRED,
+    "still": (STILL_CONSECUTIVE_REQUIRED, scaled_poll_count),
+    "template": (END_TEMPLATE_CONSECUTIVE_REQUIRED, scaled_confirmation_count),
 }
 
 
@@ -348,7 +360,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     post_start_grace_sec = POST_START_GRACE_SEC * time_scale
     timeout_sec = TIMEOUT_SEC * time_scale
     still_consecutive_required = scaled_poll_count(STILL_CONSECUTIVE_REQUIRED, time_scale)
-    end_template_consecutive_required = scaled_poll_count(
+    end_template_consecutive_required = scaled_confirmation_count(
         END_TEMPLATE_CONSECUTIVE_REQUIRED, time_scale,
     )
     freeze_consecutive_required = scaled_poll_count(FREEZE_CONSECUTIVE_REQUIRED, time_scale)
@@ -360,8 +372,11 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     # MODのメニュー自動操作(dllmain.cppのScaledSleep)は低速録画時に同じ比率だけ
     # 実時間が伸びるため、その完了を待つこちらのタイムアウトも伸ばす。伸ばし忘れると
     # 「シーケンス完了ログが検出できない」と誤判定する(touhou-recorder reports/47)。
+    # 倍速録画では縮めない(th06c/th06ncのメニュー操作は実時間のSleepで待つため、
+    # `scaled_timeout_sec()`)。
     sequence_complete_time = wait_for_log_marker(
-        config.log_path, "sequence complete", timeout=20 * time_scale, poll_interval=0.1,
+        config.log_path, "sequence complete", timeout=scaled_timeout_sec(20, time_scale),
+        poll_interval=0.1,
         log_all=True, seen_lines=seen_lines, log=log,
     )
     if sequence_complete_time is None:
@@ -527,8 +542,11 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     return detected, detected_by, frozen, crashed, last_color_frame
 
 
-def _stop_and_mux(video, audio, output_path, env, log):
-    """録画を停止し、映像と音声を1本の mp4 へ結合する。成功したら True。"""
+def _stop_and_mux(video, audio, output_path, env, log, *, time_scale=1.0, marker_log_path=None):
+    """録画を停止し、映像と音声を1本の mp4 へ結合する。成功したら True。
+
+    `marker_log_path`(MODログ)に同期マーカーが記録されていれば、それでA/V同期を補正する
+    (`mux_audio_video()`)。"""
     video_proc, audio_proc = video.proc, audio.proc
     video_target, audio_target = video.target, audio.target
     video_log_file, audio_log_file = video.log_file, audio.log_file
@@ -554,7 +572,10 @@ def _stop_and_mux(video, audio, output_path, env, log):
 
     output_exists = False
     if os.path.exists(video_target) and os.path.exists(audio_target):
-        output_exists = mux_audio_video(video_target, audio_target, output_path, env, log=log)
+        output_exists = mux_audio_video(
+            video_target, audio_target, output_path, env, log=log,
+            time_scale=time_scale, marker_log_path=marker_log_path,
+        )
     else:
         log(f"WARNING: 映像/音声の中間ファイルが見つかりません: video={video_target} audio={audio_target}")
 
@@ -585,14 +606,24 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     診断用証跡として`diagnostics_dir`へ書き出す(Issue #159、`save_diagnostics_snapshot()`)。
     """
     env = config.build_env()
-    # 低速録画(Issue #68)のスケール係数。等倍なら1.0で、時間依存パラメータは
-    # すべて従来値のままになる(実際のスケーリングは `_monitor_until_end()`)。
-    time_scale = slow_motion_scale(env)
-    if time_scale != 1.0:
+    # 録画速度(倍速録画 Issue #288・低速録画 Issue #68)のスケール係数。等倍なら1.0で、
+    # 時間依存パラメータはすべて従来値のままになる(実際のスケーリングは `_monitor_until_end()`)。
+    time_scale = recording_time_scale(env)
+    if is_speedup(time_scale):
+        log(
+            f"倍速録画モード: {speedup_multiplier(time_scale):g}倍速 "
+            f"(FPS_LIMIT_TARGET_HZ={env.get('FPS_LIMIT_TARGET_HZ')} "
+            f"SPEED_HACK_MULTIPLIER={env.get('SPEED_HACK_MULTIPLIER')}。実時間はゲーム内時間の"
+            f"{time_scale:.2f}倍。変換時に等倍へ戻します)"
+        )
+    elif time_scale != 1.0:
         log(
             f"低速録画モード: FPS_LIMIT_TARGET_HZ={env.get('FPS_LIMIT_TARGET_HZ')} "
             f"(実時間はゲーム内時間の{time_scale:.2f}倍。監視の猶予・タイムアウトも同じ比率で伸ばします)"
         )
+    # GPU描画(Xorg+nvidia)で録画する場合はNVENCで映像をエンコードする。GPU描画必須
+    # タイトル(th06nc/th15)とGPUワーカーで動くタイトル(`with_runtime_overrides()`)が該当。
+    gpu_encode = config.gpu_display
     end_template = load_end_template(config.end_template_path)
     if end_template is None:
         log(
@@ -600,6 +631,9 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
             "リプレイ終了を判定します(誤検知の可能性あり、reports/33参照)"
         )
 
+    # 前回の試行のトリガーが残っていると、MODが起動直後(録音開始前)にマーカーを鳴らして
+    # しまい検出できなくなる。
+    sync_marker.clear_trigger(config)
     game_pid = _launch_game(config, env, replay_path, log)
     if not game_pid:
         return _failure_result(config, env, log)
@@ -611,6 +645,16 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     if not geometry:
         return _failure_result(config, env, log)
     x, y, w, h = geometry
+    window_id = None
+    if config.gpu_display and config.capture_by_window_id:
+        # ゲームは起動直後にウィンドウを作り直すことがあり、検出時のIDは録画開始時には
+        # 無効になっている(th08で x11grab が "Can't find window" で起動失敗した、
+        # touhou-recorder reports/89 §5.3)ため、録画開始の直前に取り直す。
+        fresh = find_window(config, env, game_pid)
+        if fresh:
+            x, y, w, h, window_id = fresh
+            geometry = (x, y, w, h)
+        log(f"ウィンドウID基準で取り込みます (window_id={window_id})")
     detection = _EndDetection(
         template=end_template,
         still_mask=build_still_mask(config.still_detect_exclude_rect, w, h),
@@ -622,10 +666,13 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
 
     base, _ext = os.path.splitext(output_path)
     video_target = f"{base}.video.mp4"
-    audio_target = f"{base}.audio.m4a"
+    audio_target = f"{base}{audio_intermediate_extension(time_scale)}"
     side_stream_path = f"{base}.pollstream.jpg" if config.poll_side_stream else None
 
-    video_cmd = build_video_ffmpeg_cmd(config, x, y, w, h, video_target, side_stream_path)
+    video_cmd = build_video_ffmpeg_cmd(
+        config, x, y, w, h, video_target, side_stream_path,
+        time_scale=time_scale, gpu_encode=gpu_encode, window_id=window_id,
+    )
     log(f"録画開始(映像): {' '.join(video_cmd)}")
     video_log_path = f"{os.path.dirname(output_path)}/ffmpeg_video.log"
     video_log_file = open(video_log_path, "wb")
@@ -633,7 +680,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         video_cmd, env=env, stdin=subprocess.PIPE, stdout=video_log_file, stderr=subprocess.STDOUT,
     ), video_target, video_log_path, video_log_file)
 
-    audio_cmd = build_audio_ffmpeg_cmd(config, audio_target)
+    audio_cmd = build_audio_ffmpeg_cmd(config, audio_target, time_scale=time_scale)
     log(f"録画開始(音声・別プロセス): {' '.join(audio_cmd)}")
     audio_log_path = f"{os.path.dirname(output_path)}/ffmpeg_audio.log"
     audio_log_file = open(audio_log_path, "wb")
@@ -641,6 +688,8 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         audio_cmd, env=env, stdin=subprocess.PIPE, stdout=audio_log_file, stderr=subprocess.STDOUT,
     ), audio_target, audio_log_path, audio_log_file)
     record_start = time.time()
+    # 音声ffmpegの録音開始を待ってから、MODに同期マーカーを鳴らさせる(reports/88)。
+    sync_marker.schedule_trigger(config, log=log)
 
     detected, detected_by, frozen, crashed, last_color_frame = _monitor_until_end(
         config, env, geometry, detection, time_scale=time_scale,
@@ -648,7 +697,10 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         seen_lines=seen_lines, log=log, side_stream_path=side_stream_path,
     )
 
-    output_exists = _stop_and_mux(video, audio, output_path, env, log=log)
+    output_exists = _stop_and_mux(
+        video, audio, output_path, env, log=log,
+        time_scale=time_scale, marker_log_path=config.log_path,
+    )
 
     total_record_sec = time.time() - record_start
     if detected:
@@ -677,9 +729,10 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     # 終了検知の確認待ち(_CONFIRMATION_TAIL_POLL_COUNT_BY_DETECTION_METHOD参照)ぶん
     # total_record_secから差し引いた、リプレイ終了後の静止画面を含まない実質的な
     # コンテンツ終了秒。detected_byが対象外(timeout/frozen)ならtotal_record_secのまま。
-    confirmation_tail_poll_count = _CONFIRMATION_TAIL_POLL_COUNT_BY_DETECTION_METHOD.get(detected_by)
-    if confirmation_tail_poll_count is not None:
-        confirmation_tail_sec = scaled_poll_count(confirmation_tail_poll_count, time_scale) * POLL_INTERVAL_SEC
+    confirmation_tail = _CONFIRMATION_TAIL_POLL_COUNT_BY_DETECTION_METHOD.get(detected_by)
+    if confirmation_tail is not None:
+        base_count, scale_count = confirmation_tail
+        confirmation_tail_sec = scale_count(base_count, time_scale) * POLL_INTERVAL_SEC
         content_end_sec = max(0.0, total_record_sec - confirmation_tail_sec)
     else:
         content_end_sec = total_record_sec
@@ -719,7 +772,9 @@ def record_with_retry(config, replay_path, output_path, *,
 
     diagnostics_dir は試行を破棄した際の最終フレーム(Issue #159)の書き出し先。
     """
-    with pulse.job_sink(config.pulse_sink, log=log):
+    # 倍速録画ではゲームの音声出力レートに合わせた高レートのsinkを作る(`pulse.create_null_sink()`)。
+    sink_rate = audio_capture_rate_hz(recording_time_scale(config.build_env()))
+    with pulse.job_sink(config.pulse_sink, rate=sink_rate, log=log):
         return _record_with_retry(
             config, replay_path, output_path,
             progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,

@@ -4,9 +4,9 @@
 **録画後の再エンコードは、どのタイトル・どの録画速度でもこの1パスだけ**。次の3つを
 1つの ffmpeg 呼び出し(1回の filter_complex)にまとめてある:
 
-  1. 等倍への戻し(低速録画、Issue #68): 映像のPTSを圧縮し、音声のサンプルレートを
-     逆比率でリサンプルする。遅回しを早回しで戻す可逆変換なので、速度・ピッチとも
-     劣化なく復元できる(touhou-recorder reports/47)。
+  1. 等倍への戻し(倍速録画 Issue #288・低速録画 Issue #68): 映像のPTSを伸縮し、音声の
+     サンプルレートを逆比率で読み替える(テープの早回し・遅回しの逆)。速度・ピッチとも
+     同じ比率で戻るので劣化なく復元できる(touhou-recorder reports/47・85)。
   2. 解像度合わせ: **720pに満たない録画だけ引き上げる**。既に720p以上の録画
      (th20の1280x960)はそのまま通す —— 後述。
   3. ウォーターマークの合成: x11grab録画時ではなくここで行う。録画時は`-copyts`で
@@ -33,9 +33,18 @@
 - **2本**(th06/07/08/11の等倍録画): 録画された生データがそのまま「元解像度版」として
   通用するので、それを無加工でアップロードし、この変換の出力を「配信版」にする。
   再エンコードは1回だけで済む。
-- **1本**(th20、および低速録画): 生データを配信版と別に出す意味が無い(解像度が同じで
-  ウォーターマークの有無しか違わない)か、そもそも生データが半分の速度で通用しない。
-  この変換の出力だけを配信する。
+- **1本**(th20、および倍速・低速録画): 生データを配信版と別に出す意味が無い(解像度が
+  同じでウォーターマークの有無しか違わない)か、そもそも生データが等倍の速度でないため
+  通用しない。この変換の出力だけを配信する。
+
+## GPUワーカーではNVENCでエンコードする
+
+GPUワーカー(`GPU_WORKER=1`、`recording.timing.gpu_worker()`)ではこの変換もNVENCへ
+オフロードする(touhou-recorder reports/84で720p変換のCPU時間が58%減)。NVENCは同じ
+品質値でもlibx264よりビットレートが2.7〜3倍高くなる(reports/84)ため、品質値を
+libx264 crf18の出力サイズに揃うよう調整してある(`NVENC_DELIVERY_CQ`)。配信版の
+サイズはCloudFrontの無料枠(1TB/月)にそのまま効くので、ここを変える場合は
+必ず同じ録画でlibx264版とサイズを比較すること。
 """
 import json
 import subprocess
@@ -44,8 +53,16 @@ import time
 TARGET_HEIGHT = 720
 # on_progress コールバックを呼ぶ最小間隔(秒)。DynamoDBへの書き込み頻度を抑える。
 PROGRESS_REPORT_INTERVAL_SEC = 10.0
-# 低速録画を等倍へ戻すときに出力へ固定するフレームレート。
+# 倍速・低速録画を等倍へ戻すときに出力へ固定するフレームレート。
 NATIVE_FRAME_RATE_HZ = 60.0
+
+# NVENCで配信版を作るときの品質値(`-rc vbr -cq`、`-b:v 0`で品質固定=libx264のCRF相当)。
+# 配信版のビットレートはタイトル(画面の内容)で4〜13Mbpsと大きく違う(2026-09の本番実績、
+# libx264 crf18)ため、固定ビットレートではなく内容に適応する品質固定にする。
+# 同じ値ではNVENCがlibx264の2.7〜3倍のビットレートになる(reports/84)ことから、
+# 量子化を約+9段(ビットレート約1/3)した値を初期値とし、本番検証でlibx264版との
+# サイズ比較により確定させる(Issue #288)。
+NVENC_DELIVERY_CQ = 27
 # poster画像を切り出す位置(動画全体に対する割合)。0.9=末尾から数えて全体の90%地点。
 # 終盤の弾幕が盛り上がったシーンを狙う(Issue #171、リプレイ再生終了後の何も無い
 # 背景や選択画面が写り込む末尾ぎりぎりは避ける)。
@@ -136,7 +153,7 @@ def needs_separate_raw_output(width, height, time_scale=1.0):
 
     価値があるのは**解像度が実際に変わる等倍録画のときだけ**である。
 
-    - 低速録画(`time_scale != 1.0`)の生データは半分の速度なので、そのままでは
+    - 倍速・低速録画(`time_scale != 1.0`)の生データは等倍の速度でないので、そのままでは
       ユーザーに渡せない。別途出すには等倍化の再エンコードがもう1回要るが、
       得られるのは「配信版とウォーターマークの有無しか違わない動画」でしかない。
     - 解像度が変わらない録画(th20)も同様に、2本目はウォーターマークの有無しか
@@ -148,14 +165,23 @@ def needs_separate_raw_output(width, height, time_scale=1.0):
     return delivery_resolution(width, height) != (width, height)
 
 
+def _delivery_video_encoder_args(gpu_encode):
+    if gpu_encode:
+        return ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr",
+                "-cq", str(NVENC_DELIVERY_CQ), "-b:v", "0", "-pix_fmt", "yuv420p"]
+    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"]
+
+
 def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
-                      watermark_path=None, watermark_width=428, audio_sample_rate=None):
+                      watermark_path=None, watermark_width=428, audio_sample_rate=None,
+                      gpu_encode=False):
     """変換1回ぶんの ffmpeg コマンドを組み立てる(実行はしない。テストしやすくするため)。"""
     target_width, target_height = delivery_resolution(width, height)
 
     video_filters = []
     if time_scale != 1.0:
-        # 実時間がゲーム内時間の time_scale 倍かかっている録画を、その逆数で圧縮する。
+        # 実時間がゲーム内時間の time_scale 倍かかっている録画を、その逆数で伸縮する
+        # (低速録画は圧縮、倍速録画は引き伸ばし)。
         video_filters.append(f"setpts={1.0 / time_scale}*PTS")
     if (target_width, target_height) != (width, height):
         video_filters.append(f"scale={target_width}:{target_height}:flags=lanczos")
@@ -176,10 +202,14 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
         audio_maps = ["-map", "0:a"]
         audio_codec = ["-c:a", "copy"]
     elif audio_sample_rate:
-        # サンプルレートを上げて読む(asetrate)ことで早回しし、元のレートへ戻す
+        # サンプルレートを読み替える(asetrate)ことで早回し・遅回しし、リサンプルする
         # (aresample)。テープの早回しと同じ原理で、速度・ピッチとも同じ比率で戻る。
+        # 出力レートは等倍換算の低い方に揃える: 低速録画は録音レート(44100Hz)のまま、
+        # 倍速録画は録音レート(2倍速なら88200Hz)を倍率で割った値(44100Hz)になる。
+        # 倍速録画の録音レートのまま出すと、中身は44100Hz相当なのにファイルだけ大きくなる。
         asetrate = int(round(audio_sample_rate * time_scale))
-        graph.append(f"[0:a]asetrate={asetrate},aresample={audio_sample_rate}[a]")
+        output_rate = min(audio_sample_rate, asetrate)
+        graph.append(f"[0:a]asetrate={asetrate},aresample={output_rate}[a]")
         audio_maps = ["-map", "[a]"]
         audio_codec = ["-c:a", "aac", "-b:a", "192k"]
     else:
@@ -197,12 +227,14 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
         cmd += ["-c:v", "libvpx-vp9", "-i", watermark_path]
     cmd += ["-filter_complex", ";".join(graph), "-map", "[v]", *audio_maps]
     if time_scale != 1.0:
-        # 等倍へ戻すときだけ出力フレームレートを固定する。録画自体は等倍と同じ
-        # `-framerate 60` で撮っているため、低速録画の素材は各フレームが time_scale
-        # 枚ずつ並んだ状態にある。PTSを圧縮したうえでここへ落とすと**重複が
-        # ちょうど間引かれ**、等倍録画と同じ「60fps・全フレームユニーク」になる。
+        # 等倍へ戻すときだけ出力フレームレートを固定する。低速録画は等倍と同じ
+        # `-framerate 60` で撮っているため、素材は各フレームが time_scale 枚ずつ並んだ
+        # 状態にある。PTSを圧縮したうえでここへ落とすと**重複がちょうど間引かれ**、
+        # 等倍録画と同じ「60fps・全フレームユニーク」になる。倍速録画は60×倍率fpsで
+        # `-vsync 0`(可変フレームレート)のまま撮っているので、PTSを引き伸ばしたうえで
+        # ここで60fps固定に揃える(touhou-recorder reports/85・89)。
         cmd += ["-r", str(NATIVE_FRAME_RATE_HZ)]
-    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"]
+    cmd += _delivery_video_encoder_args(gpu_encode)
     # moov atomを先頭に移す(faststart)。無指定だと末尾に置かれ、ブラウザでの
     # ストリーミング再生時に末尾へのRangeリクエストが追加で発生してしまう(Issue #90)。
     cmd += ["-movflags", "+faststart"]
@@ -211,11 +243,12 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
 
 
 def convert_for_delivery(input_path, output_path, *, time_scale=1.0, watermark_path=None,
-                         watermark_width=428, on_progress=None, log=print, ffmpeg_log_path=None):
+                         watermark_width=428, on_progress=None, log=print, ffmpeg_log_path=None,
+                         gpu_encode=False):
     """録画結果を配信用の1本へ変換する(モジュール docstring 参照)。
 
     on_progress が指定されていれば、実際に変換処理が完了した**出力側の**動画時間
-    (秒、float)をおよそ PROGRESS_REPORT_INTERVAL_SEC 秒間隔で呼び出す。低速録画でも
+    (秒、float)をおよそ PROGRESS_REPORT_INTERVAL_SEC 秒間隔で呼び出す。倍速・低速録画でも
     出力は等倍なので、この値はそのまま「コンテンツ秒数」として
     `replayInfo.estimatedDurationSeconds` と比較できる。
 
@@ -238,12 +271,13 @@ def convert_for_delivery(input_path, output_path, *, time_scale=1.0, watermark_p
         input_path, output_path,
         width=width, height=height, time_scale=time_scale,
         watermark_path=watermark_path, watermark_width=watermark_width,
-        audio_sample_rate=audio_sample_rate,
+        audio_sample_rate=audio_sample_rate, gpu_encode=gpu_encode,
     )
     target_width, target_height = delivery_resolution(width, height)
     log(
         f"配信用に変換します: {width}x{height} -> {target_width}x{target_height} "
-        f"(time_scale={time_scale} watermark={'あり' if watermark_path else 'なし'})"
+        f"(time_scale={time_scale} watermark={'あり' if watermark_path else 'なし'} "
+        f"encoder={'NVENC' if gpu_encode else 'libx264'})"
     )
 
     if on_progress is None:
