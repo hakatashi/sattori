@@ -40,6 +40,7 @@
 
 .overallProgressMeta {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   justify-content: center;
   color: var(--text-muted);
@@ -54,6 +55,12 @@
 /* 低速録画(Issue #68)で走っていることの表示。異常ではないので retryHint と違い
    斜体にはせず、事実の注記として控えめに出す。 */
 .slowMotionHint {
+  color: var(--text-muted);
+}
+
+/* GPU録画の待ち行列(Issue #270)の順位・推定待ち時間。slowMotionHintと同じく
+   異常ではない事実の注記として控えめに出す。 */
+.queueHint {
   color: var(--text-muted);
 }
 
