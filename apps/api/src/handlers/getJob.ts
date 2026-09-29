@@ -98,6 +98,14 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     desyncDetected: job.desyncDetected ?? null,
     // 同じ理由（Issue #161追加より前の旧ジョブでは属性自体が無く`undefined`になりうる）。
     timedOut: job.timedOut ?? null,
+    // GPU vCPU容量リース（Issue #270）の待ち行列表示用。`AcquireGpuSlot`が
+    // ポーリングのたびに計算して書き込む値をそのまま転記するだけ（新規Query等は
+    // 行わない——3秒間隔のポーリングにGSI Queryを足さないための設計、
+    // `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`）。非GPUジョブ・待機して
+    // いないジョブ・このフィールド追加より前の旧ジョブでは属性自体が無いため
+    // `?? null`を通す。
+    queuePosition: job.gpuQueuePosition ?? null,
+    queueEstimatedWaitSeconds: job.gpuQueueEtaSeconds ?? null,
   };
   return json(200, response);
 };

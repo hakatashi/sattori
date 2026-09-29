@@ -50,6 +50,8 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     slowMotion: false,
     desyncDetected: null,
     timedOut: null,
+    queuePosition: null,
+    queueEstimatedWaitSeconds: null,
     ...overrides,
   };
 }
@@ -185,6 +187,70 @@ describe("JobProgressView のタイムアウト打ち切り注意書き（Issue 
   });
 });
 
+describe("JobProgressView のGPU録画の待ち行列表示（Issue #270）", () => {
+  it("queued かつ queuePosition があれば順位・推定待ち時間を表示する", () => {
+    render(
+      <JobProgressView
+        job={buildDoneJob({ status: "queued", queuePosition: 3, queueEstimatedWaitSeconds: 45 * 60 })}
+        loadError={null}
+      />,
+    );
+
+    expect(screen.getByText(/現在3番目です/)).toBeTruthy();
+    expect(screen.getByText(/あと約45分/)).toBeTruthy();
+  });
+
+  it("待ち行列の表示中は録画パイプラインの残り時間を出さない(待ち時間と矛盾して見えるため)", () => {
+    render(
+      <JobProgressView
+        job={buildDoneJob({ status: "queued", queuePosition: 3, queueEstimatedWaitSeconds: 45 * 60 })}
+        loadError={null}
+      />,
+    );
+
+    expect(screen.queryByText(/^残り約/)).toBeNull();
+  });
+
+  it("待ち行列を経ない通常のqueuedでは全体の残り時間を表示する", () => {
+    render(
+      <JobProgressView job={buildDoneJob({ status: "queued", queuePosition: null })} loadError={null} />,
+    );
+
+    expect(screen.getByText(/^残り約/)).toBeTruthy();
+  });
+
+  it("queueEstimatedWaitSecondsがnullなら推定待ち時間は表示しない", () => {
+    render(
+      <JobProgressView
+        job={buildDoneJob({ status: "queued", queuePosition: 1, queueEstimatedWaitSeconds: null })}
+        loadError={null}
+      />,
+    );
+
+    expect(screen.getByText(/現在1番目です/)).toBeTruthy();
+    expect(screen.queryByText(/あと約/)).toBeNull();
+  });
+
+  it("queuePositionがnull(非GPUタイトル・旧ジョブ等)なら何も表示しない", () => {
+    render(
+      <JobProgressView job={buildDoneJob({ status: "queued", queuePosition: null })} loadError={null} />,
+    );
+
+    expect(screen.queryByText(/番目です/)).toBeNull();
+  });
+
+  it("queued以外のステータスでは順位表示を出さない(表示しても値の意味が無い)", () => {
+    render(
+      <JobProgressView
+        job={buildDoneJob({ status: "recording", queuePosition: 2, progress: 10 })}
+        loadError={null}
+      />,
+    );
+
+    expect(screen.queryByText(/番目です/)).toBeNull();
+  });
+});
+
 describe("JobProgressView のプレビュー再生（Issue #71）", () => {
   it("完了ジョブはpreviewVideoUrlを<video>で再生できる", () => {
     render(
@@ -289,6 +355,8 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     slowMotion: false,
     desyncDetected: null,
     timedOut: null,
+    queuePosition: null,
+    queueEstimatedWaitSeconds: null,
     ...overrides,
   };
 }

@@ -331,6 +331,30 @@ describe("GET /jobs/{jobId}", () => {
     expect(body.timedOut).toBeNull();
   });
 
+  it("GPU録画の待ち行列で待機中のジョブはqueuePosition・queueEstimatedWaitSecondsを返す(Issue #270)", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, status: "queued", game: "th15", gpuQueuePosition: 2, gpuQueueEtaSeconds: 900 },
+    });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.queuePosition).toBe(2);
+    expect(body.queueEstimatedWaitSeconds).toBe(900);
+  });
+
+  it("待機していない・このフィールド追加より前の旧ジョブはqueuePosition・queueEstimatedWaitSecondsにnullを返す", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: doneJob });
+
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    const body = parseBody(res as APIGatewayProxyStructuredResultV2);
+
+    expect(body.queuePosition).toBeNull();
+    expect(body.queueEstimatedWaitSeconds).toBeNull();
+  });
+
   it("ジョブが存在しなければ404を返す", async () => {
     ddbMock.on(GetCommand).resolves({});
     const { handler } = await import("./getJob.js");
