@@ -106,7 +106,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         {
             const char* hz = getenv("FPS_LIMIT_TARGET_HZ");
             double targetHz = hz ? atof(hz) : 0.0;
-            if (targetHz > 0.0 && targetHz != 60.0) InstallFpsLimiterHook(60.0);
+            if (targetHz > 0.0 && targetHz != 60.0) InstallFpsLimiterHook(targetHz);
         }
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。

@@ -62,3 +62,37 @@ def test_parse_marker_log_returns_none_without_a_log(tmp_path):
 
 def test_windows_path_maps_to_the_z_drive():
     assert sync_marker.windows_path("/instance/sync_marker.trigger") == "Z:\\instance\\sync_marker.trigger"
+
+
+class _Config:
+    def __init__(self, instance_dir):
+        self.instance_dir = instance_dir
+
+
+def test_clear_trigger_cancels_a_pending_trigger(tmp_path):
+    """前の試行が設置前に中断されても、次の試行の開始時に古いタイマーを止める。"""
+    config = _Config(str(tmp_path))
+    timer = sync_marker.schedule_trigger(config, delay=0.2, log=lambda msg: None)
+
+    sync_marker.clear_trigger(config)
+    timer.join(1.0)
+
+    assert not (tmp_path / "sync_marker.trigger").exists()
+
+
+def test_verify_output_returns_none_when_ffprobe_output_is_unparsable(monkeypatch):
+    class _Result:
+        stdout = "N/A\n"
+
+    monkeypatch.setattr(sync_marker.subprocess, "run", lambda *a, **k: _Result())
+
+    assert sync_marker.verify_output("/out.mp4", {"rate": 44100}, 100.0) == (None, 0.0)
+
+
+def test_find_marker_time_returns_none_when_ffmpeg_cannot_run(monkeypatch):
+    def fail(*a, **k):
+        raise OSError("ffmpeg not found")
+
+    monkeypatch.setattr(sync_marker.subprocess, "run", fail)
+
+    assert sync_marker.find_marker_time("/a.mov", {"rate": 44100, "samples": 10, "seed": 1}) == (None, 0.0)

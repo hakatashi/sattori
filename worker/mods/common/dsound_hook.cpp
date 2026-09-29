@@ -165,6 +165,7 @@ static HRESULT WINAPI MyDirectSoundCreate8(const void* pcGuidDevice, void** ppDS
 static const DWORD kSyncMarkerSamples = 131072;
 static const short kSyncMarkerAmp = 256;  // -42dBFS。Wineのミキサーで各chへ約-6dB減衰して入る(reports/88)
 static const DWORD kSyncMarkerSeed = 0x2545F491u;
+static const int kSyncMarkerPlayAttempts = 10;
 
 typedef HRESULT(WINAPI* Lock_t)(void* pThis, DWORD dwOffset, DWORD dwBytes, void** ppvAudioPtr1,
                                 DWORD* pdwAudioBytes1, void** ppvAudioPtr2,
@@ -255,7 +256,14 @@ static DWORD WINAPI SyncMarkerThread(LPVOID param) {
     for (int i = 0; i < 20 * 60 * 200; i++) {
         if (GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES && g_ds8) {
             Log("SyncMarker: trigger found (%s)", path);
-            PlaySyncMarker();
+            // ゲームがまだSetCooperativeLevelを呼んでいない等でバッファを作れなかった場合に
+            // 備え、少し待って数回だけやり直す(やり直しても鳴らせなければ録画側は
+            // start_timeの差による補正へフォールバックする)。
+            for (int attempt = 0; attempt < kSyncMarkerPlayAttempts; attempt++) {
+                if (PlaySyncMarker()) return 0;
+                Sleep(100);
+            }
+            Log("SyncMarker: %d回試みても再生できませんでした", kSyncMarkerPlayAttempts);
             return 0;
         }
         Sleep(5);
@@ -306,6 +314,7 @@ void InitDSoundHookDynamic(double freqScale) {
 }
 
 void* WrapDirectSoundCreate8(void* real) {
+    if (!real) return real;
     if (!g_origDirectSoundCreate8) g_origDirectSoundCreate8 = (DirectSoundCreate8_t)real;
     return (void*)MyDirectSoundCreate8;
 }

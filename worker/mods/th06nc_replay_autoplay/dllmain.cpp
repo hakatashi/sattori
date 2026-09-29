@@ -173,6 +173,9 @@ FARPROC WINAPI MyGetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
 
     // 倍速録画(Issue #288)。DXライブラリはQPC・timeGetTime・音声APIをGetProcAddressで
     // 動的に取得するため、IATではなくここで差し替える。
+    // 取得に失敗した(NULL)関数はフック版に差し替えない(差し替えると呼び出し時に
+    // NULLの元関数を呼んでしまう)。
+    if (!real) return real;
     if (strcmp(lpProcName, "DirectSoundCreate8") == 0) {
         Log("GetProcAddress hook: DirectSoundCreate8 をフック版に差し替えました");
         return (FARPROC)WrapDirectSoundCreate8((void *)real);
