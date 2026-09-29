@@ -298,10 +298,10 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("GPU描画必須タイトル専用の EC2 Launch Template が g6f.xlarge 固定で存在する(Issue #241)", () => {
+  it("GPU必須ジョブ専用の EC2 Launch Template が g6f.2xlarge 固定で存在する(Issue #241・#288)", () => {
     template.hasResourceProperties("AWS::EC2::LaunchTemplate", {
       LaunchTemplateData: Match.objectLike({
-        InstanceType: "g6f.xlarge",
+        InstanceType: "g6f.2xlarge",
         ImageId: "ami-0123456789abcdef0",
         InstanceInitiatedShutdownBehavior: "terminate",
       }),

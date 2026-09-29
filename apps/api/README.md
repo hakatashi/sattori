@@ -59,7 +59,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    条件不成立（既に起動済み）なら `JobAlreadyStartedError` を捕まえて現在の状態を
    冪等に返すだけで、Step Functionsは再起動しない。
 2. **`sfn/acquireGpuSlot.ts`**（GPU vCPU容量リース、Issue #270）が最初に呼ばれる。
-   GPU描画必須タイトル（th06nc・th15）のみ`GpuSlotsTable`でvCPU容量を会計し、
+   GPU必須のジョブ（th06nc・th15と倍速録画、`requiresGpuRecording(job)`）のみ`GpuSlotsTable`でvCPU容量を会計し、
    空きが無ければ`WaitForGpuSlot`（アダプティブな間隔）を挟んで自分自身へ戻る
    ループを回す。投入順（FIFO）は`JobsTable`のsparse GSI`GpuQueueIndex`
    （PK=`gpuQueueState`, SK=`gpuQueuedAt`）で守り、列の先頭でなければ枠取りを
@@ -147,7 +147,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | th12 | `TH12_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th128 | `TH128_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th20 | `TH20_CANDIDATE_INSTANCE_TYPES` | `c7i.4xlarge` のみ |
-| th06nc・th15 | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.xlarge` / `g6f.2xlarge`（GPU描画必須、Issue #241・#82。確保済みvCPUリースに応じて`getCandidateInstanceTypes(game, { maxVcpu })`が絞り込む。Issue #270） |
+| th06nc・th15、および全タイトルの倍速録画 | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.2xlarge`のみ（GPU必須、Issue #241・#82・#288、[`decisions/0058`](../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)。GPU要否はタイトルではなくジョブ単位で決まるので`getCandidateInstanceTypes(job, { maxVcpu })`はジョブを受け取る） |
 
 > **候補を足す・変える前に
 > [`docs/decisions/0016`](../../docs/decisions/0016-ec2-fleet-instance-type-diversification.md)

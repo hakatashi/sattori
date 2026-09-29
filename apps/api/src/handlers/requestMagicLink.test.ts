@@ -346,6 +346,60 @@ describe("POST /magic-links", () => {
     expect(jobPut?.args[0].input.Item?.options).toMatchObject({ slowMotion: true });
   });
 
+  it("recordingSpeed を1〜4に正規化して保存する(Issue #288)", async () => {
+    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        options: { watermark: true, slowMotion: false, recordingSpeed: 3 },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ recordingSpeed: 3 });
+  });
+
+  it("不正な recordingSpeed は等倍に落とす", async () => {
+    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        options: { watermark: true, recordingSpeed: 8 } as never,
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ recordingSpeed: 1 });
+  });
+
+  it("倍速録画と低速録画が両方指定されたら低速録画を落とす(th20)", async () => {
+    mockUploadedReplay(new Uint8Array(await readFile(TH20_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        options: { watermark: true, slowMotion: true, recordingSpeed: 2 },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ slowMotion: false, recordingSpeed: 2 });
+  });
+
   it("低速録画に未対応のタイトル(th07)の.rpyなら options.slowMotion を握り潰す(Issue #101)", async () => {
     // 等倍で動くゲームに後処理の等倍化だけが掛かると2倍速の動画が出来上がるため、
     // ページAのグレーアウトをすり抜けた要求はここで落とす(録画自体は等倍で行える

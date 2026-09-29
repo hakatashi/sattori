@@ -1,4 +1,10 @@
-import { SLOW_MOTION_TARGET_HZ } from "@sattori/shared";
+import {
+  isSpeedupRecording,
+  recordingSpeedOf,
+  requiresGpuRecording,
+  SLOW_MOTION_TARGET_HZ,
+  speedupTargetHz,
+} from "@sattori/shared";
 import type {
   AdminJobRecord,
   JobRecord,
@@ -70,12 +76,28 @@ export function buildWorkerEnv(
     // （`worker/recording/modlog.py` の `check_replay_desync()`）。
     env.EXPECTED_SCORE = String(job.replayInfo.score);
   }
-  if (options.slowMotion) {
+  const recordingSpeed = recordingSpeedOf(job.options);
+  if (isSpeedupRecording(recordingSpeed)) {
+    // 倍速録画（Issue #288）。MOD（QPC偽装・Present上限・音声周波数）と録画スクリプトの
+    // 実時間依存パラメータが、この1つの値（60×倍率）から同じ比率でスケールする。
+    // QPC偽装の倍率（`SPEED_HACK_MULTIPLIER`）はワーカーがここから導出するので渡さない
+    // （2つの値が食い違う余地を作らないため、`worker/recording/config.py`）。
+    // 倍速録画は常にGPUインスタンスで走るため、割り当て先で無効化されることは無い。
+    env.FPS_LIMIT_TARGET_HZ = String(speedupTargetHz(recordingSpeed));
+  } else if (options.slowMotion) {
     // MOD（Present/DirectSound/fps表示のフック）と録画スクリプトの実時間依存
     // パラメータが、この1つの値から同じ比率でスケールする
     // （`docs/decisions/0014-slow-motion-scaling-across-pipeline.md`）。
     // **未指定＝等倍**が既定なので、等倍録画では付与しない。
     env.FPS_LIMIT_TARGET_HZ = String(SLOW_MOTION_TARGET_HZ);
+  }
+  if (requiresGpuRecording(job)) {
+    // GPU系インスタンス（g6f.2xlarge）で起動するジョブ。ワーカーはGPU描画必須でない
+    // タイトルもGPU描画（Xorg+nvidia）で録り、録画・変換ともNVENCでエンコードする
+    // （`worker/recording/timing.py`の`gpu_worker()`）。「どこで動くか」ではなく
+    // 「何が使えるか」を表す値で、GPUジョブは自宅ワーカーへは決してオファーされない
+    // （`workerRouting.ts`）ため、これが立っていればGPUは必ずある。
+    env.GPU_WORKER = "1";
   }
   if (options.spotInterruptionWatch) {
     env.SPOT_INTERRUPTION_WATCH = "1";

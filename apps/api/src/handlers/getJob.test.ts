@@ -367,6 +367,21 @@ describe("GET /jobs/{jobId}", () => {
    * EC2 へフォールバックしたかどうかまで織り込んだ「実際に低速録画で走るか」。
    * ジョブページの残り時間推定がこの値で2倍のバジェットを取る。
    */
+  it("recordingSpeed を返す(旧ジョブは1、Issue #288)", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, options: { watermark: true, slowMotion: false, recordingSpeed: 3 } },
+    });
+    const { handler } = await import("./getJob.js");
+    const res = await handler(makeEvent("job-1"), {} as never, () => {});
+    expect(parseBody(res as APIGatewayProxyStructuredResultV2).recordingSpeed).toBe(3);
+
+    ddbMock.on(GetCommand).resolves({
+      Item: { ...doneJob, options: { watermark: true, slowMotion: false } },
+    });
+    const legacy = await handler(makeEvent("job-1"), {} as never, () => {});
+    expect(parseBody(legacy as APIGatewayProxyStructuredResultV2).recordingSpeed).toBe(1);
+  });
+
   it("自宅ワーカーが引き受けた低速録画ジョブは slowMotion:true を返す", async () => {
     ddbMock.on(GetCommand).resolves({
       Item: { ...doneJob, options: { watermark: true, slowMotion: true }, workerKind: "home" },

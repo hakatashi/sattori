@@ -136,21 +136,20 @@ const TH128_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
 ];
 
 /**
- * GPU描画必須タイトル（th06nc・th15、`GPU_RECORDING_GAME_IDS`）専用の候補インスタンス
- * タイプ（Issue #241・#82）。GPU描画（Xorg+NVIDIA GRIDドライバ）が必須なため、CPU系
- * タイトルとは全く別のインスタンスファミリを使う
- * （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。th06ncはDXVK
- * （D3D11→Vulkan）、th15はwined3d（D3D9→OpenGL、DXVKはVulkan機能不足で起動できない、
- * touhou-recorder reports/82）と描画経路は異なるが、必要なインスタンスファミリは同じ。
+ * GPU必須のジョブ（`requiresGpuRecording()`: th06nc・th15と倍速録画、Issue #241・#82・#288）
+ * 専用の候補インスタンスタイプ。GPU描画（Xorg+NVIDIA GRIDドライバ）を使うため、CPU系
+ * とは全く別のインスタンスファミリを使う
+ * （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
  *
- * `g6f.xlarge`（NVIDIA L4の1/8スライス、4vCPU/16GiB）を第一候補とし、Spot枯渇耐性
- * （Issue #29）および1080p録画（touhou-recorder reports/81 §9.9.3で推奨）のために
- * `g6f.2xlarge`（8vCPU/32GiB）も候補に含める。eu-south-2のG系スポットクォータは
- * 32vCPU（`packages/shared/src/gpuQueue.ts`の`GPU_VCPU_QUOTA`）。
+ * **`g6f.2xlarge`（NVIDIA L4の1/4スライス、8vCPU/32GiB）のみ**。かつては`g6f.xlarge`
+ * （4vCPU）を第一候補にしていたが、eu-south-2で長期間枯渇が続いており、倍速録画
+ * （touhou-recorder reports/85〜90）は8vCPUでしか検証されていない（4vCPUではゲーム本体と
+ * キャプチャ・エンコードがCPUを奪い合い2倍速を維持できない、reports/85）ため外した
+ * （Issue #288）。eu-south-2のG系スポットクォータは32vCPU＝同時4本
+ * （`packages/shared/src/gpuQueue.ts`の`GPU_VCPU_QUOTA`）。
  */
 const GPU_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "g6f.xlarge", // NVIDIA L4 1/8スライス (4vCPU/16GiB)。reports/80・81実測、第一候補
-  "g6f.2xlarge", // NVIDIA L4 1/4スライス (8vCPU/32GiB)。reports/81実測で1080p推奨・xlarge枯渇対策
+  "g6f.2xlarge", // NVIDIA L4 1/4スライス (8vCPU/32GiB)。reports/81・89実測
 ];
 
 /**
@@ -169,11 +168,16 @@ export interface LaunchConstraints {
 
 /** module-privateではなくexportする（`ec2.test.ts`から直接検証するため）。 */
 export function getCandidateInstanceTypes(
-  game: JobRecord["game"],
+  job: Pick<JobRecord, "game" | "options">,
   constraints: LaunchConstraints = {},
 ): InstanceType[] {
+  const isGpuJob = requiresGpuRecording(job);
   const base = ((): InstanceType[] => {
-    switch (game) {
+    // GPU必須のジョブはタイトルによらずGPU候補を使う（倍速録画は全タイトルが対象）。
+    if (isGpuJob) {
+      return GPU_CANDIDATE_INSTANCE_TYPES;
+    }
+    switch (job.game) {
       case "th11":
         return TH11_CANDIDATE_INSTANCE_TYPES;
       case "th12":
@@ -182,9 +186,6 @@ export function getCandidateInstanceTypes(
         return TH20_CANDIDATE_INSTANCE_TYPES;
       case "th128":
         return TH128_CANDIDATE_INSTANCE_TYPES;
-      case "th06nc":
-      case "th15":
-        return GPU_CANDIDATE_INSTANCE_TYPES;
       default:
         return DEFAULT_CANDIDATE_INSTANCE_TYPES;
     }
@@ -192,7 +193,7 @@ export function getCandidateInstanceTypes(
 
   // GPUジョブでもmaxVcpu未指定なら全候補(呼び出し側の安全弁)。CPU系タイトルは
   // requiresGpuRecording()がfalseなのでこの絞り込みを一切通らない。
-  if (constraints.maxVcpu === undefined || !requiresGpuRecording(game)) {
+  if (constraints.maxVcpu === undefined || !isGpuJob) {
     return base;
   }
   const filtered = base.filter(
@@ -234,12 +235,12 @@ function shellEscape(value: string): string {
  * 録画/変換の成功・失敗を `SendTaskSuccess`/`SendTaskFailure` で直接通知するために渡す。
  */
 export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: string): string {
-  // GPU描画必須タイトル（th06nc、Issue #241）は別ECRイメージ（`worker-gpu`）・
+  // GPU必須のジョブ（th06nc・th15と倍速録画、Issue #241・#288）は別ECRイメージ（`worker-gpu`）・
   // GPU用カスタムAMI（Launch Templateはこの関数の外、`launchRecordingInstance()`側で
   // 分岐する）を使う。AMIにNVIDIA GRIDドライバ・nvidia-container-toolkitを事前導入
   // 済みのため、`docker run`にGPUを渡す`--gpus all`を追加するだけでよい
   // （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
-  const isGpuJob = requiresGpuRecording(job.game);
+  const isGpuJob = requiresGpuRecording(job);
   const workerImage = isGpuJob ? config.workerGpuImage : config.workerImage;
   const registry = workerImage.split("/")[0] ?? "";
 
@@ -251,6 +252,8 @@ export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: stri
   // 低速録画を行う（Issue #245）。非対応タイトルでユーザーが低速録画を選んでいた場合、
   // EC2 に落ちた時点で等倍録画になる。
   // Spot中断監視（Issue #96）はIMDSが存在するEC2でのみ有効にする。
+  // 倍速録画（Issue #288）は`buildWorkerEnv()`が`job.options`から直接読む（常にGPUで走り、
+  // 割り当て先で無効化されることが無いため）。
   const slowMotion = job.options.slowMotion && supportsEc2SlowMotion(job.game);
   const envFlags = Object.entries(
     buildWorkerEnv(config, job, taskToken, { slowMotion, spotInterruptionWatch: true }),
@@ -480,8 +483,8 @@ export async function launchRecordingInstance(
   constraints: LaunchConstraints = {},
 ): Promise<LaunchedInstance> {
   const userData = buildUserData(config, job, taskToken);
-  const candidateInstanceTypes = getCandidateInstanceTypes(job.game, constraints);
-  const isGpuJob = requiresGpuRecording(job.game);
+  const candidateInstanceTypes = getCandidateInstanceTypes(job, constraints);
+  const isGpuJob = requiresGpuRecording(job);
   const launchTemplateId = isGpuJob ? config.ec2.gpuLaunchTemplateId : config.ec2.launchTemplateId;
   const subnetIds = config.ec2.subnetIds;
 

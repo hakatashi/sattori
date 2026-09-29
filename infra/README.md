@@ -151,8 +151,8 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   により上書きする（ここでのUserDataはプレースホルダで実際に使われることはない）。
   **この分離を崩さないこと** ——
   [`docs/decisions/0002`](../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)。
-  GPU描画必須タイトル（th06nc等）専用にもう1本`GpuWorkerLaunchTemplate`を持つ
-  （`g6f.xlarge`固定、AMIはSSM動的解決ではなく事前構築したカスタムAMIをコンテキスト値
+  GPU必須のジョブ（th06nc・th15と倍速録画）専用にもう1本`GpuWorkerLaunchTemplate`を持つ
+  （`g6f.2xlarge`固定——Issue #288で起動候補を`g6f.2xlarge`だけにした、AMIはSSM動的解決ではなく事前構築したカスタムAMIをコンテキスト値
   `gpuWorkerAmiId`で固定参照する。**未設定のままsynthすると例外で失敗する**——
   `cdk.json`の`context`に設定するか`-c gpuWorkerAmiId=ami-xxxx`で指定すること、
   AMI構築手順は`build-gpu-worker-ami` skill、
