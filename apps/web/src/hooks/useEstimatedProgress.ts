@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { recordingWallClockScale } from "@sattori/shared";
+
 import type { GetJobResponse, JobStatus } from "@sattori/shared";
-import { MIN_CONVERTING_RATE, MIN_UPLOAD_BYTES_PER_SECOND } from "./jobProgressBudget.ts";
+import { MIN_CONVERTING_RATE, MIN_UPLOAD_BYTES_PER_SECOND, recordingScaleForJob } from "./jobProgressBudget.ts";
 
 /**
  * 録画フェーズはリプレイを再生しながら録画するため、進捗(コンテンツ秒数)の進む速度は
  * 実時間1秒あたり1秒で確定している。ただし低速録画(Issue #68)ではゲームが半分の速度で
- * 走るため、実時間1秒あたりコンテンツ0.5秒しか進まない(`recordingRate()`)。
+ * 走るため実時間1秒あたりコンテンツ0.5秒、倍速録画(Issue #288)では約N/1.05秒進む
+ * (`recordingRate()`)。
  * 変換フェーズはサーバースペックに応じて4〜6倍速程度で進む想定だが、個々のジョブでどの速度に
  * なるかは事前に分からないため、実測データが集まるまでの初期値として保守的な下限寄りの値を使う。
  */
-function recordingRate(slowMotion: boolean): number {
-  return 1 / recordingWallClockScale(slowMotion);
+/** 録画中、実時間1秒あたりに進むコンテンツ秒数(低速録画0.5、倍速録画は約N/1.05)。 */
+function recordingRate(job: Pick<GetJobResponse, "slowMotion" | "recordingSpeed">): number {
+  return 1 / recordingScaleForJob(job);
 }
 const DEFAULT_CONVERTING_RATE = 4;
 const MAX_CONVERTING_RATE = 8;
@@ -149,7 +151,7 @@ export function useEstimatedProgress(job: GetJobResponse | null): number | null 
 
   const rate = job
     ? job.status === "recording"
-      ? recordingRate(job.slowMotion)
+      ? recordingRate(job)
       : job.status === "converting"
         ? convertingRateRef.current
         : job.status === "uploading"

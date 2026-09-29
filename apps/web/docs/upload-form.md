@@ -90,3 +90,23 @@ EC2（GPU系インスタンス`g6f.xlarge`）で録画されるため、720p/108
 - **1080p録画は品質が不安定になりうる**ことをヒント文で案内する
   （touhou-recorder reports/81 §9.9.3の実測、`docs/decisions/0046`参照。
   g6f.xlarge=4vCPUのまま1080pを提供しているため）。
+
+## 4. 録画速度オプション（Issue #288）
+
+ゲームを内部的にN倍速（1〜4倍速）で動かして録画し、後処理で元の速度へ戻す
+（[`docs/decisions/0058`](../../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。
+詳細設定に4択のラジオボタンとして置く。
+
+- **選べるタイトルは段階的に広げる**（`src/recordingSpeedRollout.ts`の
+  `RECORDING_SPEED_SELECTABLE_GAME_IDS`）。th15 → th07 → 残り全タイトルの順（ユーザー判断）。
+  未公開のタイトルは選択肢を無効化して理由を出し、等倍で送信する。バックエンドは全タイトルで
+  受け付けるため、公開範囲はこの定数だけで決まる。
+- **既定値はタイトルごとの「おすすめ」**（`recommendedRecordingSpeed()`、th06ncは解像度で変わる）。
+  ユーザーが選ぶまではおすすめを値として保持せず都度導出する（`recordingSpeedChoice`が null）。
+  1080pに切り替えたときおすすめ（2→1倍速）へ追従させるため。別のリプレイを選び直したら
+  選択を捨てておすすめへ戻す。
+- **各選択肢に推定完了時間を添える**（`estimateRecordingCompletionSeconds()`。録画開始から完了まで、
+  待ち行列の待ち時間は含まない）。
+- **おすすめより速い速度を選ぶと警告を出すが、止めはしない**（3倍速以上はx11grabのキャプチャが
+  律速して落ちフレームが増える、`docs/known-limitations.md`）。警告文にはタイトル名を入れる。
+- 低速録画とは排他で、倍速を選んでいれば`slowMotion`は false で送る（サーバー側も倍速を優先する）。

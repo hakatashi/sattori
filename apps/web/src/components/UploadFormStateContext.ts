@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, type Dispatch, type SetStateAction } from "react";
-import { DEFAULT_RECORDING_OPTIONS, type ReplayInfo } from "@sattori/shared";
+import { DEFAULT_RECORDING_OPTIONS, type RecordingSpeed, type ReplayInfo } from "@sattori/shared";
 
 /**
  * idle: 未選択、または直前の選択がエラーで終わった状態。
@@ -36,6 +36,14 @@ export interface UploadFormPersistedState {
   setTh10BugfixMarisaB: Dispatch<SetStateAction<boolean>>;
   th06ncHighResolution: boolean;
   setTh06ncHighResolution: Dispatch<SetStateAction<boolean>>;
+  /**
+   * ユーザーが明示的に選んだ録画速度（Issue #288）。null なら「おすすめ」
+   * （`recommendedRecordingSpeed()`）に従う。おすすめはタイトルとth06ncの解像度で変わるため、
+   * 未選択の間は値を保持せず都度導出する（解像度を切り替えたときに追従させるため）。
+   * 別のリプレイを選び直したら null に戻す。
+   */
+  recordingSpeedChoice: RecordingSpeed | null;
+  setRecordingSpeedChoice: Dispatch<SetStateAction<RecordingSpeed | null>>;
 }
 
 export const UploadFormStateContext = createContext<UploadFormPersistedState | null>(null);
@@ -62,6 +70,7 @@ export function useUploadFormPersistedState(): UploadFormPersistedState {
   const [th06ncHighResolution, setTh06ncHighResolution] = useState(
     DEFAULT_RECORDING_OPTIONS.th06ncHighResolution,
   );
+  const [recordingSpeedChoice, setRecordingSpeedChoice] = useState<RecordingSpeed | null>(null);
 
   return {
     file,
@@ -84,6 +93,8 @@ export function useUploadFormPersistedState(): UploadFormPersistedState {
     setTh10BugfixMarisaB,
     th06ncHighResolution,
     setTh06ncHighResolution,
+    recordingSpeedChoice,
+    setRecordingSpeedChoice,
   };
 }
 

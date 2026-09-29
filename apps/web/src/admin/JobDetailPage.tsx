@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   calculateDownloadExpiresAt,
   isSlowMotionRecording,
+  recordingSpeedOf,
   OUTPUT_RETENTION_DAYS,
 } from "@sattori/shared";
 import type { WorkerKind } from "@sattori/shared";
@@ -133,6 +134,9 @@ export function JobDetailPage() {
                   {data.job.options.slowMotion &&
                     `（実際: ${isSlowMotionRecording(data.job.options, data.job.workerKind, data.job.game) ? "低速録画" : "等倍録画にフォールバック"}）`}
                 </dd>
+                {/* 倍速録画（Issue #288）。割り当て先によるフォールバックは無い。 */}
+                <dt>recordingSpeed</dt>
+                <dd>{`${recordingSpeedOf(data.job.options)}x`}</dd>
                 <dt>th10BugfixMarisaB</dt>
                 <dd>{data.job.options.th10BugfixMarisaB ? "true" : "false"}</dd>
                 <dt>progress</dt>

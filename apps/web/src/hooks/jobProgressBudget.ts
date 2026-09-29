@@ -1,4 +1,5 @@
-import { recordingWallClockScale } from "@sattori/shared";
+import { recordingWallClockScale, recordingWallClockSeconds } from "@sattori/shared";
+import type { GetJobResponse } from "@sattori/shared";
 
 /**
  * launching(EC2 Spot起動〜ワーカー起動完了)の悲観的所要時間の仮置き値。
@@ -62,13 +63,14 @@ export interface PhaseBudgets {
  * 計算する。
  *
  * recording はリプレイを再生しながら録画するので、通常はリプレイの再生時間そのもの
- * (等倍)。ただし低速録画(Issue #68)ではゲームを1/2倍速で走らせるため、同じ
- * リプレイでも実時間では `SLOW_MOTION_TIME_SCALE` 倍かかる。**これを織り込まないと、
+ * (等倍)に `recordingScale`(`recordingScaleForJob()`)を掛ける。低速録画(Issue #68)では
+ * ゲームを1/2倍速で走らせるため実時間で `SLOW_MOTION_TIME_SCALE` 倍、倍速録画
+ * (Issue #288)では約1/N倍になる。**これを織り込まないと、
  * th20の低速録画は録画フェーズの途中でバジェットを使い切り、「残り約○分」が消えた上に
  * `isPhaseOverrun()` がリトライ疑いを誤検知する**(悲観バジェットの1.5倍＝等倍換算
  * 1.5倍を、2倍かかる録画は必ず超えるため)。
  *
- * converting は録画結果(等倍に戻した後の動画)に対する処理なので、低速録画でも
+ * converting は録画結果(等倍に戻した後の動画)に対する処理なので、低速・倍速録画でも
  * 尺は変わらない——スケールしてはいけない。最悪ケースでも MIN_CONVERTING_RATE 倍速
  * (recordingの1/3の長さ)で終わることを仮定する。
  *
@@ -79,11 +81,11 @@ export interface PhaseBudgets {
  */
 export function computePhaseBudgets(
   estimatedDurationSeconds: number | null,
-  slowMotion = false,
+  recordingScale = 1,
   uploadTotalBytes: number | null = null,
 ): PhaseBudgets {
   const perPhase = estimatedDurationSeconds ?? FALLBACK_ESTIMATED_DURATION_SECONDS;
-  const recording = perPhase * recordingWallClockScale(slowMotion);
+  const recording = perPhase * recordingScale;
   const converting = perPhase / MIN_CONVERTING_RATE;
   const uploading = uploadTotalBytes !== null ? uploadTotalBytes / MIN_UPLOAD_BYTES_PER_SECOND : 0;
   return {
@@ -94,6 +96,18 @@ export function computePhaseBudgets(
     uploading,
     total: LAUNCHING_BUDGET_SECONDS + recording + converting + uploading,
   };
+}
+
+/**
+ * 録画フェーズの実時間が、リプレイの尺(等倍の秒数)の何倍かかるか。等倍なら1、
+ * 低速録画なら2、倍速録画なら約1.05/N(`recordingWallClockSeconds()`、ロード区間など
+ * 実時間で進む部分のぶん理想値の1/Nより少し長い)。
+ */
+export function recordingScaleForJob(job: Pick<GetJobResponse, "slowMotion" | "recordingSpeed">): number {
+  if (job.slowMotion) {
+    return recordingWallClockScale(true);
+  }
+  return recordingWallClockSeconds(1, job.recordingSpeed);
 }
 
 export function computeOverallPercent(
