@@ -18,10 +18,15 @@ static LONGLONG g_baseReal = 0;
 static bool g_haveBase = false;
 
 static BOOL WINAPI MyQueryPerformanceCounter(LARGE_INTEGER* lpPerformanceCount) {
+    // NULLを渡されたら元の関数の挙動に任せる(自前の変数で呼んでから書き込むと、
+    // 元の関数なら返せたはずのエラーの代わりにこちらでアクセス違反になる)。
+    if (!lpPerformanceCount) return g_origQPC(lpPerformanceCount);
     LARGE_INTEGER real;
     BOOL ok = g_origQPC(&real);
     if (!ok) return ok;
 
+    // 基準時刻は通常InitBases()(DLL_PROCESS_ATTACH中、単一スレッド)で確定済み。
+    // ここは確定前に呼ばれた場合の保険。
     if (!g_haveBase) {
         g_baseReal = real.QuadPart;
         g_haveBase = true;
@@ -48,6 +53,28 @@ static DWORD WINAPI MyGetTickCount() {
     DWORD real = g_origGetTickCount();
     if (!g_haveBaseTick) { g_baseTick = real; g_haveBaseTick = true; }
     return g_baseTick + (DWORD)((double)(DWORD)(real - g_baseTick) * g_speedMultiplier);
+}
+
+// 基準時刻を、フックを差し込む時点(DLL_PROCESS_ATTACH中＝ローダーロック下の単一スレッド、
+// またはGetProcAddressフック内)で確定させる。初回呼び出し時に遅延初期化すると、ゲームの
+// 複数スレッドが同時に初めて呼んだ場合に基準の書き込みが競合し、32bitでは64bit値の読み書きが
+// 分断されうる(基準がずれるとゲーム内時間が跳ぶ)。
+static void InitBases() {
+    if (g_origQPC && !g_haveBase) {
+        LARGE_INTEGER real;
+        if (g_origQPC(&real)) {
+            g_baseReal = real.QuadPart;
+            g_haveBase = true;
+        }
+    }
+    if (g_origTimeGetTime && !g_haveBaseTgt) {
+        g_baseTgt = g_origTimeGetTime();
+        g_haveBaseTgt = true;
+    }
+    if (g_origGetTickCount && !g_haveBaseTick) {
+        g_baseTick = g_origGetTickCount();
+        g_haveBaseTick = true;
+    }
 }
 
 static bool HookIATEntry(const char* dllName, const char* funcName, void* newFunc,
@@ -83,14 +110,16 @@ static bool HookIATEntry(const char* dllName, const char* funcName, void* newFun
 }
 
 void* WrapQueryPerformanceCounterForSpeedHack(void* real) {
-    if (g_speedMultiplier == 1.0) return real;
+    if (g_speedMultiplier == 1.0 || !real) return real;
     if (!g_origQPC) g_origQPC = (QueryPerformanceCounter_t)real;
+    InitBases();
     return (void*)MyQueryPerformanceCounter;
 }
 
 void* WrapTimeGetTimeForSpeedHack(void* real) {
-    if (g_speedMultiplier == 1.0) return real;
+    if (g_speedMultiplier == 1.0 || !real) return real;
     if (!g_origTimeGetTime) g_origTimeGetTime = (timeGetTime_t)real;
+    InitBases();
     return (void*)MyTimeGetTime;
 }
 
@@ -121,6 +150,7 @@ bool InstallSpeedHackHook(double multiplier) {
     if (tick)
         okTick = HookIATEntry("KERNEL32.dll", "GetTickCount", (void*)MyGetTickCount,
                               (void**)&g_origGetTickCount);
+    InitBases();
     Log("InstallSpeedHackHook: QPC hook %s, timeGetTime hook %s, GetTickCount hook %s "
         "(multiplier=%.2f)",
         ok ? "OK" : "FAILED", tgt ? (okTgt ? "OK" : "FAILED") : "off",

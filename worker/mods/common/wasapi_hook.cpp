@@ -109,14 +109,19 @@ static HRESULT WINAPI MyInitialize(void* self, int mode, DWORD flags, LONGLONG d
     WAVEFORMATEX* copy = (WAVEFORMATEX*)malloc(n);
     memcpy(copy, fmt, n);
     ScaleRate(copy, g_freqScale);
-    g_channels = copy->nChannels;
-    g_bits = copy->wBitsPerSample;
-    g_blockAlign = copy->nBlockAlign;
-    g_streamRate = copy->nSamplesPerSec;
-    g_isFloat = copy->wFormatTag == 3 /*WAVE_FORMAT_IEEE_FLOAT*/ ||
-                (copy->wFormatTag == 0xFFFE /*EXTENSIBLE*/ && copy->cbSize >= 22 &&
-                 IsEqualGUID(*(const GUID*)((const BYTE*)copy + sizeof(WAVEFORMATEX) + 6), kSubtypeFloat));
     HRESULT hr = g_origInitialize(self, mode, flags, dur, period, copy, session);
+    // マーカーの書き込みに使うフォーマットは、実際にストリームを開けたときだけ反映する
+    // (失敗したフォーマットを残すと、ゲームが別フォーマットで開き直さなかった場合に
+    // 食い違った前提で書き込むことになる)。
+    if (SUCCEEDED(hr)) {
+        g_channels = copy->nChannels;
+        g_bits = copy->wBitsPerSample;
+        g_blockAlign = copy->nBlockAlign;
+        g_streamRate = copy->nSamplesPerSec;
+        g_isFloat = copy->wFormatTag == 3 /*WAVE_FORMAT_IEEE_FLOAT*/ ||
+                    (copy->wFormatTag == 0xFFFE /*EXTENSIBLE*/ && copy->cbSize >= 22 &&
+                     IsEqualGUID(*(const GUID*)((const BYTE*)copy + sizeof(WAVEFORMATEX) + 6), kSubtypeFloat));
+    }
     Log("WASAPI Initialize: mode=%d flags=0x%lX game_rate=%lu stream_rate=%lu ch=%u bits=%u float=%d "
         "hr=0x%08lX",
         mode, (unsigned long)flags, (unsigned long)fmt->nSamplesPerSec, (unsigned long)g_streamRate,
@@ -169,7 +174,10 @@ static HRESULT WINAPI MyReleaseBuffer(void* self, UINT32 frames, DWORD flags) {
             Log("SyncMarker(WASAPI): 注入完了");
         }
     }
-    return g_origReleaseBuffer(self, frames, flags);
+    HRESULT hr = g_origReleaseBuffer(self, frames, flags);
+    // ReleaseBuffer後のバッファは無効。次のGetBufferまで参照しないよう捨てる。
+    g_lastBuffer = nullptr;
+    return hr;
 }
 
 static HRESULT WINAPI MyGetService(void* self, REFIID riid, void** ppv) {

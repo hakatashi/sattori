@@ -54,7 +54,17 @@ def windows_path(path):
     return "Z:" + os.path.abspath(path).replace("/", "\\")
 
 
+# 設置待ちのトリガー(instance_dirごと)。前の試行が設置前に中断された場合に、次の試行の
+# ゲーム起動後(音声の録音開始前)に古いタイマーがトリガーを置いてしまうと、MODが録音開始前に
+# マーカーを鳴らし終えて検出できなくなるため、`clear_trigger()`で必ず止める。
+_pending_timers = {}
+
+
 def clear_trigger(config):
+    """設置待ちのトリガーを取り消し、既に置かれたトリガーファイルを消す。各試行の開始時に呼ぶ。"""
+    timer = _pending_timers.pop(config.instance_dir, None)
+    if timer is not None:
+        timer.cancel()
     try:
         os.remove(trigger_path(config))
     except FileNotFoundError:
@@ -73,6 +83,7 @@ def schedule_trigger(config, delay=TRIGGER_DELAY_SEC, log=print):
         log("同期マーカーのトリガーを設置しました")
     t = threading.Timer(delay, _touch)
     t.daemon = True
+    _pending_timers[config.instance_dir] = t
     t.start()
     return t
 
@@ -145,9 +156,13 @@ def locate(signal_, seq):
 
 
 def find_marker_time(path, marker, env=None, stream="a:0"):
-    """音声(入力ファイルのstart_time基準)上でマーカーが始まる秒数と信頼度。"""
+    """音声(入力ファイルのstart_time基準)上でマーカーが始まる秒数と信頼度。
+    デコードできなければ(None, 0.0)。"""
     rate = marker["rate"]
-    x = decode_mono(path, rate, env=env, stream=stream)
+    try:
+        x = decode_mono(path, rate, env=env, stream=stream)
+    except (subprocess.SubprocessError, OSError):
+        return None, 0.0
     if len(x) < marker["samples"]:
         return None, 0.0
     pos, ratio = locate(x, marker_sequence(marker["samples"], marker["seed"]))
@@ -158,7 +173,17 @@ def verify_output(output_path, marker, video_first_frame_epoch, env=None):
     """mux後の動画で、マーカーの音声上の位置と映像の時間軸上の期待位置の差(秒)を返す。
 
     映像の時間軸: 出力動画の映像ストリームのstart_time(ファイル先頭基準)が、
-    録画した映像の先頭フレームの壁時計時刻に対応する。"""
+    録画した映像の先頭フレームの壁時計時刻に対応する。
+
+    ffprobeの失敗・想定外の出力(`N/A`等)では(None, 0.0)を返す。検証は補正の念押しに
+    すぎないため、ここで例外を出して録画の試行ごと失敗させてはならない。"""
+    try:
+        return _verify_output(output_path, marker, video_first_frame_epoch, env)
+    except (ValueError, IndexError, subprocess.SubprocessError, OSError):
+        return None, 0.0
+
+
+def _verify_output(output_path, marker, video_first_frame_epoch, env):
     def stream_start(sel):
         out = subprocess.run(
             ["ffprobe", "-v", "error", "-select_streams", sel, "-show_entries",

@@ -107,6 +107,11 @@ FREEZE_CONSECUTIVE_REQUIRED = 150  # 150 * POLL_INTERVAL_SEC = 300秒(5分、等
 PROGRESS_SNAPSHOT_EVERY_N_POLLS = 5
 
 
+# `capture_by_window_id`で録画直前にウィンドウIDを取り直す際のやり直し(計約2秒)。
+WINDOW_ID_REFETCH_ATTEMPTS = 10
+WINDOW_ID_REFETCH_INTERVAL_SEC = 0.2
+
+
 MAX_ATTEMPTS_DEFAULT = 3
 MAX_DUPLICATE_RATE_DEFAULT = 30.0
 
@@ -649,12 +654,25 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     if config.gpu_display and config.capture_by_window_id:
         # ゲームは起動直後にウィンドウを作り直すことがあり、検出時のIDは録画開始時には
         # 無効になっている(th08で x11grab が "Can't find window" で起動失敗した、
-        # touhou-recorder reports/89 §5.3)ため、録画開始の直前に取り直す。
-        fresh = find_window(config, env, game_pid)
+        # touhou-recorder reports/89 §5.3)ため、録画開始の直前に取り直す。作り直しの
+        # 瞬間は一時的に見つからないことがあるので、少しだけやり直す。
+        fresh = None
+        for _ in range(WINDOW_ID_REFETCH_ATTEMPTS):
+            fresh = find_window(config, env, game_pid)
+            if fresh:
+                break
+            time.sleep(WINDOW_ID_REFETCH_INTERVAL_SEC)
         if fresh:
             x, y, w, h, window_id = fresh
             geometry = (x, y, w, h)
-        log(f"ウィンドウID基準で取り込みます (window_id={window_id})")
+            log(f"ウィンドウID基準で取り込みます (window_id={window_id})")
+        else:
+            # 座標基準で続行する(録画自体はできる)。th08のGPU描画ではゲームがウィンドウを
+            # 動かすと映像がずれ、終了検知に失敗してタイムアウトになりうる。
+            log(
+                "WARNING: 録画直前にウィンドウIDを取り直せなかったため、座標基準で取り込みます"
+                f"(x={x} y={y})。録画中にウィンドウが動くと映像がずれる可能性があります"
+            )
     detection = _EndDetection(
         template=end_template,
         still_mask=build_still_mask(config.still_detect_exclude_rect, w, h),
