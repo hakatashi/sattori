@@ -23,6 +23,9 @@
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
 #include "../common/logging.h"
+#include "../common/speed_hack_hook.h"
+#include "../common/fps_limiter_hook.h"
+#include "../common/dsound_hook.h"
 #include "../common/fps_monitor.h"
 #include "../common/score_monitor.h"
 
@@ -85,6 +88,14 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         LogInit(hinst, "th12_autoplay.log");
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
+        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+        InstallSpeedHackHook();
+        // 倍速録画(reports/89)でPresentの上限をFPS_LIMIT_TARGET_HZに合わせ、BGM/SEの
+        // 再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールする(A/V同期マーカーもここで有効になる、
+        // reports/88)。FPS_LIMIT_TARGET_HZ未設定(等倍)時はscale=1.0で従来動作と互換
+        // (touhou-recorderでは低速録画検証のフェーズ58・62から同じ構成)。
+        InstallFpsLimiterHook(60.0);
+        InstallDSoundHook(1.0);
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th12.cppの`THAdvOptWnd`内、プラクティスモードパラメータ書き込み
         // コード)から収集した絶対VA(0x4b0c44=score)を、image base(0x400000)を
