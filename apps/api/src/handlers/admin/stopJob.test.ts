@@ -410,6 +410,28 @@ describe("POST /admin/jobs/{jobId}/stop（GPU vCPU容量リースの返却、Iss
 
     expect(res.statusCode).toBe(200);
     expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(1);
+    // 待機列（GpuQueueIndexのキー属性を含む）も剥がす。
+    const removeCall = ddbMock
+      .commandCalls(UpdateCommand)
+      .find((call) => String(call.args[0].input.UpdateExpression).includes("REMOVE gpuQueueState"));
+    expect(removeCall).toBeDefined();
+  });
+
+  it("待ち行列状態の後始末(clearGpuQueueState)が失敗しても停止処理を打ち切らない(200のまま)", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: recordingJob });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({});
+    // UpdateCommandの呼び出し順は
+    // markJobStopRequested → clearGpuQueueState → releaseHomeWorkerAssignment →
+    // 最終status確定。2番目(clearGpuQueueState)だけ失敗させる。
+    ddbMock
+      .on(UpdateCommand)
+      .resolvesOnce({})
+      .rejectsOnce(new Error("throttled"))
+      .resolves({});
+
+    const res = await invoke("job-1");
+
+    expect(res.statusCode).toBe(200);
   });
 
   it("リースが存在しない(非GPUジョブ)場合も200で成功する", async () => {

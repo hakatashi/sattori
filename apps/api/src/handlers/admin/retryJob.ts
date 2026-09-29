@@ -40,6 +40,10 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
   // `stopRequestedAt`（緊急停止の拒否票）も同じ理由で引き継がない。引き継ぐと
   // 新ジョブのワーカーが最初からstatusを1つも書けなくなり、録画が完走しても
   // `queued`のまま固まる（`worker/status.py`参照）。
+  // GPU vCPU容量リース（Issue #270）の待ち行列関連も同じ理由で引き継がない。
+  // `gpuQueueState`はsparse GSI `GpuQueueIndex`のキー属性で、引き継ぐと新ジョブが
+  // 起動前から「待機中」としてインデックスに載り、他のGPUジョブの投入順（FIFO）を
+  // 塞いでしまう（`docs/decisions/0056-gpu-vcpu-lease-and-queue.md`）。
   const {
     homeWorkerOfferState: _offerState,
     homeWorkerOfferExpiresAt: _offerExpiresAt,
@@ -47,6 +51,12 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
     assignedWorkerId: _assignedWorkerId,
     homeWorkerHeartbeatAt: _homeWorkerHeartbeatAt,
     stopRequestedAt: _stopRequestedAt,
+    gpuQueueState: _gpuQueueState,
+    gpuQueuedAt: _gpuQueuedAt,
+    gpuQueueEnteredAt: _gpuQueueEnteredAt,
+    gpuQueueHeartbeatAt: _gpuQueueHeartbeatAt,
+    gpuQueuePosition: _gpuQueuePosition,
+    gpuQueueEtaSeconds: _gpuQueueEtaSeconds,
     ...carried
   } = source;
   return {
