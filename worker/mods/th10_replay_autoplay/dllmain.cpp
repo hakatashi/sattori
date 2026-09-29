@@ -30,6 +30,7 @@
 // record_th10.py側でコピー先ファイル名を"th10_01.rpy"に正規化する。
 
 #include <windows.h>
+#include <stdlib.h>
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
 #include "../common/logging.h"
@@ -97,11 +98,18 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InstallDinputHook();
         // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
         InstallSpeedHackHook();
-        // 倍速録画(reports/89)でPresentの上限をFPS_LIMIT_TARGET_HZに合わせ、BGM/SEの
-        // 再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールする(A/V同期マーカーもここで有効になる、
-        // reports/88)。FPS_LIMIT_TARGET_HZ未設定(等倍)時はscale=1.0で従来動作と互換
-        // (touhou-recorderでは低速録画検証のフェーズ58・62から同じ構成)。
-        InstallFpsLimiterHook(60.0);
+        // 倍速録画(reports/89)ではPresentの上限をFPS_LIMIT_TARGET_HZ(60×倍率)に合わせる
+        // (touhou-recorderでは低速録画検証のフェーズ58・62から同じ構成)。**等倍では入れない**:
+        // このタイトルはVsyncPatchが60fpsへのフレーム制御を担っており、fps_limiter_hookは
+        // FPS_LIMIT_TARGET_HZ未設定でも60fpsで間引くため、二重の制御でゲーム進行が約3%遅れた
+        // (MOD統合テストで被弾タイミングが127秒時点で4.1秒遅延、Issue #288)。
+        {
+            const char* hz = getenv("FPS_LIMIT_TARGET_HZ");
+            double targetHz = hz ? atof(hz) : 0.0;
+            if (targetHz > 0.0 && targetHz != 60.0) InstallFpsLimiterHook(60.0);
+        }
+        // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
+        // A/V同期マーカー(reports/88)を有効にする。
         InstallDSoundHook(1.0);
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th10.cpp)の`enum ADDRS`および`THGuiPrac::State()`内の実書き込み
