@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DynamoDBDocumentClient, GetCommand, QueryCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import type { JobRecord } from "@sattori/shared";
+import { GPU_VCPU_QUOTA, type JobRecord } from "@sattori/shared";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -82,7 +82,7 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
 
   it("GPUジョブで空きが無ければ待機を返す(acquired:false、待機秒数はnextPollIntervalSeconds)", async () => {
     ddbMock.on(GetCommand).resolves({ Item: gpuJob });
-    ddbMock.on(QueryCommand).resolves({ Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 8 }] });
+    ddbMock.on(QueryCommand).resolves({ Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA }] });
 
     const { handler } = await import("./acquireGpuSlot.js");
     const result = await handler({
@@ -100,7 +100,7 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
 
   it("初回試行(attempt:1)で残り4vCPUなら4vCPUのみ確保を試みる(投機的並列化)", async () => {
     ddbMock.on(GetCommand).resolves({ Item: gpuJob });
-    ddbMock.on(QueryCommand).resolves({ Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 4 }] });
+    ddbMock.on(QueryCommand).resolves({ Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA - 4 }] });
     ddbMock.on(TransactWriteCommand).resolves({});
 
     const { handler } = await import("./acquireGpuSlot.js");
@@ -112,7 +112,7 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
 
   it("リトライ時(attempt>1)は4vCPUしか空いていなければ確保せず8vCPUが空くまで待機する", async () => {
     ddbMock.on(GetCommand).resolves({ Item: gpuJob });
-    ddbMock.on(QueryCommand).resolves({ Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 4 }] });
+    ddbMock.on(QueryCommand).resolves({ Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA - 4 }] });
 
     const { handler } = await import("./acquireGpuSlot.js");
     const result = await handler({ jobId: "job-1", attempt: 2, executionStartTime: new Date().toISOString() });
