@@ -96,6 +96,7 @@ export function JobProgressView({ job, loadError }: ViewProps) {
   const done = status === "done";
   const showProgress = typeof progress === "number" && !done && !failed;
   const estimatedDurationSeconds = job.replayInfo?.estimatedDurationSeconds ?? null;
+  const showQueue = status === "queued" && job.queuePosition !== null;
 
   return (
     <section className={styles.card}>
@@ -116,7 +117,12 @@ export function JobProgressView({ job, loadError }: ViewProps) {
           </div>
           <div className={styles.overallProgressMeta}>
             <span>{Math.round(overall.percent)}%</span>
-            {overall.remainingMinutes !== null && (
+            {/*
+              GPU録画の待ち行列に並んでいる間は、録画パイプラインの残り時間（待ち時間を
+              含まない）を出すと「あと約45分待ち」と「残り約20分」が並んで矛盾して見える
+              ため隠す。待ち行列を経ない通常の`queued`は一瞬なので全体の目安として残す。
+            */}
+            {!showQueue && overall.remainingMinutes !== null && (
               <span>{t("jobProgress.etaMinutes", { minutes: overall.remainingMinutes })}</span>
             )}
             {/*
@@ -138,7 +144,7 @@ export function JobProgressView({ job, loadError }: ViewProps) {
               0%のまま据え置く（待機は録画フェーズの進捗とは別の出来事のため）ので、
               ここに独立した文言として出す。
             */}
-            {status === "queued" && job.queuePosition !== null && (
+            {showQueue && (
               <span className={styles.queueHint}>
                 {t("jobProgress.queuePosition", { position: job.queuePosition })}
                 {job.queueEstimatedWaitSeconds !== null &&
