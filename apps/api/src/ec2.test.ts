@@ -9,7 +9,8 @@ import {
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import { mockClient } from "aws-sdk-client-mock";
-import type { JobRecord } from "@sattori/shared";
+import { DEFAULT_RECORDING_OPTIONS } from "@sattori/shared";
+import type { JobRecord, RecordingSpeed } from "@sattori/shared";
 import {
   buildUserData,
   fetchSpotPrice,
@@ -228,30 +229,43 @@ describe("buildUserData", () => {
 });
 
 describe("getCandidateInstanceTypes", () => {
-  it("maxVcpu未指定ならGPUタイトルも全候補を返す(既存の挙動を維持)", () => {
-    expect(getCandidateInstanceTypes("th15")).toEqual(["g6f.xlarge", "g6f.2xlarge"]);
-    expect(getCandidateInstanceTypes("th06nc")).toEqual(["g6f.xlarge", "g6f.2xlarge"]);
+  const job = (game: JobRecord["game"], recordingSpeed?: RecordingSpeed) => ({
+    game,
+    options: { ...DEFAULT_RECORDING_OPTIONS, recordingSpeed },
   });
 
-  it("maxVcpu=4ならGPUタイトルはg6f.xlargeのみに絞られる", () => {
-    expect(getCandidateInstanceTypes("th15", { maxVcpu: 4 })).toEqual(["g6f.xlarge"]);
+  it("GPU必須タイトルはg6f.2xlargeだけを候補にする(Issue #288)", () => {
+    expect(getCandidateInstanceTypes(job("th15"))).toEqual(["g6f.2xlarge"]);
+    expect(getCandidateInstanceTypes(job("th06nc"))).toEqual(["g6f.2xlarge"]);
   });
 
-  it("maxVcpu=8ならGPUタイトルは両方の候補を返す", () => {
-    expect(getCandidateInstanceTypes("th15", { maxVcpu: 8 })).toEqual(["g6f.xlarge", "g6f.2xlarge"]);
+  it("倍速録画はCPU系タイトルでもGPU候補を使う", () => {
+    expect(getCandidateInstanceTypes(job("th07", 3))).toEqual(["g6f.2xlarge"]);
+    expect(getCandidateInstanceTypes(job("th11", 2))).toEqual(["g6f.2xlarge"]);
+    expect(getCandidateInstanceTypes(job("th20", 2))).toEqual(["g6f.2xlarge"]);
   });
 
-  it("CPU系タイトルはmaxVcpuを渡されても一切変わらない(GPUリース制約が漏れない)", () => {
-    expect(getCandidateInstanceTypes("th11", { maxVcpu: 4 })).toEqual(
-      getCandidateInstanceTypes("th11"),
+  it("CPU系タイトルの等倍録画は従来どおりの候補(recordingSpeed欠損の旧ジョブも同じ)", () => {
+    expect(getCandidateInstanceTypes(job("th11", 1))).toEqual(getCandidateInstanceTypes(job("th11")));
+    expect(getCandidateInstanceTypes(job("th20", 1))).toEqual(["c7i.4xlarge"]);
+    expect(getCandidateInstanceTypes(job("th07", 1))).not.toContain("g6f.2xlarge");
+  });
+
+  it("maxVcpu=8ならGPUジョブはg6f.2xlargeを返す", () => {
+    expect(getCandidateInstanceTypes(job("th15"), { maxVcpu: 8 })).toEqual(["g6f.2xlarge"]);
+  });
+
+  it("CPU系の等倍録画はmaxVcpuを渡されても一切変わらない(GPUリース制約が漏れない)", () => {
+    expect(getCandidateInstanceTypes(job("th11"), { maxVcpu: 4 })).toEqual(
+      getCandidateInstanceTypes(job("th11")),
     );
-    expect(getCandidateInstanceTypes("th07", { maxVcpu: 4 })).toEqual(
-      getCandidateInstanceTypes("th07"),
+    expect(getCandidateInstanceTypes(job("th07"), { maxVcpu: 4 })).toEqual(
+      getCandidateInstanceTypes(job("th07")),
     );
   });
 
   it("候補が空になる制約(理屈上到達不能)は例外を投げる", () => {
-    expect(() => getCandidateInstanceTypes("th15", { maxVcpu: 1 })).toThrow(/GPUリース/);
+    expect(() => getCandidateInstanceTypes(job("th15"), { maxVcpu: 4 })).toThrow(/GPUリース/);
   });
 });
 
@@ -382,7 +396,7 @@ describe("launchRecordingInstance", () => {
     }
   });
 
-  it("th06ncジョブはGPU専用Launch Template・GPU系インスタンスタイプ（g6f.xlarge/g6f.2xlarge）で起動する（Issue #241）", async () => {
+  it("th06ncジョブはGPU専用Launch Template・GPU系インスタンスタイプ（g6f.2xlargeのみ）で起動する（Issue #241・#288）", async () => {
     ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
       LaunchTemplateVersion: { VersionNumber: 5 },
     });
@@ -411,14 +425,10 @@ describe("launchRecordingInstance", () => {
     const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
     // GPUジョブもCPU系と同じ全AZ(subnet-aaaa・subnet-bbbb)を候補にする
     // (`eu-south-2a`除外[Issue #267/decisions#0055]はIssue #281で撤回済み)。
-    expect(overrides).toEqual(
-      expect.arrayContaining([
-        { SubnetId: "subnet-aaaa", InstanceType: "g6f.xlarge" },
-        { SubnetId: "subnet-bbbb", InstanceType: "g6f.xlarge" },
-        { SubnetId: "subnet-aaaa", InstanceType: "g6f.2xlarge" },
-        { SubnetId: "subnet-bbbb", InstanceType: "g6f.2xlarge" },
-      ]),
-    );
+    expect(overrides).toEqual([
+      { SubnetId: "subnet-aaaa", InstanceType: "g6f.2xlarge" },
+      { SubnetId: "subnet-bbbb", InstanceType: "g6f.2xlarge" },
+    ]);
     // CPU系Launch Templateは一切参照しない
     for (const call of ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)) {
       expect(call.args[0].input.LaunchTemplateId).not.toBe("lt-xxxx");
@@ -450,14 +460,10 @@ describe("launchRecordingInstance", () => {
     const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
     // GPUジョブもCPU系と同じ全AZ(subnet-aaaa・subnet-bbbb)を候補にする
     // (`eu-south-2a`除外[Issue #267/decisions#0055]はIssue #281で撤回済み)。
-    expect(overrides).toEqual(
-      expect.arrayContaining([
-        { SubnetId: "subnet-aaaa", InstanceType: "g6f.xlarge" },
-        { SubnetId: "subnet-bbbb", InstanceType: "g6f.xlarge" },
-        { SubnetId: "subnet-aaaa", InstanceType: "g6f.2xlarge" },
-        { SubnetId: "subnet-bbbb", InstanceType: "g6f.2xlarge" },
-      ]),
-    );
+    expect(overrides).toEqual([
+      { SubnetId: "subnet-aaaa", InstanceType: "g6f.2xlarge" },
+      { SubnetId: "subnet-bbbb", InstanceType: "g6f.2xlarge" },
+    ]);
   });
 
   it("GPUジョブもCPU系ジョブと同じ全AZのサブネットを候補にする（Issue #281）", async () => {
@@ -488,22 +494,33 @@ describe("launchRecordingInstance", () => {
     expect(cpuOverrides.some((o) => o.SubnetId === "subnet-aaaa")).toBe(true);
   });
 
-  it("GPUリースのvCPU制約(constraints.maxVcpu)に応じてOverridesの候補タイプが絞られる(Issue #270)", async () => {
+  it("倍速録画ジョブはCPU系タイトルでもGPU専用Launch Template・g6f.2xlarge・worker-gpuイメージで起動する（Issue #288）", async () => {
     ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
       LaunchTemplateVersion: { VersionNumber: 1 },
     });
     ec2Mock.on(CreateFleetCommand).resolves({
-      Instances: [{ InstanceIds: ["i-0123456789abcdef0"], InstanceType: "g6f.xlarge" }],
+      Instances: [{ InstanceIds: ["i-0123456789abcdef0"], InstanceType: "g6f.2xlarge" }],
     });
 
-    await launchRecordingInstance(config, { ...job, game: "th15" }, "task-token-abc", {
-      maxVcpu: 4,
-    });
+    await launchRecordingInstance(
+      config,
+      { ...job, game: "th07", options: { ...job.options, recordingSpeed: 3 } },
+      "task-token-abc",
+      { maxVcpu: 8 },
+    );
 
+    const versionCall = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[0];
+    expect(versionCall?.args[0].input.LaunchTemplateId).toBe("lt-gpu-xxxx");
     const overrides =
       ec2Mock.commandCalls(CreateFleetCommand)[0]?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
-    const instanceTypes = new Set(overrides.map((o) => o.InstanceType));
-    expect(instanceTypes).toEqual(new Set(["g6f.xlarge"]));
+    expect(new Set(overrides.map((o) => o.InstanceType))).toEqual(new Set(["g6f.2xlarge"]));
+    const userData = Buffer.from(
+      versionCall?.args[0].input.LaunchTemplateData?.UserData ?? "",
+      "base64",
+    ).toString("utf-8");
+    expect(userData).toContain("--gpus all");
+    expect(userData).toContain("-e FPS_LIMIT_TARGET_HZ='180'");
+    expect(userData).toContain("-e GPU_WORKER='1'");
   });
 
   it("インスタンスが起動できなかった場合は Errors を含めて例外を投げる", async () => {

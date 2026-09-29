@@ -52,12 +52,33 @@ API（`POST /magic-links` での握り潰し）の両方で入口を塞いでい
 Issue #101のスコープ）。Issue #101でth09を対応させる際はMOD側の追加実装は不要で、
 許可リストに加えるだけでよい（[`worker/docs/titles/th09.md`](../worker/docs/titles/th09.md)）。
 
+### 倍速録画（2〜4倍速）の品質と未実装事項（Issue #288）
+
+[`decisions/0058`](decisions/0058-speedup-recording-on-gpu-instances.md)。技術検証は
+touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実行）で、**本番構成
+（eu-south-2・カスタムAMI上のDocker）での検証は各タイトルの公開前に行う**。
+
+- **3倍速以上はx11grabのキャプチャが律速**し、等倍へ戻した後の落ちフレームが3倍速で1〜3%、
+  4倍速で7〜9%に増える（ゲーム自体は目標fpsを維持している、reports/89 §4）。th15は3倍速でも
+  ゲーム本体が律速して14%（reports/87）。4倍速は実質的に非推奨で、UIは警告付きで選ばせる。
+- **th20の2倍速は落ちフレーム1.6%**（等倍0.1%）。ゲーム本体の単一スレッド性能が足りない。
+- **ステージ間のロード等「実時間で進む区間」は等倍へ戻すとN倍に伸びる**（th06の全6面で約+2秒）。
+  ゲーム内容の欠落ではない。一部タイトル（th07/08/09）はBGMと画面が+0.15〜0.2秒ずれ、
+  th06nc/th11/th128では時間とともに変わる（ゲーム側のBGMストリーミングに起因、パイプラインの
+  誤差は±20ms、reports/89 §6）。
+- **Sattori固有でrecorder未検証の組み合わせ**: th07・th12はVsyncPatchを注入したまま倍速にする
+  （recorderはVsyncPatch無しで検証、`worker/docs/titles/th07.md`・`th12.md`）。
+- **同期マーカー（録画冒頭約3秒の-42dBFSノイズ）は動画に残る**。聴感上の問題が無いかは
+  本番検証で確認する。
+- **GPU容量を確保できない場合のCPU等倍へのフォールバックは未実装**（Issue #289）。GPU待ち行列の
+  上限（120分）またはリトライ枯渇で失敗する。
+
 ### th06nc（東方紅魔郷: New Classic）は録画対応済み。ただしGPU専用インスタンスでのみ録画可能
 
 2026-09-10 発売の「東方紅魔郷: New Classic」は録画対応済み（Issue #241、
 [`worker/docs/titles/th06nc.md`](../worker/docs/titles/th06nc.md)）。**GPU描画
 （Xorg+NVIDIA GRIDドライバ+DXVK）が必須のタイトルで、GPU系インスタンス
-（`g6f.xlarge` / `g6f.2xlarge`）で録画される**。Xvfb+wined3d+llvmpipe（既存9タイトルの方式）では720pで9.1fpsしか出ず
+（`g6f.2xlarge`）で録画される**。Xvfb+wined3d+llvmpipe（既存9タイトルの方式）では720pで9.1fpsしか出ず
 60fpsに遠く届かないため（touhou-recorder reports/78 §5）。自宅ワーカー（GPU非搭載）
 には常にオファーされない
 （[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
@@ -65,14 +86,10 @@ Issue #101のスコープ）。Issue #101でth09を対応させる際はMOD側�
 **低速録画はスコープ外**（D3D11経路の新規実装が必要、th06cと同じ扱い。
 `SLOW_MOTION_SUPPORTED_GAME_IDS`未登録のため自動的に塞がれる）。
 
-**1080p録画オプションもg6f.xlarge（4vCPU）で起動しうる**。touhou-recorder
-reports/81 §9.9.3の実測では、1080p録画は本来g6f.2xlarge（8vCPU）が推奨——
-4vCPUでは実効fpsが54.87まで悪化し重複フレーム率が7.9%まで増える——ことが確認されて
-いる。xlargeを候補に残したのは、当時のeu-south-2のG系スポットクォータ（8vCPU＝
-g6f.xlarge換算で2台分）で並列運用の余地を残すためのユーザー判断だった
-（[`decisions/0046`](decisions/0046-gpu-ec2-instance-and-fixed-ami.md)）。クォータは
-2026-09に**32vCPU**へ引き上げられており、1080pをg6f.2xlargeに固定する見直しは
-Issue #286。1080p録画で処理落ちが疑われる場合はこの制約を踏まえて調査すること。
+GPUの起動候補は`g6f.2xlarge`（8vCPU）だけ（Issue #288、
+[`decisions/0058`](decisions/0058-speedup-recording-on-gpu-instances.md)）。以前は`g6f.xlarge`（4vCPU）も
+候補で、1080p録画が4vCPUで起動すると実効fpsが54.87まで悪化しうる（touhou-recorder reports/81 §9.9.3）
+制約があったが解消した。
 クオータ（`GPU_VCPU_QUOTA`）の範囲内でジョブを順番待ちさせる仕組みは
 [`decisions/0056`](decisions/0056-gpu-vcpu-lease-and-queue.md)。
 
@@ -396,8 +413,8 @@ IP 単位のレート制限・reCAPTCHA 等の追加 bot ゲートは、**メー
 常に効いてくるため `AGENTS.md` §3 にも要約を置いてある。
 
 - リージョンや候補インスタンスタイプを変える場合は**単価定数も併せて見直すこと**。
-  GPU系（`g6f.xlarge`、th06nc・th15、Issue #241・#82）はCPU系`.xlarge`帯とは全く異なる価格帯
-  （`gpu-xlarge`、暫定値$0.07/h）を別枠で持つ（`FALLBACK_SPOT_PRICE_USD_PER_HOUR`）。
+  GPU系（`g6f.2xlarge`、th06nc・th15と倍速録画、Issue #241・#82・#288）はCPU系とは全く異なる価格帯
+  （`gpu`、暫定値$0.08/h）を別枠で持つ（`FALLBACK_SPOT_PRICE_USD_PER_HOUR`）。
 - 自宅ワーカー（Issue #49）が処理したジョブは EC2/EBS/IPv4 の課金が発生しないため 0 で
   計上する（自宅の電気代・回線費は AWS の請求に現れず按分する意味も無いので一切計上しない）。
 - リトライで試行ごとにワーカー種別が変わったジョブの推定は過少になる（Issue #94）。

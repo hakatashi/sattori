@@ -4,7 +4,9 @@ import {
   DEFAULT_LANGUAGE,
   EMAIL_PATTERN,
   isSupportedGame,
+  isSpeedupRecording,
   isSupportedLanguage,
+  normalizeRecordingSpeed,
   parseReplayInfo,
   supportsHighResolutionRecording,
   supportsSlowMotion,
@@ -153,6 +155,14 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }
   const estimatedDurationSeconds = replayInfo?.estimatedDurationSeconds ?? null;
 
+  // 録画速度（Issue #288、倍速録画）。1〜4以外（未指定・不正値）は等倍に落とす。
+  // **全タイトルで受け付ける**——UIに出すタイトルは段階的に広げる（`apps/web`側の定数）が、
+  // 公開前のタイトルも本番で直接APIを叩いてE2E検証できるようにするため
+  // （`verify-recording-in-production` skill）。倍速録画はGPUインスタンスで必ず実行される
+  // （`requiresGpuRecording()`）ので、低速録画のように「対応していないのに後処理だけ
+  // 等倍化されて速度の狂った動画ができる」ことは起きない。
+  const recordingSpeed = normalizeRecordingSpeed(body.options.recordingSpeed);
+
   const now = new Date();
   const jobId = randomUUID();
   const job: JobRecord = {
@@ -174,7 +184,11 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       // 後処理だけが等倍化を行って2倍速の動画が出来上がり、しかも元の生動画が
       // 削除される。UI側もグレーアウトするが、ここはその防御線。エラーにはしない
       // ——録画自体は等倍で問題なく行えるため、断るより静かに落とす方がよい。
-      slowMotion: body.options.slowMotion === true && supportsSlowMotion(game),
+      // 倍速録画（recordingSpeed>1）とは排他。両方指定されたら倍速を優先する。
+      slowMotion:
+        body.options.slowMotion === true &&
+        supportsSlowMotion(game) &&
+        !isSpeedupRecording(recordingSpeed),
       // th10「バグマリ」修正オプション(Issue #75)。ここも上のslowMotionと同じ理由
       // (Issue #101)でサーバー側の再パース結果に基づいて握り潰す——クライアント申告の
       // `game`/`character`をそのまま信用すると、実際は非対応の組み合わせなのに
@@ -188,6 +202,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       // 結果（`game`）に基づいて握り潰す——非対応タイトルでtrueを指定されても無視する。
       th06ncHighResolution:
         body.options.th06ncHighResolution === true && supportsHighResolutionRecording(game),
+      recordingSpeed,
     },
     outputPath: null,
     outputPath720p: null,

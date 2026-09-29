@@ -1,4 +1,5 @@
 import type { GameId } from "./games.js";
+import { isSpeedupRecording, recordingSpeedOf } from "./recordingSpeed.js";
 
 /**
  * GPU描画（Xorg+NVIDIA GRIDドライバ+DXVK）が録画に必須なタイトル一覧（Issue #241）。
@@ -14,7 +15,8 @@ import type { GameId } from "./games.js";
  * ## 何に効くか
  *
  * - `apps/api/src/ec2.ts`: このリストに含まれるタイトルはGPU系Launch Template・
- *   GPU系ECRイメージ（`worker-gpu`）・`g6f.xlarge`系候補インスタンスタイプを使う。
+ *   GPU系ECRイメージ（`worker-gpu`）・GPU系候補インスタンスタイプ（g6f.2xlarge）を使う。
+ *   倍速録画（Issue #288）のジョブも同じ経路を通る（`requiresGpuRecording()`）。
  * - `apps/api/src/workerRouting.ts`: 自宅ワーカー（GPU非搭載）へは絶対にオファーしない
  *   （`GAME_ROUTING_POLICIES`の`offerToHomeWorker: false`）。
  * - `home-worker/src/config.ts`: 自宅ワーカーの既定`supportedGames`から除外する
@@ -35,7 +37,24 @@ import type { GameId } from "./games.js";
  */
 export const GPU_RECORDING_GAME_IDS: readonly GameId[] = ["th06nc", "th15"];
 
-/** このタイトルの録画にGPU系インスタンスが必須か。 */
-export function requiresGpuRecording(game: GameId): boolean {
+/** このタイトルは録画速度によらず常にGPU系インスタンスで録画するか。 */
+export function isGpuOnlyTitle(game: GameId): boolean {
   return GPU_RECORDING_GAME_IDS.includes(game);
+}
+
+/**
+ * このジョブの録画にGPU系インスタンス（g6f.2xlarge）が必須か。
+ *
+ * 常にGPUで録るタイトル（`GPU_RECORDING_GAME_IDS`）に加え、**倍速録画（2倍速以上、
+ * Issue #288）は全タイトルGPU必須**（CPU描画では2倍速を維持できない。touhou-recorder
+ * reports/89）。ここが true のジョブは自宅ワーカー（GPU非搭載）へは絶対にオファーせず、
+ * GPU vCPU枠のリース（`docs/decisions/0056`）・GPU系Launch Template・`worker-gpu`イメージを使う。
+ *
+ * `options`を持たない旧レコードは等倍とみなす（`recordingSpeedOf()`）。
+ */
+export function requiresGpuRecording(job: {
+  game: GameId;
+  options?: { recordingSpeed?: unknown };
+}): boolean {
+  return isGpuOnlyTitle(job.game) || isSpeedupRecording(recordingSpeedOf(job.options));
 }

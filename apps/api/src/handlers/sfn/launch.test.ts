@@ -365,14 +365,14 @@ describe("sfn/launch handler（GPU vCPU容量リース、Issue #270）", () => {
     ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: gpuJob });
     ddbMock
       .on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE })
-      .resolves({ Item: gpuLeaseItem(4) });
+      .resolves({ Item: gpuLeaseItem(8) });
     ddbMock.on(UpdateCommand).resolves({});
     ddbMock.on(TransactWriteCommand).resolves({});
     ec2Mock
       .on(CreateLaunchTemplateVersionCommand)
       .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
     ec2Mock.on(CreateFleetCommand).resolves({
-      Instances: [{ InstanceIds: ["i-gpu"], InstanceType: "g6f.xlarge", AvailabilityZone: "eu-south-2b" }],
+      Instances: [{ InstanceIds: ["i-gpu"], InstanceType: "g6f.2xlarge", AvailabilityZone: "eu-south-2b" }],
     });
     ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
 
@@ -382,7 +382,8 @@ describe("sfn/launch handler（GPU vCPU容量リース、Issue #270）", () => {
     const overrides =
       ec2Mock.commandCalls(CreateFleetCommand)[0]?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
     const instanceTypes = new Set(overrides.map((o) => o.InstanceType));
-    expect(instanceTypes).toEqual(new Set(["g6f.xlarge"]));
+    // 起動候補はg6f.2xlargeのみ(Issue #288)。
+    expect(instanceTypes).toEqual(new Set(["g6f.2xlarge"]));
   });
 
   it("リースが確保できたvCPUより実際のインスタンスが小さければ縮小する", async () => {

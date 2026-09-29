@@ -57,7 +57,7 @@
 | [0043](0043-remove-fps-runaway-detection.md) | 2026-09-08 | worker | fps暴走検知(`scan_fps_runaway()`)を削除する。真陽性の実績が無く、th08の会話イベント・th09のステージ間演出で誤検知した実績のみだったため | 有効 |
 | [0044](0044-th06c-steam-drm-stub-and-64bit-title.md) | 2026-09-10 | worker | th06cのSteamworks API初期化要求は最小限のスタブDLLで回避し、64bit専用の録画経路(`GameConfig.for_game()`のoverridesでinjectorを差し替え)を別途用意する | 有効 |
 | [0045](0045-ec2-slow-motion-for-th20.md) | 2026-09-11 | packages/shared / apps/api / apps/web / docs | EC2環境でのth20低速録画を有効化し、対応タイトルをコード内定数で管理する | 有効 |
-| [0046](0046-gpu-ec2-instance-and-fixed-ami.md) | 2026-09-12 | infra / apps/api / worker | GPU描画必須タイトル向けにg6f.xlargeを新規導入し、AMIは事前構築したカスタムAMIを固定参照する | 有効 |
+| [0046](0046-gpu-ec2-instance-and-fixed-ami.md) | 2026-09-12 | infra / apps/api / worker | GPU描画必須タイトル向けにg6f.xlargeを新規導入し、AMIは事前構築したカスタムAMIを固定参照する | 起動候補(g6f.xlarge)は[0058](0058-speedup-recording-on-gpu-instances.md)によって一部置き換え済み |
 | [0047](0047-no-gpu-titles-for-home-worker.md) | 2026-09-12 | apps/api / home-worker | GPU描画必須タイトルは自宅ワーカーへ常にオファーしない | 有効 |
 | [0048](0048-separate-ecr-repo-for-gpu-workers.md) | 2026-09-12 | infra / worker / apps/api | GPU描画必須タイトル専用の別ECRリポジトリ（worker-gpu）を新設する | 有効 |
 | [0049](0049-mod-integration-test-local-only.md) | 2026-09-14 | worker | MODの実機注入統合テストを追加するが、ゲーム資産のライセンス・実行コストのためCIには組み込まず`worker/games/`がある環境限定のローカル実行に限定する | 有効 |
@@ -69,6 +69,7 @@
 | [0055](0055-exclude-eu-south-2a-from-gpu-fleet.md) | 2026-09-19 | apps/api / infra | GPUジョブのEC2 Fleet候補から`eu-south-2a`を暫定除外する(クラッシュ率が有意に高い、p=0.0021。CPU系は対象外) | [0057](0057-revert-eu-south-2a-gpu-exclusion.md)によって撤回済み |
 | [0056](0056-gpu-vcpu-lease-and-queue.md) | 2026-09-19 | apps/api / infra | GPU録画ジョブのvCPU容量をDynamoDBでリースし、`Launch`の手前で待たせる(eu-south-2のG系スポットクオータ8vCPU下でのキューイング、Issue #270) | 有効 |
 | [0057](0057-revert-eu-south-2a-gpu-exclusion.md) | 2026-09-22 | apps/api / infra | [0055](0055-exclude-eu-south-2a-from-gpu-fleet.md)の`eu-south-2a`除外を撤回する(起動失敗の増加が実害化し、除外後もクラッシュが根絶されていないため) | 有効 |
+| [0058](0058-speedup-recording-on-gpu-instances.md) | 2026-09-30 | packages/shared / apps/api / infra / worker | 倍速録画(2〜4倍速)を導入し、2倍速以上はGPUインスタンス(g6f.2xlargeのみ)で録画する。GPU要否はタイトルではなくジョブ(タイトル+録画速度)で決まる(Issue #288) | 有効 |
 
 ## 書き方
 

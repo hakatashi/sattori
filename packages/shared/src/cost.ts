@@ -1,4 +1,4 @@
-import type { GameId } from "./games.js";
+import { requiresGpuRecording } from "./gpuRecording.js";
 import type { JobRecord } from "./job.js";
 import { OUTPUT_RETENTION_DAYS } from "./job.js";
 
@@ -101,18 +101,20 @@ export const CLOUDFRONT_USD_PER_GB = 0.085;
  * での再計測がまだのため、実際の値とは数%ずれうる。次にこの定数を見直す際は
  * TWAで再計測すること。
  *
- * `gpu-xlarge`はth06nc（Issue #241）が使うGPU系インスタンス（`g6f.xlarge`）専用の帯。
- * CPU系の`xlarge`帯とは全く別のハードウェア（NVIDIA L4スライス搭載）で価格体系も
- * 異なるため、同じ`xlarge`に混ぜると過小評価になる（`sizeClassOf()`は末尾の
- * `.xlarge`一致だけでは`g6f.xlarge`と`c7i.xlarge`を区別できないため、専用の帯として
- * 分離する必要がある）。touhou-recorder reports/80・81実測（us-west-2/eu-south-2、
- * AZ a/bの安い方）$0.062〜0.075/時間の範囲を採り、中央値寄りの$0.07を暫定値とする。
+ * `gpu`はGPU必須のジョブ（`requiresGpuRecording()`: th06nc・th15と倍速録画、Issue #241・#288）
+ * が使うGPU系インスタンス（`g6f.2xlarge`）の帯。CPU系とは全く別のハードウェア（NVIDIA L4
+ * スライス搭載）で価格体系も異なるため、同じ`xlarge`/`2xlarge`に混ぜると誤差が大きい
+ * （`sizeClassOf()`は末尾一致だけでは`g6f.2xlarge`と`c7i.2xlarge`を区別できないため、
+ * 専用の帯として分離する必要がある）。2026-08-30〜09-29の本番で記録された`g6f.2xlarge`の
+ * Spot単価（$0.061〜0.117/時、中央値付近$0.075）と、2026-09-16〜30のSpot価格履歴
+ * （eu-south-2a平均$0.075、2b平均$0.088。2cは$0.24前後と突出して高く
+ * `price-capacity-optimized`では選ばれにくい）から$0.08を暫定値とする。
  */
 export const FALLBACK_SPOT_PRICE_USD_PER_HOUR = {
   xlarge: 0.045,
   "2xlarge": 0.092,
   "4xlarge": 0.118,
-  "gpu-xlarge": 0.07,
+  gpu: 0.08,
 } as const;
 
 /**
@@ -142,8 +144,14 @@ export function usdToJpy(usd: number): number {
   return usd * USD_TO_JPY_RATE;
 }
 
-/** コスト推定に必要な `JobRecord` のフィールドだけを抜き出した入力型。 */
-export type JobCostInput = Pick<
+/**
+ * コスト推定に必要な `JobRecord` のフィールドだけを抜き出した入力型。
+ *
+ * `options`は録画速度（Issue #288）だけを使う（インスタンスタイプ未記録のジョブのサイズ帯推定、
+ * `sizeClassOfJob()`）。管理画面の全件集計は射影でこの1属性しか読まないため、型もそれに合わせて
+ * 省略可能な部分型にしてある（欠損は等倍）。
+ */
+export type JobCostInput = { options?: { recordingSpeed?: unknown } } & Pick<
   JobRecord,
   | "status"
   | "game"
@@ -265,11 +273,11 @@ export interface JobCostEstimate {
  * インスタンスタイプ（例 `c7i.2xlarge`）からサイズ帯を取り出す。
  *
  * GPU系（`g6f.*`、Issue #241）はCPU系の`.xlarge`/`.2xlarge`/`.4xlarge`とは別の価格帯
- * （`gpu-xlarge`）を持つため、末尾一致より先にファミリ名で判定する。
+ * （`gpu`）を持つため、末尾一致より先にファミリ名で判定する。
  */
 function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD_PER_HOUR {
   if (instanceType.startsWith("g6f.")) {
-    return "gpu-xlarge";
+    return "gpu";
   }
   if (instanceType.endsWith(".4xlarge")) {
     return "4xlarge";
@@ -278,27 +286,28 @@ function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD
 }
 
 /**
- * ゲームからサイズ帯を推定する。th11・th12・th128は`.2xlarge`帯、th20は`.4xlarge`帯、
- * th06nc・th15はGPU系`gpu-xlarge`帯の候補リストを使う（`apps/api/src/ec2.ts`の
- * `TH11_CANDIDATE_INSTANCE_TYPES` / `TH12_CANDIDATE_INSTANCE_TYPES` /
- * `TH128_CANDIDATE_INSTANCE_TYPES` / `TH20_CANDIDATE_INSTANCE_TYPES` /
- * `GPU_CANDIDATE_INSTANCE_TYPES`、touhou-recorder reports/40・46・73・80・81・82）。
+ * ジョブからサイズ帯を推定する。GPU必須のジョブ（th06nc・th15と倍速録画、
+ * `requiresGpuRecording()`）はGPU系`gpu`帯、それ以外はタイトルで決まる: th11・th12・th128は
+ * `.2xlarge`帯、th20は`.4xlarge`帯（`apps/api/src/ec2.ts`の`TH11_CANDIDATE_INSTANCE_TYPES` /
+ * `TH12_CANDIDATE_INSTANCE_TYPES` / `TH128_CANDIDATE_INSTANCE_TYPES` /
+ * `TH20_CANDIDATE_INSTANCE_TYPES` / `GPU_CANDIDATE_INSTANCE_TYPES`、touhou-recorder
+ * reports/40・46・73・80・81・82・89）。
  *
  * インスタンスタイプがまだ記録されていない段階（`launching`）や、リトライで
  * リセットされた場合（`retryJob.ts`）に使われる。ここが実態とずれると、`ec2.ts`の
  * 候補を変えたときに推定コストが静かに過小になる。
  */
-function sizeClassOfGame(game: GameId): keyof typeof FALLBACK_SPOT_PRICE_USD_PER_HOUR {
-  switch (game) {
+function sizeClassOfJob(job: Pick<JobCostInput, "game" | "options">): keyof typeof FALLBACK_SPOT_PRICE_USD_PER_HOUR {
+  if (requiresGpuRecording(job)) {
+    return "gpu";
+  }
+  switch (job.game) {
     case "th11":
     case "th12":
     case "th128":
       return "2xlarge";
     case "th20":
       return "4xlarge";
-    case "th06nc":
-    case "th15":
-      return "gpu-xlarge";
     default:
       return "xlarge";
   }
@@ -318,7 +327,7 @@ function resolveSpotPrice(job: JobCostInput): {
     };
   }
   return {
-    price: FALLBACK_SPOT_PRICE_USD_PER_HOUR[sizeClassOfGame(job.game)],
+    price: FALLBACK_SPOT_PRICE_USD_PER_HOUR[sizeClassOfJob(job)],
     source: "fallback-game",
   };
 }

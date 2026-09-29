@@ -1,3 +1,6 @@
+import { NATIVE_RECORDING_SPEED, recordingWallClockSeconds } from "./recordingSpeed.js";
+import type { RecordingSpeed } from "./recordingSpeed.js";
+
 /**
  * GPU録画ジョブのvCPU容量リース・待ち行列に関する定数と純粋関数（Issue #270）。
  * フロントエンド・API・インフラ(CDK)の3者が同じ値を参照する。
@@ -6,9 +9,9 @@
  *
  * eu-south-2 の G系スポットインスタンスのvCPUクオータ（`L-3819A6DF`「All G and VT
  * Spot Instance Requests」）は **32vCPU**（当初8vCPUだったが、2026-09にAWSサポートへの
- * 引き上げ申請が通った）。GPU描画必須タイトル（`GPU_RECORDING_GAME_IDS`、
- * `gpuRecording.ts`）は `g6f.xlarge`(4vCPU) / `g6f.2xlarge`(8vCPU) で起動するため、
- * 同時に走れるのは4〜8本。それを超えて来たジョブは失敗させず待たせる必要がある。
+ * 引き上げ申請が通った）。GPU必須のジョブ（`requiresGpuRecording()`、
+ * `gpuRecording.ts`）は `g6f.2xlarge`(8vCPU) で起動するため、
+ * 同時に走れるのは4本。それを超えて来たジョブは失敗させず待たせる必要がある。
  * この定数モジュールと `apps/api/src/gpuSlots.ts`（DynamoDBでの
  * vCPU会計）・`apps/api/src/gpuQueue.ts`（順位・ETA計算）が、このクオータの範囲内で
  * ジョブを正しく並べて待たせる仕組みの土台になる。詳細な設計は
@@ -30,18 +33,26 @@
  */
 export const GPU_VCPU_QUOTA = 32;
 
-/** GPU候補インスタンスタイプ（`apps/api/src/ec2.ts` の `GPU_CANDIDATE_INSTANCE_TYPES`
- *  と対で使う）ごとのvCPU数。 */
+/**
+ * GPU系インスタンスタイプごとのvCPU数。**起動候補の一覧ではなく、vCPU会計のための既知タイプの表**
+ * であることに注意——稼働中インスタンスとリースの突き合わせ（`gpuReconcile.ts`）や、起動後に
+ * 実際に確保されたタイプでリースを縮める処理（`handlers/sfn/launch.ts`）が引くため、
+ * 起動候補から外した`g6f.xlarge`も残してある（Issue #288以前に起動されたインスタンスが
+ * デプロイ時点で稼働中でも会計が狂わないように）。起動候補は`apps/api/src/ec2.ts`の
+ * `GPU_CANDIDATE_INSTANCE_TYPES`。
+ */
 export const GPU_INSTANCE_TYPE_VCPUS: Readonly<Record<string, number>> = {
   "g6f.xlarge": 4,
   "g6f.2xlarge": 8,
 };
 
-/** GPU候補インスタンスタイプのうち最小のvCPU数。空き容量がこれ未満なら誰も起動できない。 */
-export const GPU_MIN_INSTANCE_VCPU = Math.min(...Object.values(GPU_INSTANCE_TYPE_VCPUS));
-
-/** GPU候補インスタンスタイプのうち最大のvCPU数。 */
-export const GPU_MAX_INSTANCE_VCPU = Math.max(...Object.values(GPU_INSTANCE_TYPE_VCPUS));
+/**
+ * GPUジョブ1本が確保するvCPU数。起動候補を`g6f.2xlarge`（8vCPU）だけに絞った（Issue #288。
+ * `g6f.xlarge`はeu-south-2で長期間枯渇しており、倍速録画は8vCPUでしか検証されていない——
+ * 4vCPUではx264とゲーム本体がCPUを奪い合い2倍速を維持できない、touhou-recorder reports/85）
+ * ため、確保量は常にこの値になる。
+ */
+export const GPU_INSTANCE_VCPU = 8;
 
 /**
  * リースの有効期限（分）。`Launch` タスクの `taskTimeout`（150分）+ 余裕30分。
@@ -99,31 +110,18 @@ export function vcpusForInstanceType(instanceType: string): number | null {
 
 /**
  * 空きvCPU（`GPU_VCPU_QUOTA - usedVcpu`）から、確保を試みるvCPU量を決める。
- * 8vCPU分の空きがあれば大きい方（両候補タイプが使える）、4vCPU分しか無ければ
- * 小さい方（`g6f.xlarge`のみ）、それ未満なら確保不可（null）。
+ * `GPU_INSTANCE_VCPU`分の空きがあればその値、無ければ確保不可（null）。
  *
- * `minVcpu` を指定すると要求下限を引き上げられる（リトライ時＝`attempt > 1` に
- * 4vCPUでの投機的確保をやめ、最大候補タイプ分＝8vCPUの空きを待つために使う）。
+ * かつては`g6f.xlarge`(4vCPU)/`g6f.2xlarge`(8vCPU)の2候補があり、空きに応じて小さい方で
+ * 投機的に確保していたが、起動候補を`g6f.2xlarge`だけにした（Issue #288）ため1種類になった。
  *
- * これはあくまで「どちらのタイプで試すか」の事前判断であり、実際の安全性は
+ * これはあくまで事前判断であり、実際の安全性は
  * `apps/api/src/gpuSlots.ts` の `TransactWriteItems` の `ConditionExpression` が
  * 保証する（この関数の呼び出しと実際の書き込みの間に競合が起きても、条件式が
  * 弾くので過剰確保は起きない）。
  */
-export function reservableVcpu(
-  availableVcpu: number,
-  minVcpu: number = GPU_MIN_INSTANCE_VCPU,
-): number | null {
-  if (availableVcpu < minVcpu) {
-    return null;
-  }
-  if (availableVcpu >= GPU_MAX_INSTANCE_VCPU) {
-    return GPU_MAX_INSTANCE_VCPU;
-  }
-  if (availableVcpu >= GPU_MIN_INSTANCE_VCPU) {
-    return GPU_MIN_INSTANCE_VCPU;
-  }
-  return null;
+export function reservableVcpu(availableVcpu: number): number | null {
+  return availableVcpu >= GPU_INSTANCE_VCPU ? GPU_INSTANCE_VCPU : null;
 }
 
 /**
@@ -155,6 +153,21 @@ export function isHeartbeatStale(heartbeatAgeSeconds: number): boolean {
 export interface QueueAheadJob {
   /** `estimatedDurationSeconds`。null ならフォールバック値を使う。 */
   estimatedDurationSeconds: number | null;
+  /** 録画速度（Issue #288）。倍速録画はGPU枠の占有時間が短い。省略時は等倍。 */
+  recordingSpeed?: RecordingSpeed;
+}
+
+/**
+ * GPUジョブ1本がGPU枠を占有すると見込む秒数（起動からリース返却まで）。
+ * `estimatedDurationSeconds`（等倍の尺）を録画速度で割り引いたうえで、起動・変換・
+ * アップロード・通知のオーバーヘッド（`GPU_JOB_OVERHEAD_SECONDS`）を足す。
+ */
+export function estimateGpuOccupancySeconds(
+  estimatedDurationSeconds: number | null,
+  recordingSpeed: RecordingSpeed = NATIVE_RECORDING_SPEED,
+): number {
+  const content = estimatedDurationSeconds ?? GPU_QUEUE_FALLBACK_DURATION_SECONDS;
+  return recordingWallClockSeconds(content, recordingSpeed) + GPU_JOB_OVERHEAD_SECONDS;
 }
 
 export interface ActiveLease {
@@ -162,15 +175,10 @@ export interface ActiveLease {
   expectedFinishAtMs: number;
 }
 
-/**
- * ETA計算で仮定する並列数。全リースが最大候補タイプ（`GPU_MAX_INSTANCE_VCPU`）で
- * 埋まっている前提の保守側の見積もり（32vCPU / 8vCPU = 4）。`g6f.xlarge`(4vCPU)の
- * リースが混ざると実際の並列数はこれより多いが、枠を少なく数える＝長めに出るだけなので
- * 許容する。
- */
+/** ETA計算で仮定する並列数（32vCPU / 8vCPU = 4）。 */
 export const GPU_QUEUE_ESTIMATE_PARALLELISM = Math.max(
   1,
-  Math.floor(GPU_VCPU_QUOTA / GPU_MAX_INSTANCE_VCPU),
+  Math.floor(GPU_VCPU_QUOTA / GPU_INSTANCE_VCPU),
 );
 
 /**
@@ -201,8 +209,7 @@ export function estimateQueueWaitSeconds(
   }
   for (const job of aheadJobs) {
     const start = slots.shift() ?? 0;
-    const duration =
-      (job.estimatedDurationSeconds ?? GPU_QUEUE_FALLBACK_DURATION_SECONDS) + GPU_JOB_OVERHEAD_SECONDS;
+    const duration = estimateGpuOccupancySeconds(job.estimatedDurationSeconds, job.recordingSpeed);
     slots.push(start + duration);
     slots.sort((a, b) => a - b);
   }
