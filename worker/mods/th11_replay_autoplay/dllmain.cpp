@@ -27,6 +27,8 @@
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
 #include "../common/logging.h"
+#include "../common/speed_hack_hook.h"
+#include "../common/dsound_hook.h"
 #include "../common/fps_monitor.h"
 #include "../common/score_monitor.h"
 
@@ -97,6 +99,11 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         LogInit(hinst, "th11_autoplay.log");
         Log("DLL_PROCESS_ATTACH: installing IAT hooks");
         InstallDinputHook();
+        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+        InstallSpeedHackHook();
+        // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
+        // A/V同期マーカー(reports/88)を有効にする。
+        InstallDSoundHook(1.0);
         InstallKeyboardStateHook();
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th11.cpp)の`Globals* globals = (Globals*)0x4a56e0`(絶対VA、
