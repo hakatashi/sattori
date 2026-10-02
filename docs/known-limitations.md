@@ -55,8 +55,9 @@ Issue #101のスコープ）。Issue #101でth09を対応させる際はMOD側�
 ### 倍速録画（2〜4倍速）の品質と未実装事項（Issue #288）
 
 [`decisions/0058`](decisions/0058-speedup-recording-on-gpu-instances.md)。技術検証は
-touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実行）で、**本番構成
-（eu-south-2・カスタムAMI上のDocker）での検証は各タイトルの公開前に行う**。
+touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実行）。本番構成
+（eu-south-2・カスタムAMI上のDocker）では全12タイトルを2倍速（th07は3倍速、th06は4倍速も）で
+検証済み（[`reports/2026-10-02`](reports/2026-10-02-speedup-production-e2e.md)）。
 
 - **3倍速以上はx11grabのキャプチャが律速**し、等倍へ戻した後の落ちフレームが3倍速で1〜3%、
   4倍速で7〜9%に増える（ゲーム自体は目標fpsを維持している、reports/89 §4）。th15は3倍速でも
@@ -66,8 +67,9 @@ touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実�
   ゲーム内容の欠落ではない。一部タイトル（th07/08/09）はBGMと画面が+0.15〜0.2秒ずれ、
   th06nc/th11/th128では時間とともに変わる（ゲーム側のBGMストリーミングに起因、パイプラインの
   誤差は±20ms、reports/89 §6）。
-- **Sattori固有でrecorder未検証の組み合わせ**: th07・th12はVsyncPatchを注入したまま倍速にする
-  （recorderはVsyncPatch無しで検証、`worker/docs/titles/th07.md`・`th12.md`）。
+- **th12の倍速では画面上のfps表示が「120fps」になる**（th10は同じVsyncPatch＋`CalcFPS=0`の構成で
+  60表示）。ゲーム本体の進行は正常（記録スコア一致・等倍録画と同じ速度）。th12のfps計算が
+  スピードハックの対象外の時計を使っていると推測している（未調査、th12の公開前に直す）。
 - **同期マーカー（録画冒頭約3秒の-42dBFSノイズ）は動画に残る**。聴感上の問題が無いかは
   本番検証で確認する。
 - **GPU容量を確保できない場合のCPU等倍へのフォールバックは未実装**（Issue #289）。GPU待ち行列の
