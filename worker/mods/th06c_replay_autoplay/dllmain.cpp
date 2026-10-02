@@ -35,6 +35,7 @@
 #include <cstring>
 
 #include "../common/logging.h"
+#include "../common/menu_wait.h"
 #include "../common/dsound_hook.h"
 #include "../common/wasapi_hook.h"
 #include "../common/speed_hack_hook.h"
@@ -378,7 +379,7 @@ bool NavigateToReplay() {
         kMenuIndexReplay);
     for (int i = 0; i < kMenuNavMaxPresses && idx != kMenuIndexReplay; i++) {
         PressVKey(VK_DOWN);
-        Sleep(250);
+        MenuSleep(250);
         uint32_t next = ReadMenuIndex();
         Log("  Down %d回目: index %u -> %u", i + 1, idx, next);
         idx = next;
@@ -420,11 +421,11 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("入力ポーリング開始を検出");
 
     Log("タイトルロゴのアニメーション用に2000ms待機します...");
-    Sleep(2000);
+    MenuSleep(2000);
 
     Log("Step 1: Enter (デモ再生を抜けてメインメニューを表示)");
     PressVKey(VK_RETURN);
-    Sleep(500);
+    MenuSleep(500);
 
     if (!NavigateToReplay()) {
         Log("ERROR: メインメニューで 'Replay' を選択できませんでした。中断します");
@@ -433,15 +434,15 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
 
     Log("Step 3: Enter ('Replay' を確定、リプレイ一覧へ)");
     PressVKey(VK_RETURN);
-    Sleep(2000);
+    MenuSleep(2000);
 
     Log("Step 4: Enter (1番目のリプレイファイルを選択)");
     PressVKey(VK_RETURN);
-    Sleep(1000);
+    MenuSleep(1000);
 
     Log("Step 5: Enter (リプレイ再生開始)");
     PressVKey(VK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("=== th06c_replay_autoplay: sequence complete ===");
     return 0;

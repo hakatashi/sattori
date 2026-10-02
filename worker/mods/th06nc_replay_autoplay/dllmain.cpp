@@ -47,6 +47,7 @@
 #include <cstring>
 
 #include "../common/logging.h"
+#include "../common/menu_wait.h"
 #include "../common/dsound_hook.h"
 #include "../common/wasapi_hook.h"
 #include "../common/speed_hack_hook.h"
@@ -214,7 +215,8 @@ double GetTimeScale() {
     return cached;
 }
 
-void SleepScaled(DWORD ms) { Sleep((DWORD)(ms * GetTimeScale())); }
+// 倍速録画時はゲーム内時間での待ちを等倍と揃えるため1/Nにする(menu_wait.h)。
+void SleepScaled(DWORD ms) { Sleep((DWORD)(ms * GetTimeScale() * autoplay::MenuWaitScale())); }
 
 // g_pollCount が start から frames 回進むまで待つ
 void WaitFrames(LONG start, unsigned int frames, unsigned int timeoutMs) {

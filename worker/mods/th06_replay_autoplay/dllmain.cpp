@@ -25,6 +25,7 @@
 #include <windows.h>
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
+#include "../common/menu_wait.h"
 #include "../common/logging.h"
 #include "../common/speed_hack_hook.h"
 #include "../common/dsound_hook.h"
@@ -54,29 +55,29 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     }
 
     Log("Buffering 2000ms for title logo animation...");
-    Sleep(2000);
+    MenuSleep(2000);
 
     Log("Step 1: Enter (dismiss attract-mode demo, show main menu)");
     PressKey(DIK_RETURN);
-    Sleep(500);
+    MenuSleep(500);
 
     Log("Step 2: Down x2 (select 'Replay' on main menu)");
     for (int i = 0; i < 2; i++) {
         PressKey(DIK_DOWN);
-        Sleep(250);
+        MenuSleep(250);
     }
 
     Log("Step 3: Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    Sleep(2000);
+    MenuSleep(2000);
 
     Log("Step 4: Enter (select 1st replay file)");
     PressKey(DIK_RETURN);
-    Sleep(1000);
+    MenuSleep(1000);
 
     Log("Step 5: Enter (start replay playback)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("=== th06_replay_autoplay: sequence complete ===");
     return 0;

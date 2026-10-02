@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
+#include "../common/menu_wait.h"
 #include "../common/logging.h"
 #include "../common/speed_hack_hook.h"
 #include "../common/fps_limiter_hook.h"
@@ -62,29 +63,29 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     }
 
     Log("Buffering 6000ms for title screen logo animation...");
-    Sleep(6000);
+    MenuSleep(6000);
 
     Log("Step 0: Enter (dismiss 'Press Any Button' title screen)");
     PressKey(DIK_RETURN);
-    Sleep(1000);
+    MenuSleep(1000);
 
     Log("Step 1: Down x2 (select 'Replay' on main menu, skipping locked 'Extra Start')");
     for (int i = 0; i < 2; i++) {
         PressKey(DIK_DOWN);
-        Sleep(500);
+        MenuSleep(500);
     }
 
     Log("Step 2: Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    Sleep(500);
+    MenuSleep(500);
 
     Log("Step 3: Enter (select 1st replay file)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("Step 4: Enter (confirm playback, start replay from Stage 1)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("=== th10_replay_autoplay: sequence complete ===");
     return 0;

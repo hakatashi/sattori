@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
+#include "../common/menu_wait.h"
 #include "../common/logging.h"
 #include "../common/speed_hack_hook.h"
 #include "../common/fps_limiter_hook.h"
@@ -53,31 +54,31 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     }
 
     Log("Buffering 6000ms for title screen logo animation...");
-    Sleep(6000);
+    MenuSleep(6000);
 
     Log("Step 1: Down x2 (select 'Replay' on main menu)");
     for (int i = 0; i < 2; i++) {
         PressKey(DIK_DOWN);
-        Sleep(250);
+        MenuSleep(250);
     }
 
     Log("Step 2: Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("Step 3: Right (switch to user replay tab)");
     PressKey(DIK_RIGHT);
-    Sleep(500);
+    MenuSleep(500);
 
     // th11と同じスロット命名規約: 対象リプレイをインスタンスのreplay/配下に
     // "th12_ud0000.rpy"として配置しておく必要がある(record_th12.pyのcanonical_slot)。
     Log("Step 4: Enter (select 1st user replay file)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("Step 5: Enter (confirm playback, start replay)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("=== th12_replay_autoplay: sequence complete ===");
     return 0;
