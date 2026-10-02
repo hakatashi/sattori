@@ -26,6 +26,7 @@
 #include <windows.h>
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
+#include "../common/menu_wait.h"
 #include "../common/logging.h"
 #include "../common/speed_hack_hook.h"
 #include "../common/dsound_hook.h"
@@ -59,21 +60,21 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     // Start, Rank Select, etc.) instead of "Replay". 6000ms was found to
     // reliably reach the main menu (touhou-recorder reports/35).
     Log("Buffering 6000ms for title screen animation...");
-    Sleep(6000);
+    MenuSleep(6000);
 
     Log("Step 1: Down x2 (select 'Replay' on main menu)");
     for (int i = 0; i < 2; i++) {
         PressVKey(VK_DOWN_KEY);
-        Sleep(250);
+        MenuSleep(250);
     }
 
     Log("Step 2: Enter (confirm 'Replay', enter replay list)");
     PressVKey(VK_RETURN_KEY);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("Step 3: Right (switch to user replay tab)");
     PressVKey(VK_RIGHT_KEY);
-    Sleep(500);
+    MenuSleep(500);
 
     // Within the user replay tab, th11 assigns each replay file to a fixed
     // list slot parsed from the number in its filename (th11_ud0001.rpy
@@ -83,11 +84,11 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     // this Enter to land on it (verified in touhou-recorder reports/35).
     Log("Step 4: Enter (select 1st user replay file)");
     PressVKey(VK_RETURN_KEY);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("Step 5: Enter (confirm playback, start replay)");
     PressVKey(VK_RETURN_KEY);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("=== th11_replay_autoplay: sequence complete ===");
     return 0;
