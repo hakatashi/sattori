@@ -23,8 +23,8 @@ export const changelogEntries: ChangelogEntry[] = [
   },
   {
     date: "2026-10-03",
-    ja: "東方紺珠伝 (th15) の録画で、録画速度 (1〜4倍速) を選べるようにした。速い速度を選ぶと録画がより早く完了する",
-    en: "Added a recording speed option (1x–4x) for Legacy of Lunatic Kingdom (th15). Faster speeds finish recording sooner",
+    ja: "2倍速以上の速度で録画を行う高速録画オプションを実装。試験的に東方紺珠伝 (th15) で有効化",
+    en: "Implemented a high-speed recording option that records at 2x speed or higher, enabled experimentally for Legacy of Lunatic Kingdom (th15)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/288",
     important: true,
   },
@@ -36,7 +36,7 @@ export const changelogEntries: ChangelogEntry[] = [
   },
   {
     date: "2026-09-30",
-    ja: "録画時にサーバーの空きを待つ時間が発生した際、待ち順・おおよその待ち時間を表示するようにした",
+    ja: "録画時にサーバーの空きを待つ時間が発生した際、待ち順・おおよその待ち時間を表示するように改善",
     en: "Added display of queue position and estimated wait time when waiting for an available server during recording",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/270",
     important: true,
