@@ -160,7 +160,7 @@ CloudFormationのリソースIDから引く。キーはメールアドレスを�
 
 ```bash
 RATE_LIMIT_TABLE=$(aws cloudformation describe-stack-resource --region "$SATTORI_REGION" \
-  --stack-name SattoriStack --logical-resource-id EmailRateLimitTable \
+  --stack-name SattoriStack --logical-resource-id EmailRateLimitTable11AF3156 \
   --query 'StackResourceDetail.PhysicalResourceId' --output text)
 
 aws dynamodb delete-item --region "$SATTORI_REGION" \
