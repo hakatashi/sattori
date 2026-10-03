@@ -25,7 +25,12 @@
 #include <windows.h>
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
+#include "../common/menu_wait.h"
 #include "../common/logging.h"
+#include "../common/speed_hack_hook.h"
+#include "../common/dsound_hook.h"
+#include "../common/fps_display_hook.h"
+#include "../common/fps_monitor.h"
 #include "../common/score_monitor.h"
 
 using namespace autoplay;
@@ -50,29 +55,29 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     }
 
     Log("Buffering 2000ms for title logo animation...");
-    Sleep(2000);
+    MenuSleep(2000);
 
     Log("Step 1: Enter (dismiss attract-mode demo, show main menu)");
     PressKey(DIK_RETURN);
-    Sleep(500);
+    MenuSleep(500);
 
     Log("Step 2: Down x2 (select 'Replay' on main menu)");
     for (int i = 0; i < 2; i++) {
         PressKey(DIK_DOWN);
-        Sleep(250);
+        MenuSleep(250);
     }
 
     Log("Step 3: Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    Sleep(2000);
+    MenuSleep(2000);
 
     Log("Step 4: Enter (select 1st replay file)");
     PressKey(DIK_RETURN);
-    Sleep(1000);
+    MenuSleep(1000);
 
     Log("Step 5: Enter (start replay playback)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("=== th06_replay_autoplay: sequence complete ===");
     return 0;
@@ -84,6 +89,20 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         LogInit(hinst, "th06_autoplay.log");
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
+        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+        InstallSpeedHackHook();
+        // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
+        // A/V同期マーカー(reports/88)を有効にする。
+        InstallDSoundHook(1.0);
+        // 画面上fpsカウンター表示の倍速録画補正(reports/90)。th06のfps計算
+        // (RVA 0x23f3f〜、書式"%.02ffps")はWINMM.dll!timeGetTimeで経過時間を測る
+        // (0x23f5d=初回のみ基準時刻、0x23f68=毎フレーム現在時刻、500ms毎に更新)。
+        // speed_hack_hookはQPCしか偽装しないため、補正しないと2倍速(vpatch GameFPS=120)で
+        // 「120.00fps」と表示される。両呼び出しの戻り先RVAを対象にする。
+        // なおvpatch.iniのCalcFPS=1だとvpatch自身がfpsを計算・表示するため、倍速録画時は
+        // recording/instance.pyがCalcFPS=0に書き換える。InstallSpeedHackHook()の後に呼ぶこと。
+        static const ULONG_PTR kFpsTimeRvas[] = {0x00023f63, 0x00023f6e};
+        InstallFpsDisplayCorrectionHookTimeGetTime(kFpsTimeRvas, 2);
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th06.cpp)の`GAME_MANAGER = (GameManager*)0x69bca0`(絶対VA、
         // ImageBase=0x400000前提、RVA=0x29bca0)由来。GameManager構造体はポインタ
@@ -107,6 +126,8 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
             sm.intervalMs = 1000;
             StartScoreMonitorThread(sm);
         }
+        // 倍速録画の進行速度確認用(reports/89)。
+        StartFpsMonitorThread();
         CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
     }
     return TRUE;

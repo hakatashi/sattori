@@ -22,19 +22,35 @@
 | `mods/thNN_replay_autoplay/` | タイトルごとの自動再生フック DLL(`thNN_hook.dll`)のソース(C++)。
   組み込むフックの違いは各タイトルの背景ファイル([`titles/`](titles/README.md))を参照 |
 
-## 2. 低速録画(`worker/README.md` §5)まわりのフック
+## 2. 録画速度(`worker/README.md` §5)・A/V同期まわりのフック
+
+いずれも`FPS_LIMIT_TARGET_HZ`・`SPEED_HACK_MULTIPLIER`が未設定(等倍)なら従来動作と互換。
 
 | ソース | 役割 |
 | --- | --- |
+| `mods/common/speed_hack_hook.*` | 倍速録画(Issue #288)の本体。`QueryPerformanceCounter`
+  (と、`SPEED_HACK_TIMERS`指定時は`timeGetTime`/`GetTickCount`)の経過時間を
+  `SPEED_HACK_MULTIPLIER`倍に伸ばし、ゲームに「時間がN倍速く進んだ」と思わせる
+  (touhou-recorder reports/85)。全32bitタイトルのMODに組み込み、64bitのth06c/th06ncは
+  `GetProcAddress`経由の取得を`WrapQueryPerformanceCounterForSpeedHack()`で差し替える |
 | `mods/common/fps_limiter_hook.*` | `IDirect3DDevice9::Present`のvtableフックによるフレーム
-  レート制限(reports/46)。目標fpsは`FPS_LIMIT_TARGET_HZ`(既定60)。低速録画の実装基盤 |
+  レート制限(reports/46)。目標fpsは`FPS_LIMIT_TARGET_HZ`(既定60)。低速録画の実装基盤で、
+  倍速録画ではPresentの上限を`60×倍率`へ引き上げる |
 | `mods/common/fps_limiter_hook_d3d8.*` | 上記のDirect3D8版(`IDirect3DDevice8::Present`、
-  vtable番号はD3D9よりCreateDeviceが1つ・Presentが2つ小さい)。th09のMODに組み込み済みだが
-  `SLOW_MOTION_SUPPORTED_GAME_IDS`未登録のためユーザーには未公開(Issue #101で他タイトルへ
-  展開する際にそのまま使える、[titles/th09.md](titles/th09.md)) |
-| `mods/common/dsound_hook.*` / `fps_display_hook.*` | 低速録画時に音声を同じ比率へスローダウン
-  させる(`SetFrequency`フック、reports/47)／画面に焼き付くfpsカウンター表示だけを等倍相当へ
-  補正する(reports/48) |
+  vtable番号はD3D9よりCreateDeviceが1つ・Presentが2つ小さい)。th09で使う
+  ([titles/th09.md](titles/th09.md)) |
+| `mods/common/dsound_hook.*` | 音声の再生周波数を`FPS_LIMIT_TARGET_HZ/60`倍にスケールする
+  (`SetFrequency`フック、低速録画 reports/47・倍速録画 reports/89)。あわせて**同期マーカー**
+  (reports/88)を鳴らす: `SYNC_MARKER_TRIGGER`のファイルが置かれたら、ゲーム自身の
+  DirectSoundデバイスから-42dBFS・約3秒の疑似乱数ノイズを再生し、再生直前の壁時計時刻を
+  `SYNC_MARKER played ...`としてMODログへ出す(`recording/sync_marker.py`が読む)。等倍でも有効 |
+| `mods/common/wasapi_hook.*` | th06c/th06nc(DXライブラリ、音声はWASAPI)向けの`dsound_hook`相当。
+  `IAudioClient::GetMixFormat`のレートを1/倍率に見せ、`Initialize`で倍率ぶん戻して実ストリームを
+  開く。同期マーカーは`IAudioRenderClient::ReleaseBuffer`で出力バッファへ足し込む(reports/89・90) |
+| `mods/common/fps_display_hook.*` | 画面に焼き付くfpsカウンター表示だけを等倍相当へ補正する
+  (reports/48)。`speed_hack_hook`が同じAPIを偽装済みの場合はその倍率を割り戻す(二重補正で
+  th12/th20が「30fps」になった、reports/90)。**`InstallSpeedHackHook()`の後に呼ぶこと**。
+  th06/th08はfps計算が`timeGetTime`なのでtimeGetTime版を使う |
 
 ## 3. スコア監視(デシンク事後検知)
 

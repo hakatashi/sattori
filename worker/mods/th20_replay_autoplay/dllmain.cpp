@@ -29,6 +29,7 @@
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
 #include "../common/logging.h"
+#include "../common/speed_hack_hook.h"
 #include "../common/fps_monitor.h"
 #include "../common/fps_limiter_hook.h"
 #include "../common/dsound_hook.h"
@@ -118,6 +119,9 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         LogInit(hinst, "th20_autoplay.log");
         Log("DLL_PROCESS_ATTACH: installing IAT hooks");
         InstallDinputHook();
+        // 倍速録画(reports/85・89): QPCの経過時間をSPEED_HACK_MULTIPLIER倍に伸ばす。
+        // 未設定(等倍)なら何もしない。
+        InstallSpeedHackHook();
         InstallKeyboardStateHook();
         // AWS実機(Intel Xeon/Nitro仮想化)でth20のフレームペーシングが崩れ、
         // ゲーム内fpsカウンターが常時75fps前後(本来60fps)になりリプレイが

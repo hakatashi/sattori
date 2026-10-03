@@ -21,7 +21,7 @@ def fake_job_sink(monkeypatch):
     """
     events = []
 
-    def create_null_sink(sink_name, log=print):
+    def create_null_sink(sink_name, rate=None, log=print):
         events.append(("create", sink_name))
         return "42"
 

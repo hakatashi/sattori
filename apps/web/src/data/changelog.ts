@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-09-30",
+    ja: "録画した動画の音声と映像のタイミングのずれ（音ズレ）を補正する精度を改善",
+    en: "Improved the accuracy of correcting audio/video timing offsets in recorded videos",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/288",
+  },
+  {
+    date: "2026-09-30",
     ja: "録画時にサーバーの空きを待つ時間が発生した際、待ち順・おおよその待ち時間を表示するようにした",
     en: "Added display of queue position and estimated wait time when waiting for an available server during recording",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/270",
