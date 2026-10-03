@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-10-03",
+    ja: "高速録画オプションを東方妖々夢 (th07) でも利用可能に（おすすめは3倍速）",
+    en: "The high-speed recording option is now also available for Perfect Cherry Blossom (th07) (3x speed recommended)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/288",
+  },
+  {
+    date: "2026-10-03",
     ja: "東方紺珠伝 (th15) の長いリプレイで、録画後の変換に失敗することがある問題を修正",
     en: "Fixed an issue where conversion after recording could fail for long Legacy of Lunatic Kingdom (th15) replays",
     issueUrl: "https://github.com/hakatashi/sattori-dev/pull/298",
