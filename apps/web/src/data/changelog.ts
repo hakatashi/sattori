@@ -17,8 +17,8 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-10-03",
-    ja: "高速録画オプションを東方妖々夢 (th07) でも利用可能に（おすすめは3倍速）",
-    en: "The high-speed recording option is now also available for Perfect Cherry Blossom (th07) (3x speed recommended)",
+    ja: "高速録画オプションを東方妖々夢 (th07) でも利用可能に",
+    en: "The high-speed recording option is now also available for Perfect Cherry Blossom (th07)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/288",
   },
   {
