@@ -193,6 +193,8 @@ describe("buildUserData", () => {
     expect(decoded).toContain(config.workerGpuImage);
     expect(decoded).not.toContain(config.workerImage);
     expect(decoded).toContain("docker run --rm --gpus all --ipc=host -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=all -e VK_LOADER_DEBUG=all $GPU_NVIDIA_MOUNTS -v /tmp/.X11-unix:/tmp/.X11-unix -v /etc/vulkan/icd.d:/etc/vulkan/icd.d:ro");
+    expect(decoded).toContain("for d in /dev/nvidia*; do");
+    expect(decoded).toContain("--device $d");
     // ディレクトリ丸ごとマウントするとコンテナ自身のxserver-xorg-core由来モジュール
     // （wfb等）が隠れてXorgが起動できなくなる（Issue #82実機検証で判明）ため、
     // 個別ファイルだけをシェル側で動的に列挙してマウントする。

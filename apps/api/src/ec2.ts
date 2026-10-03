@@ -319,6 +319,15 @@ for f in \\
   if [ -e "$f" ]; then
     GPU_NVIDIA_MOUNTS="$GPU_NVIDIA_MOUNTS -v $f:$f:ro"
   fi
+done
+# /dev/nvidia* を --device で明示的に渡す。--gpus all だけだとホストの systemctl
+# daemon-reload（起動後数分で走る）でコンテナのcgroupデバイス許可が失われ、録画途中から
+# NVML/CUDAが "Unknown Error"/CUDA_ERROR_NO_DEVICE になり配信用NVENC変換が失敗する
+# （NVIDIA/nvidia-container-toolkit 既知の問題、Issue #288 th15本番ジョブで再現）。
+for d in /dev/nvidia*; do
+  if [ -e "$d" ]; then
+    GPU_NVIDIA_MOUNTS="$GPU_NVIDIA_MOUNTS --device $d"
+  fi
 done`
     : "";
   const dockerRunFlags = isGpuJob
