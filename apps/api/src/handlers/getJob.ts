@@ -3,6 +3,7 @@ import {
   calculateDownloadExpiresAt,
   type GetJobResponse,
   isSlowMotionRecording,
+  recordingSpeedOf,
 } from "@sattori/shared";
 import { loadConfig } from "../config.js";
 import { buildCdnUrl, buildVideoDownloadUrl } from "../downloads.js";
@@ -93,6 +94,9 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     // ユーザーの希望（`options.slowMotion`）そのままではなく、EC2へフォールバック
     // したかどうか（EC2低速録画対応タイトルかどうかも含む）まで織り込んだ「実際に低速録画で走るか」を返す（Issue #68, #245）。
     slowMotion: isSlowMotionRecording(job.options, job.workerKind, job.game),
+    // 倍速録画（Issue #288）。常にGPUインスタンスで録るため割り当て先による
+    // フォールバックが無く、ユーザーの指定がそのまま実際の速度になる。
+    recordingSpeed: recordingSpeedOf(job.options),
     // `errorCode`と同じ理由（Issue #103追加より前の旧ジョブでは属性自体が無く
     // `undefined`になりうる）で`?? null`を通す。
     desyncDetected: job.desyncDetected ?? null,

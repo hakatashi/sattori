@@ -1,17 +1,16 @@
 import {
+  estimateGpuOccupancySeconds,
   estimateQueueWaitSeconds,
-  GPU_JOB_OVERHEAD_SECONDS,
-  GPU_MAX_INSTANCE_VCPU,
-  GPU_MIN_INSTANCE_VCPU,
-  GPU_QUEUE_FALLBACK_DURATION_SECONDS,
   GPU_QUEUE_INDEX,
   GPU_QUEUE_WAITING,
   GPU_VCPU_QUOTA,
   isQueueWaitTimedOut,
   nextPollIntervalSeconds,
+  recordingSpeedOf,
   requiresGpuRecording,
   reservableVcpu,
 } from "@sattori/shared";
+import type { RecordingSpeed } from "@sattori/shared";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { loadConfig } from "../../config.js";
@@ -30,7 +29,7 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 /**
  * Step Functions の `AcquireGpuSlot` ステート（通常invoke、`Launch`の手前）から
- * 呼ばれるLambda（Issue #270）。GPU描画必須タイトル（th06nc・th15）のvCPU容量を
+ * 呼ばれるLambda（Issue #270）。GPU必須のジョブ（th06nc・th15と倍速録画）のvCPU容量を
  * `GpuSlotsTable` で会計し、投入順（FIFO、`JobsTable`のsparse GSI
  * `GpuQueueIndex`）を守りながら空きを待たせる。
  *
@@ -67,20 +66,35 @@ export interface AcquireGpuSlotResult {
   waitSeconds: number;
 }
 
-function computeExpectedFinishAt(estimatedDurationSeconds: number | null, now: Date): Date {
-  const durationSeconds = estimatedDurationSeconds ?? GPU_QUEUE_FALLBACK_DURATION_SECONDS;
-  return new Date(now.getTime() + (durationSeconds + GPU_JOB_OVERHEAD_SECONDS) * 1000);
+function computeExpectedFinishAt(
+  estimatedDurationSeconds: number | null,
+  recordingSpeed: RecordingSpeed,
+  now: Date,
+): Date {
+  // 倍速録画（Issue #288）はGPU枠の占有時間が短いので、速度を織り込んで見積もる。
+  return new Date(
+    now.getTime() + estimateGpuOccupancySeconds(estimatedDurationSeconds, recordingSpeed) * 1000,
+  );
 }
 
 /** `GpuQueueIndex`から待機中の全ジョブを取得する（Projection=ALLなので順位・ETA計算に要る属性も同時に読める）。 */
 async function queryWaitingJobs(
   table: string,
-): Promise<{ jobId: string; gpuQueuedAt: string; gpuQueueHeartbeatAt: string; estimatedDurationSeconds: number | null }[]> {
+): Promise<
+  {
+    jobId: string;
+    gpuQueuedAt: string;
+    gpuQueueHeartbeatAt: string;
+    estimatedDurationSeconds: number | null;
+    recordingSpeed: RecordingSpeed;
+  }[]
+> {
   const items: Array<{
     jobId: string;
     gpuQueuedAt: string;
     gpuQueueHeartbeatAt?: string;
     estimatedDurationSeconds?: number | null;
+    options?: { recordingSpeed?: unknown };
   }> = [];
   let exclusiveStartKey: Record<string, unknown> | undefined;
   do {
@@ -103,6 +117,7 @@ async function queryWaitingJobs(
     // 拾った場合を想定）は最も古い扱いにして安全側（stale除外）に倒す。
     gpuQueueHeartbeatAt: item.gpuQueueHeartbeatAt ?? new Date(0).toISOString(),
     estimatedDurationSeconds: item.estimatedDurationSeconds ?? null,
+    recordingSpeed: recordingSpeedOf(item.options),
   }));
 }
 
@@ -113,7 +128,7 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
     throw new Error(`ジョブが見つかりません: ${event.jobId}`);
   }
 
-  if (!requiresGpuRecording(job.game)) {
+  if (!requiresGpuRecording(job)) {
     return { jobId: event.jobId, attempt: event.attempt, acquired: true, timedOut: false, waitSeconds: 0 };
   }
 
@@ -170,16 +185,15 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
 
   if (head) {
     const { usedVcpu, leases } = await listGpuSlots(config.gpuSlotsTable);
-    // attempt > 1 の場合（前回のLaunchが失敗した再試行）、4vCPUでの起動（g6f.xlarge単独）が
-    // 在庫枯渇等で失敗した可能性がある。4vCPUのまま再試行を繰り返すとMAX_ATTEMPTS(10回≒27分)を
-    // 浪費して先行ジョブの完了(8vCPU回復)を待たずにretries_exhaustedで失敗してしまうため、
-    // リトライ時は最大候補タイプ分(GPU_MAX_INSTANCE_VCPU=8vCPU、g6f.2xlargeも選べる量)が
-    // 空くまで待機列で待たせる。
-    // 初回(attempt === 1)は4vCPUの空きがあれば投機的に並列起動を試みる。
-    const minRequiredVcpu = event.attempt > 1 ? GPU_MAX_INSTANCE_VCPU : GPU_MIN_INSTANCE_VCPU;
-    const reserve = reservableVcpu(GPU_VCPU_QUOTA - usedVcpu, minRequiredVcpu);
+    // 起動候補はg6f.2xlarge（8vCPU）だけなので、確保量も常に8vCPU（Issue #288。
+    // かつてのg6f.xlarge(4vCPU)での投機的確保は廃止した、`gpuQueue.ts`の`reservableVcpu()`）。
+    const reserve = reservableVcpu(GPU_VCPU_QUOTA - usedVcpu);
     if (reserve !== null) {
-      const expectedFinishAt = computeExpectedFinishAt(job.estimatedDurationSeconds, now);
+      const expectedFinishAt = computeExpectedFinishAt(
+        job.estimatedDurationSeconds,
+        recordingSpeedOf(job.options),
+        now,
+      );
       const result = await acquireGpuSlot(
         config.gpuSlotsTable,
         event.jobId,
@@ -225,10 +239,13 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
   // 先頭でない: 順位・ETAを計算して待つ。
   const position = queuePosition(event.jobId, liveEntries) ?? liveEntries.length + 1;
   const ahead = entriesAhead(event.jobId, liveEntries);
-  const aheadDurations = ahead.map((entry) => ({
-    estimatedDurationSeconds:
-      waitingJobs.find((w) => w.jobId === entry.jobId)?.estimatedDurationSeconds ?? null,
-  }));
+  const aheadDurations = ahead.map((entry) => {
+    const waiting = waitingJobs.find((w) => w.jobId === entry.jobId);
+    return {
+      estimatedDurationSeconds: waiting?.estimatedDurationSeconds ?? null,
+      recordingSpeed: waiting?.recordingSpeed ?? recordingSpeedOf(undefined),
+    };
+  });
   const { leases } = await listGpuSlots(config.gpuSlotsTable);
   const etaSeconds = estimateQueueWaitSeconds(
     aheadDurations,

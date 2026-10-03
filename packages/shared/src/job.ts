@@ -1,4 +1,5 @@
 import type { GameId } from "./games.js";
+import type { RecordingSpeed } from "./recordingSpeed.js";
 import type { SupportedLanguage } from "./language.js";
 import type { ReplayInfo } from "./replay.js";
 import type { HomeWorkerOfferState, WorkerEnvironment, WorkerKind } from "./worker.js";
@@ -82,6 +83,17 @@ export interface RecordingOptions {
    * `apps/api/src/workerEnv.ts`は`job.options`から直接読んで環境変数化する。
    */
   th06ncHighResolution: boolean;
+  /**
+   * 録画速度（Issue #288、倍速録画）。1〜4倍速。詳細と定数は `recordingSpeed.ts` 参照。
+   *
+   * **2倍速以上はGPUインスタンス必須**で、自宅ワーカーへはオファーしない
+   * （`requiresGpuRecording()`）。低速録画（`slowMotion`）とは排他で、2倍速以上が
+   * 指定されていれば`slowMotion`は無視する（`apps/api/src/workerEnv.ts`）。
+   *
+   * このフィールドの導入前に作られたジョブには無いため省略可能にしてあり、読むときは
+   * 必ず`recordingSpeedOf()`を通すこと（欠損は等倍）。
+   */
+  recordingSpeed?: RecordingSpeed;
 }
 
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
@@ -89,6 +101,7 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   slowMotion: false,
   th10BugfixMarisaB: false,
   th06ncHighResolution: false,
+  recordingSpeed: 1,
 };
 
 /**

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { WorkerHeartbeat } from "@sattori/shared";
-import { LAUNCH_LAMBDA_TIMEOUT_SECONDS, WORKER_HEARTBEAT_FRESH_SECONDS } from "@sattori/shared";
+import {
+  DEFAULT_RECORDING_OPTIONS,
+  LAUNCH_LAMBDA_TIMEOUT_SECONDS,
+  WORKER_HEARTBEAT_FRESH_SECONDS,
+} from "@sattori/shared";
 import {
   DEFAULT_ROUTING_POLICY,
   GAME_ROUTING_POLICIES,
@@ -162,6 +166,22 @@ describe("selectHomeWorker", () => {
     expect(
       selectHomeWorker([worker], { game: "th06nc" }, policy as GameRoutingPolicy, NOW),
     ).toBeNull();
+  });
+
+  it("倍速録画のジョブは自宅ワーカーが対応するタイトルでもオファーしない（Issue #288）", () => {
+    const job = { game: "th10" as const, options: { ...DEFAULT_RECORDING_OPTIONS, recordingSpeed: 2 as const } };
+    const policy = routingPolicyFor(job);
+    expect(policy.offerToHomeWorker).toBe(false);
+    const worker = heartbeat({ supportedGames: ["th10"] });
+    expect(selectHomeWorker([worker], job, policy, NOW)).toBeNull();
+  });
+
+  it("等倍録画は従来どおり自宅ワーカーへオファーしうる", () => {
+    const job = { game: "th10" as const, options: { ...DEFAULT_RECORDING_OPTIONS, recordingSpeed: 1 as const } };
+    const policy = routingPolicyFor(job);
+    expect(policy.offerToHomeWorker).toBe(true);
+    const worker = heartbeat({ supportedGames: ["th10"] });
+    expect(selectHomeWorker([worker], job, policy, NOW)).not.toBeNull();
   });
 
   it("th15(GPU専用タイトル)も自宅ワーカーの空き・宣言に関わらず常にnull（Issue #82）", () => {

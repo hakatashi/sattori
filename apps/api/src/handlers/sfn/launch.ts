@@ -67,7 +67,7 @@ export const handler = async (event: LaunchTaskEvent): Promise<void> => {
     return;
   }
 
-  const isGpuJob = requiresGpuRecording(job.game);
+  const isGpuJob = requiresGpuRecording(job);
   let maxVcpu: number | undefined;
   if (isGpuJob) {
     // GPU vCPU容量リース（Issue #270）。`AcquireGpuSlot`ステートが既に確保済みの

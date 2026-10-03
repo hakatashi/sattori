@@ -168,7 +168,7 @@ describe("estimateJobCost", () => {
       new Date("2026-08-02T00:00:00.000Z"),
     );
 
-    expect(estimateXlarge.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
+    expect(estimateXlarge.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
     expect(estimateXlarge.spotPricePerHour).not.toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.xlarge);
 
     const estimate2xlarge = estimateJobCost(
@@ -176,8 +176,27 @@ describe("estimateJobCost", () => {
       new Date("2026-08-02T00:00:00.000Z"),
     );
 
-    expect(estimate2xlarge.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
+    expect(estimate2xlarge.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
     expect(estimate2xlarge.spotPricePerHour).not.toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
+  });
+
+  it("インスタンスタイプが不明な倍速録画ジョブはタイトルによらずGPU帯（Issue #288）", () => {
+    const th07Speedup = estimateJobCost(
+      makeJob({
+        spotPricePerHour: null,
+        instanceType: null,
+        game: "th07",
+        options: { recordingSpeed: 3 },
+      }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+    const th20Native = estimateJobCost(
+      makeJob({ spotPricePerHour: null, instanceType: null, game: "th20", options: { recordingSpeed: 1 } }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+
+    expect(th07Speedup.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
+    expect(th20Native.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
   });
 
   it("インスタンスタイプも不明ならゲームからサイズ帯を推定する（th11・th12は.2xlarge帯）", () => {
@@ -215,9 +234,9 @@ describe("estimateJobCost", () => {
     // `launching`（インスタンスタイプ記録前）や管理画面からの再実行で通る経路。
     expect(th20.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
     expect(th06nc.spotPriceSource).toBe("fallback-game");
-    expect(th06nc.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
+    expect(th06nc.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
     expect(th15.spotPriceSource).toBe("fallback-game");
-    expect(th15.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["gpu-xlarge"]);
+    expect(th15.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
   });
 
   it("配信量は720p版1回ぶん、保管量は両方の合計とする", () => {

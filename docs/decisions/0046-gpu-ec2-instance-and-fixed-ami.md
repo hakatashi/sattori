@@ -1,6 +1,6 @@
 # 0046. GPU描画必須タイトル向けにg6f.xlargeを新規導入し、AMIは事前構築したカスタムAMIを固定参照する
 
-- **状態**: 有効
+- **状態**: 有効（ただし起動候補は[`0058`](0058-speedup-recording-on-gpu-instances.md)で`g6f.2xlarge`のみに変更。カスタムAMIの固定参照は引き続き有効）
 - **決定日**: 2026-09-12
 - **対象**: infra / apps/api / worker
 - **関連**: Issue #241、`docs/decisions/0002-ec2-launch-at-runtime-not-iac.md`、

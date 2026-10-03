@@ -3,7 +3,11 @@ import { CloudWatchClient, GetMetricDataCommand } from "@aws-sdk/client-cloudwat
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import { BYTES_PER_GB, CLOUDFRONT_FREE_TIER_GB_PER_MONTH } from "@sattori/shared";
+import {
+  BYTES_PER_GB,
+  CLOUDFRONT_FREE_TIER_GB_PER_MONTH,
+  FALLBACK_SPOT_PRICE_USD_PER_HOUR,
+} from "@sattori/shared";
 import type { JobCostInput } from "@sattori/shared";
 import { estimateCurrentMonthCostUsd, parseGranularity, summarizeCosts } from "./adminCosts.js";
 
@@ -209,6 +213,36 @@ describe("summarizeCosts", () => {
       assumedDurationJobs: 1,
       fallbackSpotPriceJobs: 1,
       unknownOutputSizeJobs: 1,
+    });
+  });
+
+  it("倍速録画ジョブはインスタンスタイプ未記録でもGPU帯のSpot単価で推定する（Issue #288）", async () => {
+    // th07は通常xlarge帯($0.045/h)だが、recordingSpeed: 2ならGPU帯($0.08/h)になる。
+    // 稼働時間1時間(3600秒)。
+    ddbMock.on(ScanCommand).resolves({
+      Items: [
+        job({
+          game: "th07",
+          launchedAt: "2026-08-01T00:00:00.000Z",
+          doneAt: "2026-08-01T01:00:00.000Z",
+          instanceType: null,
+          spotPricePerHour: null,
+          options: { recordingSpeed: 2 },
+        }),
+      ],
+    });
+
+    const result = await summarizeCosts("jobs", { granularity: "monthly", limit: 30, now: NOW });
+    const bucket = result.buckets[0];
+
+    expect(bucket?.breakdown.ec2Spot).toBeCloseTo(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu * 1.0, 6);
+    expect(bucket?.breakdown.ec2Spot).not.toBeCloseTo(FALLBACK_SPOT_PRICE_USD_PER_HOUR.xlarge * 1.0, 6);
+    expect(result.quality.fallbackSpotPriceJobs).toBe(1);
+
+    const scanCall = ddbMock.commandCalls(ScanCommand)[0];
+    expect(scanCall?.args[0].input.ProjectionExpression).toContain("#options.recordingSpeed");
+    expect(scanCall?.args[0].input.ExpressionAttributeNames).toMatchObject({
+      "#options": "options",
     });
   });
 
