@@ -12,7 +12,10 @@ import type { GameId } from "@sattori/shared";
  *
  * ここに無いタイトルは選択肢を出さず、従来どおり等倍で録画する。
  */
-export const RECORDING_SPEED_SELECTABLE_GAME_IDS: readonly GameId[] = ["th15"];
+export const RECORDING_SPEED_SELECTABLE_GAME_IDS: readonly GameId[] = [
+  "th15",
+  "th07",
+];
 
 export function isRecordingSpeedSelectable(game: GameId | null): boolean {
   return game !== null && RECORDING_SPEED_SELECTABLE_GAME_IDS.includes(game);
