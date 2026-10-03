@@ -10,6 +10,7 @@ import time
 
 import pulse
 
+from .config import with_runtime_overrides
 from .pipeline import record_with_retry
 
 
@@ -80,7 +81,9 @@ def run(game_id, build_config):
     if args.diagnostics_dir:
         os.makedirs(args.diagnostics_dir, exist_ok=True)
 
-    config = build_config(args.pulse_sink or pulse.local_sink_name())
+    # 起動側から渡された録画速度・GPUの有無による調整(GPU描画への切り替え、vpatchの
+    # GameFPS等)は、タイトルごとの設定とは別にここで一括して当てる。
+    config = with_runtime_overrides(build_config(args.pulse_sink or pulse.local_sink_name()), log=log)
     success = record_with_retry(
         config, args.replay_path, args.output,
         progress_dir=args.progress_dir, expected_duration_seconds=args.expected_duration_seconds,

@@ -3,8 +3,11 @@
 録画パイプライン本体は同じパッケージの各モジュールへ分かれている(`recording/__init__.py`)。
 タイトル固有の値をなぜその値にしたのかは `worker/docs/titles/thNN.md` にある。
 """
+import dataclasses
 import os
 from dataclasses import dataclass, field
+
+from .timing import NATIVE_FRAME_RATE_HZ, gpu_worker, is_speedup, recording_time_scale, speedup_multiplier
 
 # `worker/` ディレクトリの絶対パス。**このモジュールから見て1つ上**であることに注意
 # (`recording/config.py` にあるため)。games/・prefixes/・mods/・assets/ はいずれも
@@ -152,6 +155,14 @@ class GameConfig:
     # 上書きする必要がある場合に使う(touhou-recorder reports/78 §11.2)。
     # 空タプルが既定で、既存9タイトルは触れない。
     extra_instance_files: tuple[tuple[str, str], ...] = ()
+    # GPU描画時(`gpu_display`)に、x11grabを座標ではなくウィンドウID(`-window_id`)で
+    # 取り込むか。GPU描画面(Xorg+nvidia)のth08は、録画開始前にウィンドウを(0,0)へ
+    # 移しても、その後ゲーム自身がウィンドウ位置を(Win32のタイトルバー分下がった)
+    # クライアント(3,29)へ設定し直し、以後の映像がずれて終了画面のテンプレートが一致
+    # しなくなる(touhou-recorder reports/89 §5.3)。位置に依存しない取り込みにする。
+    # Xvfb(CPU描画)では従来どおり座標で取り込む(Xvfb上のth08はウィンドウID基準でも
+    # タイトルバー分ずれることが確認されており、利点が無いため、reports/90 §1.3)。
+    capture_by_window_id: bool = False
 
     def __post_init__(self):
         if self.game_exe is None:
@@ -220,4 +231,51 @@ class GameConfig:
         env["PULSE_SINK"] = self.pulse_sink
         if self.dxvk_dll_overrides:
             env["WINEDLLOVERRIDES"] = self.dxvk_dll_overrides
+        # 倍速録画(Issue #288)ではMODのspeed_hack_hookがQueryPerformanceCounterの経過時間を
+        # この倍率で伸ばす。起動側は`FPS_LIMIT_TARGET_HZ`(=60×倍率)だけを渡し、倍率は
+        # ここで導出する——2つの値を別々に渡すと食い違ったときにゲーム進行とPresent上限・
+        # 音声レートがずれ、しかもワーカーからは検知できないため、出所を1つにする。
+        time_scale = recording_time_scale(env)
+        if is_speedup(time_scale):
+            env["SPEED_HACK_MULTIPLIER"] = f"{speedup_multiplier(time_scale):g}"
+        else:
+            env.pop("SPEED_HACK_MULTIPLIER", None)
+        # 同期マーカー(A/V同期補正、touhou-recorder reports/88)のトリガーファイル。MOD
+        # (dsound_hook/wasapi_hook)はWine内から開くのでWindows形式(Z:)のパスで渡す。
+        # 等倍でも常に有効にする(start_timeの差による従来の補正は等倍でも+90〜+190ms
+        # 遅れていた、reports/88)。
+        from .sync_marker import trigger_path, windows_path
+        env["SYNC_MARKER_TRIGGER"] = windows_path(trigger_path(self))
         return env
+
+
+def with_runtime_overrides(config, env=None, log=print):
+    """実行時の環境変数(録画速度・GPUの有無)に応じて`GameConfig`を調整したコピーを返す。
+
+    タイトルごとの`record_thNN.py`は「そのタイトルでしか成り立たない値」だけを持ち、
+    起動側から渡される条件による調整はここに集約する(`recording.cli.run()`が呼ぶ)。
+
+    - **GPUワーカー(`GPU_WORKER=1`)**: GPU描画が必須ではないタイトルもGPU描画
+      (Xorg+nvidia)で録画する。倍速録画はGPU描画・NVENCを前提に検証されており
+      (touhou-recorder reports/89)、CPU描画(llvmpipe)では2倍速を維持できない。GPU描画面
+      では終了検知用のポーリングを本番キャプチャと同じffmpegから分岐させる
+      (`poll_side_stream`、無いと周期的なカクつきが出る、reports/81・89 §5.2)。
+    - **倍速録画かつVsyncPatch注入タイトル(th06/th07/th10/th12)**: vpatch.iniの
+      `GameFPS`を60×倍率へ、`CalcFPS`を0へ書き換える。VsyncPatchを注入したタイトルの
+      フレームレートはvpatch自身のタイマーが決めており、MODのQPC偽装はexeのIATにしか
+      効かないためvpatch内部の待ちには届かない(reports/89)。`CalcFPS=1`のままだと
+      vpatchが画面上のfps表示を実時間で計算し、2倍速で「120fps」と表示される(reports/90)。
+    """
+    env = env if env is not None else os.environ
+    changes = {}
+    if gpu_worker(env) and not config.gpu_display:
+        log("GPUワーカーのため、GPU描画(Xorg+nvidia)で録画します")
+        changes.update(gpu_display=True, poll_side_stream=True)
+    time_scale = recording_time_scale(env)
+    if is_speedup(time_scale) and any(d.lower().startswith("vpatch_") for d in config.extra_dlls):
+        game_fps = round(NATIVE_FRAME_RATE_HZ * speedup_multiplier(time_scale))
+        changes["vpatch_ini_overrides"] = config.vpatch_ini_overrides + (
+            ("Option", "GameFPS", str(game_fps)),
+            ("Option", "CalcFPS", "0"),
+        )
+    return dataclasses.replace(config, **changes) if changes else config

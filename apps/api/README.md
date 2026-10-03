@@ -75,7 +75,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    デーモンが**`launching`にする。理由は
    [`0034`](../../docs/decisions/0034-launch-handlefailure-timing.md)）。GPUジョブは
    直前に確保したリースのvCPU量で候補インスタンスタイプを絞り
-   （`getCandidateInstanceTypes(game, { maxVcpu })`）、実際に確保できたタイプに
+   （`getCandidateInstanceTypes(job, { maxVcpu })`）、実際に確保できたタイプに
    合わせてリースを縮小する。**このハンドラの戻り値はStep Functionsの実行結果に
    影響しない** — 成功/失敗の確定はワーカー自身が`taskToken`経由で
    `SendTaskSuccess`/`SendTaskFailure`を呼ぶことで行う。成功時は

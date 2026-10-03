@@ -1,5 +1,6 @@
 #include "score_monitor.h"
 #include "logging.h"
+#include <stdlib.h>
 #include <string.h>
 
 namespace autoplay {
@@ -137,6 +138,16 @@ DWORD WINAPI ScoreMonitorThread(LPVOID) {
 void StartScoreMonitorThread(const ScoreMonitorConfig& config) {
     if (!config.baseRva) return;
     g_config = config;
+    // 倍速録画(Issue #288)ではゲーム内時間が実時間のN倍で進むため、実時間の間隔を
+    // 据え置くとサンプル間隔がゲーム内でN倍に広がる。未クリアのリプレイは最終スコア
+    // 到達からメニュー復帰までが短く、本番E2Eでth07(3倍速)・th08(2倍速)の最終スコアを
+    // 取りこぼしてデシンクと誤判定した。ゲーム内時間での間隔を等倍と揃えるため1/Nにする。
+    const char* env = getenv("SPEED_HACK_MULTIPLIER");
+    double multiplier = env ? atof(env) : 1.0;
+    if (multiplier > 1.0) {
+        g_config.intervalMs = (DWORD)(config.intervalMs / multiplier);
+        if (g_config.intervalMs < 1) g_config.intervalMs = 1;
+    }
     CreateThread(NULL, 0, ScoreMonitorThread, NULL, 0, NULL);
 }
 

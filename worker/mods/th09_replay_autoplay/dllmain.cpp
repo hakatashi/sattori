@@ -24,6 +24,7 @@
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
 #include "../common/logging.h"
+#include "../common/speed_hack_hook.h"
 #include "../common/fps_monitor.h"
 #include "../common/score_monitor.h"
 #include "../common/fps_limiter_hook_d3d8.h"
@@ -65,14 +66,18 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     // CPUを占有し、タイトル画面ロード完了までの実時間が通常より延びることを
     // 実機確認した(30fps設定でホスト高負荷時に30秒を超えることがあった、
     // touhou-recorder reports/68)。他の待機と同様ScaledSleepと同じ比率で延長する。
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800,
-                                     /*timeoutMs=*/(DWORD)(30000 * GetMenuTimeScale()));
+    // ただし倍速録画(scale<1)では縮めない: ゲームの起動・ウィンドウ生成は実時間で進むため、
+    // 2倍速で15秒に縮めたところ本番E2Eで起動待ちがタイムアウトした(Issue #288)。
+    // ワーカー側の`scaled_timeout_sec()`と同じく延長方向にだけ効かせる。
+    const double startupScale = GetMenuTimeScale() > 1.0 ? GetMenuTimeScale() : 1.0;
+    const DWORD startupTimeoutMs = (DWORD)(30000 * startupScale);
+    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/startupTimeoutMs);
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
         return 1;
     }
 
-    if (!WaitForHookActive(/*timeoutMs=*/(DWORD)(30000 * GetMenuTimeScale()))) {
+    if (!WaitForHookActive(/*timeoutMs=*/startupTimeoutMs)) {
         Log("ERROR: GetDeviceState hook was never called, aborting sequence");
         return 1;
     }
@@ -112,6 +117,8 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         LogInit(hinst, "th09_autoplay.log");
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
+        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+        InstallSpeedHackHook();
         // 低速録画(未サポート、上記コメント参照)。th09はDirect3D8エンジンのため、
         // th10/th12(Direct3D9)向けのfps_limiter_hook.hではなくD3D8版
         // (fps_limiter_hook_d3d8.h)を使う。FPS_LIMIT_TARGET_HZ未設定時は

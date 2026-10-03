@@ -20,9 +20,14 @@
 // GetKeyboardStateを使う」と早合点しないこと。
 
 #include <windows.h>
+#include <stdlib.h>
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
+#include "../common/menu_wait.h"
 #include "../common/logging.h"
+#include "../common/speed_hack_hook.h"
+#include "../common/fps_limiter_hook.h"
+#include "../common/dsound_hook.h"
 #include "../common/fps_monitor.h"
 #include "../common/score_monitor.h"
 
@@ -49,31 +54,31 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     }
 
     Log("Buffering 6000ms for title screen logo animation...");
-    Sleep(6000);
+    MenuSleep(6000);
 
     Log("Step 1: Down x2 (select 'Replay' on main menu)");
     for (int i = 0; i < 2; i++) {
         PressKey(DIK_DOWN);
-        Sleep(250);
+        MenuSleep(250);
     }
 
     Log("Step 2: Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("Step 3: Right (switch to user replay tab)");
     PressKey(DIK_RIGHT);
-    Sleep(500);
+    MenuSleep(500);
 
     // th11と同じスロット命名規約: 対象リプレイをインスタンスのreplay/配下に
     // "th12_ud0000.rpy"として配置しておく必要がある(record_th12.pyのcanonical_slot)。
     Log("Step 4: Enter (select 1st user replay file)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("Step 5: Enter (confirm playback, start replay)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("=== th12_replay_autoplay: sequence complete ===");
     return 0;
@@ -85,6 +90,21 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         LogInit(hinst, "th12_autoplay.log");
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
+        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+        InstallSpeedHackHook();
+        // 倍速録画(reports/89)ではPresentの上限をFPS_LIMIT_TARGET_HZ(60×倍率)に合わせる
+        // (touhou-recorderでは低速録画検証のフェーズ58・62から同じ構成)。**等倍では入れない**:
+        // このタイトルはVsyncPatchが60fpsへのフレーム制御を担っており、fps_limiter_hookは
+        // FPS_LIMIT_TARGET_HZ未設定でも60fpsで間引くため、二重の制御でゲーム進行が約3%遅れた
+        // (MOD統合テストで被弾タイミングが127秒時点で4.1秒遅延、Issue #288)。
+        {
+            const char* hz = getenv("FPS_LIMIT_TARGET_HZ");
+            double targetHz = hz ? atof(hz) : 0.0;
+            if (targetHz > 0.0 && targetHz != 60.0) InstallFpsLimiterHook(targetHz);
+        }
+        // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
+        // A/V同期マーカー(reports/88)を有効にする。
+        InstallDSoundHook(1.0);
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th12.cppの`THAdvOptWnd`内、プラクティスモードパラメータ書き込み
         // コード)から収集した絶対VA(0x4b0c44=score)を、image base(0x400000)を

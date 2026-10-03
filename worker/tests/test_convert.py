@@ -340,3 +340,49 @@ def test_without_ffmpeg_log_path_does_not_write_a_file(monkeypatch, tmp_path):
     convert.convert_for_delivery("in.mp4", "out.mp4", on_progress=lambda p: None)
 
     assert list(tmp_path.iterdir()) == []
+
+
+# --- 倍速録画(Issue #288) ----------------------------------------------------
+
+
+def test_no_separate_raw_output_for_a_speedup_recording():
+    assert convert.needs_separate_raw_output(640, 480, time_scale=0.5) is False
+
+
+def test_stretches_video_pts_and_restores_audio_for_speedup():
+    # 2倍速: 88200Hzで録った音声を44100Hzとして読み直し(=半分の速度・ピッチ)、
+    # 等倍換算のレート(44100Hz)で出す。88200Hzのまま出すと中身に対してファイルだけ大きくなる。
+    cmd = convert.build_convert_cmd(
+        "in.mp4", "out.mp4", width=640, height=480, time_scale=0.5, audio_sample_rate=88200,
+    )
+    expr = filter_of(cmd)
+
+    assert "setpts=2.0*PTS" in expr
+    assert "asetrate=44100,aresample=44100" in expr
+    assert cmd[cmd.index("-r") + 1] == str(convert.NATIVE_FRAME_RATE_HZ)
+
+
+def test_restores_audio_of_a_four_times_speedup_to_the_native_rate():
+    cmd = convert.build_convert_cmd(
+        "in.mp4", "out.mp4", width=640, height=480, time_scale=0.25, audio_sample_rate=176400,
+    )
+
+    assert "asetrate=44100,aresample=44100" in filter_of(cmd)
+    assert "setpts=4.0*PTS" in filter_of(cmd)
+
+
+def test_uses_nvenc_with_constant_quality_when_gpu_encode():
+    cmd = convert.build_convert_cmd("in.mp4", "out.mp4", width=640, height=480, gpu_encode=True)
+
+    assert cmd[cmd.index("-c:v", cmd.index("[v]")) + 1] == "h264_nvenc"
+    assert cmd[cmd.index("-cq") + 1] == str(convert.NVENC_DELIVERY_CQ)
+    # 品質固定(ビットレート上限なし)。配信版のビットレートは内容で4〜13Mbpsと違うため。
+    assert cmd[cmd.index("-b:v") + 1] == "0"
+    assert "libx264" not in cmd
+
+
+def test_uses_libx264_by_default():
+    cmd = convert.build_convert_cmd("in.mp4", "out.mp4", width=640, height=480)
+
+    assert "libx264" in cmd
+    assert "h264_nvenc" not in cmd
