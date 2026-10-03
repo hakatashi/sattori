@@ -21,6 +21,7 @@
 
 #include <windows.h>
 #include <stdlib.h>
+#include <string.h>
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
 #include "../common/menu_wait.h"
@@ -84,6 +85,50 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     return 0;
 }
 
+// 倍速録画時の画面上fps表示の補正。VsyncPatch(vpatch_th12.dll)が表示用のfps値を自前の
+// 実時間タイマーで書き込むため、倍速では「120fps」と表示される(th12のvpatchは`CalcFPS`
+// を読まず、QPC/timeGetTime/GetTickCountを偽装しても変わらないことを実機で確認した)。
+// 表示関数(RVA 0x1cc9e)が`[eax+0x34]`のfloatを読む命令の直後に係数(60/FPS_LIMIT_TARGET_HZ)
+// を掛けるコードを差し込む。命令列が想定と違うexeでは何もしない(表示が実測値のままになる
+// だけで実害はない)。
+static void InstallFpsDisplayScalePatch(double targetHz) {
+    static const ULONG_PTR kRva = 0x1cc9e;
+    static const BYTE kExpected[10] = {0xd9, 0x40, 0x34, 0x56, 0x8b, 0x35, 0xb8, 0x43, 0x4b, 0x00};
+    BYTE* site = (BYTE*)GetModuleHandle(NULL) + kRva;
+    if (memcmp(site, kExpected, sizeof(kExpected)) != 0) {
+        Log("InstallFpsDisplayScalePatch: unexpected bytes at RVA 0x%lx, skipped", (unsigned long)kRva);
+        return;
+    }
+    BYTE* cave = (BYTE*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!cave) {
+        Log("InstallFpsDisplayScalePatch: VirtualAlloc failed");
+        return;
+    }
+    float factor = (float)(60.0 / targetHz);
+    BYTE* constPtr = cave + 32;
+    memcpy(constPtr, &factor, sizeof(factor));
+    BYTE* p = cave;
+    *p++ = 0xd9; *p++ = 0x40; *p++ = 0x34;                  // fld dword [eax+0x34]
+    *p++ = 0xd8; *p++ = 0x0d;                               // fmul dword [constPtr]
+    DWORD addr = (DWORD)(ULONG_PTR)constPtr;
+    memcpy(p, &addr, 4); p += 4;
+    *p++ = 0x56;                                            // push esi
+    *p++ = 0x8b; *p++ = 0x35; *p++ = 0xb8; *p++ = 0x43; *p++ = 0x4b; *p++ = 0x00; // mov esi,[0x4b43b8]
+    *p++ = 0xe9;                                            // jmp site+10
+    LONG rel = (LONG)((site + 10) - (p + 4));
+    memcpy(p, &rel, 4);
+
+    DWORD oldProt;
+    VirtualProtect(site, 10, PAGE_EXECUTE_READWRITE, &oldProt);
+    site[0] = 0xe9;
+    LONG toCave = (LONG)(cave - (site + 5));
+    memcpy(site + 1, &toCave, 4);
+    for (int i = 5; i < 10; i++) site[i] = 0x90;
+    VirtualProtect(site, 10, oldProt, &oldProt);
+    FlushInstructionCache(GetCurrentProcess(), site, 10);
+    Log("InstallFpsDisplayScalePatch: OK (factor=%.4f)", factor);
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
@@ -100,7 +145,10 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         {
             const char* hz = getenv("FPS_LIMIT_TARGET_HZ");
             double targetHz = hz ? atof(hz) : 0.0;
-            if (targetHz > 0.0 && targetHz != 60.0) InstallFpsLimiterHook(targetHz);
+            if (targetHz > 0.0 && targetHz != 60.0) {
+                InstallFpsLimiterHook(targetHz);
+                InstallFpsDisplayScalePatch(targetHz);
+            }
         }
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。
