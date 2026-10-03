@@ -133,6 +133,11 @@ export function JobProgressView({ job, loadError }: ViewProps) {
             {job.slowMotion && !done && (
               <span className={styles.slowMotionHint}>{t("jobProgress.slowMotionHint")}</span>
             )}
+            {job.recordingSpeed > 1 && !done && (
+              <span className={styles.slowMotionHint}>
+                {t("jobProgress.speedupHint", { speed: job.recordingSpeed })}
+              </span>
+            )}
             {overall.retrySuspected && (
               <span className={styles.retryHint}>{t("jobProgress.retryHint")}</span>
             )}

@@ -4,15 +4,23 @@ import { Link } from "react-router-dom";
 import {
   defaultSlowMotionFor,
   EMAIL_PATTERN,
+  estimateRecordingCompletionSeconds,
   GAME_TITLES,
+  isFasterThanRecommended,
+  isSpeedupRecording,
   isSupportedGame,
   parseReplayInfo,
+  RECORDING_SPEEDS,
+  recommendedRecordingSpeed,
+  requiresGpuRecording,
   SLOW_MOTION_CAPABILITY,
   SUPPORTED_GAME_IDS,
   supportsEc2SlowMotion,
   supportsHighResolutionRecording,
   supportsSlowMotion,
   supportsTh10BugfixMarisaB,
+  type GameId,
+  type RecordingSpeed,
 } from "@sattori/shared";
 import { trackParseError } from "../api/analytics.ts";
 import {
@@ -25,6 +33,7 @@ import {
 import { translateApiErrorMessage, translateUnsupportedGameMessage } from "../i18n/apiErrors.ts";
 import { useLocale } from "../i18n/LocaleContext.ts";
 import { toLocalizedPath } from "../i18n/paths.ts";
+import { isRecordingSpeedSelectable } from "../recordingSpeedRollout.ts";
 import { MagicLinkSent } from "./MagicLinkSent.tsx";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import { useUploadFormState } from "./UploadFormStateContext.ts";
@@ -47,6 +56,23 @@ function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
     reader.onerror = () => reject(reader.error);
     reader.readAsArrayBuffer(file);
   });
+}
+
+/**
+ * 録画速度の選択肢に添える推定完了時間（分）。リプレイの尺が分からなければ null。
+ * 待ち行列での待ち時間は含まない（`estimateRecordingCompletionSeconds()`）。
+ */
+function estimatedCompletionMinutes(
+  game: GameId,
+  durationSeconds: number | null | undefined,
+  speed: RecordingSpeed,
+): number | null {
+  if (durationSeconds === null || durationSeconds === undefined) {
+    return null;
+  }
+  const gpu = requiresGpuRecording({ game, options: { recordingSpeed: speed } });
+  const seconds = estimateRecordingCompletionSeconds(durationSeconds, speed, gpu);
+  return Math.max(1, Math.round(seconds / 60));
 }
 
 export function UploadForm() {
@@ -80,6 +106,8 @@ export function UploadForm() {
     setTh10BugfixMarisaB,
     th06ncHighResolution,
     setTh06ncHighResolution,
+    recordingSpeedChoice,
+    setRecordingSpeedChoice,
   } = useUploadFormState();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -128,6 +156,29 @@ export function UploadForm() {
   const th06ncHighResolutionSelectable = supportsHighResolutionRecording(preview?.game ?? null);
   const th06ncHighResolutionChecked = th06ncHighResolutionSelectable && th06ncHighResolution;
 
+  // 録画速度(Issue #288、倍速録画)。公開済みのタイトル(`recordingSpeedRollout.ts`)でだけ選べ、
+  // それ以外は等倍。未選択ならタイトル(とth06ncの解像度)ごとの「おすすめ」に従う——
+  // 解像度を切り替えたときにおすすめへ追従させるため、おすすめ自体は値として保持しない。
+  const recordingSpeedSelectable = isRecordingSpeedSelectable(game);
+  const recommendedSpeed: RecordingSpeed =
+    game !== null
+      ? recommendedRecordingSpeed(game, { th06ncHighResolution: th06ncHighResolutionChecked })
+      : 1;
+  const recordingSpeed: RecordingSpeed = recordingSpeedSelectable
+    ? (recordingSpeedChoice ?? recommendedSpeed)
+    : 1;
+  const recordingSpeedHint = !preview
+    ? t("uploadForm.recordingSpeedSelectReplayFirst")
+    : recordingSpeedSelectable
+      ? t("uploadForm.recordingSpeedHint")
+      : t("uploadForm.recordingSpeedUnsupportedGame");
+  const recordingSpeedTooFast =
+    game !== null &&
+    recordingSpeedSelectable &&
+    isFasterThanRecommended(game, recordingSpeed, {
+      th06ncHighResolution: th06ncHighResolutionChecked,
+    });
+
   // 自宅ワーカーの空き状況はページ表示時に1回だけ取得する。実際に録画が始まるのは
   // ユーザーがマジックリンクを開いた後（最大24時間後）で、その時点の可否とは
   // どのみち一致しないため、ポーリングして精度を上げても意味がない。
@@ -158,6 +209,9 @@ export function UploadForm() {
 
   function selectFile(selected: File | null) {
     setErrorMessage(null);
+    // 録画速度の選択はリプレイ（タイトル）ごとのおすすめに対する選択なので、選び直したら
+    // おすすめへ戻す。
+    setRecordingSpeedChoice(null);
     setReplayKey(null);
     setPreview(null);
     if (!selected) {
@@ -271,9 +325,11 @@ export function UploadForm() {
         replayKey,
         {
           watermark,
-          slowMotion: slowMotionChecked,
+          // 倍速録画とは排他(サーバー側も倍速を優先する)。
+          slowMotion: slowMotionChecked && !isSpeedupRecording(recordingSpeed),
           th10BugfixMarisaB: th10BugfixMarisaBChecked,
           th06ncHighResolution: th06ncHighResolutionChecked,
+          recordingSpeed,
         },
         email,
         locale,
@@ -461,6 +517,61 @@ export function UploadForm() {
             </small>
           </span>
         </label>
+        {/*
+          録画速度（Issue #288、倍速録画）。ゲームを内部的にN倍速で動かして録画し、後処理で
+          元の速度へ戻す。公開済みのタイトル（`recordingSpeedRollout.ts`）でだけ選べ、既定は
+          タイトルごとのおすすめ。選択肢ごとに推定完了時間を添え、おすすめより速い速度を
+          選んだら品質低下の可能性を警告する（止めはしない）。
+        */}
+        <fieldset
+          className={clsx(styles.speedFieldset, !recordingSpeedSelectable && styles.optionDisabled)}
+          disabled={busy || !recordingSpeedSelectable}
+        >
+          <legend className={styles.speedLegend}>{t("uploadForm.recordingSpeedOption")}</legend>
+          <div className={styles.speedOptions}>
+            {RECORDING_SPEEDS.map((speed) => {
+              const minutes =
+                game !== null && recordingSpeedSelectable
+                  ? estimatedCompletionMinutes(game, preview?.estimatedDurationSeconds, speed)
+                  : null;
+              return (
+                <label
+                  key={speed}
+                  className={clsx(styles.speedOption, speed === recordingSpeed && styles.speedOptionSelected)}
+                >
+                  <input
+                    type="radio"
+                    name="recordingSpeed"
+                    value={speed}
+                    checked={speed === recordingSpeed}
+                    onChange={() => setRecordingSpeedChoice(speed)}
+                  />
+                  <span className={styles.speedName}>
+                    {t("uploadForm.recordingSpeedValue", { speed })}
+                  </span>
+                  {recordingSpeedSelectable && speed === recommendedSpeed && (
+                    <span className={styles.speedRecommended}>
+                      {t("uploadForm.recordingSpeedRecommended")}
+                    </span>
+                  )}
+                  {minutes !== null && (
+                    <span className={styles.speedEstimate}>
+                      {t("uploadForm.recordingSpeedEstimate", { minutes })}
+                    </span>
+                  )}
+                </label>
+              );
+            })}
+          </div>
+          <small className={styles.optionHint}>{recordingSpeedHint}</small>
+          {recordingSpeedTooFast && game !== null && (
+            <p className={styles.speedWarning} role="alert">
+              {t("uploadForm.recordingSpeedTooFastWarning", {
+                title: isEnglish ? GAME_TITLES[game].englishName : GAME_TITLES[game].japaneseName,
+              })}
+            </p>
+          )}
+        </fieldset>
         {/*
           低速録画（Issue #68）。ゲームを1/2倍速で動かして録画し、後処理で等倍へ戻す。
           録画に実時間で倍かかるためEC2では行わず、電気代しかかからない自宅ワーカー

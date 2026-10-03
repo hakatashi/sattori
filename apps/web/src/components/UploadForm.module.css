@@ -199,6 +199,72 @@ li.supportedTitle.supported {
   font-weight: bold;
 }
 
+/* 録画速度(Issue #288)。4つの選択肢を横並びのボタン状に並べ、狭い画面では折り返す。 */
+.speedFieldset {
+  margin: 0.75rem 0 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.speedLegend {
+  padding: 0;
+}
+
+.speedOptions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.speedOption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.5rem 0.4rem;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: center;
+}
+
+.speedOption input {
+  margin: 0;
+}
+
+.speedOptionSelected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.speedName {
+  font-weight: 600;
+}
+
+.speedRecommended {
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--badge-text);
+  font-size: 0.75rem;
+}
+
+.speedEstimate {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.speedWarning {
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 0.8rem;
+  background: var(--warning);
+  color: var(--warning-text);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+
 /* 低速録画が選べない(自宅ワーカーが空いていない)ときの見た目。項目自体は残し、
    何が選べないのかとその理由が読めるようにしておく。 */
 .optionDisabled {

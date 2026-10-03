@@ -177,7 +177,7 @@ describe("useOverallProgress", () => {
     // 99%キャップよりはっきり低くなり、その後アップロードが進むにつれてpercentが
     // 99%キャップにぶつからずに滑らかに伸びることを検証できる。
     const uploadTotalBytes = 2 * 1024 * 1024 * 1024;
-    const totalBudget = computePhaseBudgets(REPLAY_INFO.estimatedDurationSeconds, false, uploadTotalBytes).total;
+    const totalBudget = computePhaseBudgets(REPLAY_INFO.estimatedDurationSeconds, 1, uploadTotalBytes).total;
     const convertingCompletePercent =
       ((LAUNCHING_BUDGET_SECONDS + 800 + 800 / 3) / totalBudget) * 100;
     expect(convertingCompletePercent).toBeLessThan(OVERALL_PROGRESS_CAP_PERCENT);

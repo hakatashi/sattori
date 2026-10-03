@@ -76,6 +76,10 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
   },
   { title: "status: launching", job: buildJob({ status: "launching" }) },
   {
+    title: "status: recording（2倍速の倍速録画、Issue #288）",
+    job: buildJob({ status: "recording", game: "th15", recordingSpeed: 2, progress: 300 }),
+  },
+  {
     title: "status: recording（進捗・プレビュー画像あり）",
     job: buildJob({
       status: "recording",

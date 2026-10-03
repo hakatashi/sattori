@@ -3,6 +3,7 @@ import type { GetJobResponse, JobStatus } from "@sattori/shared";
 import {
   computeOverallPercent,
   computePhaseBudgets,
+  recordingScaleForJob,
   computeRemainingMinutes,
   isPhaseOverrun,
   type PhaseBudgets,
@@ -206,9 +207,10 @@ export function useOverallProgress(
 
   const budgets = computePhaseBudgets(
     job.replayInfo?.estimatedDurationSeconds ?? null,
-    // 低速録画(Issue #68)は録画フェーズに実時間で2倍かかる。これを渡さないと
-    // 録画の途中でバジェットを使い切り、残り時間が消えたうえリトライ疑いを誤検知する。
-    job.slowMotion,
+    // 低速録画(Issue #68)は録画フェーズに実時間で2倍、倍速録画(Issue #288)は約1/N倍
+    // かかる。これを渡さないと、低速録画は録画の途中でバジェットを使い切り残り時間が消えた
+    // うえリトライ疑いを誤検知し、倍速録画は残り時間を過大に出し続ける。
+    recordingScaleForJob(job),
     job.uploadTotalBytes,
   );
   const phaseStart = phaseStartRef.current;
