@@ -509,7 +509,7 @@ export class SattoriStack extends Stack {
     const gpuWorkerLaunchTemplate = new ec2.CfnLaunchTemplate(this, "GpuWorkerLaunchTemplate", {
       launchTemplateData: {
         imageId: gpuWorkerAmiId,
-        instanceType: "g6f.xlarge",
+        instanceType: "g6f.2xlarge",
         iamInstanceProfile: { arn: workerInstanceProfile.instanceProfileArn },
         securityGroupIds: [workerSg.securityGroupId],
         instanceInitiatedShutdownBehavior: "terminate",

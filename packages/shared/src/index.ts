@@ -4,6 +4,7 @@ export * from "./language.js";
 export * from "./replay.js";
 export * from "./worker.js";
 export * from "./slowMotion.js";
+export * from "./recordingSpeed.js";
 export * from "./th10BugfixMarisaB.js";
 export * from "./gpuRecording.js";
 export * from "./gpuQueue.js";

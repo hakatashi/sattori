@@ -3,8 +3,8 @@ import {
   estimateQueueWaitSeconds,
   GPU_INSTANCE_TYPE_VCPUS,
   GPU_JOB_OVERHEAD_SECONDS,
-  GPU_MAX_INSTANCE_VCPU,
-  GPU_MIN_INSTANCE_VCPU,
+  GPU_INSTANCE_VCPU,
+  estimateGpuOccupancySeconds,
   GPU_QUEUE_ESTIMATE_PARALLELISM,
   GPU_QUEUE_FALLBACK_DURATION_SECONDS,
   GPU_QUEUE_MAX_WAIT_MINUTES,
@@ -19,14 +19,12 @@ import {
 } from "./gpuQueue.js";
 
 describe("GPU_INSTANCE_TYPE_VCPUS", () => {
-  it("最小・最大のvCPU数が実際の候補と一致する", () => {
-    expect(GPU_MIN_INSTANCE_VCPU).toBe(4);
-    expect(GPU_MAX_INSTANCE_VCPU).toBe(8);
+  it("1ジョブの確保量は起動候補(g6f.2xlarge)のvCPU数と一致する(Issue #288)", () => {
+    expect(GPU_INSTANCE_VCPU).toBe(GPU_INSTANCE_TYPE_VCPUS["g6f.2xlarge"]);
   });
 
-  it("クオータで最大候補タイプ(g6f.2xlarge)が少なくとも1台起動できる", () => {
-    // 下回るとリトライ時(attempt>1)のminVcpu=GPU_MAX_INSTANCE_VCPU要求が永久に満たせない。
-    expect(GPU_VCPU_QUOTA).toBeGreaterThanOrEqual(GPU_MAX_INSTANCE_VCPU);
+  it("クオータでg6f.2xlargeが少なくとも1台起動できる", () => {
+    expect(GPU_VCPU_QUOTA).toBeGreaterThanOrEqual(GPU_INSTANCE_VCPU);
   });
 
   it("クオータが全候補タイプのvCPU数で割り切れる(使えない端数が残らない)", () => {
@@ -48,25 +46,32 @@ describe("vcpusForInstanceType", () => {
 });
 
 describe("reservableVcpu", () => {
-  it("8vCPU分の空きがあれば最大値を返す", () => {
+  it("8vCPU分の空きがあれば8を返す", () => {
     expect(reservableVcpu(8)).toBe(8);
     expect(reservableVcpu(10)).toBe(8);
   });
 
-  it("4vCPU分しか空きが無ければ最小値を返す", () => {
-    expect(reservableVcpu(4)).toBe(4);
-    expect(reservableVcpu(7)).toBe(4);
-  });
-
-  it("最小要求量未満の空きはnull(確保不可)", () => {
-    expect(reservableVcpu(3)).toBeNull();
+  it("8vCPU未満の空きはnull(g6f.xlargeでの投機的確保はしない、Issue #288)", () => {
+    expect(reservableVcpu(7)).toBeNull();
+    expect(reservableVcpu(4)).toBeNull();
     expect(reservableVcpu(0)).toBeNull();
   });
+});
 
-  it("minVcpuを指定した場合はその値未満ならnull(リトライ時に8vCPUを要求する用途)", () => {
-    expect(reservableVcpu(4, 8)).toBeNull();
-    expect(reservableVcpu(7, 8)).toBeNull();
-    expect(reservableVcpu(8, 8)).toBe(8);
+describe("estimateGpuOccupancySeconds", () => {
+  it("等倍は尺+オーバーヘッド", () => {
+    expect(estimateGpuOccupancySeconds(1200)).toBe(1200 + GPU_JOB_OVERHEAD_SECONDS);
+  });
+
+  it("倍速録画は録画部分が速度で割り引かれる", () => {
+    expect(estimateGpuOccupancySeconds(1200, 2)).toBeCloseTo((1200 * 1.05) / 2 + GPU_JOB_OVERHEAD_SECONDS);
+    expect(estimateGpuOccupancySeconds(1200, 4)).toBeLessThan(estimateGpuOccupancySeconds(1200, 2));
+  });
+
+  it("尺が不明ならフォールバック値を使う", () => {
+    expect(estimateGpuOccupancySeconds(null)).toBe(
+      GPU_QUEUE_FALLBACK_DURATION_SECONDS + GPU_JOB_OVERHEAD_SECONDS,
+    );
   });
 });
 
@@ -130,9 +135,9 @@ describe("isHeartbeatStale", () => {
 });
 
 describe("GPU_QUEUE_ESTIMATE_PARALLELISM", () => {
-  it("クオータを最大候補タイプのvCPU数で割った並列数(最低1)", () => {
+  it("クオータを1ジョブの確保量で割った並列数(最低1)", () => {
     expect(GPU_QUEUE_ESTIMATE_PARALLELISM).toBe(
-      Math.max(1, Math.floor(GPU_VCPU_QUOTA / GPU_MAX_INSTANCE_VCPU)),
+      Math.max(1, Math.floor(GPU_VCPU_QUOTA / GPU_INSTANCE_VCPU)),
     );
   });
 });
@@ -249,5 +254,20 @@ describe("estimateQueueWaitSeconds（並列P: リストスケジューリング�
     expect(estimateQueueWaitSeconds(ahead, leases, now)).toBe(
       estimateQueueWaitSeconds(ahead, leases, now, GPU_QUEUE_ESTIMATE_PARALLELISM),
     );
+  });
+});
+
+describe("estimateQueueWaitSeconds（録画速度、Issue #288）", () => {
+  it("先行ジョブが倍速録画なら待ち時間が短くなる", () => {
+    const now = Date.parse("2026-10-01T00:00:00.000Z");
+    const native = estimateQueueWaitSeconds([{ estimatedDurationSeconds: 1200 }], [], now, 1);
+    const speedup = estimateQueueWaitSeconds(
+      [{ estimatedDurationSeconds: 1200, recordingSpeed: 2 }],
+      [],
+      now,
+      1,
+    );
+    expect(speedup).toBeLessThan(native);
+    expect(speedup).toBe(Math.round(estimateGpuOccupancySeconds(1200, 2) * 1e6) / 1e6);
   });
 });

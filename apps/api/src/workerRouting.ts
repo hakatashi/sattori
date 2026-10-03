@@ -2,6 +2,7 @@ import {
   isHeartbeatFresh,
   LAUNCH_LAMBDA_TIMEOUT_SECONDS,
   SLOW_MOTION_CAPABILITY,
+  requiresGpuRecording,
 } from "@sattori/shared";
 import type { GameId, JobRecord, WorkerCapability, WorkerHeartbeat } from "@sattori/shared";
 
@@ -91,6 +92,13 @@ export const DEFAULT_ROUTING_POLICY: GameRoutingPolicy = {
  * ハートビートが新鮮なワーカーがいる場合しかオファーしないので、自宅サーバーが
  * 落ちている平常時にこの待ちが発生することはない。
  */
+/** GPU必須のジョブ（`requiresGpuRecording()`）に適用する方針。自宅ワーカーへはオファーしない。 */
+export const GPU_ONLY_ROUTING_POLICY: GameRoutingPolicy = {
+  offerToHomeWorker: false,
+  requiredCapabilities: [],
+  offerWindowSeconds: 0,
+};
+
 export const GAME_ROUTING_POLICIES: Partial<Record<GameId, GameRoutingPolicy>> = {
   th20: {
     offerToHomeWorker: true,
@@ -129,6 +137,14 @@ export const GAME_ROUTING_POLICIES: Partial<Record<GameId, GameRoutingPolicy>> =
  * 契約として扱い、ワーカー側の実装差を許容できるようにしておく）。
  */
 export function routingPolicyFor(job: Pick<JobRecord, "game" | "options">): GameRoutingPolicy {
+  if (requiresGpuRecording(job)) {
+    // GPU必須のジョブ（th06nc・th15と倍速録画、Issue #288）。自宅ワーカーはGPUを
+    // 搭載していないため、タイトルによらず常にEC2（GPU系）へ固定する
+    // （`docs/decisions/0047-no-gpu-titles-for-home-worker.md`）。倍速録画は
+    // 自宅ワーカーが対応するタイトルでも選べるため、タイトル単位の行
+    // （`GAME_ROUTING_POLICIES`）だけでは表現できない。
+    return GPU_ONLY_ROUTING_POLICY;
+  }
   const base = GAME_ROUTING_POLICIES[job.game] ?? DEFAULT_ROUTING_POLICY;
   if (!job.options.slowMotion || base.requiredCapabilities.includes(SLOW_MOTION_CAPABILITY)) {
     return base;

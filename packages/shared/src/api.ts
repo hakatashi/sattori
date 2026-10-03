@@ -1,6 +1,7 @@
 import type { GameId } from "./games.js";
 import type { JobStatus, RecordingOptions } from "./job.js";
 import type { SupportedLanguage } from "./language.js";
+import type { RecordingSpeed } from "./recordingSpeed.js";
 import type { ReplayInfo } from "./replay.js";
 import type { WorkerCapability } from "./worker.js";
 
@@ -155,6 +156,14 @@ export interface GetJobResponse {
    * 織り込むために使う（`apps/web/src/hooks/jobProgressBudget.ts`）。
    */
   slowMotion: boolean;
+  /**
+   * このジョブの録画速度（Issue #288、倍速録画）。`RecordingOptions.recordingSpeed`を
+   * `recordingSpeedOf()`で正規化した値（旧ジョブは1）。倍速録画は割り当て先によって
+   * 等倍へフォールバックすることが無い（常にGPUインスタンスで録る）ため、ユーザーの希望が
+   * そのまま実際の速度になる。ジョブページの進捗バー・残り時間推定が、録画フェーズの
+   * 実時間が短くなることを織り込むために使う。
+   */
+  recordingSpeed: RecordingSpeed;
   /**
    * リプレイずれ（デシンク）の疑い（Issue #103、`JobRecord.desyncDetected`をそのまま
    * 転記）。`true`のときページBは「録画終了時のスコアが記録されたスコアと一致

@@ -27,6 +27,49 @@ const job = {
 } as unknown as JobRecord;
 
 describe("buildWorkerEnv", () => {
+  it("倍速録画では FPS_LIMIT_TARGET_HZ=60×倍率 と GPU_WORKER=1 を付ける(Issue #288)", () => {
+    const speedupJob = {
+      ...job,
+      game: "th07",
+      options: { ...job.options, slowMotion: false, recordingSpeed: 3 },
+    } as unknown as JobRecord;
+    const env = buildWorkerEnv(config, speedupJob, "task-token", {
+      slowMotion: false,
+      spotInterruptionWatch: true,
+    });
+
+    expect(env.FPS_LIMIT_TARGET_HZ).toBe("180");
+    expect(env.GPU_WORKER).toBe("1");
+    // 倍率はワーカーがFPS_LIMIT_TARGET_HZから導出する(値の食い違いを作らない)。
+    expect(env.SPEED_HACK_MULTIPLIER).toBeUndefined();
+  });
+
+  it("倍速録画は低速録画より優先する(両方立っていても2倍速)", () => {
+    const both = {
+      ...job,
+      options: { ...job.options, slowMotion: true, recordingSpeed: 2 },
+    } as unknown as JobRecord;
+    const env = buildWorkerEnv(config, both, "task-token", { slowMotion: true, spotInterruptionWatch: false });
+
+    expect(env.FPS_LIMIT_TARGET_HZ).toBe("120");
+  });
+
+  it("GPU必須タイトルの等倍録画は GPU_WORKER=1 だけを付ける", () => {
+    const th15 = { ...job, game: "th15", options: { ...job.options, slowMotion: false } } as unknown as JobRecord;
+    const env = buildWorkerEnv(config, th15, "task-token", { slowMotion: false, spotInterruptionWatch: true });
+
+    expect(env.GPU_WORKER).toBe("1");
+    expect(env.FPS_LIMIT_TARGET_HZ).toBeUndefined();
+  });
+
+  it("CPU系タイトルの等倍録画には GPU_WORKER を付けない", () => {
+    const th07 = { ...job, game: "th07", options: { ...job.options, slowMotion: false } } as unknown as JobRecord;
+    const env = buildWorkerEnv(config, th07, "task-token", { slowMotion: false, spotInterruptionWatch: false });
+
+    expect(env.GPU_WORKER).toBeUndefined();
+    expect(env.FPS_LIMIT_TARGET_HZ).toBeUndefined();
+  });
+
   it("低速録画のときだけ FPS_LIMIT_TARGET_HZ を付ける", () => {
     const env = buildWorkerEnv(config, job, "task-token", { slowMotion: true, spotInterruptionWatch: false });
 

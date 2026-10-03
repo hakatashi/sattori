@@ -67,9 +67,9 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
   （[`decisions/0006`](docs/decisions/0006-progress-polling-not-websocket.md)）。
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。永年無料枠で egress を実質ゼロにできる。
 - **録画ワーカーは EC2 Fleet と自宅サーバーの2種類あり、どちらも同じ ECR イメージ・同じ taskToken
-  契約で動く**（Issue #49、GPU描画必須タイトルは自宅ワーカーへ常に来ないため例外
+  契約で動く**（Issue #49、GPU必須のジョブ——th06nc・th15と倍速録画——は自宅ワーカーへ常に来ないため例外
   ——別ECRイメージ・別インスタンスタイプ、[`0046`](docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)〜
-  [`0048`](docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)）。自宅マシンは NAT 配下で
+  [`0048`](docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)・[`0058`](docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。自宅マシンは NAT 配下で
   到達できないため割り当ては**Pull 型**（AWS が
   オファーを書き、デーモンが条件付き更新で原子的に claim する。
   [`0018`](docs/decisions/0018-home-worker-pull-assignment.md)）。**ワーカーの中に「自宅かEC2か」
