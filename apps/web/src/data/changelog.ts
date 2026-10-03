@@ -16,7 +16,14 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
-    date: "2026-09-30",
+    date: "2026-10-03",
+    ja: "東方紺珠伝 (th15) の録画で、録画速度 (1〜4倍速) を選べるようにした。速い速度を選ぶと録画がより早く完了する",
+    en: "Added a recording speed option (1x–4x) for Legacy of Lunatic Kingdom (th15). Faster speeds finish recording sooner",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/288",
+    important: true,
+  },
+  {
+    date: "2026-10-03",
     ja: "録画した動画の音声と映像のタイミングのずれ（音ズレ）を補正する精度を改善",
     en: "Improved the accuracy of correcting audio/video timing offsets in recorded videos",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/288",

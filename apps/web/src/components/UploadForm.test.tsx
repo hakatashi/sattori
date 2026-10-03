@@ -261,7 +261,7 @@ describe("UploadForm", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 1 },
       "user@example.com",
       "ja",
     );
@@ -371,7 +371,7 @@ describe("UploadForm の低速録画オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 1 },
       "koishi@example.com",
       "ja",
     );
@@ -495,7 +495,7 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: true, th06ncHighResolution: false },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: true, th06ncHighResolution: false, recordingSpeed: 1 },
       "marisa@example.com",
       "ja",
     );
@@ -524,7 +524,7 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 1 },
       "koishi@example.com",
       "ja",
     );
@@ -582,7 +582,7 @@ describe("UploadForm のth06nc 1080p録画オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: true },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: true, recordingSpeed: 1 },
       "reimu@example.com",
       "ja",
     );
@@ -611,9 +611,100 @@ describe("UploadForm のth06nc 1080p録画オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
+      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 1 },
       "koishi@example.com",
       "ja",
     );
+  });
+});
+
+describe("UploadForm の録画速度オプション（Issue #288）", () => {
+  const TH15_REPLAY_INFO: ReplayInfo = {
+    ...SAMPLE_REPLAY_INFO,
+    game: "th15",
+    estimatedDurationSeconds: 1200,
+  };
+
+  function speedRadio(speed: number): HTMLInputElement {
+    return screen.getByRole("radio", { name: new RegExp(`^${speed}倍速`) }) as HTMLInputElement;
+  }
+
+  /** `fieldset`の`disabled`は子の`input.disabled`プロパティへは反映されないため、`:disabled`で判定する。 */
+  function isDisabled(input: HTMLInputElement): boolean {
+    return input.matches(":disabled");
+  }
+
+  it("公開済みタイトル(th15)ではおすすめの2倍速が既定で選ばれ、推定時間が表示される", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH15_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th15_01.rpy");
+
+    await waitFor(() => expect(isDisabled(speedRadio(2))).toBe(false));
+    expect(speedRadio(2).checked).toBe(true);
+    expect(speedRadio(2).closest("label")?.textContent).toContain("おすすめ");
+    // 20分のリプレイ: 1倍速より2倍速の方が短い推定時間になる。
+    const minutesOf = (speed: number) =>
+      Number(/約(\d+)分/.exec(speedRadio(speed).closest("label")?.textContent ?? "")?.[1]);
+    expect(minutesOf(2)).toBeLessThan(minutesOf(1));
+    expect(minutesOf(4)).toBeLessThan(minutesOf(2));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("おすすめより速い速度を選ぶとタイトル名入りの警告を出す", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH15_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th15_01.rpy");
+    await waitFor(() => expect(isDisabled(speedRadio(3))).toBe(false));
+
+    fireEvent.click(speedRadio(3));
+
+    expect(speedRadio(3).checked).toBe(true);
+    expect(screen.getByRole("alert").textContent).toContain(
+      "東方紺珠伝で推奨される録画速度より速い録画速度が選択されました",
+    );
+    fireEvent.click(speedRadio(1));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("選んだ速度で送信する", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH15_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th15_01.rpy");
+    await waitFor(() => expect(isDisabled(speedRadio(4))).toBe(false));
+    fireEvent.click(speedRadio(4));
+    fillEmail("koishi@example.com");
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(nextStepButton());
+    });
+
+    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ recordingSpeed: 4, slowMotion: false }),
+      "koishi@example.com",
+      "ja",
+    );
+  });
+
+  it("未公開のタイトルでは選択肢を無効にし、等倍で送信する", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th7_07.rpy");
+    await waitFor(() => expect(nextStepButton().disabled).toBe(true));
+    await waitFor(() => expect(screen.getByText("このタイトルは現在、1倍速での録画のみに対応しています。")).toBeTruthy());
+
+    expect(isDisabled(speedRadio(2))).toBe(true);
+    expect(speedRadio(1).checked).toBe(true);
+  });
+
+  it("別のリプレイを選び直すとおすすめに戻る", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH15_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th15_01.rpy");
+    await waitFor(() => expect(isDisabled(speedRadio(4))).toBe(false));
+    fireEvent.click(speedRadio(4));
+
+    selectFile("th15_02.rpy");
+    await waitFor(() => expect(speedRadio(2).checked).toBe(true));
   });
 });
