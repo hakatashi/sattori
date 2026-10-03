@@ -40,7 +40,7 @@ const mockedShared = vi.mocked(shared);
 const mockedAnalytics = vi.mocked(analytics);
 
 const SAMPLE_REPLAY_INFO: ReplayInfo = {
-  game: "th07",
+  game: "th08",
   player: "koyi",
   date: "01/18",
   character: "MarisaA",
@@ -191,7 +191,7 @@ describe("UploadForm", () => {
     expect(mockedClient.uploadReplay).toHaveBeenCalledWith("https://s3/put", expect.any(File));
     // プレビュー内容(ReplayPreview)が表示されている
     await waitFor(() =>
-      expect(screen.getByText("東方妖々夢 ～ Perfect Cherry Blossom.")).toBeTruthy(),
+      expect(screen.getByText("東方永夜抄 ～ Imperishable Night.")).toBeTruthy(),
     );
     expect(screen.getByText("MarisaA")).toBeTruthy();
     expect(screen.getByText("Extra")).toBeTruthy();
@@ -356,7 +356,7 @@ describe("UploadForm の低速録画オプション", () => {
     selectFile("th20_ud0000.rpy");
     await waitFor(() => expect(slowMotionCheckbox()?.checked).toBe(true));
 
-    // th20（既定オン）から th07（未対応）へ差し替える。
+    // th20（既定オン）から th08（未対応）へ差し替える。
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
     selectFile("th7_07.rpy");
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
@@ -468,7 +468,7 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     expect(screen.getByText(/東方風神録の魔理沙Bのリプレイでのみ/)).toBeTruthy();
   });
 
-  it("魔理沙Bでもth10以外(th07)はグレーアウトする", async () => {
+  it("魔理沙Bでもth10以外(th08)はグレーアウトする", async () => {
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
     renderUploadForm();
     selectFile("th7_07.rpy");
@@ -509,7 +509,7 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     fireEvent.click(th10BugfixMarisaBCheckbox());
     expect(th10BugfixMarisaBCheckbox().checked).toBe(true);
 
-    // th10・魔理沙B から th07・魔理沙A（非対応の組み合わせ）へ差し替える。
+    // th10・魔理沙B から th08・魔理沙A（非対応の組み合わせ）へ差し替える。
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
     selectFile("th7_07.rpy");
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
@@ -596,7 +596,7 @@ describe("UploadForm のth06nc 1080p録画オプション", () => {
     fireEvent.click(th06ncHighResolutionCheckbox());
     expect(th06ncHighResolutionCheckbox().checked).toBe(true);
 
-    // th06nc から th07（非対応タイトル）へ差し替える。
+    // th06nc から th08（非対応タイトル）へ差し替える。
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
     selectFile("th7_07.rpy");
     await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
