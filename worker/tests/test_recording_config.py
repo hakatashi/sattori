@@ -210,3 +210,59 @@ def test_for_game_allows_overriding_injector_path_and_injector():
     # 上書きしていないhook_dll_pathは従来どおりgame_idから機械的に導出される。
     assert cfg.hook_dll_path == f"{WORKER_ROOT}/mods/th06c_replay_autoplay/build/th06c_hook.dll"
 
+
+
+# --- 実行時の上書き(倍速録画・GPUワーカー、Issue #288) ---------------------
+
+from recording.config import with_runtime_overrides  # noqa: E402
+
+
+def test_build_env_derives_the_speed_hack_multiplier_from_the_target_hz(monkeypatch):
+    """倍率は起動側が渡す`FPS_LIMIT_TARGET_HZ`だけから導出し、食い違いを起こさない。"""
+    monkeypatch.setenv("FPS_LIMIT_TARGET_HZ", "180")
+    assert make_config().build_env()["SPEED_HACK_MULTIPLIER"] == "3"
+
+
+def test_build_env_does_not_set_the_speed_hack_multiplier_for_slow_motion(monkeypatch):
+    monkeypatch.setenv("FPS_LIMIT_TARGET_HZ", "30")
+    monkeypatch.setenv("SPEED_HACK_MULTIPLIER", "2")  # 紛れ込んだ値も消す
+    assert "SPEED_HACK_MULTIPLIER" not in make_config().build_env()
+
+
+def test_build_env_sets_the_sync_marker_trigger_as_a_windows_path(monkeypatch):
+    monkeypatch.delenv("FPS_LIMIT_TARGET_HZ", raising=False)
+    assert make_config().build_env()["SYNC_MARKER_TRIGGER"] == "Z:\\instance\\sync_marker.trigger"
+
+
+def test_runtime_overrides_leave_a_normal_cpu_job_untouched():
+    config = make_config(extra_dlls=("vpatch_th06.dll",))
+    assert with_runtime_overrides(config, {}, log=lambda msg: None) is config
+
+
+def test_runtime_overrides_switch_to_gpu_display_on_a_gpu_worker():
+    config = with_runtime_overrides(make_config(), {"GPU_WORKER": "1"}, log=lambda msg: None)
+
+    assert config.gpu_display is True
+    # GPU描画面では終了検知用のポーリングを本番キャプチャから分岐させる(reports/81・89)。
+    assert config.poll_side_stream is True
+
+
+def test_runtime_overrides_rewrite_vpatch_game_fps_for_speedup():
+    config = make_config(
+        extra_dlls=("vpatch_th10.dll",),
+        vpatch_ini_overrides=(("Option", "BugFixTh10Power3", "1"),),
+    )
+    config = with_runtime_overrides(config, {"FPS_LIMIT_TARGET_HZ": "120"}, log=lambda msg: None)
+
+    assert config.vpatch_ini_overrides == (
+        ("Option", "BugFixTh10Power3", "1"),
+        ("Option", "GameFPS", "120"),
+        ("Option", "CalcFPS", "0"),
+    )
+
+
+def test_runtime_overrides_do_not_touch_vpatch_for_slow_motion_or_titles_without_vpatch():
+    with_vpatch = make_config(extra_dlls=("vpatch_th06.dll",))
+    assert with_runtime_overrides(with_vpatch, {"FPS_LIMIT_TARGET_HZ": "30"}, log=lambda m: None) is with_vpatch
+    without = make_config()
+    assert with_runtime_overrides(without, {"FPS_LIMIT_TARGET_HZ": "120"}, log=lambda m: None) is without

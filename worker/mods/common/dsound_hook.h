@@ -24,6 +24,25 @@
 // 音声側の対症療法として現実的)。CreateSoundBuffer直後の初期周波数だけでなく
 // SetFrequency自体もフックしているため、ゲームが後から動的に周波数を
 // 変更する演出があっても同じ比率でスケールされる。
+//
+// 【倍速録画(issue #1)で確認済みの重要事項】プライマリバッファには触らないこと:
+// フェーズ85では「セカンダリを88200Hzに上げてもプライマリが44100Hzのままだと
+// ミックス時にロールオフされる」という仮説から、プライマリバッファの
+// GetFormat/SetFormat(vtable[5]/[14])と SetCooperativeLevel(vtable[6])を
+// フックする実装を入れたが、**Wineでは原理的に効果が無いことをソースコードと
+// 実測の両面から確認したため撤去した**(reports/86 §2.2)。
+//
+//   - `dlls/dsound/primary.c` の primarybuffer_SetFormat() は、協調レベルが
+//     DSSCL_WRITEPRIMARY のときだけ DSOUND_ReopenDevice(device, TRUE) を呼んで
+//     実際の出力ストリームを開き直す。DSSCL_PRIORITY では device->primary_pwfx に
+//     値を控えるだけで実ストリームは一切変わらない(戻り値は S_OK)。
+//   - DSSCL_WRITEPRIMARY へ底上げすると、`dlls/dsound/mixer.c` がセカンダリ
+//     バッファを一切ミックスしなくなる(=ゲーム音声が無音になる)ため使えない。
+//
+// 正しい介入点はMOD側ではなく録画側で、**ゲームプロセスに渡す PULSE_SINK を
+// 倍速後のレート(44100×N Hz)のnull-sinkに向けること**(recorder/instance.py の
+// ensure_audio_sink())。WineのWASAPIミックスフォーマットはPulseAudioのシンクの
+// レートをそのまま採用するため、これでdsoundのミキサーのリサンプル自体が消える。
 
 namespace autoplay {
 
@@ -32,5 +51,14 @@ namespace autoplay {
 // 再生周波数に掛ける係数(環境変数FPS_LIMIT_TARGET_HZが設定されていれば
 // target/60.0を優先、未設定なら1.0=無変更)。
 bool InstallDSoundHook(double freqScale = 1.0);
+
+// DirectSoundをIATではなくGetProcAddress/CoCreateInstanceで取得するエンジン
+// (DXライブラリ製のth06nc、reports/89)向けの入口。InitDSoundHookDynamic()で倍率の決定と
+// 同期マーカーの準備だけを行い、呼び出し側のGetProcAddressフックで
+// "DirectSoundCreate8" の戻り値を WrapDirectSoundCreate8() に差し替えるか、
+// CoCreateInstanceで作られたIDirectSound(8)を HookDirectSoundObject() に渡す。
+void InitDSoundHookDynamic(double freqScale = 1.0);
+void* WrapDirectSoundCreate8(void* real);
+void HookDirectSoundObject(void* ds8);
 
 } // namespace autoplay

@@ -8,13 +8,14 @@
 モジュール構成(責務ごとに分割してある、Issue #201):
 
   config     GameConfig とその既定値の導出
-  timing     低速録画(Issue #68)の実時間スケーリング
+  timing     録画速度(倍速録画 Issue #288・低速録画 Issue #68)の実時間スケーリング
   instance   Xvfb・instance ディレクトリ・注入コマンドの準備
   process    ゲームプロセスの探索・thprac のアタッチ・Wine の後片付け
   window     ウィンドウ検出とクロップ座標の確定
   modlog     MOD が書き出すログの読み取り(マーカー待ち・スコア照合)
   vision     画面キャプチャと画素比較
   ffmpeg     録画・結合・重複フレーム率計測の ffmpeg 呼び出し
+  sync_marker  同期マーカーによるA/V同期補正(Issue #288)
   artifacts  別プロセスへファイル経由で渡す成果物の書き出し
   pipeline   1回の録画試行と自動リトライ
   cli        record_thNN.py が共有する CLI
@@ -68,6 +69,6 @@ GameConfig.build_env() が渡す`PULSE_SINK`で固定する。
 from .cli import log_with_prefix, run
 from .config import GameConfig
 from .pipeline import record_with_retry
-from .timing import slow_motion_scale
+from .timing import gpu_worker, recording_time_scale
 
-__all__ = ["GameConfig", "log_with_prefix", "record_with_retry", "run", "slow_motion_scale"]
+__all__ = ["GameConfig", "gpu_worker", "log_with_prefix", "record_with_retry", "recording_time_scale", "run"]

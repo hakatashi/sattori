@@ -16,6 +16,10 @@ def build_config(pulse_sink):
         # 同一ホストでの並列録画で映像が混ざらないよう、タイトルごとに固定する。
         display=":98",
         canonical_slot="th8_ud0000.rpy",
+        # GPU描画(倍速録画)時はゲーム自身がウィンドウ位置を録画中に戻してしまうため、
+        # ウィンドウID基準で取り込む(docs/titles/th08.md、touhou-recorder reports/89 §5.3)。
+        # CPU描画(Xvfb)では無視される。
+        capture_by_window_id=True,
     )
 
 
