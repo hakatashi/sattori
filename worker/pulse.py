@@ -59,7 +59,10 @@ def local_sink_name():
 
 
 def _pactl(args):
-    return subprocess.run(["pactl", *args], capture_output=True, text=True)
+    # pactlの出力はロケールで翻訳される(LANG=ja_JPだと`Name:`→`名前:`等)ため、パースが
+    # 黙って失敗しないようCロケールに固定する(touhou-recorder reports/86)。
+    env = {**os.environ, "LC_ALL": "C"}
+    return subprocess.run(["pactl", *args], capture_output=True, text=True, env=env)
 
 
 def find_null_sink_modules(sink_name):
@@ -108,32 +111,41 @@ def remove_sink(sink_name, log=print):
         unload_module(module_id, log=log)
 
 
-def create_null_sink(sink_name, log=print):
+def create_null_sink(sink_name, rate=None, log=print):
     """ジョブ専用の null-sink を作成し、そのモジュールIDを返す。
 
     作成に失敗した場合は RuntimeError を投げる。sink が無ければ録音側 ffmpeg が
     `<sink名>.monitor` を開けずに即失敗し、どのみち録画は成立しないため、
     ここで明示的に失敗させて原因をログに残す。
+
+    `rate`(Hz)を指定するとそのサンプルレートの sink を作る。倍速録画(Issue #288)では
+    ゲームが再生周波数を倍率ぶん上げて出力する(2倍速なら88200Hz)ため、sink も同じレートに
+    しないとWineのdsoundミキサーがsinkのレートへアンチエイリアス付きでダウンサンプルし、
+    等倍へ戻したときの高域が失われる(touhou-recorder reports/86 §2)。未指定(等倍)なら
+    従来どおり PulseAudio の既定レートで作る。
     """
     remove_sink(sink_name, log=log)
+    rate_args = [f"rate={rate}", "channels=2"] if rate else []
     result = _pactl([
         "load-module", "module-null-sink",
         f"sink_name={sink_name}",
         f"sink_properties=device.description={sink_name}",
+        *rate_args,
     ])
     if result.returncode != 0:
         raise RuntimeError(
             f"PulseAudioの専用sink({sink_name})を作成できませんでした: {result.stderr.strip()}"
         )
     module_id = result.stdout.strip()
-    log(f"専用sinkを作成しました: {sink_name} (module={module_id})")
+    log(f"専用sinkを作成しました: {sink_name} (module={module_id}"
+        f"{f', rate={rate}Hz' if rate else ''})")
     return module_id
 
 
 @contextmanager
-def job_sink(sink_name, log=print):
+def job_sink(sink_name, rate=None, log=print):
     """ジョブ専用 null-sink を作成し、ブロックを抜けるときに(成功・失敗を問わず)unload する。"""
-    module_id = create_null_sink(sink_name, log=log)
+    module_id = create_null_sink(sink_name, rate=rate, log=log)
     try:
         yield sink_name
     finally:

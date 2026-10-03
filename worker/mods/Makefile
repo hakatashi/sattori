@@ -15,9 +15,13 @@ SRC_FPS_D3D8 := $(COMMON_DIR)/fps_limiter_hook_d3d8.cpp
 SRC_DSOUND   := $(COMMON_DIR)/dsound_hook.cpp
 SRC_FPS_DISP := $(COMMON_DIR)/fps_display_hook.cpp
 SRC_FPS_LIM  := $(COMMON_DIR)/fps_limiter_hook.cpp
+SRC_SPEED    := $(COMMON_DIR)/speed_hack_hook.cpp
+SRC_WASAPI   := $(COMMON_DIR)/wasapi_hook.cpp
 
 # 共通ソース組み合わせ
-SRCS_BASE_HOOK := $(SRC_DINPUT) $(SRC_WAIT) $(SRC_LOGGING) $(SRC_SCORE)
+# 倍速録画(Issue #288)のQPC偽装(speed_hack_hook)・音声周波数スケールとA/V同期マーカー
+# (dsound_hook)は全32bitタイトル共通で組み込む。
+SRCS_BASE_HOOK := $(SRC_DINPUT) $(SRC_WAIT) $(SRC_LOGGING) $(SRC_SCORE) $(SRC_SPEED) $(SRC_DSOUND)
 SRCS_FPS_HOOK  := $(SRCS_BASE_HOOK) $(SRC_FPS)
 
 # ターゲット出力ファイル
@@ -117,34 +121,34 @@ $(TARGET_STEAM_API_NC): th06nc_steam_stub/steam_api_stub.cpp
 	$(CXX64) $(DLL_FLAGS) -static -o $@ $<
 
 # 3. th06c hook（64bit、UTF-8/UTF-16LE、-static）
-$(TARGET_TH06C): th06c_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE)
+$(TARGET_TH06C): th06c_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE) $(SRC_DSOUND) $(SRC_SPEED) $(SRC_WASAPI)
 	@mkdir -p $(@D)
 	$(CXX64) $(DLL_FLAGS) -static \
 		-finput-charset=UTF-8 -fexec-charset=UTF-8 -fwide-exec-charset=UTF-16LE \
-		-o $@ $^
+		-o $@ $^ -lole32
 
 # 3b. th06nc hook（64bit、UTF-8/UTF-16LE、-static。GPU描画必須タイトル、Issue #241）
-$(TARGET_TH06NC): th06nc_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE)
+$(TARGET_TH06NC): th06nc_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE) $(SRC_DSOUND) $(SRC_SPEED) $(SRC_WASAPI)
 	@mkdir -p $(@D)
 	$(CXX64) $(DLL_FLAGS) -static \
 		-finput-charset=UTF-8 -fexec-charset=UTF-8 -fwide-exec-charset=UTF-16LE \
-		-o $@ $^
+		-o $@ $^ -lole32
 
-# 4. 標準的な32bitフックDLL（fps_monitor なし）
-$(TARGET_TH06): th06_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK)
+# 4. th06（vpatch＋fps表示補正のtimeGetTime版、reports/90）・th07
+$(TARGET_TH06): th06_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_DISP)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-$(TARGET_TH07): th07_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK)
+$(TARGET_TH07): th07_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-# 5. 標準的な32bitフックDLL（fps_monitor あり）
-$(TARGET_TH08): th08_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK)
+# 5. 標準的な32bitフックDLL（th08はfps表示補正、th10/th12はD3D9フレームレート制限つき）
+$(TARGET_TH08): th08_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_DISP)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-$(TARGET_TH10): th10_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK)
+$(TARGET_TH10): th10_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
@@ -152,28 +156,28 @@ $(TARGET_TH11): th11_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-$(TARGET_TH12): th12_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK)
+$(TARGET_TH12): th12_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
 # 6. th09 hook（32bit、D3D8フレームレート制限・DirectSound周波数・fps表示補正フック）
-$(TARGET_TH09): th09_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_D3D8) $(SRC_DSOUND) $(SRC_FPS_DISP)
+$(TARGET_TH09): th09_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_D3D8) $(SRC_FPS_DISP)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
 # 7. th20 hook（32bit、D3D9フレームレート制限・DirectSound周波数・fps表示補正フック、-static）
-$(TARGET_TH20): th20_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_DSOUND) $(SRC_FPS_DISP)
+$(TARGET_TH20): th20_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_FPS_DISP)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -static -o $@ $^
 
 # 8. th128 hook（32bit、D3D9フレームレート制限・DirectSound周波数フック）
-$(TARGET_TH128): th128_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_DSOUND)
+$(TARGET_TH128): th128_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
 # 9. th15 hook（32bit、GetDeviceState方式・D3D9フレームレート制限・DirectSound周波数フック、
 #    -static。touhou-recorder reports/82参照）
-$(TARGET_TH15): th15_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_DSOUND)
+$(TARGET_TH15): th15_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -static -o $@ $^
 

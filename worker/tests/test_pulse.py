@@ -125,3 +125,36 @@ def test_unload_module_returns_false_on_failure(monkeypatch):
 
     assert pulse.unload_module("31", log=messages.append) is False
     assert any("unload" in msg for msg in messages)
+
+
+def test_create_null_sink_uses_the_given_rate_for_speedup(monkeypatch):
+    """倍速録画ではゲームの出力レート(2倍速なら88200Hz)に合わせたsinkを作る(reports/86 §2)。"""
+    calls = fake_pactl(monkeypatch, {"load-module": FakeCompletedProcess(stdout="42\n")})
+
+    pulse.create_null_sink("sattori_job_abc", rate=88200, log=lambda msg: None)
+
+    load = next(c for c in calls if c[1] == "load-module")
+    assert "rate=88200" in load and "channels=2" in load
+
+
+def test_create_null_sink_keeps_the_default_rate_for_normal_speed(monkeypatch):
+    calls = fake_pactl(monkeypatch, {"load-module": FakeCompletedProcess(stdout="42\n")})
+
+    pulse.create_null_sink("sattori_job_abc", log=lambda msg: None)
+
+    load = next(c for c in calls if c[1] == "load-module")
+    assert not any(arg.startswith("rate=") for arg in load)
+
+
+def test_pactl_forces_the_c_locale(monkeypatch):
+    """pactlの出力はロケールで翻訳されるため、パースが黙って失敗しないようCロケールにする。"""
+    seen = {}
+
+    def run(cmd, **kwargs):
+        seen["env"] = kwargs.get("env")
+        return FakeCompletedProcess()
+
+    monkeypatch.setattr(pulse.subprocess, "run", run)
+    pulse.find_null_sink_modules("sattori_job_abc")
+
+    assert seen["env"]["LC_ALL"] == "C"

@@ -30,9 +30,14 @@
 // record_th10.py側でコピー先ファイル名を"th10_01.rpy"に正規化する。
 
 #include <windows.h>
+#include <stdlib.h>
 #include "../common/dinput_hook.h"
 #include "../common/window_wait.h"
+#include "../common/menu_wait.h"
 #include "../common/logging.h"
+#include "../common/speed_hack_hook.h"
+#include "../common/fps_limiter_hook.h"
+#include "../common/dsound_hook.h"
 #include "../common/fps_monitor.h"
 #include "../common/score_monitor.h"
 
@@ -58,29 +63,29 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     }
 
     Log("Buffering 6000ms for title screen logo animation...");
-    Sleep(6000);
+    MenuSleep(6000);
 
     Log("Step 0: Enter (dismiss 'Press Any Button' title screen)");
     PressKey(DIK_RETURN);
-    Sleep(1000);
+    MenuSleep(1000);
 
     Log("Step 1: Down x2 (select 'Replay' on main menu, skipping locked 'Extra Start')");
     for (int i = 0; i < 2; i++) {
         PressKey(DIK_DOWN);
-        Sleep(500);
+        MenuSleep(500);
     }
 
     Log("Step 2: Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    Sleep(500);
+    MenuSleep(500);
 
     Log("Step 3: Enter (select 1st replay file)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("Step 4: Enter (confirm playback, start replay from Stage 1)");
     PressKey(DIK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("=== th10_replay_autoplay: sequence complete ===");
     return 0;
@@ -92,6 +97,21 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         LogInit(hinst, "th10_autoplay.log");
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
+        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+        InstallSpeedHackHook();
+        // 倍速録画(reports/89)ではPresentの上限をFPS_LIMIT_TARGET_HZ(60×倍率)に合わせる
+        // (touhou-recorderでは低速録画検証のフェーズ58・62から同じ構成)。**等倍では入れない**:
+        // このタイトルはVsyncPatchが60fpsへのフレーム制御を担っており、fps_limiter_hookは
+        // FPS_LIMIT_TARGET_HZ未設定でも60fpsで間引くため、二重の制御でゲーム進行が約3%遅れた
+        // (MOD統合テストで被弾タイミングが127秒時点で4.1秒遅延、Issue #288)。
+        {
+            const char* hz = getenv("FPS_LIMIT_TARGET_HZ");
+            double targetHz = hz ? atof(hz) : 0.0;
+            if (targetHz > 0.0 && targetHz != 60.0) InstallFpsLimiterHook(targetHz);
+        }
+        // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
+        // A/V同期マーカー(reports/88)を有効にする。
+        InstallDSoundHook(1.0);
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th10.cpp)の`enum ADDRS`および`THGuiPrac::State()`内の実書き込み
         // コードから収集した絶対VA(0x474c44=score, 0x474c70=life, 0x474c7c=stage)を、

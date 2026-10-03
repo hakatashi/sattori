@@ -35,6 +35,10 @@
 #include <cstring>
 
 #include "../common/logging.h"
+#include "../common/menu_wait.h"
+#include "../common/dsound_hook.h"
+#include "../common/wasapi_hook.h"
+#include "../common/speed_hack_hook.h"
 #include "../common/score_monitor.h"
 
 using namespace autoplay;
@@ -108,6 +112,31 @@ BOOL WINAPI MyGetKeyboardState(PBYTE lpKeyState) {
     return ok;
 }
 
+// 倍速録画(Issue #288、touhou-recorder reports/89・90)。DXライブラリは音声APIを
+// CoCreateInstanceで作るため、生成されたオブジェクトをフックして倍速時の再生レート
+// スケールと同期マーカー(reports/88)を効かせる。音声は実際にはWASAPIで出ている
+// (CLSID_MMDeviceEnumeratorの生成とmmdevapi.dllのロードを確認、dsound.dll/XAudio2は
+// ロードされない)が、DirectSound版のエンジンにも備えてDirectSoundもフックしておく。
+typedef HRESULT(WINAPI *CoCreateInstance_t)(REFCLSID, LPUNKNOWN, DWORD, REFIID, LPVOID *);
+CoCreateInstance_t g_origCoCreateInstance = nullptr;
+const GUID kCLSID_DirectSound8 = {0x3901cc3f, 0x84b5, 0x4fa4, {0xba, 0x35, 0xaa, 0x81, 0x72, 0xb8, 0xa0, 0x9b}};
+const GUID kCLSID_DirectSound = {0x47d4d946, 0x62e8, 0x11cf, {0x93, 0xbc, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00}};
+const GUID kCLSID_MMDeviceEnumerator = {0xbcde0395, 0xe52f, 0x467c, {0x8e, 0x3d, 0xc4, 0x57, 0x92, 0x91, 0x69, 0x2e}};
+
+HRESULT WINAPI MyCoCreateInstance(REFCLSID rclsid, LPUNKNOWN outer, DWORD ctx, REFIID riid, LPVOID *ppv) {
+    HRESULT hr = g_origCoCreateInstance(rclsid, outer, ctx, riid, ppv);
+    Log("CoCreateInstance: clsid={%08lX-%04X-%04X-...} hr=0x%08lX", (unsigned long)rclsid.Data1,
+        rclsid.Data2, rclsid.Data3, (unsigned long)hr);
+    if (SUCCEEDED(hr) && ppv && *ppv &&
+        (IsEqualGUID(rclsid, kCLSID_DirectSound8) || IsEqualGUID(rclsid, kCLSID_DirectSound))) {
+        HookDirectSoundObject(*ppv);
+    }
+    if (SUCCEEDED(hr) && ppv && *ppv && IsEqualGUID(rclsid, kCLSID_MMDeviceEnumerator)) {
+        HookMMDeviceEnumerator(*ppv);
+    }
+    return hr;
+}
+
 FARPROC WINAPI MyGetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
     FARPROC real = g_origGetProcAddress(hModule, lpProcName);
 
@@ -120,6 +149,27 @@ FARPROC WINAPI MyGetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
             Log("GetProcAddress hook: GetKeyboardState を自前実装に差し替えました");
         }
         return (FARPROC)MyGetKeyboardState;
+    }
+
+    // 倍速録画(Issue #288)。DXライブラリはQPC・timeGetTime・音声APIをGetProcAddressで
+    // 動的に取得するため、IATではなくここで差し替える。
+    // 取得に失敗した(NULL)関数はフック版に差し替えない(差し替えると呼び出し時に
+    // NULLの元関数を呼んでしまう)。
+    if (!real) return real;
+    if (strcmp(lpProcName, "DirectSoundCreate8") == 0) {
+        Log("GetProcAddress hook: DirectSoundCreate8 をフック版に差し替えました");
+        return (FARPROC)WrapDirectSoundCreate8((void *)real);
+    }
+    if (strcmp(lpProcName, "timeGetTime") == 0) {
+        return (FARPROC)WrapTimeGetTimeForSpeedHack((void *)real);
+    }
+    if (strcmp(lpProcName, "CoCreateInstance") == 0) {
+        if (!g_origCoCreateInstance) g_origCoCreateInstance = (CoCreateInstance_t)real;
+        return (FARPROC)MyCoCreateInstance;
+    }
+    if (strcmp(lpProcName, "QueryPerformanceCounter") == 0) {
+        Log("GetProcAddress hook: QueryPerformanceCounter を倍速用に差し替えました");
+        return (FARPROC)WrapQueryPerformanceCounterForSpeedHack((void *)real);
     }
     return real;
 }
@@ -329,7 +379,7 @@ bool NavigateToReplay() {
         kMenuIndexReplay);
     for (int i = 0; i < kMenuNavMaxPresses && idx != kMenuIndexReplay; i++) {
         PressVKey(VK_DOWN);
-        Sleep(250);
+        MenuSleep(250);
         uint32_t next = ReadMenuIndex();
         Log("  Down %d回目: index %u -> %u", i + 1, idx, next);
         idx = next;
@@ -371,11 +421,11 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("入力ポーリング開始を検出");
 
     Log("タイトルロゴのアニメーション用に2000ms待機します...");
-    Sleep(2000);
+    MenuSleep(2000);
 
     Log("Step 1: Enter (デモ再生を抜けてメインメニューを表示)");
     PressVKey(VK_RETURN);
-    Sleep(500);
+    MenuSleep(500);
 
     if (!NavigateToReplay()) {
         Log("ERROR: メインメニューで 'Replay' を選択できませんでした。中断します");
@@ -384,15 +434,15 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
 
     Log("Step 3: Enter ('Replay' を確定、リプレイ一覧へ)");
     PressVKey(VK_RETURN);
-    Sleep(2000);
+    MenuSleep(2000);
 
     Log("Step 4: Enter (1番目のリプレイファイルを選択)");
     PressVKey(VK_RETURN);
-    Sleep(1000);
+    MenuSleep(1000);
 
     Log("Step 5: Enter (リプレイ再生開始)");
     PressVKey(VK_RETURN);
-    Sleep(700);
+    MenuSleep(700);
 
     Log("=== th06c_replay_autoplay: sequence complete ===");
     return 0;
@@ -409,6 +459,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         bool ok = HookIATEntry("KERNEL32.dll", "GetProcAddress", (void *)MyGetProcAddress,
                                (void **)&g_origGetProcAddress);
         Log("GetProcAddress IAT hook: %s", ok ? "OK" : "FAILED");
+
+        // exeのIATにCoCreateInstanceは無くFAILEDになるが(GetProcAddress経由で捕捉する)、
+        // 念のため試みる。
+        bool okCo = HookIATEntry("ole32.dll", "CoCreateInstance", (void *)MyCoCreateInstance,
+                                 (void **)&g_origCoCreateInstance);
+        Log("CoCreateInstance IAT hook: %s", okCo ? "OK" : "FAILED");
+        // 倍速録画(Issue #288): QPC偽装とWASAPIのレート偽装・同期マーカーの準備。
+        // SPEED_HACK_MULTIPLIER/FPS_LIMIT_TARGET_HZ未設定(等倍)ならレートは変えない。
+        InstallSpeedHackHook();
+        InstallWasapiHook(1.0);
 
         // リプレイずれ判定用のスコア監視(Issue #103)。th06cはオリジナルth06の完全な
         // 再実装であり、thpracのth06用RVAは一切流用できない。touhou-recorder reports/75の
