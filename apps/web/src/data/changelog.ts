@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-10-03",
+    ja: "東方紺珠伝 (th15) の長いリプレイで、録画後の変換に失敗することがある問題を修正",
+    en: "Fixed an issue where conversion after recording could fail for long Legacy of Lunatic Kingdom (th15) replays",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/pull/298",
+  },
+  {
+    date: "2026-10-03",
     ja: "東方紺珠伝 (th15) の録画で、録画速度 (1〜4倍速) を選べるようにした。速い速度を選ぶと録画がより早く完了する",
     en: "Added a recording speed option (1x–4x) for Legacy of Lunatic Kingdom (th15). Faster speeds finish recording sooner",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/288",
