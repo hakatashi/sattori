@@ -18,11 +18,14 @@
 """
 import subprocess
 
+from . import sync_marker
 from .ffmpeg import ffprobe_start_time
 from .modlog import find_replay_start_epoch
 
 # リプレイの再生を確定するキーを押す何秒前から残すか(ゲーム内時間=等倍の動画上の秒数)。
 REPLAY_START_LEAD_SEC = 1.0
+# 同期マーカーが鳴り終わってから何秒あけてカットを始めるか(Wineの出力遅延ぶんの余裕)。
+MARKER_TAIL_MARGIN_SEC = 0.3
 # 開始より手前に終了が来る・極端に短い、といった明らかにおかしい範囲では終了側を捨てる。
 MIN_CUT_DURATION_SEC = 1.0
 
@@ -69,6 +72,18 @@ def compute_cut_range(config, video_target, output_path, env, *, time_scale, con
     else:
         # 実時間はゲーム内時間の time_scale 倍(倍速録画ではメニュー操作も実時間で縮む)。
         cut["startSec"] = max(v_offset, to_output_sec(start_epoch - REPLAY_START_LEAD_SEC * time_scale))
+        # 同期マーカー(約3秒のノイズ)は配信版に残さない。マーカーはゲームの初期化が済んでから
+        # 鳴らすので(`sync_marker.schedule_trigger()`)、メニュー操作の速いタイトルでは
+        # 鳴り終わりが上の開始位置より後ろになりうる。その場合は開始を鳴り終わりまで遅らせる
+        # (リプレイ選択画面を見せる時間が少し短くなるだけ)。
+        marker = sync_marker.parse_marker_log(config.log_path, log=log)
+        if marker is not None:
+            marker_end = to_output_sec(
+                marker["epoch"] + marker["samples"] / marker["rate"] + MARKER_TAIL_MARGIN_SEC)
+            if marker_end > cut["startSec"]:
+                log(f"同期マーカーの鳴り終わり({marker_end:.3f}s)まで配信版の開始を遅らせます"
+                    f"(本来の開始 {cut['startSec']:.3f}s)")
+                cut["startSec"] = marker_end
 
     if content_end_epoch is not None:
         end_sec = to_output_sec(content_end_epoch)
