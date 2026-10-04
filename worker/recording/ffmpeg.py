@@ -28,6 +28,14 @@ NATIVE_AUDIO_BITRATE_KBPS = 192
 # (touhou-recorder reports/86 §6。Opusは内部48kHz固定なので使ってはならない)。
 AAC_MAX_SAMPLE_RATE_HZ = 96000
 
+# x11grab入力のキュー(`-thread_queue_size`)に溜められる長さ(秒、キャプチャのフレームレート換算)。
+# ffmpeg 6.xは入力のdemuxをスレッドで回し、キューが既定の8パケットで満杯になるとx11grabが
+# 画面の取り込みを止める。GPUワーカーでは録画開始直後に出力側(NVENCの初期化等)が詰まり、
+# 実時間0.5〜3.3秒キャプチャが止まって、出力の先頭が倍率ぶん長く静止・欠落していた
+# (Issue #302)。キューを広げると止まっている間のフレームがメモリに溜まり、欠落しない。
+# 溜まるのは詰まっている間だけで、最悪でも 1280x960(bgr0、約4.9MB/フレーム)×240fps×4秒≒4.7GB。
+CAPTURE_QUEUE_SEC = 4
+
 
 def _video_encoder_args(gpu_encode):
     """映像エンコーダの引数。
@@ -75,6 +83,11 @@ def audio_encode_args(time_scale):
     return ["-c:a", "aac", "-b:a", f"{bitrate}k", "-cutoff", str(capture_rate // 2)]
 
 
+def capture_queue_packets(frame_rate):
+    """x11grab入力のキューのパケット数(`CAPTURE_QUEUE_SEC`参照)。"""
+    return int(frame_rate * CAPTURE_QUEUE_SEC)
+
+
 def build_video_ffmpeg_cmd(config, x, y, w, h, video_output, side_stream_path=None, *,
                            time_scale=1.0, gpu_encode=False, window_id=None):
     """映像のみを録画するffmpegコマンド(音声は別プロセス、reports/26参照)。
@@ -98,6 +111,9 @@ def build_video_ffmpeg_cmd(config, x, y, w, h, video_output, side_stream_path=No
     (GPU描画・高解像度のth06ncで顕在化、touhou-recorder reports/81 §9)。
     未指定時は従来通りのコマンド文字列と完全に一致する。
 
+    x11grab入力には`-thread_queue_size`を付け、出力側が詰まってもキャプチャを止めない
+    (`CAPTURE_QUEUE_SEC`、Issue #302)。
+
     倍速録画(`time_scale`<1、Issue #288)ではキャプチャのフレームレート自体を60×倍率へ
     上げる(`recording.timing.capture_frame_rate_hz()`)。`window_id`を指定すると座標では
     なくウィンドウID基準で取り込む(`GameConfig.capture_by_window_id`)。`gpu_encode`で
@@ -106,6 +122,7 @@ def build_video_ffmpeg_cmd(config, x, y, w, h, video_output, side_stream_path=No
     frame_rate = capture_frame_rate_hz(time_scale)
     base_cmd = [
         "ffmpeg", "-y", "-nostdin", "-copyts",
+        "-thread_queue_size", str(capture_queue_packets(frame_rate)),
         "-f", "x11grab", "-draw_mouse", "0", "-video_size", f"{w}x{h}", "-framerate", str(frame_rate),
     ]
     if window_id:
