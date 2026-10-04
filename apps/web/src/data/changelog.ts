@@ -16,26 +16,26 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
-    date: "2026-10-04",
+    date: "2026-10-05",
     ja: "録画した動画から、メニュー操作やリプレイ終了後の静止画面をカットし、リプレイ選択画面から再生終了までだけを配信するように",
     en: "Recorded videos now cut out the menu navigation and the still screen after the replay ends, keeping only the part from the replay selection screen to the end of playback",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/266",
     important: true,
   },
   {
-    date: "2026-10-04",
+    date: "2026-10-05",
     ja: "東方紺珠伝 (th15)・東方錦上京 (th20) の動画を1080pに拡大して配信するように（YouTubeにアップロードしても720pに落ちないように）。元の解像度の動画も引き続きダウンロード可能",
     en: "Videos of Legacy of Lunatic Kingdom (th15) and Unfinished Dream of All Living Ghost (th20) are now upscaled to 1080p so they are not downgraded to 720p on YouTube. The original-resolution video is also available for download",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/284",
   },
   {
-    date: "2026-10-04",
+    date: "2026-10-05",
     ja: "高速録画で、動画の冒頭が数秒間止まって見える・リプレイの最初が欠けることがある問題を修正",
     en: "Fixed an issue where, with high-speed recording, the beginning of the video could appear frozen for a few seconds or the start of the replay could be missing",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/302",
   },
   {
-    date: "2026-10-04",
+    date: "2026-10-05",
     ja: "ブラウザで動画を先頭から再生したときに、音声が映像より先行して聞こえることがある問題を修正",
     en: "Fixed an issue where audio could play ahead of the video when playing from the beginning in some browsers",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/301",
