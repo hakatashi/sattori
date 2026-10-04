@@ -96,3 +96,26 @@ def test_find_marker_time_returns_none_when_ffmpeg_cannot_run(monkeypatch):
     monkeypatch.setattr(sync_marker.subprocess, "run", fail)
 
     assert sync_marker.find_marker_time("/a.mov", {"rate": 44100, "samples": 10, "seed": 1}) == (None, 0.0)
+
+
+class _SinkConfig(_Config):
+    def __init__(self, instance_dir):
+        super().__init__(instance_dir)
+        self.pulse_sink = "sattori_job_x"
+
+
+def test_trigger_waits_until_the_game_audio_stream_is_flowing(tmp_path, monkeypatch):
+    """ゲームがDirectSoundを作った直後はWineの出力がまだPulseAudioへ流れておらず、
+    そこで鳴らしたマーカーは録音に入らない(th08の等倍で検出に失敗した)。"""
+    flowing = {"value": False}
+    monkeypatch.setattr(sync_marker.pulse, "sink_has_playing_input", lambda sink: flowing["value"])
+    monkeypatch.setattr(sync_marker, "STREAM_SETTLE_SEC", 0.0)
+    config = _SinkConfig(str(tmp_path))
+
+    pending = sync_marker.schedule_trigger(config, delay=0.0, log=lambda msg: None)
+    pending.join(0.3)
+    assert not (tmp_path / "sync_marker.trigger").exists()
+
+    flowing["value"] = True
+    pending.join(1.0)
+    assert (tmp_path / "sync_marker.trigger").exists()

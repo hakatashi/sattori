@@ -22,7 +22,7 @@ from .artifacts import (
     write_timeout_result,
 )
 from . import sync_marker
-from .cut import compute_cut_range
+from .cut import compute_cut_range, output_video_offset
 from .ffmpeg import (
     audio_intermediate_extension,
     build_audio_ffmpeg_cmd,
@@ -781,7 +781,11 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
 
     total_record_sec = time.time() - record_start
     cut = None
+    video_offset_sec = 0.0
     if output_exists:
+        # 音声の録音は映像より先に始める(`_start_audio_capture()`)ので、mux後の動画では
+        # 映像がファイル先頭から数秒〜十数秒後ろにずれて始まる。
+        video_offset_sec = output_video_offset(output_path, env) or 0.0
         cut = compute_cut_range(
             config, video.target, output_path, env, time_scale=time_scale,
             content_end_epoch=content_end_epoch, reference_epoch=record_start, log=log,
@@ -825,6 +829,9 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         "classification": classification,
         "total_record_sec": total_record_sec,
         "content_end_sec": content_end_sec,
+        # mux後の動画で映像が始まる秒数。total_record_sec・content_end_secは映像の録画開始が
+        # 起点なので、出力ファイル上の位置へはこれを足して換算する。
+        "video_offset_sec": video_offset_sec,
         # 配信版でカットする範囲(Issue #266、`recording/cut.py`)。出力が無ければNone。
         "cut": cut,
         # この試行の録画に適用されていた実時間スケール(等倍なら1.0)。出力は等倍へ
@@ -917,7 +924,13 @@ def _record_with_retry(config, replay_path, output_path, *,
         # 静止画面(選択画面等)が固定30秒窓の大半を占め、閾値超過と誤判定する
         # (本番のth06ncジョブで確認、Issue #250)。
         content_end_sec = result.get("content_end_sec", result["total_record_sec"])
-        dup_rate = measure_duplicate_rate(output_path, 15, min(30, max(5, content_end_sec - 15)))
+        # 「録画開始15秒」は映像の録画開始が起点。音声を先に録り始めた分(数秒〜十数秒)だけ
+        # 出力ファイル上では後ろにずれるので足す。足さないと窓がメニュー操作・ロード区間に
+        # かかる(GPUワーカーのth06 4倍速で2.7%→28.6%)。
+        video_offset_sec = result.get("video_offset_sec", 0.0)
+        dup_rate = measure_duplicate_rate(
+            output_path, 15 + video_offset_sec, min(30, max(5, content_end_sec - 15)),
+        )
         log(
             f"録画開始15秒以降の重複フレーム率: {dup_rate}% "
             f"(閾値{threshold:.1f}%、time_scale={time_scale})"
@@ -928,7 +941,8 @@ def _record_with_retry(config, replay_path, output_path, *,
             # (last_color_frame)は使えず、ミュージ済みの出力ファイルから取り直す
             # (Issue #159)。
             save_diagnostics_snapshot(
-                diagnostics_dir, grab_frame_from_video(output_path, 15), attempt, "duplicate_rate",
+                diagnostics_dir, grab_frame_from_video(output_path, 15 + video_offset_sec), attempt,
+                "duplicate_rate",
             )
             continue
 
