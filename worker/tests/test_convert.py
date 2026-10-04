@@ -33,31 +33,38 @@ def test_delivery_resolution_rounds_width_to_even():
     assert width % 2 == 0
 
 
-def test_delivery_resolution_never_downscales_a_960p_recording():
-    # th20は1280x960で録画される。高さ720pxへ「合わせる」と960x720への縮小になり、
-    # 主要ダウンロード導線がユーザーをわざわざ低い解像度へ誘導してしまう。
-    # 720p版が存在する理由(低解像度がYouTubeで60fpsと認識されない、reports/21)は
-    # 元から720p以上ある録画には当てはまらない。
-    assert convert.delivery_resolution(1280, 960) == (1280, 960)
+def test_delivery_resolution_scales_a_960p_recording_up_to_1080p():
+    # th20は1280x960で録画される。YouTubeは720pと1080pの間の動画を720pへ縮小して
+    # 配信するため、1080pへ引き上げる(Issue #284)。
+    assert convert.delivery_resolution(1280, 960) == (1440, 1080)
 
 
 def test_delivery_resolution_keeps_a_recording_exactly_at_720p():
     assert convert.delivery_resolution(1280, 720) == (1280, 720)
 
 
+def test_delivery_resolution_keeps_a_recording_exactly_at_1080p():
+    # th06ncの高解像度録画(1920x1080)。
+    assert convert.delivery_resolution(1920, 1080) == (1920, 1080)
+
+
+def test_delivery_resolution_keeps_a_recording_above_1080p():
+    assert convert.delivery_resolution(2560, 1440) == (2560, 1440)
+
+
 # --- 生データを別途配信するかの判断 ----------------------------------------
 
 
 def test_separate_raw_output_is_worth_it_only_when_the_resolution_changes():
-    # th06/07/08/11の等倍録画: 生データがそのまま元解像度版として通用するので、
-    # 無加工でアップロードすれば再エンコードは配信版の1回だけで済む。
+    # 640x480のタイトルとth20(1280x960、Issue #284で1080pへ引き上げるようになった)の等倍録画。
     assert convert.needs_separate_raw_output(640, 480) is True
+    assert convert.needs_separate_raw_output(1280, 960) is True
 
 
 def test_no_separate_raw_output_when_the_resolution_does_not_change():
-    # th20の等倍録画: 2本目はウォーターマークの有無しか違わず、S3保管料と
+    # th06ncの等倍録画: 2本目はウォーターマークの有無しか違わず、S3保管料と
     # CloudFront転送量が倍になるだけ(ウォーターマーク不要ならページAでオフにできる)。
-    assert convert.needs_separate_raw_output(1280, 960) is False
+    assert convert.needs_separate_raw_output(1280, 720) is False
 
 
 def test_no_separate_raw_output_for_a_time_scaled_recording():
@@ -77,7 +84,7 @@ def test_scales_up_a_low_resolution_recording():
 
 
 def test_does_not_scale_when_the_resolution_already_matches():
-    cmd = convert.build_convert_cmd("in.mp4", "out.mp4", width=1280, height=960)
+    cmd = convert.build_convert_cmd("in.mp4", "out.mp4", width=1280, height=720)
 
     assert "scale=" not in filter_of(cmd)
 
@@ -97,12 +104,12 @@ def test_compresses_video_pts_and_resamples_audio_for_scale_above_one():
 
 
 def test_forces_the_native_frame_rate_when_undoing_scale_above_one():
-    """`-r 60` が、30Hz素材を60fpsで撮ったことによる重複フレームを間引く要点。"""
+    """60fps固定が、30Hz素材を60fpsで撮ったことによる重複フレームを間引く要点。"""
     cmd = convert.build_convert_cmd(
         "in.mp4", "out.mp4", width=1280, height=960, time_scale=2.0, audio_sample_rate=48000,
     )
 
-    assert cmd[cmd.index("-r") + 1] == str(convert.NATIVE_FRAME_RATE_HZ)
+    assert "setpts=0.5*PTS,fps=60:start_time=0" in filter_of(cmd)
 
 
 def test_moves_moov_atom_to_the_front_for_streaming_playback():
@@ -113,14 +120,29 @@ def test_moves_moov_atom_to_the_front_for_streaming_playback():
     assert cmd[cmd.index("-movflags") + 1] == "+faststart"
 
 
-def test_does_not_touch_frame_rate_or_audio_for_a_normal_speed_recording():
+def test_does_not_change_speed_for_a_normal_speed_recording():
+    cmd = convert.build_convert_cmd("in.mp4", "out.mp4", width=640, height=480)
+    expr = filter_of(cmd)
+
+    assert "setpts" not in expr
+    assert "asetrate" not in expr
+    assert "trim" not in expr
+
+
+def test_starts_audio_at_zero_with_real_silence():
+    """音声の開始が遅い録画をそのまま出すと、MP4の先頭の空編集(elst)になり、
+    ブラウザによっては先頭からの再生で無視されて音ズレする(Issue #301)。"""
     cmd = convert.build_convert_cmd("in.mp4", "out.mp4", width=640, height=480)
 
-    assert "-r" not in cmd
-    assert "asetrate" not in filter_of(cmd)
-    # 音声を触る必要が無ければ再エンコードせずそのまま通す。
-    assert cmd[cmd.index("-c:a") + 1] == "copy"
-    assert cmd[cmd.index("-map", cmd.index("-map") + 1) + 1] == "0:a"
+    assert "[0:a]aresample=first_pts=0[a]" in filter_of(cmd)
+    # 無音で埋めるので、等倍録画でも音声は再エンコードする。
+    assert cmd[cmd.index("-c:a") + 1] == "aac"
+
+
+def test_starts_video_at_zero():
+    cmd = convert.build_convert_cmd("in.mp4", "out.mp4", width=640, height=480)
+
+    assert "fps=60:start_time=0" in filter_of(cmd)
 
 
 def test_drops_audio_when_the_sample_rate_cannot_be_probed():
@@ -136,7 +158,7 @@ def test_drops_audio_when_the_sample_rate_cannot_be_probed():
     assert "asetrate" not in filter_of(cmd)
     assert "setpts=0.5*PTS" in filter_of(cmd)
     assert "-an" in cmd
-    assert "0:a" not in cmd
+    assert "0:a" not in filter_of(cmd)
     assert "-c:a" not in cmd
 
 
@@ -172,6 +194,71 @@ def test_undoes_scale_above_one_and_overlays_the_watermark_in_one_ffmpeg_invocat
     assert "asetrate=96000" in expr
     # 出力は1つだけ(＝エンコードも1回だけ)。
     assert cmd.count("libx264") == 1
+
+
+# --- リプレイ再生区間外のカット(Issue #266) ---------------------------------
+
+
+def test_cuts_video_and_audio_to_the_same_range():
+    cmd = convert.build_convert_cmd(
+        "in.mp4", "out.mp4", width=640, height=480, cut_start=3.25, cut_end=100.5,
+    )
+    expr = filter_of(cmd)
+
+    assert "[0:v]trim=start=3.250000:end=100.500000,setpts=(PTS-3.250000/TB),fps=60" in expr
+    assert "[0:a]aresample=first_pts=0,atrim=start=3.250000:end=100.500000,asetpts=PTS-3.250000/TB[a]" in expr
+
+
+def test_pads_the_audio_start_before_cutting():
+    """録音した音声のptsは先頭からのサンプル数の積算と少しずつずれているので、ptsで切る
+    atrimを先に掛けると切り口がずれる(th08の実録画で+26ms)。"""
+    cmd = convert.build_convert_cmd("in.mp4", "out.mp4", width=640, height=480, cut_start=3.0)
+    expr = filter_of(cmd)
+
+    assert expr.index("aresample=first_pts=0") < expr.index("atrim=")
+
+
+def test_cuts_before_undoing_the_speedup():
+    # カット範囲は録画(等倍へ戻す前)の時間軸の秒数。
+    cmd = convert.build_convert_cmd(
+        "in.mp4", "out.mp4", width=640, height=480, time_scale=0.5, audio_sample_rate=88200,
+        cut_start=2.0, cut_end=50.0,
+    )
+    expr = filter_of(cmd)
+
+    assert "trim=start=2.000000:end=50.000000,setpts=2.0*(PTS-2.000000/TB),fps=60" in expr
+    assert ("[0:a]aresample=first_pts=0,atrim=start=2.000000:end=50.000000,"
+            "asetpts=PTS-2.000000/TB,asetrate=44100,aresample=44100[a]") in expr
+
+
+def test_cuts_only_the_end_when_the_start_is_unknown():
+    cmd = convert.build_convert_cmd("in.mp4", "out.mp4", width=640, height=480, cut_end=50.0)
+    expr = filter_of(cmd)
+
+    assert "[0:v]trim=end=50.000000,fps=60" in expr
+    assert "[0:a]aresample=first_pts=0,atrim=end=50.000000[a]" in expr
+
+
+# --- 元の解像度版を同時に出す(2本出力) --------------------------------------
+
+
+def test_writes_the_raw_output_from_the_same_cut_without_scale_or_watermark():
+    cmd = convert.build_convert_cmd(
+        "in.mp4", "out.mp4", width=640, height=480, cut_start=1.0, cut_end=9.0,
+        watermark_path="watermark.webm", raw_output_path="raw.mp4",
+    )
+    expr = filter_of(cmd)
+
+    assert cmd.count("ffmpeg") == 1
+    # カット・フレームレート固定の後で分岐し、拡大とウォーターマークは配信版にだけ掛ける。
+    assert "fps=60:start_time=0,split=2[vsrc][vraw];[vsrc]null,scale=960:720" in expr
+    assert "asplit=2[a][araw]" in expr
+    raw_args = cmd[cmd.index("out.mp4") + 1:]
+    assert raw_args[raw_args.index("-map") + 1] == "[vraw]"
+    assert "[araw]" in raw_args
+    assert raw_args[-1] == "raw.mp4"
+    assert cmd.count("libx264") == 2
+    assert cmd.count("+faststart") == 2
 
 
 def test_caps_watermark_width_at_half_the_target_width():
@@ -357,9 +444,10 @@ def test_stretches_video_pts_and_restores_audio_for_speedup():
     )
     expr = filter_of(cmd)
 
-    assert "setpts=2.0*PTS" in expr
+    assert "setpts=2.0*PTS,fps=60:start_time=0" in expr
     assert "asetrate=44100,aresample=44100" in expr
-    assert cmd[cmd.index("-r") + 1] == str(convert.NATIVE_FRAME_RATE_HZ)
+    # 先頭の無音は等倍化の前に埋める(無音の長さも一緒に伸縮させるため)。
+    assert "[0:a]aresample=first_pts=0,asetrate=44100" in expr
 
 
 def test_restores_audio_of_a_four_times_speedup_to_the_native_rate():

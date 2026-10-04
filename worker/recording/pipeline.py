@@ -17,10 +17,12 @@ import pulse
 from .artifacts import (
     save_diagnostics_snapshot,
     save_progress_snapshot,
+    write_cut_result,
     write_desync_result,
     write_timeout_result,
 )
 from . import sync_marker
+from .cut import compute_cut_range
 from .ffmpeg import (
     audio_intermediate_extension,
     build_audio_ffmpeg_cmd,
@@ -336,8 +338,8 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                        side_stream_path=None):
     """リプレイ終了(または異常)を検知するまでポーリングする。
 
-    戻り値: (detected, detected_by, frozen, crashed, last_color_frame)。**録画の停止は
-    ここではやらない**(呼び出し側が `_stop_and_mux()` で止める)。`detected_by`は
+    戻り値: (detected, detected_by, frozen, crashed, last_color_frame, content_end_epoch)。
+    **録画の停止はここではやらない**(呼び出し側が `_stop_and_mux()` で止める)。`detected_by`は
     `detected`がTrueだった場合の検知方式("template" / "still")で、呼び出し側がログの
     サマリー行に正しい方式を表示するために使う(未検知/frozen/crashed/timeoutの場合は
     None。以前は`detected`フラグだけを見て`elif detected:`で常に「画面静止検知」に
@@ -352,6 +354,10 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     `last_color_frame`は直近に取得したカラー画像で、試行が破棄された際の診断用証跡
     (Issue #159、`save_diagnostics_snapshot()`)に使う。1回もフレームを取得できないまま
     終了した場合(grace期間中のタイムアウト等)はNone。
+    `content_end_epoch`は、終了を確定させた連続一致が**始まった**フレームの壁時計時刻
+    (epoch秒)。配信版のカット終了位置(Issue #266)に使う。画面静止なら静止が始まる直前の
+    フレーム(=そのフレーム以降は画面が変わっていない)、テンプレート照合なら最初に一致した
+    フレームの時刻。`detected`がFalseならNone(カットせず末尾まで残す)。
 
     時間に関する定数はすべてここで `time_scale` 倍する。ポーリングは実時間駆動
     (`POLL_INTERVAL_SEC`)なので、回数を据え置くと**ゲーム内時間で必要な静止の長さが
@@ -386,6 +392,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     log(f"リプレイ再生開始とみなす時刻から監視開始(猶予{post_start_grace_sec:.1f}秒)")
 
     prev_frame = None
+    prev_frame_time = None
     last_color_frame = None
     last_side_stream_mtime = None
     consecutive_still = 0
@@ -393,6 +400,9 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     consecutive_freeze = 0
     detected = False
     detected_by = None
+    content_end_epoch = None
+    # 連続一致が始まったフレームの時刻(連続が途切れたらNoneへ戻す)。
+    streak_start_time = None
     frozen = False
     crashed = False
     poll_count = 0
@@ -444,7 +454,10 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
             if frame is None:
                 time.sleep(POLL_INTERVAL_SEC)
                 continue
+            # ffmpegがこのフレームを書き出した時刻。
+            frame_time = last_side_stream_mtime
         else:
+            frame_time = time.time()
             frame, color_frame = grab_frame(config, env, x, y, w, h)
         last_color_frame = color_frame
         poll_count += 1
@@ -490,6 +503,8 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
             # END_TEMPLATE_CONSECUTIVE_REQUIRED回連続の一致を要求する。
             template_d = mad_masked(frame, end_template, end_template_mask)
             if template_d < end_template_mad_threshold:
+                if end_template_consecutive == 0:
+                    streak_start_time = frame_time
                 end_template_consecutive += 1
             else:
                 end_template_consecutive = 0
@@ -501,6 +516,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                 log("リプレイ選択画面と連続して一致したためリプレイ終了と判定しました")
                 detected = True
                 detected_by = "template"
+                content_end_epoch = streak_start_time
                 break
             # end_template方式は終了判定に画面静止を使わないため、本編が完全に固まった
             # (デシンク・非再生等)場合を別途検知する必要がある(FREEZE_CONSECUTIVE_REQUIRED
@@ -525,6 +541,9 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
             if prev_frame is not None:
                 d = mad_masked(prev_frame, frame, still_mask)
                 if d < STILL_MAD_THRESHOLD:
+                    if consecutive_still == 0:
+                        # 前回のフレームと同じ=静止は前回のフレームの時点で既に始まっている。
+                        streak_start_time = prev_frame_time
                     consecutive_still += 1
                 else:
                     consecutive_still = 0
@@ -533,10 +552,12 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
                     log("画面が一定時間変化しなくなったためリプレイ終了と判定しました")
                     detected = True
                     detected_by = "still"
+                    content_end_epoch = streak_start_time
                     break
             prev_frame = frame
+            prev_frame_time = frame_time
         time.sleep(POLL_INTERVAL_SEC)
-    return detected, detected_by, frozen, crashed, last_color_frame
+    return detected, detected_by, frozen, crashed, last_color_frame, content_end_epoch
 
 
 def _stop_and_mux(video, audio, output_path, env, log, *, time_scale=1.0, marker_log_path=None):
@@ -696,7 +717,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     # 音声ffmpegの録音開始を待ってから、MODに同期マーカーを鳴らさせる(reports/88)。
     sync_marker.schedule_trigger(config, log=log)
 
-    detected, detected_by, frozen, crashed, last_color_frame = _monitor_until_end(
+    detected, detected_by, frozen, crashed, last_color_frame, content_end_epoch = _monitor_until_end(
         config, env, geometry, detection, time_scale=time_scale,
         progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
         seen_lines=seen_lines, log=log, side_stream_path=side_stream_path,
@@ -708,6 +729,12 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     )
 
     total_record_sec = time.time() - record_start
+    cut = None
+    if output_exists:
+        cut = compute_cut_range(
+            config, video_target, output_path, env, time_scale=time_scale,
+            content_end_epoch=content_end_epoch, reference_epoch=record_start, log=log,
+        )
     if detected:
         classification = "good"
         stop_reason = "リプレイ選択画面テンプレート照合" if detected_by == "template" else "画面静止検知"
@@ -747,6 +774,8 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         "classification": classification,
         "total_record_sec": total_record_sec,
         "content_end_sec": content_end_sec,
+        # 配信版でカットする範囲(Issue #266、`recording/cut.py`)。出力が無ければNone。
+        "cut": cut,
         # この試行の録画に適用されていた実時間スケール(等倍なら1.0)。出力は等倍へ
         # 戻す前の生データなので、呼び出し側の診断ログに使う。
         "time_scale": time_scale,
@@ -757,7 +786,7 @@ def record_with_retry(config, replay_path, output_path, *,
                        progress_dir=None, expected_duration_seconds=None, diagnostics_dir=None,
                        max_attempts=MAX_ATTEMPTS_DEFAULT, max_duplicate_rate=MAX_DUPLICATE_RATE_DEFAULT,
                        expected_score=None, desync_result_path=None, timeout_result_path=None,
-                       log=print):
+                       cut_result_path=None, log=print):
     """attempt_recording()を最大max_attempts回試行し、事後の重複フレーム率チェックに
     引っかかった場合は出力を破棄してリトライする。正常な録画が得られればTrueを、
     max_attempts回失敗すればFalseを返す。
@@ -775,6 +804,9 @@ def record_with_retry(config, replay_path, output_path, *,
     録画成功が確定した時点で結果をJSONへ書き出す。
 
     diagnostics_dir は試行を破棄した際の最終フレーム(Issue #159)の書き出し先。
+
+    cut_result_path は採用した試行の配信版カット範囲(Issue #266、`recording/cut.py`)の
+    書き出し先。
     """
     # 倍速録画ではゲームの音声出力レートに合わせた高レートのsinkを作る(`pulse.create_null_sink()`)。
     sink_rate = audio_capture_rate_hz(recording_time_scale(config.build_env()))
@@ -785,14 +817,15 @@ def record_with_retry(config, replay_path, output_path, *,
             diagnostics_dir=diagnostics_dir,
             max_attempts=max_attempts, max_duplicate_rate=max_duplicate_rate,
             expected_score=expected_score, desync_result_path=desync_result_path,
-            timeout_result_path=timeout_result_path, log=log,
+            timeout_result_path=timeout_result_path, cut_result_path=cut_result_path, log=log,
         )
 
 
 def _record_with_retry(config, replay_path, output_path, *,
                        progress_dir, expected_duration_seconds, diagnostics_dir,
                        max_attempts, max_duplicate_rate,
-                       expected_score, desync_result_path, timeout_result_path, log):
+                       expected_score, desync_result_path, timeout_result_path,
+                       cut_result_path=None, log=print):
     for attempt in range(1, max_attempts + 1):
         log(f"=== 試行 {attempt}/{max_attempts} ===")
         try:
@@ -858,6 +891,7 @@ def _record_with_retry(config, replay_path, output_path, *,
         desync_detected = check_replay_desync(config, expected_score, log=log)
         write_desync_result(desync_result_path, desync_detected)
         write_timeout_result(timeout_result_path, timed_out)
+        write_cut_result(cut_result_path, result.get("cut"))
         return True
 
     log(f"ERROR: {max_attempts}回試行しても正常な録画が得られませんでした")

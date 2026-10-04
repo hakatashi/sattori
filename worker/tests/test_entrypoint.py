@@ -55,7 +55,7 @@ def entrypoint(monkeypatch, tmp_path):
 
     # 本番の作業ディレクトリは`/app`固定なので、テストでは書ける場所へ差し替える。
     # 実ffmpeg・実S3・実DynamoDBにも触らせない。
-    for name in ("OUTPUT_VIDEO", "OUTPUT_VIDEO_DELIVERY", "OUTPUT_POSTER"):
+    for name in ("OUTPUT_VIDEO", "OUTPUT_VIDEO_DELIVERY", "OUTPUT_VIDEO_RAW", "OUTPUT_POSTER"):
         path = str(tmp_path / f"{name.lower()}.mp4")
         with open(path, "wb") as f:
             f.write(b"x" * 10)
@@ -64,6 +64,7 @@ def entrypoint(monkeypatch, tmp_path):
     # OUTPUT_VIDEO等と同じくテスト用の書ける場所へ差し替える。
     monkeypatch.setattr(module, "DESYNC_RESULT_PATH", str(tmp_path / "desync_result.json"))
     monkeypatch.setattr(module, "TIMEOUT_RESULT_PATH", str(tmp_path / "timeout_result.json"))
+    monkeypatch.setattr(module, "CUT_RESULT_PATH", str(tmp_path / "cut_result.json"))
     monkeypatch.setattr(module, "update_status", lambda *a, **k: recorded_status.append((a, k)))
     monkeypatch.setattr(module, "update_progress", lambda *a, **k: None)
     monkeypatch.setattr(module, "upload_ffmpeg_upscale_log_if_present", lambda s3: None)
@@ -84,27 +85,46 @@ def status_kwargs(module, status):
     raise AssertionError(f"{status} への更新が行われていません")
 
 
-# --- 出力が2本になる場合(th06/07/08/11の等倍録画) --------------------------
+# --- 出力が2本になる場合(解像度が変わる等倍録画) -----------------------------
 
 
-def test_keeps_both_outputs_when_the_resolution_changes(entrypoint, monkeypatch):
-    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (640, 480))
+@pytest.mark.parametrize("resolution", [(640, 480), (1280, 960)])
+def test_keeps_both_outputs_when_the_resolution_changes(entrypoint, monkeypatch, resolution):
+    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: resolution)
+    converted = []
+    monkeypatch.setattr(entrypoint, "convert_for_delivery", lambda *a, **k: converted.append(k))
     s3 = FakeS3()
 
-    entrypoint.convert_and_upload(s3, 1.0)
+    entrypoint.convert_and_upload(s3, 1.0, {"startSec": 3.0, "endSec": 90.0})
 
+    # 元の解像度版も同じ変換(=同じカット)で作る。
+    assert converted[0]["raw_output_path"] == entrypoint.OUTPUT_VIDEO_RAW
+    assert (converted[0]["cut_start"], converted[0]["cut_end"]) == (3.0, 90.0)
     kwargs = status_kwargs(entrypoint, "done")
-    assert kwargs["output_path"] == entrypoint.OUTPUT_KEY
+    assert kwargs["output_path"] == entrypoint.OUTPUT_KEY_RAW
     assert kwargs["output_path_720p"] == entrypoint.OUTPUT_KEY_DELIVERY
-    # 生データはそのまま元解像度版として配信するので消さない。
-    assert s3.deleted == []
+    assert [u["key"] for u in s3.uploads if u["key"].endswith(".mp4")] == [
+        entrypoint.OUTPUT_KEY_DELIVERY, entrypoint.OUTPUT_KEY_RAW,
+    ]
+    # 生データはカットされていないので配信しない。役目を終えたので消す。
+    assert s3.deleted == [entrypoint.OUTPUT_KEY]
 
 
-# --- 出力が1本になる場合(th20・倍速録画) ----------------------------------
+def test_upload_total_includes_the_raw_output(entrypoint, monkeypatch):
+    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (640, 480))
+
+    entrypoint.convert_and_upload(FakeS3(), 1.0)
+
+    assert status_kwargs(entrypoint, "uploading")["upload_total_bytes"] == 20
+
+
+# --- 出力が1本になる場合(th06nc・倍速録画) --------------------------------
 
 
 def test_collapses_to_one_output_when_the_resolution_does_not_change(entrypoint, monkeypatch):
-    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (1280, 960))
+    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (1280, 720))
+    converted = []
+    monkeypatch.setattr(entrypoint, "convert_for_delivery", lambda *a, **k: converted.append(k))
     s3 = FakeS3()
 
     entrypoint.convert_and_upload(s3, 1.0)
@@ -113,11 +133,12 @@ def test_collapses_to_one_output_when_the_resolution_does_not_change(entrypoint,
     # `outputPath` が変換結果を指し、720p版は作られない(null のまま)。
     assert kwargs["output_path"] == entrypoint.OUTPUT_KEY_DELIVERY
     assert "output_path_720p" not in kwargs
+    assert converted[0]["raw_output_path"] is None
 
 
 def test_deletes_the_raw_checkpoint_when_it_is_no_longer_served(entrypoint, monkeypatch):
     # 消さないとジョブあたりのS3保管量が倍のまま残る(AGENTS.md §6)。
-    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (1280, 960))
+    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (1280, 720))
     s3 = FakeS3()
 
     entrypoint.convert_and_upload(s3, 2.0)
@@ -127,7 +148,7 @@ def test_deletes_the_raw_checkpoint_when_it_is_no_longer_served(entrypoint, monk
 
 def test_marks_done_before_deleting_the_raw_checkpoint(entrypoint, monkeypatch):
     """順序が逆だと、削除後・status更新前に落ちたジョブが復旧不能になる。"""
-    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (1280, 960))
+    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (1280, 720))
     order = []
     monkeypatch.setattr(
         entrypoint, "update_status", lambda *a, **k: order.append(f"status:{a[1]}")
@@ -162,7 +183,7 @@ def test_transitions_to_uploading_before_uploading_the_delivery_video(entrypoint
     ジョブページの進捗が「変換ほぼ完了」のまま止まって見える問題を防ぐため、
     convert_for_delivery完了後・upload_video呼び出し前にstatusをuploadingへ更新する。
     """
-    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (640, 480))
+    monkeypatch.setattr(entrypoint, "probe_resolution", lambda path: (1280, 720))
     order = []
     monkeypatch.setattr(
         entrypoint, "update_status",
@@ -259,19 +280,55 @@ def test_reads_the_time_scale_recorded_with_the_raw_checkpoint(entrypoint):
     """
     s3 = FakeS3(metadata={entrypoint.TIME_SCALE_METADATA_KEY: "2.0"})
 
-    assert entrypoint.read_checkpoint_time_scale(s3) == 2.0
+    assert entrypoint.read_checkpoint_metadata(s3)[0] == 2.0
 
 
 def test_falls_back_to_normal_speed_when_the_metadata_is_missing(entrypoint):
     # このフィールド導入前のジョブ。
-    assert entrypoint.read_checkpoint_time_scale(FakeS3(metadata={})) == 1.0
+    assert entrypoint.read_checkpoint_metadata(FakeS3(metadata={})) == (
+        1.0, {"startSec": None, "endSec": None},
+    )
 
 
 def test_falls_back_to_normal_speed_when_the_head_request_fails(entrypoint):
     # ここで例外にすると、変換から再開できたはずのジョブを録画からやり直させることになる。
     s3 = FakeS3(head_error=RuntimeError("throttled"))
 
-    assert entrypoint.read_checkpoint_time_scale(s3) == 1.0
+    assert entrypoint.read_checkpoint_metadata(s3) == (1.0, {"startSec": None, "endSec": None})
+
+
+# --- チェックポイントに添えるカット範囲(Issue #266) -------------------------
+
+
+def test_reads_the_cut_range_recorded_with_the_raw_checkpoint(entrypoint):
+    # 変換から再開した試行は録画をしないので、カット範囲を自分では決められない。
+    s3 = FakeS3(metadata={
+        entrypoint.TIME_SCALE_METADATA_KEY: "1.0",
+        entrypoint.CUT_START_METADATA_KEY: "3.250000",
+        entrypoint.CUT_END_METADATA_KEY: "90.500000",
+    })
+
+    assert entrypoint.read_checkpoint_metadata(s3) == (1.0, {"startSec": 3.25, "endSec": 90.5})
+
+
+def test_cut_metadata_omits_the_side_that_is_not_cut(entrypoint):
+    assert entrypoint.cut_to_metadata({"startSec": 3.25, "endSec": None}) == {
+        entrypoint.CUT_START_METADATA_KEY: "3.250000",
+    }
+
+
+def test_reads_the_cut_result_written_by_the_recording_script(entrypoint):
+    with open(entrypoint.CUT_RESULT_PATH, "w") as f:
+        f.write('{"startSec": 3.5, "endSec": null}')
+
+    assert entrypoint.read_cut_result() == {"startSec": 3.5, "endSec": None}
+
+
+def test_does_not_cut_when_the_cut_result_is_missing_or_broken(entrypoint):
+    assert entrypoint.read_cut_result() == {"startSec": None, "endSec": None}
+    with open(entrypoint.CUT_RESULT_PATH, "w") as f:
+        f.write("{broken")
+    assert entrypoint.read_cut_result() == {"startSec": None, "endSec": None}
 
 
 # --- 変換から再開するかの判定 ---------------------------------------------
@@ -315,9 +372,16 @@ def main_calls(entrypoint, monkeypatch, tmp_path):
     monkeypatch.setattr(entrypoint, "InterruptionWatcher", FakeThread)
     monkeypatch.setattr(entrypoint, "TaskHeartbeat", FakeThread)
     monkeypatch.setattr(entrypoint, "notify_task_result", lambda ok, **k: calls.append(f"notify:{ok}"))
-    monkeypatch.setattr(entrypoint, "record", lambda s3: calls.append("record"))
+    def fake_record(s3):
+        calls.append("record")
+        return 1.0, {"startSec": 3.0, "endSec": None}
+
+    monkeypatch.setattr(entrypoint, "record", fake_record)
     monkeypatch.setattr(entrypoint, "download_checkpoint_video", lambda s3: calls.append("download"))
-    monkeypatch.setattr(entrypoint, "convert_and_upload", lambda s3, scale: calls.append(f"convert:{scale}"))
+    monkeypatch.setattr(
+        entrypoint, "convert_and_upload",
+        lambda s3, scale, cut: calls.append(f"convert:{scale}:{cut['startSec']}"),
+    )
     return calls
 
 
@@ -342,7 +406,7 @@ def test_main_records_from_scratch_when_the_checkpoint_is_gone(entrypoint, monke
 
     entrypoint.main()
 
-    assert main_calls == ["record", "convert:1.0", "notify:True"]
+    assert main_calls == ["record", "convert:1.0:3.0", "notify:True"]
 
 
 def test_main_resumes_from_the_checkpoint_with_its_recorded_time_scale(
@@ -350,11 +414,13 @@ def test_main_resumes_from_the_checkpoint_with_its_recorded_time_scale(
 ):
     monkeypatch.setattr(entrypoint, "get_job", lambda job_id: {"status": "converting"})
     monkeypatch.setattr(entrypoint, "raw_checkpoint_exists", lambda s3: True)
-    monkeypatch.setattr(entrypoint, "read_checkpoint_time_scale", lambda s3: 2.0)
+    monkeypatch.setattr(
+        entrypoint, "read_checkpoint_metadata", lambda s3: (2.0, {"startSec": 1.5, "endSec": 60.0}),
+    )
 
     entrypoint.main()
 
-    assert main_calls == ["download", "convert:2.0", "notify:True"]
+    assert main_calls == ["download", "convert:2.0:1.5", "notify:True"]
 
 
 def test_upload_video_attaches_metadata_when_given(entrypoint):
