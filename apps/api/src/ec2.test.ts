@@ -56,7 +56,7 @@ const job: JobRecord = {
   game: "th07",
   replayKey: "replays/abc.rpy",
   status: "queued",
-  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
+  options: { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
   outputPath: null,
   outputPath720p: null,
   error: null,
@@ -121,7 +121,7 @@ describe("buildUserData", () => {
     const decoded = Buffer.from(
       buildUserData(
         config,
-        { ...job, options: { watermark: false, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false } },
+        { ...job, options: { watermark: false, th10BugfixMarisaB: false, th06ncHighResolution: false } },
         "task-token-abc",
       ),
       "base64",
@@ -159,30 +159,6 @@ describe("buildUserData", () => {
     );
     expect(decoded).toContain(`TASK_TOKEN='abc'\\''; echo pwned; '\\'''`);
     expect(() => execFileSync("bash", ["-n"], { input: decoded })).not.toThrow();
-  });
-
-  it("EC2低速録画対応タイトル(th20)で slowMotion:true の場合は FPS_LIMIT_TARGET_HZ を付与する（Issue #245）", () => {
-    const decoded = Buffer.from(
-      buildUserData(
-        config,
-        { ...job, game: "th20", options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false, th06ncHighResolution: false } },
-        "task-token-abc",
-      ),
-      "base64",
-    ).toString("utf-8");
-    expect(decoded).toContain("FPS_LIMIT_TARGET_HZ='30'");
-  });
-
-  it("EC2低速録画未対応タイトルでは slowMotion:true であっても FPS_LIMIT_TARGET_HZ を付与しない", () => {
-    const decoded = Buffer.from(
-      buildUserData(
-        config,
-        { ...job, game: "th06", options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false, th06ncHighResolution: false } },
-        "task-token-abc",
-      ),
-      "base64",
-    ).toString("utf-8");
-    expect(decoded).not.toContain("FPS_LIMIT_TARGET_HZ");
   });
 
   it("GPU描画必須タイトル(th06nc)はGPU系ECRイメージ・--gpus allを使う（Issue #241）", () => {
@@ -238,6 +214,7 @@ describe("getCandidateInstanceTypes", () => {
 
   it("GPU必須タイトルはg6f.2xlargeだけを候補にする(Issue #288)", () => {
     expect(getCandidateInstanceTypes(job("th15"))).toEqual(["g6f.2xlarge"]);
+    expect(getCandidateInstanceTypes(job("th20", 1))).toEqual(["g6f.2xlarge"]);
     expect(getCandidateInstanceTypes(job("th06nc"))).toEqual(["g6f.2xlarge"]);
   });
 
@@ -249,7 +226,6 @@ describe("getCandidateInstanceTypes", () => {
 
   it("CPU系タイトルの等倍録画は従来どおりの候補(recordingSpeed欠損の旧ジョブも同じ)", () => {
     expect(getCandidateInstanceTypes(job("th11", 1))).toEqual(getCandidateInstanceTypes(job("th11")));
-    expect(getCandidateInstanceTypes(job("th20", 1))).toEqual(["c7i.4xlarge"]);
     expect(getCandidateInstanceTypes(job("th07", 1))).not.toContain("g6f.2xlarge");
   });
 

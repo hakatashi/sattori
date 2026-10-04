@@ -1,5 +1,5 @@
 /** 設定読み込みのテスト。環境変数は `loadConfig()` の引数として渡す。 */
-import { GPU_RECORDING_GAME_IDS, SUPPORTED_GAME_IDS, WORKER_CAPABILITIES } from "@sattori/shared";
+import { GPU_RECORDING_GAME_IDS, SUPPORTED_GAME_IDS } from "@sattori/shared";
 import { describe, expect, it } from "vitest";
 import { ConfigError, loadConfig } from "./config.js";
 import type { Environment } from "./config.js";
@@ -29,9 +29,6 @@ describe("loadConfig", () => {
       expect(config.supportedGames).not.toContain(game);
     }
     expect(config.maxConcurrency).toBe(2);
-    // 低速録画（Issue #68）の実体はEC2と共通のワーカーイメージ側にあり、デーモンは
-    // 環境変数をそのまま`docker run`へ渡すだけなので、自宅ワーカーは無条件に対応できる。
-    expect(config.capabilities).toEqual([...WORKER_CAPABILITIES]);
   });
 
   it("GPU描画必須タイトル(th06nc)をHOME_WORKER_SUPPORTED_GAMESで明示指定するとエラー", () => {
@@ -41,27 +38,20 @@ describe("loadConfig", () => {
     );
   });
 
-  it("能力は空文字で明示的に降りられる（自宅マシンを長時間占有されたくない場合）", () => {
-    expect(loadConfig(env({ HOME_WORKER_CAPABILITIES: "" })).capabilities).toEqual([]);
-  });
-
-  it("能力とタイトルはカンマ区切りで上書きできる", () => {
+  it("タイトルはカンマ区切りで上書きできる", () => {
     const config = loadConfig(
       env({
         HOME_WORKER_SUPPORTED_GAMES: "th07, th08",
-        HOME_WORKER_CAPABILITIES: "slow-motion-recording",
         HOME_WORKER_MAX_CONCURRENCY: "4",
       }),
     );
 
     expect(config.supportedGames).toEqual(["th07", "th08"]);
-    expect(config.capabilities).toEqual(["slow-motion-recording"]);
     expect(config.maxConcurrency).toBe(4);
   });
 
-  it("未知の能力・タイトルは起動時に弾く", () => {
+  it("未知のタイトルは起動時に弾く", () => {
     // typoで「1件も引き受けないワーカー」が黙って出来上がるのを防ぐ。
-    expect(() => loadConfig(env({ HOME_WORKER_CAPABILITIES: "fast-forward" }))).toThrow(ConfigError);
     expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th99" }))).toThrow(ConfigError);
   });
 

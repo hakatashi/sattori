@@ -81,9 +81,6 @@ touhou-recorderでの事前検証（reports/74〜77）を踏まえた設計:
   見られる、touhou-recorder reports/75）。理論尺**未満**であること自体は処理落ちの
   兆候ではない——`docs/known-limitations.md`§3の一般則（重複フレーム率と理論尺比較の
   併用）に加え、th06cは理論尺比較を超過方向のみで見るという追加の注意が要る。
-- **低速録画（Issue #68）は未対応**: th06cはD3D11経由で描画しており、`fps_limiter_hook.h`
-  （D3D9専用）・`fps_limiter_hook_d3d8.h`のいずれも使えない。`SLOW_MOTION_SUPPORTED_GAME_IDS`
-  には登録しない。
 - **自動リトライ・音声/映像の別プロセス録画**は他タイトルと共通の実装
   （`recording/`パッケージ）をそのまま使う。
 
@@ -91,7 +88,6 @@ touhou-recorderでの事前検証（reports/74〜77）を踏まえた設計:
 
 - ステージ番号・残機・グレイズが監視できないため、リプレイずれの事後検証はスコアの
   一致判定のみに限られる（デシンクの検知手段としては他タイトルよりやや弱い）。
-- 低速録画は技術的に未実装（MOD側にPresentフックが無い）。
 - Steamworks APIスタブは実機で観測された呼び出しにのみ対応しているため、将来の
   ゲームアップデートで新しいインターフェース/メソッドが呼ばれるとNULL逆参照で
   クラッシュしうる（`mods/th06c_steam_stub/steam_api_stub.cpp`のログでスロット番号を

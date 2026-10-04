@@ -4,8 +4,9 @@
 **録画後の再エンコードは、どのタイトル・どの録画速度でもこの1パスだけ**。次の3つを
 1つの ffmpeg 呼び出し(1回の filter_complex)にまとめてある:
 
-  1. 等倍への戻し(倍速録画 Issue #288・低速録画 Issue #68): 映像のPTSを伸縮し、音声の
-     サンプルレートを逆比率で読み替える(テープの早回し・遅回しの逆)。速度・ピッチとも
+  1. 等倍への戻し(倍速録画 Issue #288): 映像のPTSを伸縮し、音声の
+     サンプルレートを逆比率で読み替える(テープの早回し・遅回しの逆)。旧低速録画(scale>1)の
+     チェックポイントからの再開用に、scale>1の経路も残してある。速度・ピッチとも
      同じ比率で戻るので劣化なく復元できる(touhou-recorder reports/47・85)。
   2. 解像度合わせ: **720pに満たない録画だけ引き上げる**。既に720p以上の録画
      (th20の1280x960)はそのまま通す —— 後述。
@@ -33,7 +34,7 @@
 - **2本**(th06/07/08/11の等倍録画): 録画された生データがそのまま「元解像度版」として
   通用するので、それを無加工でアップロードし、この変換の出力を「配信版」にする。
   再エンコードは1回だけで済む。
-- **1本**(th20、および倍速・低速録画): 生データを配信版と別に出す意味が無い(解像度が
+- **1本**(th20、および倍速録画): 生データを配信版と別に出す意味が無い(解像度が
   同じでウォーターマークの有無しか違わない)か、そもそも生データが等倍の速度でないため
   通用しない。この変換の出力だけを配信する。
 
@@ -53,7 +54,7 @@ import time
 TARGET_HEIGHT = 720
 # on_progress コールバックを呼ぶ最小間隔(秒)。DynamoDBへの書き込み頻度を抑える。
 PROGRESS_REPORT_INTERVAL_SEC = 10.0
-# 倍速・低速録画を等倍へ戻すときに出力へ固定するフレームレート。
+# 倍速録画を等倍へ戻すときに出力へ固定するフレームレート。
 NATIVE_FRAME_RATE_HZ = 60.0
 
 # NVENCで配信版を作るときの品質値(`-rc vbr -cq`、`-b:v 0`で品質固定=libx264のCRF相当)。
@@ -153,7 +154,7 @@ def needs_separate_raw_output(width, height, time_scale=1.0):
 
     価値があるのは**解像度が実際に変わる等倍録画のときだけ**である。
 
-    - 倍速・低速録画(`time_scale != 1.0`)の生データは等倍の速度でないので、そのままでは
+    - 倍速録画(`time_scale != 1.0`)の生データは等倍の速度でないので、そのままでは
       ユーザーに渡せない。別途出すには等倍化の再エンコードがもう1回要るが、
       得られるのは「配信版とウォーターマークの有無しか違わない動画」でしかない。
     - 解像度が変わらない録画(th20)も同様に、2本目はウォーターマークの有無しか
@@ -181,7 +182,7 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
     video_filters = []
     if time_scale != 1.0:
         # 実時間がゲーム内時間の time_scale 倍かかっている録画を、その逆数で伸縮する
-        # (低速録画は圧縮、倍速録画は引き伸ばし)。
+        # (scale>1は圧縮、倍速録画は引き伸ばし)。
         video_filters.append(f"setpts={1.0 / time_scale}*PTS")
     if (target_width, target_height) != (width, height):
         video_filters.append(f"scale={target_width}:{target_height}:flags=lanczos")
@@ -204,7 +205,7 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
     elif audio_sample_rate:
         # サンプルレートを読み替える(asetrate)ことで早回し・遅回しし、リサンプルする
         # (aresample)。テープの早回しと同じ原理で、速度・ピッチとも同じ比率で戻る。
-        # 出力レートは等倍換算の低い方に揃える: 低速録画は録音レート(44100Hz)のまま、
+        # 出力レートは等倍換算の低い方に揃える: scale>1は録音レート(44100Hz)のまま、
         # 倍速録画は録音レート(2倍速なら88200Hz)を倍率で割った値(44100Hz)になる。
         # 倍速録画の録音レートのまま出すと、中身は44100Hz相当なのにファイルだけ大きくなる。
         asetrate = int(round(audio_sample_rate * time_scale))
@@ -227,7 +228,7 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
         cmd += ["-c:v", "libvpx-vp9", "-i", watermark_path]
     cmd += ["-filter_complex", ";".join(graph), "-map", "[v]", *audio_maps]
     if time_scale != 1.0:
-        # 等倍へ戻すときだけ出力フレームレートを固定する。低速録画は等倍と同じ
+        # 等倍へ戻すときだけ出力フレームレートを固定する。旧低速録画(scale>1)は等倍と同じ
         # `-framerate 60` で撮っているため、素材は各フレームが time_scale 枚ずつ並んだ
         # 状態にある。PTSを圧縮したうえでここへ落とすと**重複がちょうど間引かれ**、
         # 等倍録画と同じ「60fps・全フレームユニーク」になる。倍速録画は60×倍率fpsで
@@ -248,7 +249,7 @@ def convert_for_delivery(input_path, output_path, *, time_scale=1.0, watermark_p
     """録画結果を配信用の1本へ変換する(モジュール docstring 参照)。
 
     on_progress が指定されていれば、実際に変換処理が完了した**出力側の**動画時間
-    (秒、float)をおよそ PROGRESS_REPORT_INTERVAL_SEC 秒間隔で呼び出す。倍速・低速録画でも
+    (秒、float)をおよそ PROGRESS_REPORT_INTERVAL_SEC 秒間隔で呼び出す。倍速録画でも
     出力は等倍なので、この値はそのまま「コンテンツ秒数」として
     `replayInfo.estimatedDurationSeconds` と比較できる。
 

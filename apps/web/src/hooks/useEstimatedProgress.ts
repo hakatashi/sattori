@@ -5,14 +5,13 @@ import { MIN_CONVERTING_RATE, MIN_UPLOAD_BYTES_PER_SECOND, recordingScaleForJob 
 
 /**
  * 録画フェーズはリプレイを再生しながら録画するため、進捗(コンテンツ秒数)の進む速度は
- * 実時間1秒あたり1秒で確定している。ただし低速録画(Issue #68)ではゲームが半分の速度で
- * 走るため実時間1秒あたりコンテンツ0.5秒、倍速録画(Issue #288)では約N/1.05秒進む
+ * 実時間1秒あたり1秒で確定している。ただし倍速録画(Issue #288)では実時間1秒あたり約N/1.05秒進む
  * (`recordingRate()`)。
  * 変換フェーズはサーバースペックに応じて4〜6倍速程度で進む想定だが、個々のジョブでどの速度に
  * なるかは事前に分からないため、実測データが集まるまでの初期値として保守的な下限寄りの値を使う。
  */
-/** 録画中、実時間1秒あたりに進むコンテンツ秒数(低速録画0.5、倍速録画は約N/1.05)。 */
-function recordingRate(job: Pick<GetJobResponse, "slowMotion" | "recordingSpeed">): number {
+/** 録画中、実時間1秒あたりに進むコンテンツ秒数(倍速録画は約N/1.05)。 */
+function recordingRate(job: Pick<GetJobResponse, "recordingSpeed">): number {
   return 1 / recordingScaleForJob(job);
 }
 const DEFAULT_CONVERTING_RATE = 4;

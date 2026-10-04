@@ -59,7 +59,7 @@ function computeElapsedSeconds(params: {
 }): number {
   const { status, phaseElapsedSeconds, phaseProgressSeconds, uploadTotalBytes, budgets } = params;
   // 進捗(phaseProgressSeconds)はワーカーが報告する「コンテンツ秒数」で、バジェットは
-  // 実時間。低速録画(Issue #68)ではこの2つの単位が2倍ずれるため、必ず換算してから
+  // 実時間。倍速録画(Issue #288)ではこの2つの単位がずれるため、必ず換算してから
   // 突き合わせる(等倍録画では係数1で従来と同じ)。
   const wallClockPerContentSecond =
     budgets.recordingContent > 0 ? budgets.recording / budgets.recordingContent : 1;
@@ -84,7 +84,7 @@ function computeElapsedSeconds(params: {
       // なる。実際の変換進捗率(content秒数ベース)をbudgets.convertingの持ち分に按分することで、
       // 変換の実進捗に応じて全体%が伸びるようにする。
       // 変換の対象は等倍に戻した後の動画なので、分母は実時間の`recording`ではなく
-      // コンテンツ長の`recordingContent`である(低速録画でも変換の尺は変わらない)。
+      // コンテンツ長の`recordingContent`である(倍速録画でも変換の尺は変わらない)。
       const ratio = Math.min(1, (phaseProgressSeconds ?? 0) / budgets.recordingContent);
       return budgets.launching + budgets.recording + ratio * budgets.converting;
     }
@@ -207,9 +207,8 @@ export function useOverallProgress(
 
   const budgets = computePhaseBudgets(
     job.replayInfo?.estimatedDurationSeconds ?? null,
-    // 低速録画(Issue #68)は録画フェーズに実時間で2倍、倍速録画(Issue #288)は約1/N倍
-    // かかる。これを渡さないと、低速録画は録画の途中でバジェットを使い切り残り時間が消えた
-    // うえリトライ疑いを誤検知し、倍速録画は残り時間を過大に出し続ける。
+    // 倍速録画(Issue #288)は録画フェーズに実時間で約1/N倍かかる。これを渡さないと
+    // 残り時間を過大に出し続ける。
     recordingScaleForJob(job),
     job.uploadTotalBytes,
   );

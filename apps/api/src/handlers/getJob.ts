@@ -2,7 +2,6 @@ import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import {
   calculateDownloadExpiresAt,
   type GetJobResponse,
-  isSlowMotionRecording,
   recordingSpeedOf,
 } from "@sattori/shared";
 import { loadConfig } from "../config.js";
@@ -91,9 +90,6 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     previewImageUrl,
     posterImageUrl,
     replayInfo: job.replayInfo ?? null,
-    // ユーザーの希望（`options.slowMotion`）そのままではなく、EC2へフォールバック
-    // したかどうか（EC2低速録画対応タイトルかどうかも含む）まで織り込んだ「実際に低速録画で走るか」を返す（Issue #68, #245）。
-    slowMotion: isSlowMotionRecording(job.options, job.workerKind, job.game),
     // 倍速録画（Issue #288）。常にGPUインスタンスで録るため割り当て先による
     // フォールバックが無く、ユーザーの指定がそのまま実際の速度になる。
     recordingSpeed: recordingSpeedOf(job.options),

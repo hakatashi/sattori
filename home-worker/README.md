@@ -131,13 +131,12 @@ claim が解除され、EC2 でリトライされる。
 | `HOME_WORKER_ROLE_ARN` | (なし) | CfnOutput `HomeWorkerRoleArn`。**本番では必ず指定する**（未指定だと環境の認証情報をそのままコンテナへ渡す） |
 | `HOME_WORKER_ID` | `home-1` | ワーカー識別子。複数台にするなら一意にすること |
 | `HOME_WORKER_MAX_CONCURRENCY` | `2` | 同時録画数の上限。**上げる前に「実機検証の記録」を読むこと** — 2並列でもCPU温度が上限に張り付くため、安全な並列度は冷却状態とホストの他負荷に依存する |
-| `HOME_WORKER_SUPPORTED_GAMES` | `SUPPORTED_GAME_IDS`からGPU描画必須タイトルを除いた全部（現状th06/06c/07/08/09/10/11/12/20） | 引き受けるタイトル。自宅マシンの都合で一部だけ受け持ちたい場合に上書きする。**GPU描画必須タイトル（th06nc・th15、Issue #241・#82）はGPU非搭載の自宅マシンでは録画できないため指定できない**（指定すると`ConfigError`で起動失敗する） |
-| `HOME_WORKER_CAPABILITIES` | `WORKER_CAPABILITIES` 全部（現状 `slow-motion-recording` のみ） | 追加能力（`packages/shared/src/worker.ts`）。低速録画（Issue #68）の実体は EC2 と共通のワーカーイメージ側にあり、デーモンは `homeWorkerEnv` をそのまま `docker run` へ渡すだけなので、自宅ワーカーは無条件に対応できる＝既定で全部宣言する。**「対応はできるが引き受けたくない」場合は空文字（`HOME_WORKER_CAPABILITIES=`）で降りられる**（変数ごと消すと既定に戻るので効かない） |
+| `HOME_WORKER_SUPPORTED_GAMES` | `SUPPORTED_GAME_IDS`からGPU描画必須タイトルを除いた全部（現状th06/06c/07/08/09/10/11/12/128） | 引き受けるタイトル。自宅マシンの都合で一部だけ受け持ちたい場合に上書きする。**GPU描画必須タイトル（th06nc・th15・th20、Issue #241・#82・#288）はGPU非搭載の自宅マシンでは録画できないため指定できない**（指定すると`ConfigError`で起動失敗する） |
 | `HOME_WORKER_LOAD_THRESHOLD` | `0.7` | 1コアあたりのロードアベレージがこれを超えている間は新規 claim を止める |
 | `HOME_WORKER_POLL_INTERVAL_SEC` | `3` | オファー探索の間隔 |
 | `HOME_WORKER_DOCKER_CPUS` | (なし) | `docker run --cpus` |
 | `HOME_WORKER_DOCKER_ARGS` | (なし) | `docker run` への追加引数（シェルと同じ空白区切り） |
-| `HOME_WORKER_DRAIN_TIMEOUT_SEC` | `9000` | 終了シグナル後、実行中ジョブの完走を待つ上限。低速録画（Issue #68）の録画タイムアウト（120分＝等倍60分の2倍）＋変換の余裕（30分）で、Step Functions 側の `taskTimeout`（150分）と揃えてある。**短くすると AWS 側がまだ待っているジョブをデーモンが先に打ち切ることになる** |
+| `HOME_WORKER_DRAIN_TIMEOUT_SEC` | `9000` | 終了シグナル後、実行中ジョブの完走を待つ上限。録画タイムアウト（等倍60分）＋変換の余裕に、廃止した低速録画（Issue #68、録画120分）の旧ジョブ分を見込んだ値で、Step Functions 側の `taskTimeout`（150分）と揃えてある。**短くすると AWS 側がまだ待っているジョブをデーモンが先に打ち切ることになる** |
 | `WORKER_LOG_GROUP` | `/sattori/worker` | ログ転送先（EC2 ワーカーと同じ） |
 | `HOME_WORKER_NETWORK_CHECK_INTERVAL_SEC` | `60` | 新規claim前に、コンテナのネットワーク名前空間からAWSへ実際に到達できるかを確認する間隔。ホストは正常でもコンテナだけ通信不能という障害（[`decisions/0028`](../docs/decisions/0028-home-worker-container-network-check.md)）はホスト発のハートビートだけでは検知できないため、`docker run`で軽量イメージを実際に起動して確かめる |
 | `HOME_WORKER_TITLE_ASSETS_CACHE_DIR` | (なし) | タイトル資産（ゲーム本体・WINEPREFIX・MOD）のキャッシュに使うホスト側ディレクトリ（Issue #104）。設定するとこのディレクトリを`docker run -v`でコンテナへマウントし、`TITLE_ASSETS_CACHE_DIR`としてコンテナへ渡す（`runner.ts`）。自宅回線はタイトル資産のダウンロードに40秒前後かかり、これはジョブ毎に変わらないデータなので、事前にディレクトリを指定しておくと2回目以降のジョブでダウンロードを省略できる（キャッシュの仕組みは[`worker/docs/title-assets.md`](../worker/docs/title-assets.md) §3、[`decisions/0040`](../docs/decisions/0040-home-worker-title-assets-cache.md)）。**未指定なら従来どおり毎回ダウンロードする**（ディレクトリ自体は事前にホスト側で作成しておくこと。中身の管理はデーモンではなくワーカーコンテナが行う） |
@@ -191,35 +190,17 @@ claim が解除され、EC2 でリトライされる。
 - ワーカー内蔵の重複フレーム率チェックは録画開始15〜45秒しか見ないため、**録画途中の劣化を
   検知できない**（Issue #93）。
 
-## 7. 低速録画（Issue #68）と th20 の振り分け
+## 7. 倍速録画・GPU必須タイトルは自宅へ来ない（Issue #288）
 
-th20（東方錦上京、Issue #87）は描画負荷が高く、等倍で録るなら4xlarge級のインスタンスが要る。
-録画品質を担保するには 1/2 倍速で録画して後処理で等速へ戻す方式（Issue #68）が有効だが、
-録画に倍の実時間がかかるため EC2 では割に合わない。そこで
-**「低速録画できる自宅ワーカーが空いていれば自宅で低速録画、いなければ4xlarge級の EC2 で
-等速録画」**という振り分けになっている。
+録画速度を上げた倍速録画（2倍速以上）と GPU 必須タイトル（th06nc・th15・th20）は GPU
+インスタンス（`g6f.2xlarge`）でしか録画せず、GPU 非搭載の自宅マシンへはオファーされない
+（`apps/api/src/workerRouting.ts` の `GPU_ONLY_ROUTING_POLICY`、
+[`decisions/0047`](../docs/decisions/0047-no-gpu-titles-for-home-worker.md)・
+[`0058`](../docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。
+旧「低速録画」（Issue #68）と、そのための能力宣言（capability）・th20 のオファー待ちは廃止した。
 
-- **能力の宣言**: デーモンは既定で `slow-motion-recording` を宣言する（§4.1 の
-  `HOME_WORKER_CAPABILITIES`）。宣言の実体はワーカーコンテナ側にあるので、
-  デーモンが何か特別なことをするわけではない。
-- **オファーの条件**: 低速録画を希望するジョブは、この能力を宣言したワーカーにしか
-  オファーされない（`apps/api/src/workerRouting.ts` の `routingPolicyFor()`）。
-  th20 はオファー待ちの上限（`MAX_OFFER_WINDOW_SECONDS`）まで自宅ワーカーを待つ。
-- **録画速度の指定**: デーモンは録画速度を一切知らない。AWS 側がオファーに添える
-  `homeWorkerEnv` に `FPS_LIMIT_TARGET_HZ=30` が入っているかどうかがすべてで、
-  デーモンはそれをそのまま `docker run -e` へ渡す（`apps/api/src/workerEnv.ts`）。
-  **EC2 起動時はこの変数を付けない**ので、同じイメージが等倍で走る。
-- **所要時間**: 録画フェーズが実時間で2倍になるため、`HOME_WORKER_DRAIN_TIMEOUT_SEC`
-  の既定と Step Functions の `taskTimeout` を 150 分に揃えてある（§4.1）。
-  1本の th20 で自宅マシンを1時間以上占有することになる点に注意。
-
-ワーカーコンテナ側の実装（Present フックによるスローモーション化、DirectSound の
-周波数スケール、録画後の等倍変換）は `worker/README.md` §5 と
-`docs/decisions/0014-slow-motion-scaling-across-pipeline.md` を参照。
-
-> **デーモン側に録画速度の判断を持ち込まないこと。** 「起動側が渡す環境変数だけで表す」と
-> 決めた理由は
-> [`docs/decisions/0010`](../docs/decisions/0010-slow-motion-no-worker-side-branching.md)。
+> **デーモン側に録画速度の判断を持ち込まないこと。** 環境差分は起動側が渡す環境変数だけで表す。
+> 理由は [`docs/decisions/0010`](../docs/decisions/0010-slow-motion-no-worker-side-branching.md)。
 
 ## 8. テスト
 

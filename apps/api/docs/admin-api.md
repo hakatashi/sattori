@@ -65,8 +65,8 @@ status遷移に起因するページを跨いだ重複・欠落は管理画面�
 （`downloads.ts`）動画URLの組み立て（`buildVideoDownloadUrl`）は
 `getJob.ts`から移設して共有。ユーザー向け`GET /jobs/{jobId}`と異なり、statusが
 `done`でなくても`outputPath`/`outputPath720p`があればURLを返す（`converting`中の
-生動画チェックポイントを取得したい運用ニーズのため）。**低速録画（Issue #68）の
-ジョブでは、`converting`中の`outputPath`が指すのは半分の速度の生データである**
+生動画チェックポイントを取得したい運用ニーズのため）。**倍速録画（Issue #288）の
+ジョブでは、`converting`中の`outputPath`が指すのは倍速のままの生データである**
 （等倍へ戻すのは変換工程。`worker/README.md` §5）。ユーザー向けの
 `GET /jobs/{jobId}`は`done`のときしかURLを返さないのでこれが漏れることはないが、
 管理画面で変換中の動画を開いたときは意図した挙動として扱うこと。`.rpy`は`UploadBucket`が

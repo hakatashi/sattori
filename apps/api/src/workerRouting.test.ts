@@ -7,18 +7,17 @@ import {
 } from "@sattori/shared";
 import {
   DEFAULT_ROUTING_POLICY,
-  GAME_ROUTING_POLICIES,
+  GPU_ONLY_ROUTING_POLICY,
   isWorkerEligible,
   MAX_OFFER_WINDOW_SECONDS,
   routingPolicyFor,
   selectHomeWorker,
 } from "./workerRouting.js";
-import type { GameRoutingPolicy } from "./workerRouting.js";
 
 const NOW = new Date("2026-08-09T12:00:00.000Z");
 const JOB = {
   game: "th07",
-  options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
+  options: { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
 } as const;
 
 function heartbeat(overrides: Partial<WorkerHeartbeat> = {}): WorkerHeartbeat {
@@ -30,7 +29,6 @@ function heartbeat(overrides: Partial<WorkerHeartbeat> = {}): WorkerHeartbeat {
     activeJobs: 0,
     maxConcurrency: 4,
     supportedGames: ["th06", "th07", "th08", "th11"],
-    capabilities: [],
     ttl: Math.floor(NOW.getTime() / 1000) + 900,
     ...overrides,
   };
@@ -41,31 +39,10 @@ describe("routingPolicyFor", () => {
     expect(routingPolicyFor(JOB)).toEqual(DEFAULT_ROUTING_POLICY);
   });
 
-  it("低速録画を希望するジョブは slow-motion-recording を宣言したワーカーにだけオファーする", () => {
-    const policy = routingPolicyFor({
-      game: "th20",
-      options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
-    });
-    expect(policy.requiredCapabilities).toContain("slow-motion-recording");
-  });
-
-  it("低速録画を希望しなければ、th20でも能力の要求は足さない(オファー先を無用に狭めない)", () => {
-    const policy = routingPolicyFor({
-      game: "th20",
-      options: { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
-    });
-    expect(policy.requiredCapabilities).toEqual([]);
-  });
-
-  it("th20は自宅ワーカーを待つ価値が高いのでオファー待機を上限まで伸ばしてある", () => {
-    // EC2フォールバック先が`.4xlarge`帯と高価で、かつ低速録画は自宅でしかできない。
-    expect(routingPolicyFor(JOB).offerWindowSeconds).toBeLessThan(
-      routingPolicyFor({
-        game: "th20",
-        options: { watermark: true, slowMotion: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
-      })
-        .offerWindowSeconds,
-    );
+  it("GPU必須タイトル(th06nc・th15・th20)は自宅ワーカーへオファーしない", () => {
+    for (const game of ["th06nc", "th15", "th20"] as const) {
+      expect(routingPolicyFor({ game, options: JOB.options })).toEqual(GPU_ONLY_ROUTING_POLICY);
+    }
   });
 
   it("オファー待機は自宅デーモンのポーリング間隔より十分長い", () => {
@@ -76,17 +53,11 @@ describe("routingPolicyFor", () => {
     // 待機は`Launch`の実行時間をそのまま消費する。溢れると、オファーは撤回済み
     // （あるいは撤回すらできないまま）なのにEC2も起動していない状態で15分の
     // ハートビートタイムアウトを待つ、丸ごと無駄なリトライが1周発生する。
-    // th20（Issue #87）向けに待機を伸ばすときは、この上限の元である
-    // `LAUNCH_LAMBDA_TIMEOUT_SECONDS`（CDKが使う値）も併せて上げること。
+    // 待機を伸ばすときは、この上限の元である`LAUNCH_LAMBDA_TIMEOUT_SECONDS`（CDKが使う値）も
+    // 併せて上げること。
     expect(MAX_OFFER_WINDOW_SECONDS).toBeLessThan(LAUNCH_LAMBDA_TIMEOUT_SECONDS);
-    for (const [game, policy] of [
-      ["(既定)", DEFAULT_ROUTING_POLICY] as const,
-      ...Object.entries(GAME_ROUTING_POLICIES),
-    ]) {
-      expect(
-        policy?.offerWindowSeconds,
-        `${game} の offerWindowSeconds が上限(${MAX_OFFER_WINDOW_SECONDS}秒)を超えています`,
-      ).toBeLessThanOrEqual(MAX_OFFER_WINDOW_SECONDS);
+    for (const policy of [DEFAULT_ROUTING_POLICY, GPU_ONLY_ROUTING_POLICY]) {
+      expect(policy.offerWindowSeconds).toBeLessThanOrEqual(MAX_OFFER_WINDOW_SECONDS);
     }
   });
 });
@@ -119,16 +90,6 @@ describe("isWorkerEligible", () => {
     expect(isWorkerEligible(heartbeat({ supportedGames: ["th06"] }), JOB, policy, NOW)).toBe(false);
   });
 
-  it("要求された能力を宣言していなければ引き受けない(th20の低速録画を見据えた分岐)", () => {
-    const strict: GameRoutingPolicy = {
-      ...policy,
-      requiredCapabilities: ["slow-motion-recording"],
-    };
-    expect(isWorkerEligible(heartbeat(), JOB, strict, NOW)).toBe(false);
-    expect(
-      isWorkerEligible(heartbeat({ capabilities: ["slow-motion-recording"] }), JOB, strict, NOW),
-    ).toBe(true);
-  });
 });
 
 describe("selectHomeWorker", () => {
@@ -158,14 +119,13 @@ describe("selectHomeWorker", () => {
   });
 
   it("th06nc(GPU専用タイトル)は自宅ワーカーの空き・宣言に関わらず常にnull（Issue #241）", () => {
-    const policy = GAME_ROUTING_POLICIES.th06nc;
-    expect(policy?.offerToHomeWorker).toBe(false);
+    const job = { game: "th06nc" as const, options: JOB.options };
+    const policy = routingPolicyFor(job);
+    expect(policy.offerToHomeWorker).toBe(false);
     // supportedGamesにth06ncを明示的に持つ(≒GPUを積んだ自宅マシンを自称する)
     // ワーカーがいても、方針自体がオファーしないため常にnull。
     const worker = heartbeat({ supportedGames: ["th06nc"] });
-    expect(
-      selectHomeWorker([worker], { game: "th06nc" }, policy as GameRoutingPolicy, NOW),
-    ).toBeNull();
+    expect(selectHomeWorker([worker], job, policy, NOW)).toBeNull();
   });
 
   it("倍速録画のジョブは自宅ワーカーが対応するタイトルでもオファーしない（Issue #288）", () => {
@@ -184,12 +144,11 @@ describe("selectHomeWorker", () => {
     expect(selectHomeWorker([worker], job, policy, NOW)).not.toBeNull();
   });
 
-  it("th15(GPU専用タイトル)も自宅ワーカーの空き・宣言に関わらず常にnull（Issue #82）", () => {
-    const policy = GAME_ROUTING_POLICIES.th15;
-    expect(policy?.offerToHomeWorker).toBe(false);
-    const worker = heartbeat({ supportedGames: ["th15"] });
-    expect(
-      selectHomeWorker([worker], { game: "th15" }, policy as GameRoutingPolicy, NOW),
-    ).toBeNull();
+  it("th15・th20(GPU専用タイトル)も自宅ワーカーの空き・宣言に関わらず常にnull（Issue #82・#288）", () => {
+    for (const game of ["th15", "th20"] as const) {
+      const job = { game, options: JOB.options };
+      const worker = heartbeat({ supportedGames: [game] });
+      expect(selectHomeWorker([worker], job, routingPolicyFor(job), NOW)).toBeNull();
+    }
   });
 });

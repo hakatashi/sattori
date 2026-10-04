@@ -29,10 +29,9 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | --- | --- | --- |
 | `createUpload.ts` | `POST /uploads` | `.rpy` アップロード用の署名付きPUT URLを発行（ファイル本体はLambdaを経由しない）。`size`は`MAX_REPLAY_BYTES`以下の整数であることを検証したうえで署名の`ContentLength`に使うため、実際のPUTのバイト数がこの値と一致しないとS3が拒否する（Issue #128 SEC-2） |
 | `parseReplay.ts` | `POST /replays/parse` | アップロード済みリプレイを取得し `@sattori/shared` の `parseReplayInfo()` で解析。同じロジックはブラウザでも直接動くため（`apps/web/README.md`「ページAのフロー」参照）、現在のページAはこのAPIを呼ばず解析をクライアント内で完結させている。将来他のクライアント（管理画面の再解析等）が使う可能性を見込んで残してある |
-| `requestMagicLink.ts` | `POST /magic-links` | レート制限チェック→`status: "pending"`の`JobRecord`作成→SESでマジックリンク送信。メール送信自体が失敗したらジョブを削除してロールバックする。低速録画（Issue #68）の要求は**低速録画に対応したタイトル（`supportsSlowMotion()`、Issue #101）でなければ握り潰す**（等倍で録画できる以上エラーにはしない） |
+| `requestMagicLink.ts` | `POST /magic-links` | レート制限チェック→`status: "pending"`の`JobRecord`作成→SESでマジックリンク送信。メール送信自体が失敗したらジョブを削除してロールバックする |
 | `startJob.ts` | `POST /jobs/{jobId}/start` | `pending`→`queued`への原子遷移＋Step Functions `StartExecution`。`queued`のまま実行が`absent`なら張り直す（[Issue #132対応](../../docs/decisions/0031-stalled-job-sweep-by-status.md)） |
-| `getJob.ts` | `GET /jobs/{jobId}` | ジョブ状態取得。完了時はCloudFrontのダウンロードURL・プレビュー再生URLを組み立てる。低速録画（Issue #68）で走るかどうか（`isSlowMotionRecording()`）も返す |
-| `getWorkerAvailability.ts` | `GET /worker-availability` | 常駐ワーカー（自宅ワーカー、Issue #49）の空き状況。ページAが「低速録画」を選べるか判定するためだけの公開エンドポイント。**認証なしで公開されるため`workerId`・台数・負荷は返さない**（開発者の自宅環境の稼働状況を必要以上に外へ出さない） |
+| `getJob.ts` | `GET /jobs/{jobId}` | ジョブ状態取得。完了時はCloudFrontのダウンロードURL・プレビュー再生URLを組み立てる |
 | `sendCompletionEmail.ts` | JobsTableのDynamoDB Streams | ジョブが`done`に遷移した瞬間を検知しSESで完了メール送信 |
 | `sweepOrphanInstances.ts` | EventBridgeのスケジュールルール（10分間隔） | 孤児化した録画EC2インスタンスの定期掃除（Issue #23。§5） |
 | `sweepStalledJobs.ts` | 同上（同じRuleに相乗り） | 非終端のまま固まったジョブレコードを`failed`へ確定する定期掃除（[Issue #132対応](../../docs/decisions/0031-stalled-job-sweep-by-status.md)） |
@@ -146,12 +145,11 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | th11 | `TH11_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th12 | `TH12_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th128 | `TH128_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
-| th20 | `TH20_CANDIDATE_INSTANCE_TYPES` | `c7i.4xlarge` のみ |
-| th06nc・th15、および全タイトルの倍速録画 | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.2xlarge`のみ（GPU必須、Issue #241・#82・#288、[`decisions/0058`](../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)。GPU要否はタイトルではなくジョブ単位で決まるので`getCandidateInstanceTypes(job, { maxVcpu })`はジョブを受け取る） |
+| th06nc・th15・th20、および全タイトルの倍速録画 | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.2xlarge`のみ（GPU必須、Issue #241・#82・#288、[`decisions/0058`](../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)。GPU要否はタイトルではなくジョブ単位で決まるので`getCandidateInstanceTypes(job, { maxVcpu })`はジョブを受け取る） |
 
 > **候補を足す・変える前に
 > [`docs/decisions/0016`](../../docs/decisions/0016-ec2-fleet-instance-type-diversification.md)
-> を必ず読むこと**（各候補の実機検証の裏付け・th20が1タイプしかない理由・
+> を必ず読むこと**（各候補の実機検証の裏付け・GPU帯が1タイプしかない理由・
 > 「同スペック帯だから安全」が繰り返し裏切られている経緯）。インスタンスの起動を
 > CDK側へ移さない理由は [`0002`](../../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)。
 > `CreateLaunchTemplateVersion`の`SourceVersion`に`$Default`ではなく`$Latest`を使う
@@ -220,10 +218,10 @@ GPUインスタンス（`listTaggedInstances()`の`instanceType`）とリース�
 一元的に組み立て、**EC2（UserDataの`docker run -e`）と自宅ワーカー（オファーに添えて
 `JobRecord.homeWorkerEnv` に書き、デーモンがそのまま`docker run`へ渡す）で共有する**。
 
-低速録画（Issue #68。自宅ワーカーまたはEC2対応タイトルで行う）のような環境差分も、ワーカーの`if`
+倍速録画（`FPS_LIMIT_TARGET_HZ`・`GPU_WORKER`）のような環境差分も、ワーカーの`if`
 ではなく起動側がこの関数の出力に足すかどうかで表現する（理由は
-[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)・
-[`docs/decisions/0045`](../../docs/decisions/0045-ec2-slow-motion-for-th20.md)）。
+[`docs/decisions/0058`](../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)・
+[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
 
 th06ncの1080p録画オプション（Issue #241、`TH06NC_RESOLUTION=1080p`）は
 `th10BugfixMarisaB`と同じパターン——`job.options`から直接読む——を使う。th06ncは

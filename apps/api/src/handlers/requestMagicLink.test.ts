@@ -24,7 +24,6 @@ const TH07_FIXTURE = path.join(FIXTURES_DIR, "th07/th7_07.rpy");
 // th13はパーサーとしては認識できるが、Sattoriの録画対応タイトルには含まれない
 // (parseReplay.test.tsと同じ用途)。
 const TH13_FIXTURE = path.join(FIXTURES_DIR, "th13/th13_01.rpy");
-const TH20_FIXTURE = path.join(FIXTURES_DIR, "th20/th20_01.rpy");
 const TH10_MARISA_B_FIXTURE = path.join(FIXTURES_DIR, "th10/th10_23.rpy");
 const TH10_REIMU_A_FIXTURE = path.join(FIXTURES_DIR, "th10/th10_02.rpy");
 
@@ -327,32 +326,13 @@ describe("POST /magic-links", () => {
     expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
   });
 
-  it("低速録画に対応したタイトル(th20)の.rpyなら options.slowMotion をそのまま保存する", async () => {
-    mockUploadedReplay(new Uint8Array(await readFile(TH20_FIXTURE)));
-    const { handler } = await import("./requestMagicLink.js");
-    await handler(
-      makeEvent({
-        replayKey: VALID_REPLAY_KEY,
-        options: { watermark: true, slowMotion: true },
-        email: "user@example.com",
-      }),
-      {} as never,
-      () => {},
-    );
-    const jobPut = ddbMock
-      .commandCalls(PutCommand)
-      .find((call) => call.args[0].input.Item?.status === "pending");
-    expect(jobPut?.args[0].input.Item?.game).toBe("th20");
-    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ slowMotion: true });
-  });
-
   it("recordingSpeed を1〜4に正規化して保存する(Issue #288)", async () => {
     mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
     const { handler } = await import("./requestMagicLink.js");
     await handler(
       makeEvent({
         replayKey: VALID_REPLAY_KEY,
-        options: { watermark: true, slowMotion: false, recordingSpeed: 3 },
+        options: { watermark: true, recordingSpeed: 3 },
         email: "user@example.com",
       }),
       {} as never,
@@ -380,46 +360,6 @@ describe("POST /magic-links", () => {
       .commandCalls(PutCommand)
       .find((call) => call.args[0].input.Item?.status === "pending");
     expect(jobPut?.args[0].input.Item?.options).toMatchObject({ recordingSpeed: 1 });
-  });
-
-  it("倍速録画と低速録画が両方指定されたら低速録画を落とす(th20)", async () => {
-    mockUploadedReplay(new Uint8Array(await readFile(TH20_FIXTURE)));
-    const { handler } = await import("./requestMagicLink.js");
-    await handler(
-      makeEvent({
-        replayKey: VALID_REPLAY_KEY,
-        options: { watermark: true, slowMotion: true, recordingSpeed: 2 },
-        email: "user@example.com",
-      }),
-      {} as never,
-      () => {},
-    );
-    const jobPut = ddbMock
-      .commandCalls(PutCommand)
-      .find((call) => call.args[0].input.Item?.status === "pending");
-    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ slowMotion: false, recordingSpeed: 2 });
-  });
-
-  it("低速録画に未対応のタイトル(th07)の.rpyなら options.slowMotion を握り潰す(Issue #101)", async () => {
-    // 等倍で動くゲームに後処理の等倍化だけが掛かると2倍速の動画が出来上がるため、
-    // ページAのグレーアウトをすり抜けた要求はここで落とす(録画自体は等倍で行える
-    // のでエラーにはしない)。
-    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
-    const { handler } = await import("./requestMagicLink.js");
-    const res = await handler(
-      makeEvent({
-        replayKey: VALID_REPLAY_KEY,
-        options: { watermark: true, slowMotion: true },
-        email: "user@example.com",
-      }),
-      {} as never,
-      () => {},
-    );
-    expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(202);
-    const jobPut = ddbMock
-      .commandCalls(PutCommand)
-      .find((call) => call.args[0].input.Item?.status === "pending");
-    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ slowMotion: false });
   });
 
   it("th10かつ魔理沙Bの.rpyなら options.th10BugfixMarisaB をそのまま保存する(Issue #75)", async () => {

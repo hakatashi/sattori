@@ -9,7 +9,6 @@ import {
   normalizeRecordingSpeed,
   parseReplayInfo,
   supportsHighResolutionRecording,
-  supportsSlowMotion,
   supportsTh10BugfixMarisaB,
   type GameId,
   type JobRecord,
@@ -172,25 +171,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     status: "pending",
     options: {
       watermark: body.options.watermark !== false,
-      // 低速録画（Issue #68）は明示的に true を指定されたときだけ有効にする
-      // （ウォーターマークと逆で、既定は「しない」）。ここでは自宅ワーカーの
-      // 空きを検証しない——実際に録画が始まるのはユーザーがマジックリンクを
-      // 開いた後（最大24時間後）で、この時点の可否を確かめても意味がないため。
-      // 録画時に自宅ワーカーがいなければ`Launch`がEC2での等倍録画へ静かに
-      // フォールバックする（`handlers/sfn/launch.ts`・`workerRouting.ts`）。
-      //
-      // 一方**タイトルの対応可否は時間で変わらない**ので、ここで握り潰す
-      // （Issue #101）。非対応タイトルのまま録画すると、ゲームは等倍で動くのに
-      // 後処理だけが等倍化を行って2倍速の動画が出来上がり、しかも元の生動画が
-      // 削除される。UI側もグレーアウトするが、ここはその防御線。エラーにはしない
-      // ——録画自体は等倍で問題なく行えるため、断るより静かに落とす方がよい。
-      // 倍速録画（recordingSpeed>1）とは排他。両方指定されたら倍速を優先する。
-      slowMotion:
-        body.options.slowMotion === true &&
-        supportsSlowMotion(game) &&
-        !isSpeedupRecording(recordingSpeed),
-      // th10「バグマリ」修正オプション(Issue #75)。ここも上のslowMotionと同じ理由
-      // (Issue #101)でサーバー側の再パース結果に基づいて握り潰す——クライアント申告の
+      // th10「バグマリ」修正オプション(Issue #75)。サーバー側の再パース結果に基づいて握り潰す——クライアント申告の
       // `game`/`character`をそのまま信用すると、実際は非対応の組み合わせなのに
       // オプションだけ有効化させられてしまう(=`worker/docs/titles/th10.md`が警告する
       // デシンクの原因を録画側に持ち込む)。`replayInfo`はこの関数内で既にS3から

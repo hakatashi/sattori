@@ -34,21 +34,6 @@ export const WORKER_KINDS = [
 export type WorkerKind = (typeof WORKER_KINDS)[number];
 
 /**
- * ワーカーが自己申告する「標準の録画以外にできること」。ジョブのルーティング条件
- * （`GameRoutingPolicy.requiredCapabilities`）として使う。
- *
- * - `slow-motion-recording`: 低速（例: 1/2倍速）で録画し、後処理で等速へ戻す
- *   （Issue #68）。録画に倍の実時間がかかるためEC2では割に合わないが、電気代しか
- *   かからない自宅ワーカーなら品質のために使える、という位置づけ。th20（東方錦上京、
- *   Issue #87）は描画負荷が高く、この能力を持つワーカーを優先したい。
- *   **能力の宣言はデーモン側の設定（`HOME_WORKER_CAPABILITIES`）で行う**ため、
- *   ここに定義があること自体は「実装済み」を意味しない。
- */
-export const WORKER_CAPABILITIES = ["slow-motion-recording"] as const;
-
-export type WorkerCapability = (typeof WORKER_CAPABILITIES)[number];
-
-/**
  * `WorkersTable` の1アイテム（ワーカー1台ぶんのハートビート）。自宅デーモンが
  * `WORKER_HEARTBEAT_INTERVAL_SECONDS` ごとに丸ごと上書きする。
  *
@@ -79,8 +64,6 @@ export interface WorkerHeartbeat {
    * なるが、自宅側のディスク都合などで絞れるようにしておく。
    */
   supportedGames: GameId[];
-  /** 追加能力（`WorkerCapability`）。宣言していない能力を要求するジョブは回ってこない。 */
-  capabilities: WorkerCapability[];
   /** DynamoDB TTL（epoch秒）。デーモンが止まったレコードを自動で掃除する。 */
   ttl: number;
 }
