@@ -194,11 +194,6 @@ li.supportedTitle.supported {
   margin-top: 0.15rem;
 }
 
-.slowMotionHint {
-  display: block;
-  font-weight: bold;
-}
-
 /* 録画速度(Issue #288)。4つの選択肢を横並びのボタン状に並べ、狭い画面では折り返す。 */
 .speedFieldset {
   margin: 0.75rem 0 0;
@@ -265,8 +260,7 @@ li.supportedTitle.supported {
   font-size: 0.85rem;
 }
 
-/* 低速録画が選べない(自宅ワーカーが空いていない)ときの見た目。項目自体は残し、
-   何が選べないのかとその理由が読めるようにしておく。 */
+/* 選べない項目の見た目。項目自体は残し、何が選べないのかとその理由が読めるようにしておく。 */
 .optionDisabled {
   opacity: 0.5;
   cursor: not-allowed;

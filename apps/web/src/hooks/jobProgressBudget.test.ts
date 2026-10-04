@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { SLOW_MOTION_TIME_SCALE } from "@sattori/shared";
 import {
   computeOverallPercent,
   computePhaseBudgets,
@@ -89,52 +88,32 @@ describe("isPhaseOverrun", () => {
   });
 });
 
-describe("computePhaseBudgets（低速録画、Issue #68）", () => {
-  it("録画フェーズの悲観バジェットは実時間で2倍になる", () => {
-    const budgets = computePhaseBudgets(900, SLOW_MOTION_TIME_SCALE);
-
-    expect(budgets.recording).toBe(1800);
-    // 変換の対象は等倍へ戻した後の動画なので、尺は低速録画でも変わらない。
-    expect(budgets.converting).toBe(300);
-    expect(budgets.total).toBe(LAUNCHING_BUDGET_SECONDS + 1800 + 300);
-  });
-
-  it("recordingContent はコンテンツ長のままで、低速録画かどうかに依らない", () => {
+describe("computePhaseBudgets（録画スケール）", () => {
+  it("recordingContent は録画スケールに依らずコンテンツ長のまま", () => {
     // ワーカーが報告する progress はコンテンツ秒数なので、実時間の recording と
     // 直接比べてはいけない。この値が両者の換算係数・分母になる。
-    expect(computePhaseBudgets(900, SLOW_MOTION_TIME_SCALE).recordingContent).toBe(900);
+    expect(computePhaseBudgets(900, 0.5).recordingContent).toBe(900);
     expect(computePhaseBudgets(900, 1).recordingContent).toBe(900);
   });
 
   it("既定(引数省略)は等倍録画として計算する", () => {
     expect(computePhaseBudgets(900)).toEqual(computePhaseBudgets(900, 1));
   });
-
-  it("低速録画の録画バジェットは、リトライ疑いの誤検知を防ぐのに十分な余裕がある", () => {
-    // 悲観バジェットの PHASE_OVERRUN_FACTOR 倍を超えるとリトライ疑いになる。
-    // 等倍のバジェットのままだと、2倍かかる録画は必ずこれを踏む。
-    const naive = computePhaseBudgets(900, 1).recording;
-    const actualWallClock = 900 * 2;
-
-    expect(isPhaseOverrun(naive, actualWallClock)).toBe(true);
-    expect(isPhaseOverrun(computePhaseBudgets(900, SLOW_MOTION_TIME_SCALE).recording, actualWallClock)).toBe(false);
-  });
 });
 
 describe("recordingScaleForJob（倍速録画、Issue #288）", () => {
-  it("等倍は1、低速録画は2", () => {
-    expect(recordingScaleForJob({ slowMotion: false, recordingSpeed: 1 })).toBe(1);
-    expect(recordingScaleForJob({ slowMotion: true, recordingSpeed: 1 })).toBe(SLOW_MOTION_TIME_SCALE);
+  it("等倍は1", () => {
+    expect(recordingScaleForJob({ recordingSpeed: 1 })).toBe(1);
   });
 
   it("倍速録画は約1/N(実時間で進む区間のぶん少し長め)", () => {
-    expect(recordingScaleForJob({ slowMotion: false, recordingSpeed: 2 })).toBeCloseTo(0.525);
-    expect(recordingScaleForJob({ slowMotion: false, recordingSpeed: 4 })).toBeCloseTo(0.2625);
+    expect(recordingScaleForJob({ recordingSpeed: 2 })).toBeCloseTo(0.525);
+    expect(recordingScaleForJob({ recordingSpeed: 4 })).toBeCloseTo(0.2625);
   });
 
   it("倍速録画の録画バジェットは短くなるが、変換バジェットは尺のまま", () => {
     const native = computePhaseBudgets(900, 1);
-    const speedup = computePhaseBudgets(900, recordingScaleForJob({ slowMotion: false, recordingSpeed: 3 }));
+    const speedup = computePhaseBudgets(900, recordingScaleForJob({ recordingSpeed: 3 }));
     expect(speedup.recording).toBeLessThan(native.recording / 2);
     expect(speedup.recordingContent).toBe(900);
     expect(speedup.converting).toBe(native.converting);

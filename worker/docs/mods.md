@@ -34,13 +34,13 @@
   (touhou-recorder reports/85)。全32bitタイトルのMODに組み込み、64bitのth06c/th06ncは
   `GetProcAddress`経由の取得を`WrapQueryPerformanceCounterForSpeedHack()`で差し替える |
 | `mods/common/fps_limiter_hook.*` | `IDirect3DDevice9::Present`のvtableフックによるフレーム
-  レート制限(reports/46)。目標fpsは`FPS_LIMIT_TARGET_HZ`(既定60)。低速録画の実装基盤で、
+  レート制限(reports/46)。目標fpsは`FPS_LIMIT_TARGET_HZ`(既定60)。倍速録画の実装基盤で、
   倍速録画ではPresentの上限を`60×倍率`へ引き上げる |
 | `mods/common/fps_limiter_hook_d3d8.*` | 上記のDirect3D8版(`IDirect3DDevice8::Present`、
   vtable番号はD3D9よりCreateDeviceが1つ・Presentが2つ小さい)。th09で使う
   ([titles/th09.md](titles/th09.md)) |
 | `mods/common/dsound_hook.*` | 音声の再生周波数を`FPS_LIMIT_TARGET_HZ/60`倍にスケールする
-  (`SetFrequency`フック、低速録画 reports/47・倍速録画 reports/89)。あわせて**同期マーカー**
+  (`SetFrequency`フック、reports/47・89)。あわせて**同期マーカー**
   (reports/88)を鳴らす: `SYNC_MARKER_TRIGGER`のファイルが置かれたら、ゲーム自身の
   DirectSoundデバイスから-42dBFS・約3秒の疑似乱数ノイズを再生し、再生直前の壁時計時刻を
   `SYNC_MARKER played ...`としてMODログへ出す(`recording/sync_marker.py`が読む)。等倍でも有効 |

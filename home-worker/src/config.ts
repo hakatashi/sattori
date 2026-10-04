@@ -8,8 +8,8 @@
  * **環境変数名は公開仕様**（`home-worker/README.md` §4.1 が文書化している）なので、
  * 変えるならREADMEと運用中のsystemdユニットの `EnvironmentFile` も併せて直すこと。
  */
-import { GAME_IDS, GPU_RECORDING_GAME_IDS, SUPPORTED_GAME_IDS, WORKER_CAPABILITIES } from "@sattori/shared";
-import type { GameId, WorkerCapability } from "@sattori/shared";
+import { GAME_IDS, GPU_RECORDING_GAME_IDS, SUPPORTED_GAME_IDS } from "@sattori/shared";
+import type { GameId } from "@sattori/shared";
 
 /** 必須の環境変数が欠けている・値が不正である。 */
 export class ConfigError extends Error {
@@ -38,20 +38,6 @@ export interface Config {
    * 他負荷に依存し、固定の数字では決まらない）。
    */
   maxConcurrency: number;
-  /**
-   * このワーカーが宣言する追加能力（`@sattori/shared` の `WORKER_CAPABILITIES`）。
-   * **実際にできることだけを書く**。
-   *
-   * 既定は `WORKER_CAPABILITIES` 全部。低速録画（Issue #68）の実体はワーカー
-   * コンテナ側（EC2と共通の ECR イメージ）にあり、デーモンは
-   * `homeWorkerEnv` をそのまま `docker run` へ渡すだけなので、
-   * **イメージが対応していれば自宅ワーカーは無条件に対応できる**——「宣言したのに
-   * できない」状態を作りようがないため、明示設定を必須にする意味がない。
-   * 逆に「対応しているが引き受けたくない」（録画に倍の実時間がかかるので自宅
-   * マシンを長時間占有されたくない等）場合に `HOME_WORKER_CAPABILITIES=`（空）で
-   * 降りられるようにしてある。
-   */
-  capabilities: WorkerCapability[];
   /** 引き受けるタイトル。既定は録画対応タイトル（`SUPPORTED_GAME_IDS`）全部。 */
   supportedGames: GameId[];
   /**
@@ -72,7 +58,7 @@ export interface Config {
   dockerExtraArgs: string[];
   /**
    * 終了シグナルを受けてから実行中ジョブの完走を待つ上限（秒）。既定は
-   * **低速録画（Issue #68）のタイムアウト（120分＝等倍60分の2倍）＋変換の余裕（30分）**
+   * **録画タイムアウト（等倍60分）＋変換の余裕に、廃止した低速録画（Issue #68、録画120分）の旧ジョブ分を見込んだ値**
    * で、Step Functions 側のフェイルセーフ（`taskTimeout`、150分）と一致させてある。
    * ここが短いと、AWS側がまだ待っているジョブをデーモンが先に打ち切ることになる。
    */
@@ -215,21 +201,8 @@ function parseGames(values: string[]): GameId[] {
   });
 }
 
-function parseCapabilities(values: string[]): WorkerCapability[] {
-  return values.map((value) => {
-    if (!(WORKER_CAPABILITIES as readonly string[]).includes(value)) {
-      throw new ConfigError(`未知の能力です: ${value}`);
-    }
-    return value as WorkerCapability;
-  });
-}
-
 export function loadConfig(env: Environment = process.env): Config {
   const games = list(env, "HOME_WORKER_SUPPORTED_GAMES");
-  // 能力だけは `optional()`（空文字を未設定と同一視する）を通さない。既定が
-  // 「全部宣言する」なので、空文字が未設定と同じ扱いだと**降りる手段が無くなる**ため、
-  // 「変数そのものが無い＝既定」「空文字＝明示的に何も宣言しない」を区別する。
-  const capabilitiesRaw = env["HOME_WORKER_CAPABILITIES"];
   const dockerArgs = optional(env, "HOME_WORKER_DOCKER_ARGS");
   return {
     region: env["AWS_REGION"] || env["AWS_DEFAULT_REGION"] || "eu-south-2",
@@ -240,15 +213,6 @@ export function loadConfig(env: Environment = process.env): Config {
     workerId: optional(env, "HOME_WORKER_ID") ?? "home-1",
     roleArn: optional(env, "HOME_WORKER_ROLE_ARN"),
     maxConcurrency: number_(env, "HOME_WORKER_MAX_CONCURRENCY", 2),
-    capabilities:
-      capabilitiesRaw === undefined
-        ? [...WORKER_CAPABILITIES]
-        : parseCapabilities(
-            capabilitiesRaw
-              .split(",")
-              .map((item) => item.trim())
-              .filter((item) => item !== ""),
-          ),
     // 録画対応タイトル（`SUPPORTED_GAME_IDS`）を既定にする。自宅マシンの都合で
     // 一部だけ受け持ちたい場合は `HOME_WORKER_SUPPORTED_GAMES` で上書きする。
     // GPU描画必須タイトル（`GPU_RECORDING_GAME_IDS`、Issue #241）は自宅マシンに

@@ -203,8 +203,7 @@ export class HomeWorkerDaemon {
     this.#log(
       `起動しました workerId=${this.#config.workerId} ` +
         `maxConcurrency=${this.#config.maxConcurrency} ` +
-        `games=${this.#config.supportedGames.join(",")} ` +
-        `capabilities=${this.#config.capabilities.join(",") || "(なし)"}`,
+        `games=${this.#config.supportedGames.join(",")}`,
     );
     while (!this.#stopping.isSet) {
       try {

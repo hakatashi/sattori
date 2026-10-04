@@ -223,7 +223,7 @@ def test_build_env_derives_the_speed_hack_multiplier_from_the_target_hz(monkeypa
     assert make_config().build_env()["SPEED_HACK_MULTIPLIER"] == "3"
 
 
-def test_build_env_does_not_set_the_speed_hack_multiplier_for_slow_motion(monkeypatch):
+def test_build_env_does_not_set_the_speed_hack_multiplier_below_native_rate(monkeypatch):
     monkeypatch.setenv("FPS_LIMIT_TARGET_HZ", "30")
     monkeypatch.setenv("SPEED_HACK_MULTIPLIER", "2")  # 紛れ込んだ値も消す
     assert "SPEED_HACK_MULTIPLIER" not in make_config().build_env()
@@ -261,7 +261,7 @@ def test_runtime_overrides_rewrite_vpatch_game_fps_for_speedup():
     )
 
 
-def test_runtime_overrides_do_not_touch_vpatch_for_slow_motion_or_titles_without_vpatch():
+def test_runtime_overrides_do_not_touch_vpatch_below_native_rate_or_titles_without_vpatch():
     with_vpatch = make_config(extra_dlls=("vpatch_th06.dll",))
     assert with_runtime_overrides(with_vpatch, {"FPS_LIMIT_TARGET_HZ": "30"}, log=lambda m: None) is with_vpatch
     without = make_config()

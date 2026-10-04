@@ -1,6 +1,6 @@
 # 0014. 低速録画の倍率はフック・監視・変換・品質チェックのすべてへ一貫して適用する
 
-- **状態**: 有効
+- **状態**: 有効（低速録画の1/2倍速自体は廃止。倍率を全工程へ一貫適用する考え方は倍速録画の `FPS_LIMIT_TARGET_HZ` 由来の倍率にも当てはまる。[`0058`](0058-speedup-recording-on-gpu-instances.md)）
 - **決定日**: 2026-08
 - **対象**: worker / apps/web
 - **関連**: Issue #68、touhou-recorder reports/47・48、

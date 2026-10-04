@@ -60,8 +60,8 @@ def test_no_separate_raw_output_when_the_resolution_does_not_change():
     assert convert.needs_separate_raw_output(1280, 960) is False
 
 
-def test_no_separate_raw_output_for_a_slow_motion_recording():
-    # 低速録画の生データは半分の速度でそのままユーザーへ渡せない。別途出すには
+def test_no_separate_raw_output_for_a_time_scaled_recording():
+    # 等倍でない速度の生データはそのままユーザーへ渡せない。別途出すには
     # 等倍化の再エンコードがもう1回要るのに、得られるのはウォーターマークの
     # 有無しか違わない動画でしかない。
     assert convert.needs_separate_raw_output(640, 480, time_scale=2.0) is False
@@ -82,7 +82,7 @@ def test_does_not_scale_when_the_resolution_already_matches():
     assert "scale=" not in filter_of(cmd)
 
 
-def test_compresses_video_pts_and_resamples_audio_for_slow_motion():
+def test_compresses_video_pts_and_resamples_audio_for_scale_above_one():
     cmd = convert.build_convert_cmd(
         "in.mp4", "out.mp4", width=1280, height=960, time_scale=2.0, audio_sample_rate=48000,
     )
@@ -96,7 +96,7 @@ def test_compresses_video_pts_and_resamples_audio_for_slow_motion():
     assert "[a]" in cmd
 
 
-def test_forces_the_native_frame_rate_when_undoing_slow_motion():
+def test_forces_the_native_frame_rate_when_undoing_scale_above_one():
     """`-r 60` が、30Hz素材を60fpsで撮ったことによる重複フレームを間引く要点。"""
     cmd = convert.build_convert_cmd(
         "in.mp4", "out.mp4", width=1280, height=960, time_scale=2.0, audio_sample_rate=48000,
@@ -158,7 +158,7 @@ def test_overlays_the_watermark_in_the_same_pass():
     assert "overlay=" in expr
 
 
-def test_undoes_slow_motion_and_overlays_the_watermark_in_one_ffmpeg_invocation():
+def test_undoes_scale_above_one_and_overlays_the_watermark_in_one_ffmpeg_invocation():
     """等倍への戻しとウォーターマーク合成が1回の呼び出し・1回のエンコードで済む。"""
     cmd = convert.build_convert_cmd(
         "in.mp4", "out.mp4", width=1280, height=960, time_scale=2.0,

@@ -34,7 +34,6 @@ export function buildHeartbeat(config: Config, state: HeartbeatState): WorkerHea
     activeJobs: state.activeJobs,
     maxConcurrency: config.maxConcurrency,
     supportedGames: [...config.supportedGames],
-    capabilities: [...config.capabilities],
     ttl: Math.floor(now.getTime() / 1000) + WORKER_HEARTBEAT_TTL_SECONDS,
   };
 }

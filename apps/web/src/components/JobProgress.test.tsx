@@ -47,7 +47,6 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     previewImageUrl: null,
     posterImageUrl: null,
     replayInfo: REPLAY_INFO,
-    slowMotion: false,
     recordingSpeed: 1,
     desyncDetected: null,
     timedOut: null,
@@ -77,8 +76,7 @@ describe("JobProgressView のダウンロード", () => {
   });
 
   it("出力が1本のジョブは downloadUrl へフォールバックし、副次リンクを出さない", () => {
-    // th20・低速録画のジョブは、解像度が変わらない/生データが半分の速度で使えない
-    // ため出力を1本に集約する(`worker/convert.py` の needs_separate_raw_output())。
+    // th20のジョブは、解像度が変わらないため出力を1本に集約する(`worker/convert.py` の needs_separate_raw_output())。
     // このときAPIは downloadUrl720p を null で返し、downloadUrl が本命になる。
     render(
       <JobProgressView job={buildDoneJob({ downloadUrl720p: null })} loadError={null} />,
@@ -353,7 +351,6 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     previewImageUrl: null,
     posterImageUrl: null,
     replayInfo: REPLAY_INFO,
-    slowMotion: false,
     recordingSpeed: 1,
     desyncDetected: null,
     timedOut: null,

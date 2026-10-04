@@ -39,24 +39,6 @@ export interface RecordingOptions {
   /** ウォーターマーク合成の有無。デフォルト true（合成する）。 */
   watermark: boolean;
   /**
-   * 低速録画（Issue #68）。ゲームを 1/2 倍速で走らせて録画し、後処理で等倍へ戻す
-   * ことで、等倍では処理落ちするタイトル（th20）の録画品質を担保する。
-   * 詳細と定数は `slowMotion.ts` 参照。
-   *
-   * **低速録画に対応したタイトル（`SLOW_MOTION_SUPPORTED_GAME_IDS`）でしか選べない**。
-   * 非対応タイトルではページAがグレーアウトし、`POST /magic-links` も true を握り潰す
-   * （Issue #101）。
-   *
-   * さらに**自宅ワーカー（Issue #49）がこの能力を宣言している場合しか選べない**
-   * （EC2 Spot では録画に倍の実時間＝倍のコストがかかるため）。ページAは
-   * `GET /worker-availability` で可否を確認し、使えない間はチェックボックスを
-   * グレーアウトする。ここが true でも、実際に自宅ワーカーがclaimしなければ
-   * EC2 での等倍録画へフォールバックする（`apps/api/src/handlers/sfn/launch.ts`）。
-   * デフォルト false（既定でオンにするのは th20 のみで、その判断は
-   * `defaultSlowMotionFor()` がフロントエンド側で行う）。
-   */
-  slowMotion: boolean;
-  /**
    * th10（東方風神録）の既知バグ「バグマリ」（魔理沙Bのパワーが3.00〜3.95の間に
    * あるときショット火力が異常上昇する）をVsyncPatchで修正した状態で録画するか
    * （Issue #75）。詳細と定数は `th10BugfixMarisaB.ts` 参照。
@@ -87,8 +69,7 @@ export interface RecordingOptions {
    * 録画速度（Issue #288、倍速録画）。1〜4倍速。詳細と定数は `recordingSpeed.ts` 参照。
    *
    * **2倍速以上はGPUインスタンス必須**で、自宅ワーカーへはオファーしない
-   * （`requiresGpuRecording()`）。低速録画（`slowMotion`）とは排他で、2倍速以上が
-   * 指定されていれば`slowMotion`は無視する（`apps/api/src/workerEnv.ts`）。
+   * （`requiresGpuRecording()`）。
    *
    * このフィールドの導入前に作られたジョブには無いため省略可能にしてあり、読むときは
    * 必ず`recordingSpeedOf()`を通すこと（欠損は等倍）。
@@ -98,7 +79,6 @@ export interface RecordingOptions {
 
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   watermark: true,
-  slowMotion: false,
   th10BugfixMarisaB: false,
   th06ncHighResolution: false,
   recordingSpeed: 1,

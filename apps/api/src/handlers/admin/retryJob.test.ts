@@ -40,7 +40,7 @@ const sfnMock = mockClient(SFNClient);
 const failedJob: JobRecord = createJobRecord({
   game: "th11",
   status: "failed",
-  options: { watermark: false, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
+  options: { watermark: false, th10BugfixMarisaB: false, th06ncHighResolution: false },
   outputPath: "videos/job-1.mp4",
   error: "録画に複数回失敗しました",
   errorCode: "retries_exhausted",
@@ -74,7 +74,7 @@ describe("buildRetryJob", () => {
     // 引き継ぐもの
     expect(retried.game).toBe("th11");
     expect(retried.replayKey).toBe("replays/abc.rpy");
-    expect(retried.options).toEqual({ watermark: false, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false });
+    expect(retried.options).toEqual({ watermark: false, th10BugfixMarisaB: false, th06ncHighResolution: false });
     expect(retried.email).toBe("user@example.com");
     expect(retried.language).toBe("en");
     expect(retried.estimatedDurationSeconds).toBe(900);
