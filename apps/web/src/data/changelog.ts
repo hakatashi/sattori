@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-10-05",
+    ja: "倍速録画で、本編の短いリプレイ（スペルプラクティス等）が「処理落ち」と誤判定されて録画に失敗する問題を修正",
+    en: "Fixed an issue where short replays (such as Spell Practice) recorded at higher speed were wrongly judged as lagging and failed to record",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/306",
+  },
+  {
+    date: "2026-10-05",
     ja: "録画した動画から、メニュー操作やリプレイ終了後の静止画面をカットし、リプレイ選択画面から再生終了までだけを配信するように",
     en: "Recorded videos now cut out the menu navigation and the still screen after the replay ends, keeping only the part from the replay selection screen to the end of playback",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/266",
