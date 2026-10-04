@@ -362,67 +362,21 @@ describe("GET /jobs/{jobId}", () => {
     expect((res as APIGatewayProxyStructuredResultV2).statusCode).toBe(404);
   });
 
-  /**
-   * 低速録画（Issue #68）。`slowMotion` はユーザーの希望そのままではなく、
-   * EC2 へフォールバックしたかどうかまで織り込んだ「実際に低速録画で走るか」。
-   * ジョブページの残り時間推定がこの値で2倍のバジェットを取る。
-   */
   it("recordingSpeed を返す(旧ジョブは1、Issue #288)", async () => {
     ddbMock.on(GetCommand).resolves({
-      Item: { ...doneJob, options: { watermark: true, slowMotion: false, recordingSpeed: 3 } },
+      Item: { ...doneJob, options: { watermark: true, recordingSpeed: 3 } },
     });
     const { handler } = await import("./getJob.js");
     const res = await handler(makeEvent("job-1"), {} as never, () => {});
     expect(parseBody(res as APIGatewayProxyStructuredResultV2).recordingSpeed).toBe(3);
 
     ddbMock.on(GetCommand).resolves({
-      Item: { ...doneJob, options: { watermark: true, slowMotion: false } },
+      Item: { ...doneJob, options: { watermark: true } },
     });
     const legacy = await handler(makeEvent("job-1"), {} as never, () => {});
     expect(parseBody(legacy as APIGatewayProxyStructuredResultV2).recordingSpeed).toBe(1);
   });
 
-  it("自宅ワーカーが引き受けた低速録画ジョブは slowMotion:true を返す", async () => {
-    ddbMock.on(GetCommand).resolves({
-      Item: { ...doneJob, options: { watermark: true, slowMotion: true }, workerKind: "home" },
-    });
-
-    const { handler } = await import("./getJob.js");
-    const res = await handler(makeEvent("job-1"), {} as never, () => {});
-
-    expect(parseBody(res as APIGatewayProxyStructuredResultV2).slowMotion).toBe(true);
-  });
-
-  it("EC2低速録画未対応タイトル(th11)でEC2へフォールバックしたジョブは、希望されていても slowMotion:false を返す", async () => {
-    ddbMock.on(GetCommand).resolves({
-      Item: { ...doneJob, game: "th11", options: { watermark: true, slowMotion: true }, workerKind: "ec2" },
-    });
-
-    const { handler } = await import("./getJob.js");
-    const res = await handler(makeEvent("job-1"), {} as never, () => {});
-
-    expect(parseBody(res as APIGatewayProxyStructuredResultV2).slowMotion).toBe(false);
-  });
-
-  it("EC2低速録画対応タイトル(th20)でEC2へフォールバックしたジョブは、slowMotion:true を維持する（Issue #245）", async () => {
-    ddbMock.on(GetCommand).resolves({
-      Item: { ...doneJob, game: "th20", options: { watermark: true, slowMotion: true }, workerKind: "ec2" },
-    });
-
-    const { handler } = await import("./getJob.js");
-    const res = await handler(makeEvent("job-1"), {} as never, () => {});
-
-    expect(parseBody(res as APIGatewayProxyStructuredResultV2).slowMotion).toBe(true);
-  });
-
-  it("低速録画を希望していないジョブは常に slowMotion:false を返す", async () => {
-    ddbMock.on(GetCommand).resolves({ Item: { ...doneJob, workerKind: "home" } });
-
-    const { handler } = await import("./getJob.js");
-    const res = await handler(makeEvent("job-1"), {} as never, () => {});
-
-    expect(parseBody(res as APIGatewayProxyStructuredResultV2).slowMotion).toBe(false);
-  });
 
   /**
    * 出力が1本のジョブ（th20・低速録画。`worker/convert.py` の

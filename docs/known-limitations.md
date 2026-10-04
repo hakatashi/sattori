@@ -37,21 +37,6 @@ VsyncPatchで修正するかどうかは、記録リプレイと再生時で設�
 （判断の根拠は [`decisions/0036`](decisions/0036-th10-bugfix-marisab-self-report.md)、
 `worker/docs/titles/th10.md`）。
 
-### 低速録画は th20 のみ
-
-低速録画（Issue #68）の対応タイトルも現状 th20 のみで、他タイトルへの展開は Issue #101。
-
-速度を落とす仕組みはタイトルの MOD 側（Present フック）にあるため、フックを組み込んで実機
-検証を済ませたタイトル以外で要求すると、**ゲームは等倍で動くのに後処理だけが等倍化を行い
-2倍速の動画になる**。ワーカーはこの食い違いを検知できないので、UI（グレーアウト）と
-API（`POST /magic-links` での握り潰し）の両方で入口を塞いでいる。**この判定をワーカー側へ
-移さないこと**（[`decisions/0010`](decisions/0010-slow-motion-no-worker-side-branching.md)）。
-
-**th09だけは低速録画フック（Direct3D8版Present間引き・fps表示補正）の実装・実機検証が
-済んでいる**が、ユーザー向けには非公開のまま（`SLOW_MOTION_SUPPORTED_GAME_IDS`未登録、
-Issue #101のスコープ）。Issue #101でth09を対応させる際はMOD側の追加実装は不要で、
-許可リストに加えるだけでよい（[`worker/docs/titles/th09.md`](../worker/docs/titles/th09.md)）。
-
 ### 倍速録画（2〜4倍速）の品質と未実装事項（Issue #288）
 
 [`decisions/0058`](decisions/0058-speedup-recording-on-gpu-instances.md)。技術検証は
@@ -81,9 +66,6 @@ touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実�
 60fpsに遠く届かないため（touhou-recorder reports/78 §5）。自宅ワーカー（GPU非搭載）
 には常にオファーされない
 （[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
-
-**低速録画はスコープ外**（D3D11経路の新規実装が必要、th06cと同じ扱い。
-`SLOW_MOTION_SUPPORTED_GAME_IDS`未登録のため自動的に塞がれる）。
 
 GPUの起動候補は`g6f.2xlarge`（8vCPU）だけ（Issue #288、
 [`decisions/0058`](decisions/0058-speedup-recording-on-gpu-instances.md)）。以前は`g6f.xlarge`（4vCPU）も
@@ -127,9 +109,7 @@ th06ncとは異なり**GPU描画が原理的に必須なわけではない**—�
 動作する。ただしExtraステージの高負荷演出区間ではCPUコア数を増やしても解消しない
 処理落ちが発生し、GPU（wined3d+OpenGLのまま、DXVKではない）に切り替えることで解消
 することを実機確認したため（touhou-recorder reports/82）、品質を優先してth06ncと
-同じ`g6f`系GPUインスタンスに固定している。低速録画でも同等の効果が代替手段として
-機能することを確認済みだが、本番ではth06ncと運用を揃えるためGPU固定とし低速録画は
-提供しない（`SLOW_MOTION_SUPPORTED_GAME_IDS`未登録）。自宅ワーカー（GPU非搭載）には
+同じ`g6f`系GPUインスタンスに固定している。自宅ワーカー（GPU非搭載）には
 常にオファーされない（[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
 
 **入力ポーリング方式はth11/th20のGetKeyboardStateではなく、th06/07/08/10と同じ
@@ -182,7 +162,7 @@ th20（東方錦上京）はタイトル固有の制約が多い。詳細は
 ページAの注意書きはこの理由から継続しているので、**ワーカー側が thprac 対応済みで
 あることを根拠に消さないこと**。詳細と根拠は
 [`decisions/0009`](decisions/0009-thprac-post-attach.md)「補足: 録画側の thprac では
-直せないずれがある」と [`apps/web/docs/upload-form.md`](../apps/web/docs/upload-form.md) §2.1。
+直せないずれがある」と [`apps/web/docs/upload-form.md`](../apps/web/docs/upload-form.md) §1.1。
 
 ## 3. 録画品質の検証にまつわる制約
 
@@ -333,22 +313,6 @@ NAT 配下のデーモンには通知が届かないため、取り消しの捕�
 つまり**「何並列まで大丈夫か」は固定の数字では決まらない**。冷却状態と、その時ホストで
 他に何が動いているかで変わる。`HOME_WORKER_LOAD_THRESHOLD`（新規 claim を止める閾値）は
 この意味で効くが、**走り出した録画の劣化は防げない**ことに注意。
-
-### th20 の低速録画2並列は、温度と無関係に高確率でハングする(未解決、Issue #179)
-
-CPUクーラー換装後の健全性確認(Issue #162)
-（[`reports/2026-08-26-th20-post-cooler-replacement-verification.md`](reports/2026-08-26-th20-post-cooler-replacement-verification.md)）
-で、**th20 の低速録画を2並列にすると、CPU温度・負荷とも全く問題ない状態で、一方のジョブが
-難易度確認画面（「HARD」「LUNATIC」のロード演出）からステージ開始へ進まず完全にハングする**
-現象を発見した（6試行中4試行で再現。フリーズはCPU使用率アイドル同然のまま発生しており、
-スピンではなく真のハングに見える）。原因は未特定（GPU/wineserverの共有資源競合、
-`fps_limiter_hook`の`QueryPerformanceCounter`ベースのタイミング計算が2プロセス同時実行下の
-スケジューリング遅延で破綻する、等の仮説はあるが切り分けていない）。
-
-**`HOME_WORKER_MAX_CONCURRENCY`を2以上に保ったまま自宅ワーカーを稼働させると、th20が2並列で
-同時に走った際に高確率で失敗（自動リトライの3回を使い切って`failed`になる）し得る。** 他の
-4タイトル（th06/07/08/11）の2並列では発生しない（§4冒頭の実測はth07/th08の組み合わせ）。
-根本原因の調査・修正は Issue #179 で追跡する。
 
 ### 録画処理がハングした場合の後片付けは頑健化済みだが、外側の保険は手動運用に留まる(Issue #186)
 

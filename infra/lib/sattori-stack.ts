@@ -587,13 +587,6 @@ export class SattoriStack extends Stack {
     const parseReplayFn = makeHandler("ParseReplayFn", "parseReplay.ts");
     const getJobFn = makeHandler("GetJobFn", "getJob.ts");
     const requestMagicLinkFn = makeHandler("RequestMagicLinkFn", "requestMagicLink.ts");
-    // ページAで「低速録画」(Issue #68)を選べるかの判定に使う、自宅ワーカー(Issue #49)の
-    // 空き状況の公開スナップショット。認証なしで公開するため、ハンドラ側で workerId 等の
-    // 運用情報を落としてから返す(`handlers/getWorkerAvailability.ts`)。
-    const getWorkerAvailabilityFn = makeHandler(
-      "GetWorkerAvailabilityFn",
-      "getWorkerAvailability.ts",
-    );
     // Cookie無しのサーバーサイド計測（`POST /beacon`、Issue #142）。計測用テーブルの
     // 読み書きしか行わないため、他の管理系Lambdaと同様commonEnvを使わず専用の環境変数
     // だけを持たせる（`apps/api/README.md`「環境変数」参照）。SETTINGS_TABLE は
@@ -611,7 +604,6 @@ export class SattoriStack extends Stack {
     uploadBucket.grantPut(createUploadFn); // 署名付き PUT URL 発行のため
     uploadBucket.grantRead(parseReplayFn); // アップロード済み .rpy を取得して解析するため
     jobsTable.grantReadData(getJobFn);
-    workersTable.grantReadData(getWorkerAvailabilityFn);
     analyticsEventsTable.grantWriteData(recordAnalyticsEventFn);
     // 日次saltの読み取り・初回生成時の書き込みの両方が必要（Issue #144）。
     settingsTable.grantReadWriteData(recordAnalyticsEventFn);
@@ -807,12 +799,11 @@ export class SattoriStack extends Stack {
       // 内訳は「録画自体のタイムアウト + 720pアップスケール変換・S3アップロード・
       // DynamoDB更新・taskToken通知の余裕(30分)」。
       //
-      // 録画のタイムアウト(`worker/recording/pipeline.py`の`TIMEOUT_SEC`)は等倍で60分
-      // だが、低速録画(Issue #68)ではゲーム進行が半分の速度になるぶん同じ比率で
-      // 伸びて120分になる。**このフェイルセーフはジョブごとに変えられない**ので、
-      // 最も長くなる低速録画に合わせて 120 + 30 = 150分にしてある。等倍のジョブが
-      // これで不利になることはない——ハートビート(下記、15分)が実際の死活監視を
-      // 担っており、ワーカーが黙ればそちらが先に発火するため。
+      // 録画のタイムアウト(`worker/recording/pipeline.py`の`TIMEOUT_SEC`)は等倍で60分。
+      // 低速録画(旧Issue #68、実時間が2倍かかり120分になった)は廃止したが、デプロイ時点で
+      // 走っている旧ジョブへの影響を避けるためこの値は縮めていない(120 + 30 = 150分)。
+      // このフェイルセーフはジョブごとに変えられないが、ハートビート(下記、15分)が実際の
+      // 死活監視を担っており、ワーカーが黙ればそちらが先に発火するため不利にはならない。
       taskTimeout: sfn.Timeout.duration(Duration.minutes(150)),
       // ワーカーが生きているかの死活監視(Issue #49)。ワーカーコンテナは起動直後から
       // 60秒間隔で `SendTaskHeartbeat` を送る(`worker/task_heartbeat.py`)ので、
@@ -1198,14 +1189,6 @@ export class SattoriStack extends Stack {
       path: "/jobs/{jobId}",
       methods: [apigw.HttpMethod.GET],
       integration: new HttpLambdaIntegration("GetJobInt", getJobFn),
-    });
-    httpApi.addRoutes({
-      path: "/worker-availability",
-      methods: [apigw.HttpMethod.GET],
-      integration: new HttpLambdaIntegration(
-        "GetWorkerAvailabilityInt",
-        getWorkerAvailabilityFn,
-      ),
     });
     // Cookie無しのサーバーサイド計測（Issue #142）。フロントエンドはこのパスを
     // API_BASE経由ではなく常に相対パス`/beacon`で叩く——CloudFront(WebCdn)の

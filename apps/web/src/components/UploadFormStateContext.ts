@@ -28,10 +28,6 @@ export interface UploadFormPersistedState {
   setEmail: Dispatch<SetStateAction<string>>;
   phase: UploadFormPhase;
   setPhase: Dispatch<SetStateAction<UploadFormPhase>>;
-  slowMotionTouched: boolean;
-  setSlowMotionTouched: Dispatch<SetStateAction<boolean>>;
-  slowMotion: boolean;
-  setSlowMotion: Dispatch<SetStateAction<boolean>>;
   th10BugfixMarisaB: boolean;
   setTh10BugfixMarisaB: Dispatch<SetStateAction<boolean>>;
   th06ncHighResolution: boolean;
@@ -62,8 +58,6 @@ export function useUploadFormPersistedState(): UploadFormPersistedState {
   const [watermark, setWatermark] = useState(DEFAULT_RECORDING_OPTIONS.watermark);
   const [email, setEmail] = useState("");
   const [phase, setPhase] = useState<UploadFormPhase>("idle");
-  const [slowMotionTouched, setSlowMotionTouched] = useState(false);
-  const [slowMotion, setSlowMotion] = useState(false);
   const [th10BugfixMarisaB, setTh10BugfixMarisaB] = useState(
     DEFAULT_RECORDING_OPTIONS.th10BugfixMarisaB,
   );
@@ -85,10 +79,6 @@ export function useUploadFormPersistedState(): UploadFormPersistedState {
     setEmail,
     phase,
     setPhase,
-    slowMotionTouched,
-    setSlowMotionTouched,
-    slowMotion,
-    setSlowMotion,
     th10BugfixMarisaB,
     setTh10BugfixMarisaB,
     th06ncHighResolution,

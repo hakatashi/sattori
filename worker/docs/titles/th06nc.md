@@ -113,12 +113,8 @@ touhou-recorder側の初期実装が踏んだ地雷は、sattori側の共通実�
   ゲーム更新時は`verify-game-update` skillで必ず再確認すること。
 - ステージ番号・残機・グレイズのRVAは未特定。
 
-## 低速録画・自宅ワーカーはスコープ外
+## 自宅ワーカーはスコープ外
 
-- 低速録画（Issue #68）はth06ncでは提供しない。D3D11経路のフレームレート制限フック
-  （`fps_limiter_hook.h`はD3D9専用、`fps_limiter_hook_d3d8.h`はD3D8専用）が
-  いずれも使えず新規実装が必要なため、th06cと同じ扱いでスコープ外にした
-  （`SLOW_MOTION_SUPPORTED_GAME_IDS`に含めないだけで自動的に塞がれる）。
 - 自宅ワーカー（GPU非搭載）には常にオファーしない（`apps/api/src/workerRouting.ts`の
   `GAME_ROUTING_POLICIES.th06nc.offerToHomeWorker = false`、`decisions/0047`）。
 

@@ -181,9 +181,9 @@ def test_build_video_ffmpeg_cmd_captures_at_the_games_frame_rate_for_speedup():
     assert cmd[cmd.index("-vsync") + 1] == "0"
 
 
-def test_build_video_ffmpeg_cmd_keeps_60fps_without_vsync_for_slow_motion():
+def test_build_video_ffmpeg_cmd_keeps_60fps_without_vsync_at_native_speed():
     config = make_config()
-    cmd = ffmpeg.build_video_ffmpeg_cmd(config, 0, 0, 640, 480, "out.video.mp4", time_scale=2.0)
+    cmd = ffmpeg.build_video_ffmpeg_cmd(config, 0, 0, 640, 480, "out.video.mp4")
 
     assert cmd[cmd.index("-framerate") + 1] == "60"
     assert "-vsync" not in cmd

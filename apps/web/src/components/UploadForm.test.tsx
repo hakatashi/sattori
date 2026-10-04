@@ -24,7 +24,6 @@ vi.mock("../api/client.ts", () => ({
   createUpload: vi.fn(),
   uploadReplay: vi.fn(),
   requestMagicLink: vi.fn(),
-  getWorkerAvailability: vi.fn(),
 }));
 
 vi.mock("@sattori/shared", async (importOriginal) => {
@@ -102,9 +101,6 @@ const TH20_REPLAY_INFO: ReplayInfo = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // UploadForm はマウント時に必ず自宅ワーカーの空き状況を引く。既定は「いない」
-  // （＝低速録画は選べない）とし、必要なテストだけが上書きする。
-  mockedClient.getWorkerAvailability.mockResolvedValue({ available: false, capabilities: [] });
   mockedClient.createUpload.mockResolvedValue({
     replayKey: "replays/x.rpy",
     uploadUrl: "https://s3.example.com/put",
@@ -261,7 +257,7 @@ describe("UploadForm", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 1 },
+      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 2 },
       "user@example.com",
       "ja",
     );
@@ -293,138 +289,13 @@ describe("UploadForm", () => {
   });
 });
 
-/**
- * 低速録画（Issue #68）の詳細設定。要件は「低速録画に対応したタイトル（Issue #101）で、
- * かつ自宅ワーカーが利用可能なとき、かつその場合に限り選べる」「選べるならth20だけ
- * 既定オン」「選べないならグレーアウト」。
- */
-describe("UploadForm の低速録画オプション", () => {
-  function slowMotionCheckbox(): HTMLInputElement | null {
-    const labels = screen
-      .queryAllByText(/低速録画で品質を優先する|Prioritize quality/)
-      .map((el) => el.closest("label"))
-      .filter((label): label is HTMLLabelElement => label !== null);
-    const label = labels[0];
-    return (label?.querySelector('input[type="checkbox"]') as HTMLInputElement) ?? null;
-  }
-
-  it("自宅ワーカーが使えなくても、EC2低速録画対応タイトル(th20)なら選択でき、既定でオンになる（Issue #245）", async () => {
-    mockedClient.getWorkerAvailability.mockResolvedValue({ available: false, capabilities: [] });
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
-    renderUploadForm();
-    selectFile("th20_ud0000.rpy");
-
-    await waitFor(() => expect(slowMotionCheckbox()?.checked).toBe(true));
-    expect(slowMotionCheckbox()?.disabled).toBe(false);
-  });
-
-  it("自宅ワーカーが低速録画に対応していれば、th20は既定でオンになる", async () => {
-    mockedClient.getWorkerAvailability.mockResolvedValue({
-      available: true,
-      capabilities: ["slow-motion-recording"],
-    });
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
-    renderUploadForm();
-    selectFile("th20_ud0000.rpy");
-
-    await waitFor(() => expect(slowMotionCheckbox()?.checked).toBe(true));
-    expect(slowMotionCheckbox()?.disabled).toBe(false);
-  });
-
-  it("低速録画に未対応のタイトルは、自宅ワーカーが使えてもグレーアウトする（Issue #101）", async () => {
-    mockedClient.getWorkerAvailability.mockResolvedValue({
-      available: true,
-      capabilities: ["slow-motion-recording"],
-    });
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
-    renderUploadForm();
-    selectFile("th7_07.rpy");
-
-    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
-    expect(slowMotionCheckbox()?.checked).toBe(false);
-    expect(slowMotionCheckbox()?.disabled).toBe(true);
-    expect(screen.getByText(/まだ低速録画に対応していない/)).toBeTruthy();
-  });
-
-  it("非対応タイトルへ差し替えたら、チェック済みでも送信される値がオフに戻る", async () => {
-    mockedClient.getWorkerAvailability.mockResolvedValue({
-      available: true,
-      capabilities: ["slow-motion-recording"],
-    });
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
-    renderUploadForm();
-    selectFile("th20_ud0000.rpy");
-    await waitFor(() => expect(slowMotionCheckbox()?.checked).toBe(true));
-
-    // th20（既定オン）から th08（未対応）へ差し替える。
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
-    selectFile("th7_07.rpy");
-    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
-    expect(slowMotionCheckbox()?.checked).toBe(false);
-
-    mockedClient.requestMagicLink.mockResolvedValue({});
-    fillEmail("koishi@example.com");
-    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
-    await act(async () => {
-      fireEvent.click(nextStepButton());
-    });
-    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
-    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
-      expect.anything(),
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 1 },
-      "koishi@example.com",
-      "ja",
-    );
-  });
-
+describe("UploadForm のth20の注意書き", () => {
   it("th20のリプレイではデシンクの注意書きを録画前に表示する", async () => {
-    mockedClient.getWorkerAvailability.mockResolvedValue({ available: false, capabilities: [] });
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
     renderUploadForm();
     selectFile("th20_ud0000.rpy");
 
     await waitFor(() => expect(screen.getByText(/リプレイずれ/)).toBeTruthy());
-    // 処理落ちの注意自体は常に出る。
-    expect(screen.getByText(/描画が重く/)).toBeTruthy();
-  });
-
-  it("低速録画が有効なら、低速録画をすすめる案内は出さない", async () => {
-    mockedClient.getWorkerAvailability.mockResolvedValue({
-      available: true,
-      capabilities: ["slow-motion-recording"],
-    });
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
-    renderUploadForm();
-    selectFile("th20_ud0000.rpy");
-
-    // 注意書き自体はリプレイの解析直後（＝自宅ワーカーの空き状況を引く前）に出るので、
-    // 低速録画が実際にオンになるまで待ってから案内の有無を見る。
-    await waitFor(() => expect(slowMotionCheckbox()?.checked).toBe(true));
-    expect(screen.getByText(/リプレイずれ/)).toBeTruthy();
-    // 処理落ちの注意自体は常に出すが、低速録画をすすめる一文だけを落とす。
-    expect(screen.getByText(/描画が重く/)).toBeTruthy();
-    expect(screen.queryByText(/ある程度の改善/)).toBeNull();
-  });
-
-  it("低速録画のチェックを外した場合は、低速録画をすすめる案内を表示する", async () => {
-    mockedClient.getWorkerAvailability.mockResolvedValue({ available: false, capabilities: [] });
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH20_REPLAY_INFO });
-    renderUploadForm();
-    selectFile("th20_ud0000.rpy");
-
-    await waitFor(() => {
-      const cb = slowMotionCheckbox();
-      expect(cb).not.toBeNull();
-      expect(cb?.disabled).toBe(false);
-      expect(cb?.checked).toBe(true);
-    });
-
-    // チェックを外す
-    fireEvent.click(slowMotionCheckbox()!);
-    expect(slowMotionCheckbox()?.checked).toBe(false);
-
-    // 低速録画がオフなので、低速録画で改善できる旨の案内が出る。
-    expect(screen.getByText(/ある程度の改善/)).toBeTruthy();
   });
 });
 
@@ -495,7 +366,7 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: true, th06ncHighResolution: false, recordingSpeed: 1 },
+      { watermark: true, th10BugfixMarisaB: true, th06ncHighResolution: false, recordingSpeed: 2 },
       "marisa@example.com",
       "ja",
     );
@@ -524,7 +395,7 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 1 },
+      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 2 },
       "koishi@example.com",
       "ja",
     );
@@ -582,7 +453,7 @@ describe("UploadForm のth06nc 1080p録画オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: true, recordingSpeed: 1 },
+      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: true, recordingSpeed: 1 },
       "reimu@example.com",
       "ja",
     );
@@ -611,7 +482,7 @@ describe("UploadForm のth06nc 1080p録画オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      { watermark: true, slowMotion: false, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 1 },
+      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 2 },
       "koishi@example.com",
       "ja",
     );
@@ -634,7 +505,7 @@ describe("UploadForm の録画速度オプション（Issue #288）", () => {
     return input.matches(":disabled");
   }
 
-  it("公開済みタイトル(th15)ではおすすめの2倍速が既定で選ばれ、推定時間が表示される", async () => {
+  it("th15ではおすすめの2倍速が既定で選ばれ、推定時間が表示される", async () => {
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH15_REPLAY_INFO });
     renderUploadForm();
     selectFile("th15_01.rpy");
@@ -680,21 +551,19 @@ describe("UploadForm の録画速度オプション（Issue #288）", () => {
 
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ recordingSpeed: 4, slowMotion: false }),
+      expect.objectContaining({ recordingSpeed: 4 }),
       "koishi@example.com",
       "ja",
     );
   });
 
-  it("未公開のタイトルでは選択肢を無効にし、等倍で送信する", async () => {
+  it("どのタイトルでも選択肢が有効で、th08ではおすすめの2倍速が既定になる", async () => {
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
     renderUploadForm();
     selectFile("th7_07.rpy");
-    await waitFor(() => expect(nextStepButton().disabled).toBe(true));
-    await waitFor(() => expect(screen.getByText("このタイトルは現在、1倍速での録画のみに対応しています。")).toBeTruthy());
+    await waitFor(() => expect(isDisabled(speedRadio(2))).toBe(false));
 
-    expect(isDisabled(speedRadio(2))).toBe(true);
-    expect(speedRadio(1).checked).toBe(true);
+    expect(speedRadio(2).checked).toBe(true);
   });
 
   it("別のリプレイを選び直すとおすすめに戻る", async () => {

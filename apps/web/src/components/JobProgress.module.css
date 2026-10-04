@@ -52,13 +52,13 @@
   font-style: italic;
 }
 
-/* 低速録画(Issue #68)で走っていることの表示。異常ではないので retryHint と違い
+/* 倍速録画(Issue #288)で走っていることの表示。異常ではないので retryHint と違い
    斜体にはせず、事実の注記として控えめに出す。 */
-.slowMotionHint {
+.speedupHint {
   color: var(--text-muted);
 }
 
-/* GPU録画の待ち行列(Issue #270)の順位・推定待ち時間。slowMotionHintと同じく
+/* GPU録画の待ち行列(Issue #270)の順位・推定待ち時間。speedupHintと同じく
    異常ではない事実の注記として控えめに出す。 */
 .queueHint {
   color: var(--text-muted);

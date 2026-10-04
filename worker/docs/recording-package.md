@@ -31,7 +31,7 @@ fps暴走検知(MODのGetDeviceState呼び出し頻度による早期打ち切�
 | モジュール | 役割 |
 | --- | --- |
 | `config.py` | `GameConfig` とその既定値の導出(`for_game()`)。パス類は `WORKER_ROOT` 起点 |
-| `timing.py` | 低速録画(`worker/README.md` §5)の実時間スケーリングと、重複フレーム率の閾値換算 |
+| `timing.py` | 倍速録画(`worker/README.md` §5)の実時間スケーリング |
 | `instance.py` | Xvfb 起動・instance ディレクトリの複製・`vpatch.ini` の上書き・注入コマンド |
 | `process.py` | ゲームプロセスの探索・thprac のアタッチ・Wine の後片付け |
 | `window.py` | ウィンドウ検出とクロップ座標の確定 |

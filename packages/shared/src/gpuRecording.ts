@@ -23,8 +23,9 @@ import { isSpeedupRecording, recordingSpeedOf } from "./recordingSpeed.js";
  *   多層防御（本来は`workerRouting.ts`側の制御だけで十分だが、誤って自宅マシンに
  *   明示指定されることを防ぐ）。
  *
- * 将来th20等の既存CPU系タイトルをGPU化する場合はこの配列に足すだけでよい構造だが、
- * **既存のCPU系タイトルの録画経路は一切変更しない**（Issue #241のスコープ外）。
+ * th20（東方錦上京）は、Xvfb+llvmpipeでは高負荷区間（ボム・スペルカード）でゲーム自体が
+ * 処理落ちする（reports/45・46）ため、GPU描画（g6f.2xlarge）の等倍録画へ移した
+ * （Issue #288、`docs/decisions/0058`）。旧来の低速録画（1/2倍速）は廃止した。
  *
  * th15（東方紺珠伝、Issue #82）もこのリストに含まれる。ただしth06ncとは理由が
  * 異なる——th06ncはD3D11描画がXvfb+llvmpipeでは原理的に60fpsへ届かない
@@ -35,7 +36,7 @@ import { isSpeedupRecording, recordingSpeedOf } from "./recordingSpeed.js";
  * ことを実機検証で確認した（touhou-recorder reports/82）ため、品質を優先して
  * GPU系インスタンス（g6f系）に固定している。
  */
-export const GPU_RECORDING_GAME_IDS: readonly GameId[] = ["th06nc", "th15"];
+export const GPU_RECORDING_GAME_IDS: readonly GameId[] = ["th06nc", "th15", "th20"];
 
 /** このタイトルは録画速度によらず常にGPU系インスタンスで録画するか。 */
 export function isGpuOnlyTitle(game: GameId): boolean {

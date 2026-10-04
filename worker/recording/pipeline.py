@@ -33,12 +33,10 @@ from .modlog import check_replay_desync, wait_for_log_marker
 from .process import attach_thprac, find_live_game_pid, kill_wine_and_wait
 from .timing import (
     audio_capture_rate_hz,
-    duplicate_rate_threshold_for_raw,
     is_speedup,
     recording_time_scale,
     scaled_confirmation_count,
     scaled_poll_count,
-    scaled_timeout_sec,
     speedup_multiplier,
 )
 from .vision import (
@@ -59,7 +57,7 @@ from .window import (
 )
 
 
-# 連続回数はいずれも「等倍録画での秒数」をポーリング回数で表したもの。低速・倍速録画では
+# 連続回数はいずれも「等倍録画での秒数」をポーリング回数で表したもの。倍速録画では
 # _monitor_until_end() が time_scale 倍して使う(ポーリング間隔は実時間駆動なので、
 # 回数を据え置くとゲーム内時間で必要な静止の長さが伸び縮みしてしまう)。
 STILL_CONSECUTIVE_REQUIRED = 8  # 8 * POLL_INTERVAL_SEC = 16秒(等倍録画時)
@@ -69,8 +67,8 @@ TIMEOUT_SEC = 60 * 60
 
 
 # テンプレート照合そのものの説明と閾値は `recording/vision.py` にある。
-END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録画時。低速録画では
-                                       # time_scale 倍されるが、倍速録画でも2回より減らさない)。
+END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録画時。倍速録画では
+                                       # time_scale 倍されるが、2回より減らさない)。
                                        # 動画圧縮ノイズ等による単発の偶然一致を弾くため連続一致を
                                        # 要求する(reports/34、scaled_confirmation_count())
 
@@ -263,7 +261,7 @@ def _settle_crop_geometry(config, env, game_pid, seen_lines, log):
     # 出現した後**なのは、PIDが生えただけの時点ではゲームがまだ`CREATE_SUSPENDED`で、
     # Windows側からは「動いている東方ゲーム」として成立しておらず、thpracがアタッチ先を
     # 見つけられずに終了することがあるため(本番で発生、Issue #110)。それでもMODの
-    # タイトルロゴ待ち(th20は10秒、低速録画なら20秒)が終わってメニュー操作が始まるまでには
+    # タイトルロゴ待ち(th20は10秒)が終わってメニュー操作が始まるまでには
     # 十分間に合う。失敗しても録画は続行する(thprac無しの従来動作に戻るだけ。
     # attach_thprac()参照)。
     attach_thprac(config, env, log=log)
@@ -357,8 +355,8 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
 
     時間に関する定数はすべてここで `time_scale` 倍する。ポーリングは実時間駆動
     (`POLL_INTERVAL_SEC`)なので、回数を据え置くと**ゲーム内時間で必要な静止の長さが
-    1/time_scale に縮む**——低速録画のth20なら16秒→8秒相当になり、会話イベントや
-    弾幕の薄い区間でリプレイ途中の誤検知を招く(しかも classification は "good" に
+    1/time_scale に伸び縮みする**——据え置くと、2倍速で16秒→32秒相当になり
+    終了検知が遅れ、スケールの掛け忘れはリプレイ途中の誤検知を招く(しかも classification は "good" に
     なるためリトライされず、途中で切れた動画がそのまま配信される)。
     """
     x, y, w, h = geometry
@@ -374,13 +372,9 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     end_template_mad_threshold = detection.template_mad_threshold
     still_mask = detection.still_mask
 
-    # MODのメニュー自動操作(dllmain.cppのScaledSleep)は低速録画時に同じ比率だけ
-    # 実時間が伸びるため、その完了を待つこちらのタイムアウトも伸ばす。伸ばし忘れると
-    # 「シーケンス完了ログが検出できない」と誤判定する(touhou-recorder reports/47)。
-    # 倍速録画では縮めない(th06c/th06ncのメニュー操作は実時間のSleepで待つため、
-    # `scaled_timeout_sec()`)。
+    # 倍速録画でもタイムアウトは縮めない(th06c/th06ncのメニュー操作は実時間のSleepで待つため)。
     sequence_complete_time = wait_for_log_marker(
-        config.log_path, "sequence complete", timeout=scaled_timeout_sec(20, time_scale),
+        config.log_path, "sequence complete", timeout=20,
         poll_interval=0.1,
         log_all=True, seen_lines=seen_lines, log=log,
     )
@@ -457,9 +451,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
         if progress_dir and poll_count % PROGRESS_SNAPSHOT_EVERY_N_POLLS == 0:
             # 進捗は**実時間ではなくコンテンツ秒数**(＝完成品の動画で何秒ぶん進んだか)
             # で報告する。分母の expected_duration_seconds がリプレイの再生時間である
-            # 以上、低速録画で伸びた実時間をそのまま入れると進捗率が半分に見えてしまう。
-            # 実時間が倍かかること自体はフロントエンド側がジョブの `slowMotion` を見て
-            # 残り時間の見積もりに織り込む(`apps/web/src/hooks/jobProgressBudget.ts`)。
+            # 以上、実時間をそのまま入れると倍速録画で進捗率が実際より大きく見えてしまう。
             save_progress_snapshot(
                 progress_dir, color_frame, elapsed / time_scale, expected_duration_seconds,
             )
@@ -611,7 +603,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     診断用証跡として`diagnostics_dir`へ書き出す(Issue #159、`save_diagnostics_snapshot()`)。
     """
     env = config.build_env()
-    # 録画速度(倍速録画 Issue #288・低速録画 Issue #68)のスケール係数。等倍なら1.0で、
+    # 録画速度(倍速録画 Issue #288)のスケール係数。等倍なら1.0で、
     # 時間依存パラメータはすべて従来値のままになる(実際のスケーリングは `_monitor_until_end()`)。
     time_scale = recording_time_scale(env)
     if is_speedup(time_scale):
@@ -620,11 +612,6 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
             f"(FPS_LIMIT_TARGET_HZ={env.get('FPS_LIMIT_TARGET_HZ')} "
             f"SPEED_HACK_MULTIPLIER={env.get('SPEED_HACK_MULTIPLIER')}。実時間はゲーム内時間の"
             f"{time_scale:.2f}倍。変換時に等倍へ戻します)"
-        )
-    elif time_scale != 1.0:
-        log(
-            f"低速録画モード: FPS_LIMIT_TARGET_HZ={env.get('FPS_LIMIT_TARGET_HZ')} "
-            f"(実時間はゲーム内時間の{time_scale:.2f}倍。監視の猶予・タイムアウトも同じ比率で伸ばします)"
         )
     # GPU描画(Xorg+nvidia)で録画する場合はNVENCで映像をエンコードする。GPU描画必須
     # タイトル(th06nc/th15)とGPUワーカーで動くタイトル(`with_runtime_overrides()`)が該当。
@@ -761,8 +748,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         "total_record_sec": total_record_sec,
         "content_end_sec": content_end_sec,
         # この試行の録画に適用されていた実時間スケール(等倍なら1.0)。出力は等倍へ
-        # 戻す前の生データなので、重複フレーム率の判定にこの値が要る
-        # (`duplicate_rate_threshold_for_raw()`)。
+        # 戻す前の生データなので、呼び出し側の診断ログに使う。
         "time_scale": time_scale,
     }
 
@@ -839,11 +825,9 @@ def _record_with_retry(config, replay_path, output_path, *,
             log(f"WARNING: 試行{attempt}中にWineがクラッシュしたため、この試行を破棄してリトライします")
             continue
 
-        # 判定対象は**等倍へ戻す前の生データ**なので、閾値の方をスケールに合わせて
-        # 換算する(`duplicate_rate_threshold_for_raw()`)。等倍録画では換算しても
-        # 値が変わらないため、th06/07/08/11の挙動は従来どおり。
+        # 倍速録画はキャプチャ自体を60N fpsで行うため構造的な重複が無く、閾値は換算しない。
         time_scale = result.get("time_scale", 1.0)
-        threshold = duplicate_rate_threshold_for_raw(max_duplicate_rate, time_scale)
+        threshold = max_duplicate_rate
         # total_record_secではなくcontent_end_secを使う。短いリプレイでは終了検知の
         # 確認待ち(_CONFIRMATION_TAIL_POLL_COUNT_BY_DETECTION_METHOD)で録画に付加される
         # 静止画面(選択画面等)が固定30秒窓の大半を占め、閾値超過と誤判定する
@@ -852,7 +836,7 @@ def _record_with_retry(config, replay_path, output_path, *,
         dup_rate = measure_duplicate_rate(output_path, 15, min(30, max(5, content_end_sec - 15)))
         log(
             f"録画開始15秒以降の重複フレーム率: {dup_rate}% "
-            f"(閾値{threshold:.1f}% = 等倍換算{max_duplicate_rate}%、time_scale={time_scale})"
+            f"(閾値{threshold:.1f}%、time_scale={time_scale})"
         )
         if dup_rate is not None and dup_rate > threshold:
             log(f"WARNING: 重複フレーム率({dup_rate}%)が閾値({threshold:.1f}%)を超えました。破棄してリトライします")

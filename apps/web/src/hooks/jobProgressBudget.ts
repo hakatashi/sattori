@@ -1,4 +1,4 @@
-import { recordingWallClockScale, recordingWallClockSeconds } from "@sattori/shared";
+import { recordingWallClockSeconds } from "@sattori/shared";
 import type { GetJobResponse } from "@sattori/shared";
 
 /**
@@ -38,13 +38,13 @@ export const PHASE_OVERRUN_FACTOR = 1.5;
 
 export interface PhaseBudgets {
   launching: number;
-  /** 録画フェーズの悲観バジェット(秒、**実時間**)。低速録画なら等倍の2倍になる。 */
+  /** 録画フェーズの悲観バジェット(秒、**実時間**)。倍速録画なら等倍より短くなる。 */
   recording: number;
   /**
    * 録画されるコンテンツの長さ(秒) = リプレイの再生時間。ワーカーが報告する進捗
    * (`GetJobResponse.progress`)は**実時間ではなくコンテンツ秒数**なので、
    * `recording`(実時間)と直接比べてはいけない。両者を突き合わせる箇所は
-   * この値を分母／換算係数として使う。低速録画かどうかに依らず一定。
+   * この値を分母／換算係数として使う。録画速度に依らず一定。
    */
   recordingContent: number;
   converting: number;
@@ -63,14 +63,10 @@ export interface PhaseBudgets {
  * 計算する。
  *
  * recording はリプレイを再生しながら録画するので、通常はリプレイの再生時間そのもの
- * (等倍)に `recordingScale`(`recordingScaleForJob()`)を掛ける。低速録画(Issue #68)では
- * ゲームを1/2倍速で走らせるため実時間で `SLOW_MOTION_TIME_SCALE` 倍、倍速録画
- * (Issue #288)では約1/N倍になる。**これを織り込まないと、
- * th20の低速録画は録画フェーズの途中でバジェットを使い切り、「残り約○分」が消えた上に
- * `isPhaseOverrun()` がリトライ疑いを誤検知する**(悲観バジェットの1.5倍＝等倍換算
- * 1.5倍を、2倍かかる録画は必ず超えるため)。
+ * (等倍)に `recordingScale`(`recordingScaleForJob()`)を掛ける。倍速録画
+ * (Issue #288)では約1/N倍になる。**これを織り込まないと、残り時間を過大に出し続ける**。
  *
- * converting は録画結果(等倍に戻した後の動画)に対する処理なので、低速・倍速録画でも
+ * converting は録画結果(等倍に戻した後の動画)に対する処理なので、倍速録画でも
  * 尺は変わらない——スケールしてはいけない。最悪ケースでも MIN_CONVERTING_RATE 倍速
  * (recordingの1/3の長さ)で終わることを仮定する。
  *
@@ -100,13 +96,10 @@ export function computePhaseBudgets(
 
 /**
  * 録画フェーズの実時間が、リプレイの尺(等倍の秒数)の何倍かかるか。等倍なら1、
- * 低速録画なら2、倍速録画なら約1.05/N(`recordingWallClockSeconds()`、ロード区間など
+ * 倍速録画なら約1.05/N(`recordingWallClockSeconds()`、ロード区間など
  * 実時間で進む部分のぶん理想値の1/Nより少し長い)。
  */
-export function recordingScaleForJob(job: Pick<GetJobResponse, "slowMotion" | "recordingSpeed">): number {
-  if (job.slowMotion) {
-    return recordingWallClockScale(true);
-  }
+export function recordingScaleForJob(job: Pick<GetJobResponse, "recordingSpeed">): number {
   return recordingWallClockSeconds(1, job.recordingSpeed);
 }
 

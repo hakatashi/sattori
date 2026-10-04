@@ -8,7 +8,7 @@
 モジュール構成(責務ごとに分割してある、Issue #201):
 
   config     GameConfig とその既定値の導出
-  timing     録画速度(倍速録画 Issue #288・低速録画 Issue #68)の実時間スケーリング
+  timing     倍速録画(Issue #288)の実時間スケーリング
   instance   Xvfb・instance ディレクトリ・注入コマンドの準備
   process    ゲームプロセスの探索・thprac のアタッチ・Wine の後片付け
   window     ウィンドウ検出とクロップ座標の確定

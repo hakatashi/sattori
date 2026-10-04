@@ -176,14 +176,12 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   ——自宅マシンの停電・回線断はAWS側から一切観測できず、これが無いとジョブが
   タスクタイムアウト（150分）まで「録画中」で固まる。EC2ワーカーにとっても
   ハング時の失敗検知が150分→15分に縮まる。
-  **タスクタイムアウトが150分なのは低速録画（Issue #68）に合わせているため**。
-  録画自体のタイムアウト（`worker/recording/pipeline.py`の`TIMEOUT_SEC`）は等倍で60分だが、
-  低速録画ではゲーム進行が半分の速度になるぶん同じ比率で伸びて120分になる。これは
-  ジョブごとに変えられないフェイルセーフなので、最も長くなるケースに合わせて
-  120 + 30（変換・アップロードの余裕）= 150分にしてある。等倍のジョブがこれで不利に
-  なることはない——実際の死活監視はハートビート（15分）が担っており、ワーカーが
-  黙ればそちらが先に発火する。自宅デーモンの`HOME_WORKER_DRAIN_TIMEOUT_SEC`も
-  同じ150分に揃えてある（`home-worker/README.md`）。**ハートビートを送らない古いワーカー
+  **タスクタイムアウトが150分なのは、廃止した低速録画（Issue #68、録画が最大120分）の
+  旧ジョブが走っている間の影響を避けるため据え置いているだけ**。現在の録画自体のタイムアウト
+  （`worker/recording/pipeline.py`の`TIMEOUT_SEC`）は等倍で60分（倍速録画ではさらに短い）。
+  実際の死活監視はハートビート（15分）が担っており、ワーカーが黙ればそちらが先に発火する。
+  自宅デーモンの`HOME_WORKER_DRAIN_TIMEOUT_SEC`も同じ150分に揃えてある
+  （`home-worker/README.md`）。**ハートビートを送らない古いワーカー
   イメージがECRに残っていると全ジョブが15分でタイムアウトするため、
   ワーカーイメージのpushを`cdk deploy`より先に行うこと**（下記デプロイ手順）。
 - **IAM**: ワーカーロール（ECR pull / S3 / DynamoDB / ログ送出 /
@@ -228,7 +226,7 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   ストリーム名で書き込む。重複フレーム診断のため失敗時も残す。
 - **Lambda**（`NodejsFunction`、CJS出力。ESM出力だとAWS SDK内部の動的
   `require("node:https")`がLambda(ESM)で失敗するため）× 25: createUpload /
-  parseReplay / requestMagicLink / startJob / getJob / getWorkerAvailability /
+  parseReplay / requestMagicLink / startJob / getJob /
   recordAnalyticsEvent / sendCompletionEmail / sfn.launch / sfn.handleFailure /
   sfn.acquireGpuSlot / sfn.releaseGpuSlot（Issue #270）/
   sweepOrphanInstances / sweepStalledJobs（Issue #132）/ admin.authorizer /

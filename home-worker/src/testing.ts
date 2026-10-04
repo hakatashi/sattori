@@ -14,7 +14,6 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     workerId: "home-1",
     roleArn: null,
     maxConcurrency: 2,
-    capabilities: [],
     supportedGames: ["th06", "th07"],
     pollIntervalSec: 3,
     loadThreshold: 0.7,

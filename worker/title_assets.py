@@ -31,7 +31,7 @@ import time
 REPO = "/app"
 DOWNLOAD_DIR = "/tmp"
 
-# 古い世代ディレクトリを削除するまでの猶予。低速録画(Issue #68)込みの最大所要時間
+# 古い世代ディレクトリを削除するまでの猶予。倍速・GPU待ち込みの最大所要時間
 # (home-worker/README.md §4.1 の `HOME_WORKER_DRAIN_TIMEOUT_SEC` 既定150分)より
 # 十分大きく取ることで、削除時点でその世代を参照中のジョブが実行中である可能性を
 # 実務上排除する。

@@ -1,23 +1,18 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import {
-  defaultSlowMotionFor,
   EMAIL_PATTERN,
   estimateRecordingCompletionSeconds,
   GAME_TITLES,
   isFasterThanRecommended,
-  isSpeedupRecording,
   isSupportedGame,
   parseReplayInfo,
   RECORDING_SPEEDS,
   recommendedRecordingSpeed,
   requiresGpuRecording,
-  SLOW_MOTION_CAPABILITY,
   SUPPORTED_GAME_IDS,
-  supportsEc2SlowMotion,
   supportsHighResolutionRecording,
-  supportsSlowMotion,
   supportsTh10BugfixMarisaB,
   type GameId,
   type RecordingSpeed,
@@ -25,7 +20,6 @@ import {
 import { trackParseError } from "../api/analytics.ts";
 import {
   createUpload,
-  getWorkerAvailability,
   requestMagicLink,
   SattoriApiError,
   uploadReplay,
@@ -33,7 +27,6 @@ import {
 import { translateApiErrorMessage, translateUnsupportedGameMessage } from "../i18n/apiErrors.ts";
 import { useLocale } from "../i18n/LocaleContext.ts";
 import { toLocalizedPath } from "../i18n/paths.ts";
-import { isRecordingSpeedSelectable } from "../recordingSpeedRollout.ts";
 import { MagicLinkSent } from "./MagicLinkSent.tsx";
 import { ReplayPreview } from "./ReplayPreview.tsx";
 import { useUploadFormState } from "./UploadFormStateContext.ts";
@@ -81,9 +74,8 @@ export function UploadForm() {
   /**
    * STEP1〜3の入力・解析結果は`Layout`直下（`App.tsx`）で保持する。`/replay-help`や
    * `/terms`へのリンクで離脱してブラウザの「戻る」で戻ってきても消えないようにする
-   * ため（`UploadFormStateContext.ts`）。`dragging`・`errorMessage`・
-   * `slowMotionAvailable`は一時的なUI状態／マウントの度に取り直す情報なのでここでは
-   * 対象外——ローカルの`useState`のままにする。
+   * ため（`UploadFormStateContext.ts`）。`dragging`・`errorMessage`は
+   * 一時的なUI状態なのでここでは対象外——ローカルの`useState`のままにする。
    */
   const {
     file,
@@ -98,10 +90,6 @@ export function UploadForm() {
     setEmail,
     phase,
     setPhase,
-    slowMotionTouched,
-    setSlowMotionTouched,
-    slowMotion,
-    setSlowMotion,
     th10BugfixMarisaB,
     setTh10BugfixMarisaB,
     th06ncHighResolution,
@@ -111,41 +99,12 @@ export function UploadForm() {
   } = useUploadFormState();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  /**
-   * 低速録画（Issue #68）が今選べるか。自宅ワーカー（Issue #49）が
-   * `slow-motion-recording` を宣言して空いているときだけ true になる。
-   * 取得に失敗した場合も false のまま——選択肢を出しておいて実際には等倍で
-   * 録画される、という食い違いを避け、安全側（グレーアウト）に倒す。
-   */
-  const [slowMotionAvailable, setSlowMotionAvailable] = useState(false);
-
   const busy = phase !== "idle" && phase !== "ready";
   const emailValid = EMAIL_PATTERN.test(email);
   const game = preview?.game ?? null;
-  // 低速録画に対応したタイトルか（Issue #101）。非対応タイトルで要求すると、ゲームは
-  // 等倍で動くのに後処理だけが等倍化を行って2倍速の動画が出来上がるため、可否とは
-  // 別にここで塞ぐ。タイトル未確定（解析前）も非対応として扱う。
-  const slowMotionSupported = supportsSlowMotion(game);
-  const ec2SlowMotionSupported = supportsEc2SlowMotion(game);
-  // 低速録画は「対応タイトル」かつ「自宅ワーカーまたはEC2で利用可能」な場合に有効（Issue #245）。
-  // 可否が変わった／別タイトルのリプレイに差し替えられた場合に、実際に送信される値が
-  // 取り残されないよう、「チェック状態」ではなくこの導出値を唯一の真実として扱う。
-  const isSlowMotionAvailable = slowMotionAvailable || ec2SlowMotionSupported;
-  const slowMotionSelectable = isSlowMotionAvailable && slowMotionSupported;
-  const slowMotionChecked = slowMotionSelectable && slowMotion;
-  // 選べない理由はユーザーから見て意味が違う（タイトル側の未対応は待っても変わらないが、
-  // ワーカーの混雑は時間をおけば変わる）ので区別して出す。タイトルが未確定の間は
-  // 「まだリプレイを選んでいない」だけなので、非対応とは言わない。
-  const slowMotionHint =
-    preview && !slowMotionSupported
-      ? t("uploadForm.slowMotionUnsupportedGame")
-      : isSlowMotionAvailable
-        ? t("uploadForm.slowMotionHintLine2")
-        : t("uploadForm.slowMotionUnavailable");
-
   // th10「バグマリ」修正オプション(Issue #75)。バグの発生条件(魔理沙Bのショット
-  // 火力パワー3依存)自体が対象を規定するため、低速録画と異なりワーカーの空き状況には
-  // 依存しない——「th10かつ魔理沙B」の組み合わせだけで選択可否が決まる。
+  // 火力パワー3依存)自体が対象を規定するため、「th10かつ魔理沙B」の組み合わせだけで
+  // 選択可否が決まる。
   const th10BugfixMarisaBSelectable = supportsTh10BugfixMarisaB(
     preview?.game ?? null,
     preview?.character ?? null,
@@ -156,56 +115,21 @@ export function UploadForm() {
   const th06ncHighResolutionSelectable = supportsHighResolutionRecording(preview?.game ?? null);
   const th06ncHighResolutionChecked = th06ncHighResolutionSelectable && th06ncHighResolution;
 
-  // 録画速度(Issue #288、倍速録画)。公開済みのタイトル(`recordingSpeedRollout.ts`)でだけ選べ、
-  // それ以外は等倍。未選択ならタイトル(とth06ncの解像度)ごとの「おすすめ」に従う——
+  // 録画速度(Issue #288、倍速録画)。全タイトルで選べる。未選択ならタイトル(とth06ncの解像度)ごとの「おすすめ」に従う——
   // 解像度を切り替えたときにおすすめへ追従させるため、おすすめ自体は値として保持しない。
-  const recordingSpeedSelectable = isRecordingSpeedSelectable(game);
   const recommendedSpeed: RecordingSpeed =
     game !== null
       ? recommendedRecordingSpeed(game, { th06ncHighResolution: th06ncHighResolutionChecked })
       : 1;
-  const recordingSpeed: RecordingSpeed = recordingSpeedSelectable
-    ? (recordingSpeedChoice ?? recommendedSpeed)
-    : 1;
-  const recordingSpeedHint = !preview
-    ? t("uploadForm.recordingSpeedSelectReplayFirst")
-    : recordingSpeedSelectable
-      ? t("uploadForm.recordingSpeedHint")
-      : t("uploadForm.recordingSpeedUnsupportedGame");
+  const recordingSpeed: RecordingSpeed = recordingSpeedChoice ?? recommendedSpeed;
+  const recordingSpeedHint = preview
+    ? t("uploadForm.recordingSpeedHint")
+    : t("uploadForm.recordingSpeedSelectReplayFirst");
   const recordingSpeedTooFast =
     game !== null &&
-    recordingSpeedSelectable &&
     isFasterThanRecommended(game, recordingSpeed, {
       th06ncHighResolution: th06ncHighResolutionChecked,
     });
-
-  // 自宅ワーカーの空き状況はページ表示時に1回だけ取得する。実際に録画が始まるのは
-  // ユーザーがマジックリンクを開いた後（最大24時間後）で、その時点の可否とは
-  // どのみち一致しないため、ポーリングして精度を上げても意味がない。
-  useEffect(() => {
-    let cancelled = false;
-    getWorkerAvailability()
-      .then((availability) => {
-        if (!cancelled) {
-          setSlowMotionAvailable(
-            availability.available && availability.capabilities.includes(SLOW_MOTION_CAPABILITY),
-          );
-        }
-      })
-      .catch(() => {
-        // 低速録画が選べないだけで、アップロード自体は問題なく続けられる。
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // タイトルが確定した（＝リプレイを解析できた）時点で、そのタイトルの既定へ寄せる。
-  useEffect(() => {
-    if (!slowMotionTouched) {
-      setSlowMotion(defaultSlowMotionFor(preview?.game ?? null, slowMotionAvailable));
-    }
-  }, [preview?.game, slowMotionAvailable, slowMotionTouched]);
 
   function selectFile(selected: File | null) {
     setErrorMessage(null);
@@ -325,8 +249,6 @@ export function UploadForm() {
         replayKey,
         {
           watermark,
-          // 倍速録画とは排他(サーバー側も倍速を優先する)。
-          slowMotion: slowMotionChecked && !isSpeedupRecording(recordingSpeed),
           th10BugfixMarisaB: th10BugfixMarisaBChecked,
           th06ncHighResolution: th06ncHighResolutionChecked,
           recordingSpeed,
@@ -463,8 +385,6 @@ export function UploadForm() {
           汚染されたリプレイは再生側では原理的に修復できないため、「プレイ時にthpracを
           入れる」という案内はサーバー側の対策では代替できない（詳細は
           `apps/web/docs/upload-form.md`「ワーカーがthpracを適用した後もこの注意書きを残す理由」）。
-        - 等倍録画では品質が落ちる: 低速録画（Issue #68）が使えないときのみ該当するため、
-          自宅ワーカーが空いていて低速録画が選べる状態なら出さない。
       */}
       {preview?.game === "th20" && (
         <div className={styles.notice} role="note">
@@ -477,10 +397,6 @@ export function UploadForm() {
                   <a key="thprac" href="https://github.com/touhouworldcup/thprac" target="_blank" rel="noopener noreferrer"/>
                 ]}
               />
-            </li>
-            <li>
-              {t("uploadForm.th20NoticeFrameDrop")}
-              {!slowMotionChecked && t("uploadForm.th20NoticeNormalSpeed")}
             </li>
           </ul>
         </div>
@@ -519,19 +435,18 @@ export function UploadForm() {
         </label>
         {/*
           録画速度（Issue #288、倍速録画）。ゲームを内部的にN倍速で動かして録画し、後処理で
-          元の速度へ戻す。公開済みのタイトル（`recordingSpeedRollout.ts`）でだけ選べ、既定は
-          タイトルごとのおすすめ。選択肢ごとに推定完了時間を添え、おすすめより速い速度を
+          元の速度へ戻す。既定はタイトルごとのおすすめ。選択肢ごとに推定完了時間を添え、おすすめより速い速度を
           選んだら品質低下の可能性を警告する（止めはしない）。
         */}
         <fieldset
-          className={clsx(styles.speedFieldset, !recordingSpeedSelectable && styles.optionDisabled)}
-          disabled={busy || !recordingSpeedSelectable}
+          className={styles.speedFieldset}
+          disabled={busy}
         >
           <legend className={styles.speedLegend}>{t("uploadForm.recordingSpeedOption")}</legend>
           <div className={styles.speedOptions}>
             {RECORDING_SPEEDS.map((speed) => {
               const minutes =
-                game !== null && recordingSpeedSelectable
+                game !== null
                   ? estimatedCompletionMinutes(game, preview?.estimatedDurationSeconds, speed)
                   : null;
               return (
@@ -549,7 +464,7 @@ export function UploadForm() {
                   <span className={styles.speedName}>
                     {t("uploadForm.recordingSpeedValue", { speed })}
                   </span>
-                  {recordingSpeedSelectable && speed === recommendedSpeed && (
+                  {game !== null && speed === recommendedSpeed && (
                     <span className={styles.speedRecommended}>
                       {t("uploadForm.recordingSpeedRecommended")}
                     </span>
@@ -572,32 +487,6 @@ export function UploadForm() {
             </p>
           )}
         </fieldset>
-        {/*
-          低速録画（Issue #68）。ゲームを1/2倍速で動かして録画し、後処理で等倍へ戻す。
-          録画に実時間で倍かかるためEC2では行わず、電気代しかかからない自宅ワーカー
-          （Issue #49）が空いているときにだけ選べる。使えない間はグレーアウトし、
-          その理由をヒントに出す（黙って消すと「前は在ったのに」と混乱するため）。
-        */}
-        <label
-          className={clsx(styles.option, !slowMotionSelectable && styles.optionDisabled)}
-        >
-          <input
-            type="checkbox"
-            checked={slowMotionChecked}
-            onChange={(e) => {
-              setSlowMotionTouched(true);
-              setSlowMotion(e.target.checked);
-            }}
-            disabled={busy || !slowMotionSelectable}
-          />
-          <span>
-            {t("uploadForm.slowMotionOption")}
-            <small className={styles.optionHint}>
-              {t("uploadForm.slowMotionHintLine1")}<br/>
-              <span className={styles.slowMotionHint}>{slowMotionHint}</span>
-            </small>
-          </span>
-        </label>
         {/*
           th10「バグマリ」修正オプション(Issue #75)。VsyncPatchの`BugFixTh10Power3`は
           記録リプレイと再生時で設定が食い違うとリプレイずれ(デシンク)を起こすが、

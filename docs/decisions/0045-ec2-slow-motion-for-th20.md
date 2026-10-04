@@ -1,6 +1,6 @@
 # 0045. EC2環境でのth20低速録画を有効化し、対応タイトルをコード内定数で管理する
 
-- **状態**: 有効
+- **状態**: [`0058`](0058-speedup-recording-on-gpu-instances.md) によって置き換え済み（th20 は GPU 必須タイトルになり低速録画は廃止）
 - **決定日**: 2026-09-11
 - **対象**: packages/shared / apps/api / apps/web / docs
 - **関連**: Issue #245、PR #246、`docs/decisions/0010-slow-motion-no-worker-side-branching.md`、
