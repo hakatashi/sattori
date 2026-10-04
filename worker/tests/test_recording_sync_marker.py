@@ -119,3 +119,22 @@ def test_trigger_waits_until_the_game_audio_stream_is_flowing(tmp_path, monkeypa
     flowing["value"] = True
     pending.join(1.0)
     assert (tmp_path / "sync_marker.trigger").exists()
+
+
+def test_trigger_waits_until_the_game_window_is_stable(tmp_path, monkeypatch):
+    """ゲームの初期化中(th08はウィンドウを作り直す)に鳴らすと、マーカーの再生もゲームも
+    止まることがあった。"""
+    monkeypatch.setattr(sync_marker.pulse, "sink_has_playing_input", lambda sink: True)
+    monkeypatch.setattr(sync_marker, "STREAM_SETTLE_SEC", 0.0)
+    config = _SinkConfig(str(tmp_path))
+    config.log_path = str(tmp_path / "mod.log")
+    (tmp_path / "mod.log").write_text("[12:00:00.000] WaitForStableWindow: window appeared\n")
+
+    pending = sync_marker.schedule_trigger(config, delay=0.0, log=lambda msg: None)
+    pending.join(0.3)
+    assert not (tmp_path / "sync_marker.trigger").exists()
+
+    with open(tmp_path / "mod.log", "a") as f:
+        f.write("[12:00:01.000] WaitForStableWindow: stable after 800 ms total\n")
+    pending.join(1.0)
+    assert (tmp_path / "sync_marker.trigger").exists()

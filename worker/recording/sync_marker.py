@@ -36,9 +36,15 @@ TRIGGER_DELAY_SEC = 2.0
 # 音声の録音はゲームの起動直後に始める(`pipeline._start_audio_capture()`)ので、ゲームが
 # DirectSoundを作った直後にマーカーを鳴らすと、Wineの出力がまだPulseAudioへ流れておらず
 # 録音に入らないことがある(th08の等倍で検出に失敗した)。
-STREAM_SETTLE_SEC = 0.5
-# ゲームの音声ストリームを待つ上限。超えたらそのままトリガーを置く(録画は止めない)。
+STREAM_SETTLE_SEC = 0.2
+# ゲームの初期化(ウィンドウの安定)・音声ストリームを待つ上限。超えたらそのままトリガーを置く
+# (録画は止めない)。
 STREAM_WAIT_TIMEOUT_SEC = 30.0
+# MODがウィンドウの安定を報告する行(`mods/common/window_wait.cpp`)。これより前にマーカーを
+# 鳴らすと、ゲームの初期化(th08はウィンドウを作り直す)と干渉して、マーカーの再生もゲームも
+# 止まることがある(th08の等倍で、マーカー用のバッファ作成から戻らずウィンドウの安定待ちが
+# タイムアウトした)。
+GAME_READY_LOG = "WaitForStableWindow: stable"
 # マーカーを探す範囲(音声ファイル先頭からの秒数)。マーカーはゲームの進行速度(倍速)によらず録画開始の約TRIGGER_DELAY_SEC秒後に実時間で鳴る。PHATは探索範囲の
 # 全体でスペクトルを平坦化するので、範囲を広げるほどピーク比は下がる(th15の実録画で
 # 振幅64のとき 5秒=37、10秒=20、30秒=13、reports/88)。
@@ -70,7 +76,8 @@ _pending_triggers = {}
 
 
 class _PendingTrigger(threading.Thread):
-    """`delay`秒待ち、ゲームの音声ストリームが流れ始めるのを待ってからトリガーを置くスレッド。"""
+    """`delay`秒待ち、ゲームの初期化(ウィンドウの安定)と音声ストリームの開始を待ってから
+    トリガーを置くスレッド。"""
 
     def __init__(self, config, delay, log):
         super().__init__(daemon=True)
@@ -82,21 +89,33 @@ class _PendingTrigger(threading.Thread):
     def cancel(self):
         self._cancelled.set()
 
+    def _game_ready(self):
+        log_path = getattr(self._config, "log_path", None)
+        if not log_path:
+            return True
+        try:
+            with open(log_path, errors="replace") as f:
+                return GAME_READY_LOG in f.read()
+        except OSError:
+            return False
+
+    def _stream_playing(self):
+        sink = getattr(self._config, "pulse_sink", None)
+        return not sink or pulse.sink_has_playing_input(sink)
+
     def run(self):
         if self._cancelled.wait(self._delay):
             return
-        sink = getattr(self._config, "pulse_sink", None)
-        if sink:
-            deadline = time.monotonic() + STREAM_WAIT_TIMEOUT_SEC
-            while not pulse.sink_has_playing_input(sink):
-                if time.monotonic() > deadline:
-                    self._log("WARNING: ゲームの音声ストリームが見つからないまま同期マーカーのトリガーを設置します")
-                    break
-                if self._cancelled.wait(0.1):
-                    return
-            else:
-                if self._cancelled.wait(STREAM_SETTLE_SEC):
-                    return
+        deadline = time.monotonic() + STREAM_WAIT_TIMEOUT_SEC
+        while not (self._game_ready() and self._stream_playing()):
+            if time.monotonic() > deadline:
+                self._log("WARNING: ゲームの初期化・音声ストリームを確認できないまま同期マーカーのトリガーを設置します")
+                break
+            if self._cancelled.wait(0.1):
+                return
+        else:
+            if self._cancelled.wait(STREAM_SETTLE_SEC):
+                return
         if self._cancelled.is_set():
             return
         try:
@@ -120,8 +139,9 @@ def clear_trigger(config):
 
 
 def schedule_trigger(config, delay=TRIGGER_DELAY_SEC, log=print):
-    """録音開始後、`delay`秒たち、かつゲームの音声ストリームがジョブ専用シンク
-    (`config.pulse_sink`)で流れ始めてからトリガーファイルを置く(非同期)。"""
+    """録音開始後、`delay`秒たち、MODがウィンドウの安定を報告し(`GAME_READY_LOG`)、かつ
+    ゲームの音声ストリームがジョブ専用シンク(`config.pulse_sink`)で流れ始めてから
+    トリガーファイルを置く(非同期)。"""
     pending = _PendingTrigger(config, delay, log)
     _pending_triggers[config.instance_dir] = pending
     pending.start()

@@ -73,3 +73,24 @@ def test_does_not_cut_when_the_video_start_is_unknown(monkeypatch):
     _stub(monkeypatch, v_start=None)
 
     assert _compute() == {"startSec": None, "endSec": None}
+
+
+def test_starts_after_the_sync_marker_when_it_overlaps(monkeypatch):
+    # マーカー(1001.0から2.97秒)の鳴り終わり+余裕0.3秒=映像の4.27秒が、本来の開始(4.0秒)より後ろ。
+    _stub(monkeypatch)
+    monkeypatch.setattr(cut.sync_marker, "parse_marker_log", lambda path, log=print: {
+        "epoch": 1001.0, "samples": 131072, "rate": 44100,
+    })
+
+    start = _compute()["startSec"]
+
+    assert abs(start - (1.0 + 131072 / 44100 + cut.MARKER_TAIL_MARGIN_SEC)) < 1e-9
+
+
+def test_keeps_the_lead_when_the_sync_marker_ended_earlier(monkeypatch):
+    _stub(monkeypatch)
+    monkeypatch.setattr(cut.sync_marker, "parse_marker_log", lambda path, log=print: {
+        "epoch": 999.0, "samples": 131072, "rate": 176400,
+    })
+
+    assert _compute()["startSec"] == 4.0
