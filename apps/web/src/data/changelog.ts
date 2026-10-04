@@ -30,6 +30,12 @@ export const changelogEntries: ChangelogEntry[] = [
   },
   {
     date: "2026-10-04",
+    ja: "高速録画で、動画の冒頭が数秒間止まって見える・リプレイの最初が欠けることがある問題を修正",
+    en: "Fixed an issue where, with high-speed recording, the beginning of the video could appear frozen for a few seconds or the start of the replay could be missing",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/302",
+  },
+  {
+    date: "2026-10-04",
     ja: "ブラウザで動画を先頭から再生したときに、音声が映像より先行して聞こえることがある問題を修正",
     en: "Fixed an issue where audio could play ahead of the video when playing from the beginning in some browsers",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/301",
