@@ -38,10 +38,10 @@ def test_build_video_ffmpeg_cmd_with_side_stream_adds_split_filter():
 def test_build_video_ffmpeg_cmd_without_side_stream_matches_legacy_command():
     # side_stream_path未指定時は既存9タイトルのコマンド文字列と完全一致すること
     # (Issue #241対応による回帰が無いことの確認。`-nostdin`はSIGTTIN対策で
-    # 2026-09-15に追加した分だけ差分がある、recording/ffmpeg.pyのモジュール
-    # docstring参照)。
+    # 2026-09-15に追加した分と、`-thread_queue_size`(Issue #302)の分だけ差分がある、
+    # recording/ffmpeg.pyのモジュールdocstring参照)。
     config = make_config()
-    legacy = ["ffmpeg", "-y", "-nostdin", "-copyts",
+    legacy = ["ffmpeg", "-y", "-nostdin", "-copyts", "-thread_queue_size", "240",
               "-f", "x11grab", "-draw_mouse", "0", "-video_size", "640x480", "-framerate", "60",
               "-i", f"{config.display}+0,0",
               "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
@@ -179,6 +179,16 @@ def test_build_video_ffmpeg_cmd_captures_at_the_games_frame_rate_for_speedup():
     assert cmd[cmd.index("-framerate") + 1] == "120"
     # 60fps超でcfr変換させるとタイムスタンプが壊れる(touhou-recorder reports/85)。
     assert cmd[cmd.index("-vsync") + 1] == "0"
+
+
+def test_build_video_ffmpeg_cmd_queues_capture_frames_while_the_output_is_busy():
+    """出力側(NVENCの初期化等)が詰まってもx11grabを止めない(Issue #302)。キューは
+    キャプチャのフレームレートで4秒ぶん。入力オプションなので`-i`より前に置く。"""
+    config = make_config()
+    cmd = ffmpeg.build_video_ffmpeg_cmd(config, 0, 0, 640, 480, "out.video.mp4", time_scale=0.25)
+
+    assert cmd[cmd.index("-thread_queue_size") + 1] == "960"
+    assert cmd.index("-thread_queue_size") < cmd.index("-f") < cmd.index("-i")
 
 
 def test_build_video_ffmpeg_cmd_keeps_60fps_without_vsync_at_native_speed():

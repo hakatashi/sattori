@@ -158,3 +158,37 @@ def test_pactl_forces_the_c_locale(monkeypatch):
     pulse.find_null_sink_modules("sattori_job_abc")
 
     assert seen["env"]["LC_ALL"] == "C"
+
+
+_SINKS = "0\tauto_null\tmodule-null-sink.c\ts16le 2ch 44100Hz\tIDLE\n7\tsattori_job_x\tmodule-null-sink.c\ts16le 2ch 44100Hz\tRUNNING\n"
+
+
+def _sink_inputs(sink, corked):
+    return (
+        "Sink Input #12\n\tDriver: protocol-native.c\n\tOwner Module: 9\n\tClient: 3\n"
+        f"\tSink: {sink}\n\tSample Specification: s16le 2ch 44100Hz\n\tCorked: {corked}\n\tMute: no\n"
+    )
+
+
+def _fake_pactl(monkeypatch, inputs):
+    def fake(args):
+        out = _SINKS if args[:3] == ["list", "short", "sinks"] else inputs
+        return type("R", (), {"returncode": 0, "stdout": out})()
+    monkeypatch.setattr(pulse, "_pactl", fake)
+
+
+def test_sink_has_playing_input_when_the_game_stream_is_flowing(monkeypatch):
+    _fake_pactl(monkeypatch, _sink_inputs(7, "no"))
+
+    assert pulse.sink_has_playing_input("sattori_job_x") is True
+
+
+def test_sink_has_no_playing_input_while_the_stream_is_corked_or_elsewhere(monkeypatch):
+    _fake_pactl(monkeypatch, _sink_inputs(7, "yes"))
+    assert pulse.sink_has_playing_input("sattori_job_x") is False
+
+    _fake_pactl(monkeypatch, _sink_inputs(0, "no"))
+    assert pulse.sink_has_playing_input("sattori_job_x") is False
+
+    _fake_pactl(monkeypatch, "")
+    assert pulse.sink_has_playing_input("missing_sink") is False

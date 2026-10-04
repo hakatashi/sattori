@@ -75,3 +75,18 @@ def write_timeout_result(path, timed_out):
     with open(tmp_path, "w") as f:
         json.dump({"timedOut": timed_out}, f)
     os.replace(tmp_path, path)
+
+
+def write_cut_result(path, cut):
+    """配信版でカットする範囲(Issue #266、`recording/cut.py`)をJSONへ書き出す。
+
+    `cut`は`{"startSec": float|None, "endSec": float|None}`(秒は等倍へ戻す前の録画の時間軸)。
+    Noneなら両方Noneとして書く。write_desync_result()と同じファイル受け渡しの方式。
+    """
+    if not path:
+        return
+    cut = cut or {}
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w") as f:
+        json.dump({"startSec": cut.get("startSec"), "endSec": cut.get("endSec")}, f)
+    os.replace(tmp_path, path)

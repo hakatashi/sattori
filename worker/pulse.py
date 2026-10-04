@@ -65,6 +65,34 @@ def _pactl(args):
     return subprocess.run(["pactl", *args], capture_output=True, text=True, env=env)
 
 
+def sink_has_playing_input(sink_name):
+    """指定した sink へ、cork(一時停止)されていない再生ストリーム(sink-input)が
+    つながっているか。ゲーム(Wine)の音声出力が実際に流れ始めたかの判定に使う
+    (同期マーカーを鳴らすタイミング、`recording/sync_marker.py`)。pactlが失敗したらFalse。"""
+    sinks = _pactl(["list", "short", "sinks"])
+    if sinks.returncode != 0:
+        return False
+    index = None
+    for line in sinks.stdout.splitlines():
+        cols = line.split("\t")
+        if len(cols) >= 2 and cols[1] == sink_name:
+            index = cols[0]
+            break
+    if index is None:
+        return False
+    inputs = _pactl(["list", "sink-inputs"])
+    if inputs.returncode != 0:
+        return False
+    # `pactl list sink-inputs` はストリームごとに "Sink Input #N" で始まるブロックを出す。
+    for block in inputs.stdout.split("Sink Input #")[1:]:
+        fields = dict(
+            line.strip().split(": ", 1) for line in block.splitlines() if ": " in line
+        )
+        if fields.get("Sink") == index and fields.get("Corked") == "no":
+            return True
+    return False
+
+
 def find_null_sink_modules(sink_name):
     """指定した sink 名で読み込まれている module-null-sink のモジュールIDを列挙する。
 

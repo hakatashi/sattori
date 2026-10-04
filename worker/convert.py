@@ -1,27 +1,33 @@
 #!/usr/bin/env python3
 """録画結果を「ユーザーへ配信する1本」へ変換する後処理(Sattori ワーカー)。
 
-**録画後の再エンコードは、どのタイトル・どの録画速度でもこの1パスだけ**。次の3つを
+**録画後の再エンコードは、どのタイトル・どの録画速度でもこの1パスだけ**。次の4つを
 1つの ffmpeg 呼び出し(1回の filter_complex)にまとめてある:
 
-  1. 等倍への戻し(倍速録画 Issue #288): 映像のPTSを伸縮し、音声の
+  1. リプレイ再生区間外のカット(Issue #266): メニューの自動操作と、終了検知を確定させる
+     までの静止画面を落とす。範囲は録画側が決めて渡す(`recording/cut.py`)。
+  2. 等倍への戻し(倍速録画 Issue #288): 映像のPTSを伸縮し、音声の
      サンプルレートを逆比率で読み替える(テープの早回し・遅回しの逆)。旧低速録画(scale>1)の
      チェックポイントからの再開用に、scale>1の経路も残してある。速度・ピッチとも
      同じ比率で戻るので劣化なく復元できる(touhou-recorder reports/47・85)。
-  2. 解像度合わせ: **720pに満たない録画だけ引き上げる**。既に720p以上の録画
-     (th20の1280x960)はそのまま通す —— 後述。
-  3. ウォーターマークの合成: x11grab録画時ではなくここで行う。録画時は`-copyts`で
+  3. 解像度合わせ: **720p・1080pに満たない録画だけ、そのすぐ上へ引き上げる** —— 後述。
+  4. ウォーターマークの合成: x11grab録画時ではなくここで行う。録画時は`-copyts`で
      生ptsがwallclock(実epoch秒)のまま filtergraph に渡るため、ほぼ0起点の
      ウォーターマーク動画とフレーム同期が噛み合わず overlay が不発になる
      (本番のth08録画で発覚)。完成済みファイル入力同士のここでは正しく機能する。
 
-## なぜ720p「以上」にはしないのか
+あわせて、**映像・音声とも出力の0秒から始める**。音声の開始が映像より遅い録画(mux時の
+A/V同期補正で音声を後ろへずらしたもの)をそのまま出すと、MP4上では先頭の「空編集」(elst)に
+なり、ブラウザによっては先頭からの再生で無視されて音ズレする(Issue #301)。先頭を実際の
+無音で埋める(`aresample=first_pts=0`)。
 
-720p版が存在する理由は「th07(640x480)のような低解像度録画は、そのまま YouTube へ
-上げると60fpsとして認識されない」ことへの対策(reports/21)であり、**元から720p以上ある
-録画には当てはまらない**。th20は内部描画解像度が960p相当(1280x960)なので、高さ720pxへ
-「合わせる」と960x720への縮小になり、主要ダウンロード導線がユーザーをわざわざ低い
-解像度へ誘導してしまう。
+## 解像度の引き上げ先(720p・1080p)
+
+引き上げる理由は、YouTube が動画を決まった解像度の段(720p・1080p)で配信することにある。
+th07(640x480)のような低解像度録画は、そのままでは60fpsとして認識されない(reports/21)。
+th20(1280x960)のように段の間にある録画は**下の段(720p)へ縮小して配信される**(Issue #284)。
+そこで、高さが720px未満なら720pへ、720px超1080px未満なら1080pへ引き上げる。**ちょうど
+720p・1080pの録画(th06ncの1280x720・1920x1080)はそのまま通す**。
 
 出力解像度をアスペクト比を保って決めるのは共通で、「720pという呼称に引きずられて
 1280x720(16:9)へ固定すると4:3コンテンツが横方向だけ引き伸ばされて歪む」(reports/21)
@@ -31,12 +37,13 @@
 
 呼び出し側(`entrypoint.py`)は `needs_separate_raw_output()` で判断する:
 
-- **2本**(th06/07/08/11の等倍録画): 録画された生データがそのまま「元解像度版」として
-  通用するので、それを無加工でアップロードし、この変換の出力を「配信版」にする。
-  再エンコードは1回だけで済む。
-- **1本**(th20、および倍速録画): 生データを配信版と別に出す意味が無い(解像度が
-  同じでウォーターマークの有無しか違わない)か、そもそも生データが等倍の速度でないため
-  通用しない。この変換の出力だけを配信する。
+- **2本**(解像度が変わる等倍録画。640x480のタイトルとth15/th20): 配信版に加えて、元の解像度・
+  ウォーターマーク無しの版も出す。カットした結果でなければならないので、録画の生データを
+  そのまま出すのではなく、**同じ ffmpeg 呼び出しの2つ目の出力**として作る(デコードと
+  フィルタは1回で済む)。
+- **1本**(th06nc、および倍速録画): 元の解像度版を別に出す意味が無い(解像度が同じで
+  ウォーターマークの有無しか違わない)か、そもそも生データが等倍の速度でないため
+  通用しない。配信版だけを出す。
 
 ## GPUワーカーではNVENCでエンコードする
 
@@ -51,7 +58,8 @@ import json
 import subprocess
 import time
 
-TARGET_HEIGHT = 720
+# 解像度を引き上げる先の高さ(低い順)。モジュール docstring 参照。
+TARGET_HEIGHTS = (720, 1080)
 # on_progress コールバックを呼ぶ最小間隔(秒)。DynamoDBへの書き込み頻度を抑える。
 PROGRESS_REPORT_INTERVAL_SEC = 10.0
 # 倍速録画を等倍へ戻すときに出力へ固定するフレームレート。
@@ -142,11 +150,14 @@ def extract_poster_frame(input_path, output_path, *, position_ratio=POSTER_POSIT
 
 
 def delivery_resolution(width, height):
-    """配信版の解像度。720pに満たない録画だけアスペクト比を保って引き上げ、
-    既に720p以上ならそのまま返す(モジュール docstring 参照)。"""
-    if height >= TARGET_HEIGHT:
-        return width, height
-    return round(width * TARGET_HEIGHT / height / 2) * 2, TARGET_HEIGHT
+    """配信版の解像度。720p・1080pに満たない録画はアスペクト比を保ってそのすぐ上の段へ
+    引き上げ、どちらかちょうど、または1080pを超えるならそのまま返す(モジュール docstring 参照)。"""
+    for target_height in TARGET_HEIGHTS:
+        if height == target_height:
+            return width, height
+        if height < target_height:
+            return round(width * target_height / height / 2) * 2, target_height
+    return width, height
 
 
 def needs_separate_raw_output(width, height, time_scale=1.0):
@@ -154,10 +165,11 @@ def needs_separate_raw_output(width, height, time_scale=1.0):
 
     価値があるのは**解像度が実際に変わる等倍録画のときだけ**である。
 
-    - 倍速録画(`time_scale != 1.0`)の生データは等倍の速度でないので、そのままでは
-      ユーザーに渡せない。別途出すには等倍化の再エンコードがもう1回要るが、
-      得られるのは「配信版とウォーターマークの有無しか違わない動画」でしかない。
-    - 解像度が変わらない録画(th20)も同様に、2本目はウォーターマークの有無しか
+    - 倍速録画(`time_scale != 1.0`)は1本のまま。生データが等倍の速度でないため元から
+      「録画そのままの版」を出せず、2本目は等倍化した上でのエンコードがもう1本要る
+      (倍速録画の導入時からの判断。カット導入で等倍録画も2本目を作り直すようになったが、
+      倍速録画まで2本にするかは別途判断する)。
+    - 解像度が変わらない録画(th06nc)も同様に、2本目はウォーターマークの有無しか
       違わない。S3保管料とCloudFront転送量が倍になるだけで、ウォーターマークが
       不要なユーザーはページAの詳細設定でオフにできる。
     """
@@ -173,22 +185,52 @@ def _delivery_video_encoder_args(gpu_encode):
     return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"]
 
 
+def _trim_args(cut_start, cut_end):
+    args = []
+    if cut_start:
+        args.append(f"start={cut_start:.6f}")
+    if cut_end is not None:
+        args.append(f"end={cut_end:.6f}")
+    return ":".join(args)
+
+
 def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
                       watermark_path=None, watermark_width=428, audio_sample_rate=None,
-                      gpu_encode=False):
-    """変換1回ぶんの ffmpeg コマンドを組み立てる(実行はしない。テストしやすくするため)。"""
+                      gpu_encode=False, cut_start=None, cut_end=None, raw_output_path=None):
+    """変換1回ぶんの ffmpeg コマンドを組み立てる(実行はしない。テストしやすくするため)。
+
+    `cut_start`/`cut_end`は残す範囲(入力の時間軸の秒、Noneならその側はカットしない、
+    `recording/cut.py`)。`raw_output_path`を指定すると、元の解像度・ウォーターマーク無しの
+    版を2つ目の出力として同時に書き出す(モジュール docstring)。"""
     target_width, target_height = delivery_resolution(width, height)
+    trim = _trim_args(cut_start, cut_end)
+    origin = cut_start or 0.0
 
     video_filters = []
+    if trim:
+        video_filters.append(f"trim={trim}")
+    # 残す範囲の先頭を0秒にし、実時間がゲーム内時間の time_scale 倍かかっている録画を
+    # その逆数で伸縮する(scale>1は圧縮、倍速録画は引き伸ばし)。
+    pts = f"(PTS-{origin:.6f}/TB)" if origin else "PTS"
     if time_scale != 1.0:
-        # 実時間がゲーム内時間の time_scale 倍かかっている録画を、その逆数で伸縮する
-        # (scale>1は圧縮、倍速録画は引き伸ばし)。
-        video_filters.append(f"setpts={1.0 / time_scale}*PTS")
+        video_filters.append(f"setpts={1.0 / time_scale}*{pts}")
+    elif origin:
+        video_filters.append(f"setpts={pts}")
+    # 出力のフレームレートを固定する。倍速録画は60×倍率fpsで`-vsync 0`(可変フレーム
+    # レート)のまま撮っているので、PTSを引き伸ばしたうえでここで60fps固定に揃える
+    # (touhou-recorder reports/85・89)。旧低速録画(scale>1)は等倍と同じ`-framerate 60`で
+    # 撮っているため、素材は各フレームが time_scale 枚ずつ並んだ状態にある。PTSを圧縮した
+    # うえでここへ落とすと**重複がちょうど間引かれ**、等倍録画と同じ「60fps・全フレーム
+    # ユニーク」になる。等倍録画は元から60fpsなので実質何もしない。`start_time=0`で、
+    # 映像の先頭が0秒より後ろにある(mux時に映像を後ろへずらした)録画も0秒から始める
+    # (最初のフレームを複製して埋める、Issue #301)。
+    video_filters.append(f"fps={NATIVE_FRAME_RATE_HZ:g}:start_time=0")
+    if raw_output_path:
+        video_filters.append("split=2[vsrc][vraw];[vsrc]null")
     if (target_width, target_height) != (width, height):
         video_filters.append(f"scale={target_width}:{target_height}:flags=lanczos")
-    video_chain = ",".join(video_filters) if video_filters else "null"
 
-    graph = [f"[0:v]{video_chain}[base]"]
+    graph = [f"[0:v]{','.join(video_filters)}[base]"]
     if watermark_path:
         # ウォーターマーク幅は既定428pxでも、変換後の画面の半分より広くはしない
         # (狭いウィンドウで画面の大半を覆ってしまうのを防ぐ)。
@@ -198,55 +240,74 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
     else:
         graph.append("[base]null[v]")
 
-    if time_scale == 1.0:
-        # 等倍録画。音声は触る必要がないのでそのまま通す。
-        audio_maps = ["-map", "0:a"]
-        audio_codec = ["-c:a", "copy"]
-    elif audio_sample_rate:
-        # サンプルレートを読み替える(asetrate)ことで早回し・遅回しし、リサンプルする
-        # (aresample)。テープの早回しと同じ原理で、速度・ピッチとも同じ比率で戻る。
-        # 出力レートは等倍換算の低い方に揃える: scale>1は録音レート(44100Hz)のまま、
-        # 倍速録画は録音レート(2倍速なら88200Hz)を倍率で割った値(44100Hz)になる。
-        # 倍速録画の録音レートのまま出すと、中身は44100Hz相当なのにファイルだけ大きくなる。
-        asetrate = int(round(audio_sample_rate * time_scale))
-        output_rate = min(audio_sample_rate, asetrate)
-        graph.append(f"[0:a]asetrate={asetrate},aresample={output_rate}[a]")
-        audio_maps = ["-map", "[a]"]
-        audio_codec = ["-c:a", "aac", "-b:a", "192k"]
-    else:
-        # 等倍へ戻すのにサンプルレートが分からない場合は**音声を落とす**。
-        # `-c:a copy` で残すと、映像だけPTSが半分になった横で time_scale 倍の長さの
-        # 音声が丸ごと残り、冒頭からずれた・尺も倍の動画になる(呼び出し側が出す
-        # 「映像のみ等倍へ変換します」の警告とも食い違う)。無音の方が被害が小さい。
-        audio_maps = []
-        audio_codec = ["-an"]
+    # 音声の先頭が0秒より後ろにある(mux時のA/V同期補正で後ろへずらした)なら、そこまでを
+    # 実際の無音で埋める。埋めないとMP4上では先頭の空編集(elst)になり、ブラウザによっては
+    # 先頭からの再生で無視されて音ズレする(Issue #301)。
+    #
+    # **カットより先に埋めること**。録音した音声のパケットのpts(pulseの読み取り時刻)は
+    # 先頭からのサンプル数の積算と少しずつずれており、ptsで切る`atrim`を先に掛けると
+    # 切り口がずれる(th08の実録画で+26ms)。先に埋めると以降のptsはサンプル数の積算に
+    # なり、mux時の同期マーカー検証(`recording/sync_marker.py`)や再生時と同じ時間軸で切れる。
+    # 等倍化より前に置くのは、無音の長さも一緒に伸縮させるため。
+    audio_filters = ["aresample=first_pts=0"]
+    if trim:
+        audio_filters.append(f"atrim={trim}")
+    if origin:
+        audio_filters.append(f"asetpts=PTS-{origin:.6f}/TB")
+    has_audio = True
+    if time_scale != 1.0:
+        if audio_sample_rate:
+            # サンプルレートを読み替える(asetrate)ことで早回し・遅回しし、リサンプルする
+            # (aresample)。テープの早回しと同じ原理で、速度・ピッチとも同じ比率で戻る。
+            # 出力レートは等倍換算の低い方に揃える: scale>1は録音レート(44100Hz)のまま、
+            # 倍速録画は録音レート(2倍速なら88200Hz)を倍率で割った値(44100Hz)になる。
+            # 倍速録画の録音レートのまま出すと、中身は44100Hz相当なのにファイルだけ大きくなる。
+            asetrate = int(round(audio_sample_rate * time_scale))
+            output_rate = min(audio_sample_rate, asetrate)
+            audio_filters.append(f"asetrate={asetrate},aresample={output_rate}")
+        else:
+            # 等倍へ戻すのにサンプルレートが分からない場合は**音声を落とす**。
+            # そのまま残すと、映像だけPTSが伸縮した横で元の長さの音声が丸ごと残り、
+            # 冒頭からずれた・尺も違う動画になる(呼び出し側が出す「映像のみ等倍へ変換します」
+            # の警告とも食い違う)。無音の方が被害が小さい。
+            has_audio = False
+    if has_audio:
+        if raw_output_path:
+            audio_filters.append("asplit=2[a][araw]")
+            graph.append(f"[0:a]{','.join(audio_filters)}")
+        else:
+            graph.append(f"[0:a]{','.join(audio_filters)}[a]")
+
+    def output_args(video_label, audio_label, path):
+        args = ["-map", video_label]
+        args += _delivery_video_encoder_args(gpu_encode)
+        if has_audio:
+            # カット・無音埋めのため音声も必ず再エンコードする(等倍録画も`-c:a copy`できない)。
+            args += ["-map", audio_label, "-c:a", "aac", "-b:a", "192k"]
+        else:
+            args += ["-an"]
+        # moov atomを先頭に移す(faststart)。無指定だと末尾に置かれ、ブラウザでの
+        # ストリーミング再生時に末尾へのRangeリクエストが追加で発生してしまう(Issue #90)。
+        args += ["-movflags", "+faststart", path]
+        return args
 
     cmd = ["ffmpeg", "-y", "-nostdin", "-i", input_path]
     if watermark_path:
         # ウォーターマーク webm の VP9 アルファは libvpx 経由デコーダでないと
         # 不透明扱いになる(reports/18)。-c:v libvpx-vp9 を明示する。
         cmd += ["-c:v", "libvpx-vp9", "-i", watermark_path]
-    cmd += ["-filter_complex", ";".join(graph), "-map", "[v]", *audio_maps]
-    if time_scale != 1.0:
-        # 等倍へ戻すときだけ出力フレームレートを固定する。旧低速録画(scale>1)は等倍と同じ
-        # `-framerate 60` で撮っているため、素材は各フレームが time_scale 枚ずつ並んだ
-        # 状態にある。PTSを圧縮したうえでここへ落とすと**重複がちょうど間引かれ**、
-        # 等倍録画と同じ「60fps・全フレームユニーク」になる。倍速録画は60×倍率fpsで
-        # `-vsync 0`(可変フレームレート)のまま撮っているので、PTSを引き伸ばしたうえで
-        # ここで60fps固定に揃える(touhou-recorder reports/85・89)。
-        cmd += ["-r", str(NATIVE_FRAME_RATE_HZ)]
-    cmd += _delivery_video_encoder_args(gpu_encode)
-    # moov atomを先頭に移す(faststart)。無指定だと末尾に置かれ、ブラウザでの
-    # ストリーミング再生時に末尾へのRangeリクエストが追加で発生してしまう(Issue #90)。
-    cmd += ["-movflags", "+faststart"]
-    cmd += [*audio_codec, output_path]
+    cmd += ["-filter_complex", ";".join(graph)]
+    cmd += output_args("[v]", "[a]", output_path)
+    if raw_output_path:
+        cmd += output_args("[vraw]", "[araw]", raw_output_path)
     return cmd
 
 
 def convert_for_delivery(input_path, output_path, *, time_scale=1.0, watermark_path=None,
                          watermark_width=428, on_progress=None, log=print, ffmpeg_log_path=None,
-                         gpu_encode=False):
-    """録画結果を配信用の1本へ変換する(モジュール docstring 参照)。
+                         gpu_encode=False, cut_start=None, cut_end=None, raw_output_path=None):
+    """録画結果を配信用の1本(`raw_output_path`指定時は元の解像度版との2本)へ変換する
+    (モジュール docstring 参照)。
 
     on_progress が指定されていれば、実際に変換処理が完了した**出力側の**動画時間
     (秒、float)をおよそ PROGRESS_REPORT_INTERVAL_SEC 秒間隔で呼び出す。倍速録画でも
@@ -273,12 +334,14 @@ def convert_for_delivery(input_path, output_path, *, time_scale=1.0, watermark_p
         width=width, height=height, time_scale=time_scale,
         watermark_path=watermark_path, watermark_width=watermark_width,
         audio_sample_rate=audio_sample_rate, gpu_encode=gpu_encode,
+        cut_start=cut_start, cut_end=cut_end, raw_output_path=raw_output_path,
     )
     target_width, target_height = delivery_resolution(width, height)
     log(
         f"配信用に変換します: {width}x{height} -> {target_width}x{target_height} "
         f"(time_scale={time_scale} watermark={'あり' if watermark_path else 'なし'} "
-        f"encoder={'NVENC' if gpu_encode else 'libx264'})"
+        f"encoder={'NVENC' if gpu_encode else 'libx264'} cut={cut_start}〜{cut_end} "
+        f"元の解像度版={'あり' if raw_output_path else 'なし'})"
     )
 
     if on_progress is None:
@@ -287,8 +350,9 @@ def convert_for_delivery(input_path, output_path, *, time_scale=1.0, watermark_p
 
     # stderr を stdout にマージしてログへ流す(進捗追跡のため stdout をパイプで
     # 読む必要があるが、変換失敗時の診断情報(ffmpegのエラー出力)を捨てないため)。
+    # `-progress`はグローバルオプションなので、出力が2つある場合も先頭に置く。
     proc = subprocess.Popen(
-        [*cmd[:-1], "-progress", "pipe:1", "-nostats", cmd[-1]],
+        [cmd[0], "-progress", "pipe:1", "-nostats", *cmd[1:]],
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     ffmpeg_log_file = open(ffmpeg_log_path, "w") if ffmpeg_log_path else None
