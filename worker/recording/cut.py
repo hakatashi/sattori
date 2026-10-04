@@ -5,8 +5,10 @@
 落とす。ここではその範囲を**mux後の動画(`video.mp4`)の時間軸の秒数**で決め、
 `entrypoint.py`へファイル経由で渡す(`artifacts.write_cut_result()`)。
 
-- **開始**: MODがリプレイ一覧でファイルを選ぶキーを押す`REPLAY_SELECT_LEAD_SEC`秒前
-  (ゲーム内時間)。リプレイ一覧に出るプレイヤー名・日時・スコアを動画に残すため。
+- **開始**: MODがリプレイの再生を確定するキーを押す`REPLAY_START_LEAD_SEC`秒前
+  (ゲーム内時間、`modlog.find_replay_start_epoch()`)。リプレイ選択画面に出るプレイヤー名・
+  日時・スコアを動画に残すため。決められなければ映像の先頭(音声だけが先に始まっている区間は
+  落とす。`pipeline.attempt_recording()`は音声の録音を映像より先に始める)。
 - **終了**: 終了検知(画面静止・テンプレート照合)の連続一致が始まったフレーム
   (`pipeline._monitor_until_end()`の`content_end_epoch`)。
 
@@ -17,10 +19,10 @@
 import subprocess
 
 from .ffmpeg import ffprobe_start_time
-from .modlog import find_replay_select_epoch
+from .modlog import find_replay_start_epoch
 
-# リプレイを選ぶキーを押す何秒前から残すか(ゲーム内時間=等倍の動画上の秒数)。
-REPLAY_SELECT_LEAD_SEC = 1.0
+# リプレイの再生を確定するキーを押す何秒前から残すか(ゲーム内時間=等倍の動画上の秒数)。
+REPLAY_START_LEAD_SEC = 1.0
 # 開始より手前に終了が来る・極端に短い、といった明らかにおかしい範囲では終了側を捨てる。
 MIN_CUT_DURATION_SEC = 1.0
 
@@ -60,12 +62,13 @@ def compute_cut_range(config, video_target, output_path, env, *, time_scale, con
     def to_output_sec(epoch):
         return v_offset + (epoch - v_start)
 
-    select_epoch = find_replay_select_epoch(config.log_path, reference_epoch=reference_epoch)
-    if select_epoch is None:
-        log("WARNING: MODログにリプレイ選択の記録が無いため、配信版の先頭をカットしません")
+    start_epoch = find_replay_start_epoch(config.log_path, reference_epoch=reference_epoch)
+    if start_epoch is None:
+        log("WARNING: MODログにリプレイ再生確定の記録が無いため、配信版の先頭は映像の先頭からにします")
+        cut["startSec"] = v_offset if v_offset > 0 else None
     else:
         # 実時間はゲーム内時間の time_scale 倍(倍速録画ではメニュー操作も実時間で縮む)。
-        cut["startSec"] = max(0.0, to_output_sec(select_epoch - REPLAY_SELECT_LEAD_SEC * time_scale))
+        cut["startSec"] = max(v_offset, to_output_sec(start_epoch - REPLAY_START_LEAD_SEC * time_scale))
 
     if content_end_epoch is not None:
         end_sec = to_output_sec(content_end_epoch)

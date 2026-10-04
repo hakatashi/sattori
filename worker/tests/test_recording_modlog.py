@@ -135,68 +135,76 @@ def test_check_replay_desync_matches_even_if_a_later_sample_is_garbage(tmp_path)
     assert modlog.check_replay_desync(config, 303766040, log=lambda msg: None) is False
 
 
-# --- リプレイファイルを選択したキー入力の時刻(Issue #266) ----------------------
+# --- リプレイの再生を確定したキー入力の時刻(Issue #266) ------------------------
 
 # 2026-10-04 12:34:56.000 UTC
 _EPOCH_123456 = 1791117296.0
+_MARKER = (f"SYNC_MARKER played epoch={_EPOCH_123456:.6f} play_call_sec=0.1 rate=44100 "
+           "samples=131072 amp=256 seed=0x2545F491 hr=0x00000000")
 
 
-def test_find_replay_select_epoch_converts_local_time_using_the_sync_marker(tmp_path):
+def test_find_replay_start_epoch_uses_the_last_step_before_sequence_complete(tmp_path):
     # ローカル時刻がUTC+9(21:34:56)でも、同期マーカー行の epoch= から換算できる。
     log_path = tmp_path / "th08_autoplay.log"
     log_path.write_text(
-        "[21:34:50.000] Step 2: Enter (confirm 'Replay', enter replay list)\n"
-        "[21:34:51.250] Step 3: Enter (select 1st replay file)\n"
-        f"[21:34:56.000] SYNC_MARKER played epoch={_EPOCH_123456:.6f} play_call_sec=0.1 rate=44100 "
-        "samples=132300 amp=64 seed=0x1234ABCD hr=0x00000000\n"
+        f"[21:34:56.000] {_MARKER}\n"
+        "[21:34:57.000] Step 3: Enter (select 1st replay file)\n"
+        "[21:34:57.700] Step 4: Enter (select default start stage)\n"
+        "[21:34:58.400] Step 5: Enter (select normal playback mode, start replay)\n"
+        "[21:34:59.100] === th08_replay_autoplay: sequence complete ===\n"
+        "[21:35:00.000] FpsMonitor: 300 GetDeviceState calls\n"
     )
 
-    epoch = modlog.find_replay_select_epoch(str(log_path), reference_epoch=_EPOCH_123456)
+    epoch = modlog.find_replay_start_epoch(str(log_path), reference_epoch=_EPOCH_123456)
 
-    assert abs(epoch - (_EPOCH_123456 - 4.75)) < 1e-6
-
-
-def test_find_replay_select_epoch_matches_every_title_wording(tmp_path):
-    for wording in ("Step 4: Enter (select 1st user replay file)",
-                    "Step 4: Enter (1番目のリプレイファイルを選択)"):
-        log_path = tmp_path / "mod.log"
-        log_path.write_text(
-            f"[12:34:50.500] {wording}\n"
-            f"[12:34:56.000] SYNC_MARKER played epoch={_EPOCH_123456:.6f}\n"
-        )
-
-        epoch = modlog.find_replay_select_epoch(str(log_path), reference_epoch=_EPOCH_123456)
-
-        assert abs(epoch - (_EPOCH_123456 - 5.5)) < 1e-6
+    assert abs(epoch - (_EPOCH_123456 + 2.4)) < 1e-6
 
 
-def test_find_replay_select_epoch_handles_midnight_between_select_and_marker(tmp_path):
+def test_find_replay_start_epoch_ignores_steps_after_sequence_complete(tmp_path):
     log_path = tmp_path / "mod.log"
     log_path.write_text(
-        "[23:59:59.000] Step 3: Enter (select 1st replay file)\n"
+        "[12:34:57.000] Step 5: Enter (リプレイ再生開始)\n"
+        "[12:34:57.700] === th06c_replay_autoplay: sequence complete ===\n"
+        "[12:35:30.000] Step 9: something unrelated\n"
+        f"[12:34:56.000] {_MARKER}\n"
+    )
+
+    epoch = modlog.find_replay_start_epoch(str(log_path), reference_epoch=_EPOCH_123456)
+
+    assert abs(epoch - (_EPOCH_123456 + 1.0)) < 1e-6
+
+
+def test_find_replay_start_epoch_handles_midnight_between_the_key_and_the_marker(tmp_path):
+    log_path = tmp_path / "mod.log"
+    log_path.write_text(
+        "[23:59:59.000] Step 5: Enter (start replay playback)\n"
+        "[23:59:59.500] === sequence complete ===\n"
         "[00:00:02.000] SYNC_MARKER played epoch=1791158402.000000\n"  # 2026-10-05 00:00:02 UTC
     )
 
-    epoch = modlog.find_replay_select_epoch(str(log_path), reference_epoch=1791158400.0)
+    epoch = modlog.find_replay_start_epoch(str(log_path), reference_epoch=1791158400.0)
 
     assert abs(epoch - 1791158399.0) < 1e-6
 
 
-def test_find_replay_select_epoch_falls_back_to_the_local_timezone(tmp_path, monkeypatch):
+def test_find_replay_start_epoch_falls_back_to_the_local_timezone(tmp_path, monkeypatch):
     monkeypatch.setenv("TZ", "UTC")
     import time
     time.tzset()
     log_path = tmp_path / "mod.log"
-    log_path.write_text("[12:34:51.000] Step 3: Enter (select 1st replay file)\n")
+    log_path.write_text(
+        "[12:34:51.000] Step 5: Enter (start replay playback)\n"
+        "[12:34:51.700] === sequence complete ===\n"
+    )
 
-    epoch = modlog.find_replay_select_epoch(str(log_path), reference_epoch=_EPOCH_123456)
+    epoch = modlog.find_replay_start_epoch(str(log_path), reference_epoch=_EPOCH_123456)
 
     assert abs(epoch - (_EPOCH_123456 - 5.0)) < 1e-6
 
 
-def test_find_replay_select_epoch_returns_none_without_the_line(tmp_path):
+def test_find_replay_start_epoch_returns_none_until_the_sequence_completes(tmp_path):
     log_path = tmp_path / "mod.log"
     log_path.write_text("[12:34:51.000] Step 1: Down x2\n")
 
-    assert modlog.find_replay_select_epoch(str(log_path)) is None
-    assert modlog.find_replay_select_epoch(str(tmp_path / "missing.log")) is None
+    assert modlog.find_replay_start_epoch(str(log_path)) is None
+    assert modlog.find_replay_start_epoch(str(tmp_path / "missing.log")) is None

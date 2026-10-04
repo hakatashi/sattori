@@ -930,3 +930,68 @@ def test_record_with_retry_writes_the_cut_range_of_the_adopted_attempt(monkeypat
         make_config(), "/replay.rpy", "/out.mp4", cut_result_path=str(cut_path), log=lambda msg: None,
     ) is True
     assert json.loads(cut_path.read_text()) == {"startSec": 3.0, "endSec": 90.0}
+
+
+# --- 音声の録音を映像より先に始める(同期マーカーをカット区間へ追い出す、Issue #266) ---
+
+
+class _FakeProc:
+    def __init__(self, *a, **k):
+        self.terminated = False
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        return 0
+
+
+def _patch_until_capture(monkeypatch, tmp_path):
+    procs = []
+
+    def fake_popen(cmd, **kwargs):
+        proc = _FakeProc()
+        proc.cmd = cmd
+        procs.append(proc)
+        return proc
+
+    monkeypatch.setattr(pipeline, "load_end_template", lambda path: None)
+    monkeypatch.setattr(pipeline, "_launch_game", lambda *a, **k: 1234)
+    monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "_log_failure_diagnostics", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.sync_marker, "schedule_trigger", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline.subprocess, "Popen", fake_popen)
+    return procs
+
+
+def test_attempt_recording_starts_audio_before_settling_the_window(monkeypatch, tmp_path):
+    procs = _patch_until_capture(monkeypatch, tmp_path)
+    order = []
+    monkeypatch.setattr(pipeline, "_settle_crop_geometry",
+                        lambda *a, **k: order.append(("geometry", len(procs))) or None)
+
+    result = pipeline.attempt_recording(
+        make_config(), "/replay.rpy", str(tmp_path / "out.mp4"), None, None, log=lambda m: None,
+    )
+
+    # ウィンドウの安定を待つ時点で、音声の録音だけが始まっている。
+    assert order == [("geometry", 1)]
+    assert "pulse" in procs[0].cmd
+    # 座標を確定できなければ、先に始めた録音を止める。
+    assert procs[0].terminated is True
+    assert result["output_exists"] is False
+
+
+def test_attempt_recording_stops_audio_when_starting_the_video_raises(monkeypatch, tmp_path):
+    procs = _patch_until_capture(monkeypatch, tmp_path)
+
+    def boom(*a, **k):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(pipeline, "_settle_crop_geometry", boom)
+
+    with pytest.raises(RuntimeError):
+        pipeline.attempt_recording(
+            make_config(), "/replay.rpy", str(tmp_path / "out.mp4"), None, None, log=lambda m: None,
+        )
+    assert procs[0].terminated is True

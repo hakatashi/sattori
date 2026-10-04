@@ -4,10 +4,10 @@ from recording import cut
 from recording_helpers import make_config
 
 
-def _stub(monkeypatch, *, v_start=1000.0, v_offset=0.0, select_epoch=1005.0):
+def _stub(monkeypatch, *, v_start=1000.0, v_offset=0.0, start_epoch=1005.0):
     monkeypatch.setattr(cut, "ffprobe_start_time", lambda path, env: v_start)
     monkeypatch.setattr(cut, "_output_video_offset", lambda path, env: v_offset)
-    monkeypatch.setattr(cut, "find_replay_select_epoch", lambda path, reference_epoch=None: select_epoch)
+    monkeypatch.setattr(cut, "find_replay_start_epoch", lambda path, reference_epoch=None: start_epoch)
 
 
 def _compute(time_scale=1.0, content_end_epoch=1100.0):
@@ -17,7 +17,7 @@ def _compute(time_scale=1.0, content_end_epoch=1100.0):
     )
 
 
-def test_starts_one_second_before_the_replay_is_selected(monkeypatch):
+def test_starts_one_second_before_the_replay_playback_is_confirmed(monkeypatch):
     _stub(monkeypatch)
 
     assert _compute() == {"startSec": 4.0, "endSec": 100.0}
@@ -37,10 +37,18 @@ def test_lead_time_is_in_game_time_for_a_speedup_recording(monkeypatch):
     assert _compute(time_scale=0.5)["startSec"] == 4.5
 
 
-def test_does_not_cut_the_start_without_the_replay_select_line(monkeypatch):
-    _stub(monkeypatch, select_epoch=None)
+def test_does_not_cut_the_start_without_the_replay_start_line(monkeypatch):
+    _stub(monkeypatch, start_epoch=None)
 
     assert _compute() == {"startSec": None, "endSec": 100.0}
+
+
+def test_starts_at_the_video_without_the_replay_start_line(monkeypatch):
+    # 音声の録音は映像より先に始まる(同期マーカーをメニュー操作の前に鳴らすため)。
+    # 映像が無い区間(静止画で埋まるだけ)は残さない。
+    _stub(monkeypatch, start_epoch=None, v_offset=3.5)
+
+    assert _compute()["startSec"] == 3.5
 
 
 def test_does_not_cut_the_end_without_a_detected_end(monkeypatch):
@@ -55,10 +63,10 @@ def test_drops_an_end_before_the_start(monkeypatch):
     assert _compute(content_end_epoch=1004.5) == {"startSec": 4.0, "endSec": None}
 
 
-def test_never_starts_before_the_beginning(monkeypatch):
-    _stub(monkeypatch, select_epoch=1000.2)
+def test_never_starts_before_the_video(monkeypatch):
+    _stub(monkeypatch, start_epoch=1000.2, v_offset=3.5)
 
-    assert _compute()["startSec"] == 0.0
+    assert _compute()["startSec"] == 3.5
 
 
 def test_does_not_cut_when_the_video_start_is_unknown(monkeypatch):
