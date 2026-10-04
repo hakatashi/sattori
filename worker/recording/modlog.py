@@ -76,12 +76,14 @@ def wait_for_log_marker(log_path, marker, timeout, poll_interval=0.1, log_all=Fa
 
 
 # ---------------------------------------------------------------------------
-# リプレイファイルを選択したキー入力の時刻(配信版のカット開始位置、Issue #266)
+# リプレイの再生を確定したキー入力の時刻(配信版のカット開始位置、Issue #266)
 # ---------------------------------------------------------------------------
-# 全タイトルのMOD(`mods/thNN_replay_autoplay/dllmain.cpp`)は、リプレイ一覧で1番目の
-# ファイルを選ぶEnterを押す**直前**にこの文言を含む行をログへ出す(Step番号はタイトルで
-# 違うので文言で拾う)。MODを足すときはこの文言を揃えること。
-REPLAY_SELECT_LOG_RE = re.compile(r"select 1st (?:user )?replay file|1番目のリプレイファイルを選択")
+# 全タイトルのMOD(`mods/thNN_replay_autoplay/dllmain.cpp`)は、メニュー操作のキーを押す
+# **直前**に`Step N: ...`の行をログへ出し、最後のキー(再生を確定するEnter)を押してから
+# `sequence complete`の行を出す。そこで`sequence complete`より前の**最後の**Step行を、
+# 再生を確定したキーとみなす(Step番号・文言はタイトルで違う)。MODを足すときはこの並びを守ること。
+MENU_STEP_LOG_RE = re.compile(r"\] Step \d+: ")
+SEQUENCE_COMPLETE_LOG = "sequence complete"
 # MODログの行頭の時刻(`mods/common/logging.cpp`、`GetLocalTime()`のローカル時刻・日付なし)。
 _LOG_LINE_TIME_RE = re.compile(r"^\[(\d{2}):(\d{2}):(\d{2})\.(\d{3})\] ")
 # 同期マーカー行(`recording/sync_marker.py`)。行頭のローカル時刻と壁時計のepoch秒の両方を
@@ -102,8 +104,9 @@ def _nearest_epoch(seconds_of_day, offset, reference_epoch):
     return base + days * _SECONDS_PER_DAY
 
 
-def find_replay_select_epoch(log_path, reference_epoch=None):
-    """MODがリプレイファイルを選択するキーを押した壁時計時刻(epoch秒)。見つからなければNone。
+def find_replay_start_epoch(log_path, reference_epoch=None):
+    """MODがリプレイの再生を確定するキーを押した壁時計時刻(epoch秒)。見つからなければNone
+    (`sequence complete`の行が無い=メニュー操作が完了していない場合も含む)。
 
     MODログの行頭時刻は`GetLocalTime()`(ミリ秒精度、日付なし)なので、同じログにある
     同期マーカー行(行頭のローカル時刻と`epoch=`の両方を持つ)からタイムゾーン差を実測して
@@ -119,18 +122,22 @@ def find_replay_select_epoch(log_path, reference_epoch=None):
             lines = f.readlines()
     except OSError:
         return None
-    select_sod = None
+    last_step_sod = None
+    start_sod = None
     offset = None
     for line in lines:
         time_match = _LOG_LINE_TIME_RE.match(line)
         if not time_match:
             continue
-        if select_sod is None and REPLAY_SELECT_LOG_RE.search(line):
-            select_sod = _seconds_of_day(time_match)
+        if start_sod is None:
+            if MENU_STEP_LOG_RE.search(line):
+                last_step_sod = _seconds_of_day(time_match)
+            elif SEQUENCE_COMPLETE_LOG in line:
+                start_sod = last_step_sod
         marker_match = _SYNC_MARKER_EPOCH_RE.search(line)
         if marker_match:
             offset = float(marker_match.group(1)) - _seconds_of_day(time_match)
-    if select_sod is None:
+    if start_sod is None:
         return None
     if reference_epoch is None:
         reference_epoch = time.time()
@@ -140,7 +147,7 @@ def find_replay_select_epoch(log_path, reference_epoch=None):
         local_midnight = datetime.datetime.fromtimestamp(reference_epoch).replace(
             hour=0, minute=0, second=0, microsecond=0)
         offset = local_midnight.timestamp()
-    return _nearest_epoch(select_sod, offset, reference_epoch)
+    return _nearest_epoch(start_sod, offset, reference_epoch)
 
 
 def read_verified_scores(log_path, game_id):
