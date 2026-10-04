@@ -23,12 +23,22 @@ import os
 import re
 import subprocess
 import threading
+import time
 
 import numpy as np
 
-# トリガーから鳴らすまでの待ち。音声ffmpegがpulseへ接続して実際に録音を始めるまでの
+import pulse
+
+# トリガーを置く前の待ち。音声ffmpegがpulseへ接続して実際に録音を始めるまでの
 # 時間(ローカル・AWSとも1秒未満)に余裕を持たせる。
 TRIGGER_DELAY_SEC = 2.0
+# ゲーム(Wine)の音声ストリームがジョブ専用シンクに現れてから、さらにトリガーまで待つ秒数。
+# 音声の録音はゲームの起動直後に始める(`pipeline._start_audio_capture()`)ので、ゲームが
+# DirectSoundを作った直後にマーカーを鳴らすと、Wineの出力がまだPulseAudioへ流れておらず
+# 録音に入らないことがある(th08の等倍で検出に失敗した)。
+STREAM_SETTLE_SEC = 0.5
+# ゲームの音声ストリームを待つ上限。超えたらそのままトリガーを置く(録画は止めない)。
+STREAM_WAIT_TIMEOUT_SEC = 30.0
 # マーカーを探す範囲(音声ファイル先頭からの秒数)。マーカーはゲームの進行速度(倍速)によらず録画開始の約TRIGGER_DELAY_SEC秒後に実時間で鳴る。PHATは探索範囲の
 # 全体でスペクトルを平坦化するので、範囲を広げるほどピーク比は下がる(th15の実録画で
 # 振幅64のとき 5秒=37、10秒=20、30秒=13、reports/88)。
@@ -54,16 +64,55 @@ def windows_path(path):
 
 
 # 設置待ちのトリガー(instance_dirごと)。前の試行が設置前に中断された場合に、次の試行の
-# ゲーム起動後(音声の録音開始前)に古いタイマーがトリガーを置いてしまうと、MODが録音開始前に
+# ゲーム起動後(音声の録音開始前)に古いスレッドがトリガーを置いてしまうと、MODが録音開始前に
 # マーカーを鳴らし終えて検出できなくなるため、`clear_trigger()`で必ず止める。
-_pending_timers = {}
+_pending_triggers = {}
+
+
+class _PendingTrigger(threading.Thread):
+    """`delay`秒待ち、ゲームの音声ストリームが流れ始めるのを待ってからトリガーを置くスレッド。"""
+
+    def __init__(self, config, delay, log):
+        super().__init__(daemon=True)
+        self._config = config
+        self._delay = delay
+        self._log = log
+        self._cancelled = threading.Event()
+
+    def cancel(self):
+        self._cancelled.set()
+
+    def run(self):
+        if self._cancelled.wait(self._delay):
+            return
+        sink = getattr(self._config, "pulse_sink", None)
+        if sink:
+            deadline = time.monotonic() + STREAM_WAIT_TIMEOUT_SEC
+            while not pulse.sink_has_playing_input(sink):
+                if time.monotonic() > deadline:
+                    self._log("WARNING: ゲームの音声ストリームが見つからないまま同期マーカーのトリガーを設置します")
+                    break
+                if self._cancelled.wait(0.1):
+                    return
+            else:
+                if self._cancelled.wait(STREAM_SETTLE_SEC):
+                    return
+        if self._cancelled.is_set():
+            return
+        try:
+            with open(trigger_path(self._config), "w") as f:
+                f.write("sync\n")
+        except OSError as err:
+            self._log(f"WARNING: 同期マーカーのトリガーを設置できませんでした: {err!r}")
+            return
+        self._log("同期マーカーのトリガーを設置しました")
 
 
 def clear_trigger(config):
     """設置待ちのトリガーを取り消し、既に置かれたトリガーファイルを消す。各試行の開始時に呼ぶ。"""
-    timer = _pending_timers.pop(config.instance_dir, None)
-    if timer is not None:
-        timer.cancel()
+    pending = _pending_triggers.pop(config.instance_dir, None)
+    if pending is not None:
+        pending.cancel()
     try:
         os.remove(trigger_path(config))
     except FileNotFoundError:
@@ -71,20 +120,12 @@ def clear_trigger(config):
 
 
 def schedule_trigger(config, delay=TRIGGER_DELAY_SEC, log=print):
-    """録画開始後、`delay`秒たってからトリガーファイルを置く(非同期)。"""
-    def _touch():
-        try:
-            with open(trigger_path(config), "w") as f:
-                f.write("sync\n")
-        except OSError as err:
-            log(f"WARNING: 同期マーカーのトリガーを設置できませんでした: {err!r}")
-            return
-        log("同期マーカーのトリガーを設置しました")
-    t = threading.Timer(delay, _touch)
-    t.daemon = True
-    _pending_timers[config.instance_dir] = t
-    t.start()
-    return t
+    """録音開始後、`delay`秒たち、かつゲームの音声ストリームがジョブ専用シンク
+    (`config.pulse_sink`)で流れ始めてからトリガーファイルを置く(非同期)。"""
+    pending = _PendingTrigger(config, delay, log)
+    _pending_triggers[config.instance_dir] = pending
+    pending.start()
+    return pending
 
 
 def parse_marker_log(log_path, log=print):

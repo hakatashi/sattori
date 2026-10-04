@@ -27,7 +27,7 @@ REPLAY_START_LEAD_SEC = 1.0
 MIN_CUT_DURATION_SEC = 1.0
 
 
-def _output_video_offset(output_path, env):
+def output_video_offset(output_path, env):
     """mux後の動画で、映像ストリームがファイル先頭から何秒後に始まるか。
 
     mux(`ffmpeg._run_mux()`)は音声の方が先に始まった場合に映像を`-itsoffset`で後ろへずらす
@@ -54,7 +54,7 @@ def compute_cut_range(config, video_target, output_path, env, *, time_scale, con
     """
     cut = {"startSec": None, "endSec": None}
     v_start = ffprobe_start_time(video_target, env)
-    v_offset = _output_video_offset(output_path, env)
+    v_offset = output_video_offset(output_path, env)
     if v_start is None or v_offset is None:
         log("WARNING: 映像の開始時刻を取得できなかったため、配信版のカットをスキップします")
         return cut

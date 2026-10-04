@@ -536,6 +536,7 @@ def test_attempt_recording_saves_diagnostics_snapshot_on_discarded_attempt(monke
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "compute_cut_range", lambda *a, **k: {"startSec": None, "endSec": None})
+    monkeypatch.setattr(pipeline, "output_video_offset", lambda *a, **k: 0.0)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
     monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
 
@@ -568,6 +569,7 @@ def test_attempt_recording_does_not_save_diagnostics_snapshot_on_good_classifica
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "compute_cut_range", lambda *a, **k: {"startSec": None, "endSec": None})
+    monkeypatch.setattr(pipeline, "output_video_offset", lambda *a, **k: 0.0)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
     monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
 
@@ -602,6 +604,7 @@ def test_attempt_recording_logs_template_match_as_the_detection_reason(monkeypat
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "compute_cut_range", lambda *a, **k: {"startSec": None, "endSec": None})
+    monkeypatch.setattr(pipeline, "output_video_offset", lambda *a, **k: 0.0)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
     monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
 
@@ -658,7 +661,7 @@ def test_record_with_retry_saves_diagnostics_snapshot_on_duplicate_rate_discard(
     )
 
     assert success is False
-    assert saved == [("/diag", "frame:/out.mp4:15", 1, "duplicate_rate")]
+    assert saved == [("/diag", "frame:/out.mp4:15.0", 1, "duplicate_rate")]
 
 
 def test_record_with_retry_uses_content_end_sec_for_duplicate_rate_window(monkeypatch):
@@ -717,6 +720,7 @@ def test_attempt_recording_content_end_sec_excludes_still_confirmation_tail(monk
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "compute_cut_range", lambda *a, **k: {"startSec": None, "endSec": None})
+    monkeypatch.setattr(pipeline, "output_video_offset", lambda *a, **k: 0.0)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
     monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
     times = iter([100.0, 148.3])
@@ -745,6 +749,7 @@ def test_attempt_recording_content_end_sec_excludes_template_confirmation_tail(m
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "compute_cut_range", lambda *a, **k: {"startSec": None, "endSec": None})
+    monkeypatch.setattr(pipeline, "output_video_offset", lambda *a, **k: 0.0)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
     monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
     times = iter([100.0, 120.0])
@@ -773,6 +778,7 @@ def test_attempt_recording_content_end_sec_equals_total_record_sec_on_timeout(mo
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "compute_cut_range", lambda *a, **k: {"startSec": None, "endSec": None})
+    monkeypatch.setattr(pipeline, "output_video_offset", lambda *a, **k: 0.0)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "save_diagnostics_snapshot", lambda *a, **k: None)
     monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
@@ -909,6 +915,7 @@ def test_attempt_recording_passes_the_content_end_to_the_cut_range(monkeypatch, 
         return {"startSec": 3.0, "endSec": 40.0}
 
     monkeypatch.setattr(pipeline, "compute_cut_range", fake_compute_cut_range)
+    monkeypatch.setattr(pipeline, "output_video_offset", lambda *a, **k: 0.0)
     out = str(tmp_path / "out.mp4")
 
     result = pipeline.attempt_recording(config, "/replay.rpy", out, None, None, log=lambda msg: None)
@@ -995,3 +1002,18 @@ def test_attempt_recording_stops_audio_when_starting_the_video_raises(monkeypatc
             make_config(), "/replay.rpy", str(tmp_path / "out.mp4"), None, None, log=lambda m: None,
         )
     assert procs[0].terminated is True
+
+
+def test_record_with_retry_measures_duplicates_from_the_video_start(monkeypatch):
+    """音声を先に録り始める分、出力ファイル上で映像は後ろにずれて始まる。検査窓は
+    映像の録画開始から15秒(ずらさないとメニュー操作・ロード区間にかかる)。"""
+    monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good", "total_record_sec": 100.0,
+        "content_end_sec": 90.0, "time_scale": 1.0, "video_offset_sec": 18.0,
+    })
+    calls = []
+    monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda path, start, dur: calls.append((start, dur)) or 0.0)
+    monkeypatch.setattr(pipeline, "check_replay_desync", lambda *a, **k: None)
+
+    assert pipeline.record_with_retry(make_config(), "/replay.rpy", "/out.mp4", log=lambda m: None) is True
+    assert calls == [(33.0, 30)]

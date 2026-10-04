@@ -6,7 +6,7 @@ from recording_helpers import make_config
 
 def _stub(monkeypatch, *, v_start=1000.0, v_offset=0.0, start_epoch=1005.0):
     monkeypatch.setattr(cut, "ffprobe_start_time", lambda path, env: v_start)
-    monkeypatch.setattr(cut, "_output_video_offset", lambda path, env: v_offset)
+    monkeypatch.setattr(cut, "output_video_offset", lambda path, env: v_offset)
     monkeypatch.setattr(cut, "find_replay_start_epoch", lambda path, reference_epoch=None: start_epoch)
 
 
