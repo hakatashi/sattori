@@ -17,6 +17,25 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-10-04",
+    ja: "録画した動画から、メニュー操作やリプレイ終了後の静止画面をカットし、リプレイ選択画面から再生終了までだけを配信するように",
+    en: "Recorded videos now cut out the menu navigation and the still screen after the replay ends, keeping only the part from the replay selection screen to the end of playback",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/266",
+    important: true,
+  },
+  {
+    date: "2026-10-04",
+    ja: "東方紺珠伝 (th15)・東方錦上京 (th20) の動画を1080pに拡大して配信するように（YouTubeにアップロードしても720pに落ちないように）。元の解像度の動画も引き続きダウンロード可能",
+    en: "Videos of Legacy of Lunatic Kingdom (th15) and Unfinished Dream of All Living Ghost (th20) are now upscaled to 1080p so they are not downgraded to 720p on YouTube. The original-resolution video is also available for download",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/284",
+  },
+  {
+    date: "2026-10-04",
+    ja: "ブラウザで動画を先頭から再生したときに、音声が映像より先行して聞こえることがある問題を修正",
+    en: "Fixed an issue where audio could play ahead of the video when playing from the beginning in some browsers",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/301",
+  },
+  {
+    date: "2026-10-04",
     ja: "すべてのタイトルで録画速度（高速録画）を選べるように。あわせて低速録画を廃止し、東方錦上京 (th20) は等倍のままGPUで録画するようになり品質が向上",
     en: "Recording speed (high-speed recording) can now be selected for all titles. Slow-motion recording has been retired, and Unfinished Dream of All Living Ghost (th20) is now recorded at normal speed on a GPU for better quality",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/288",
