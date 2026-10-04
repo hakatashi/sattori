@@ -143,7 +143,7 @@ curl -s -X PUT "$UPLOAD_URL" -H "content-type: application/octet-stream" \
 # 3. マジックリンクをリクエスト(実メールアドレス宛。ユーザー自身のメールを使うこと)
 curl -s -X POST "$API/magic-links" -H "content-type: application/json" -d "{
   \"replayKey\": \"$REPLAY_KEY\",
-  \"options\": {\"watermark\": true, \"slowMotion\": false, \"th10BugfixMarisaB\": false, \"th06ncHighResolution\": false},
+  \"options\": {\"watermark\": true, \"recordingSpeed\": 1, \"th10BugfixMarisaB\": false, \"th06ncHighResolution\": false},
   \"email\": \"<user's email>\",
   \"language\": \"ja\"
 }"

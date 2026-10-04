@@ -14,7 +14,7 @@
 - [2. 構成](#2-構成)
 - [3. 実行時の環境変数](#3-実行時の環境変数)
 - [4. 出力ファイル](#4-出力ファイル)
-- [5. 録画速度(倍速録画 Issue #288・低速録画 Issue #68)](#5-録画速度倍速録画-issue-288低速録画-issue-68)
+- [5. 録画速度(倍速録画 Issue #288)](#5-録画速度倍速録画-issue-288)
 - [6. Spot中断時のリトライと再開(Issue #11)](#6-spot中断時のリトライと再開issue-11)
 - [7. ジョブレコードへの書き込み規約](#7-ジョブレコードへの書き込み規約)
 - [8. リポジトリに含まれない資産とタイトル資産アーカイブ(Issue #22)](#8-リポジトリに含まれない資産とタイトル資産アーカイブissue-22)
@@ -73,7 +73,7 @@
 | `title_assets.py` | `GAME`環境変数に応じたタイトル固有アセットをS3からダウンロード・展開する(§8) |
 | `Dockerfile` | 実行イメージ定義 |
 | `mods/` | ゲームプロセスへ注入するフック DLL(`thNN_hook.dll`)とインジェクタ(`injector.exe`)の
-  ソース(C++)。共通フック・タイトル別フック・低速録画(§5)のPresentフック・スコア監視(デシンクの
+  ソース(C++)。共通フック・タイトル別フック・倍速録画(§5)のPresentフック・スコア監視(デシンクの
   事後検知)の内訳は **[`docs/mods.md`](docs/mods.md)**。ビルドは §9 |
 
 ## 3. 実行時の環境変数
@@ -93,7 +93,7 @@
 | `EXPECTED_DURATION_SECONDS` | リプレイの推定再生時間(進捗率算出の参考値、省略可) |
 | `EXPECTED_SCORE` | リプレイファイルの記録スコア(画面表示値)。リプレイずれの事後検証(Issue #103、
   [`docs/mods.md`](docs/mods.md)の`score_monitor`)に使う。`replayInfo.score`が取得できていなければ省略される |
-| `FPS_LIMIT_TARGET_HZ` | 録画速度(§5)の目標fps。**省略時は等倍**(既定60)。倍速録画では`60×倍率`(2倍速なら`120`)、低速録画では`30`。MODへ渡す`SPEED_HACK_MULTIPLIER`(倍率)と`SYNC_MARKER_TRIGGER`(同期マーカー)はワーカーがここから導出するので、起動側は渡さない |
+| `FPS_LIMIT_TARGET_HZ` | 録画速度(§5)の目標fps。**省略時は等倍**(既定60)。倍速録画では`60×倍率`(2倍速なら`120`)。60未満(旧低速録画)は未対応で等倍扱い。MODへ渡す`SPEED_HACK_MULTIPLIER`(倍率)と`SYNC_MARKER_TRIGGER`(同期マーカー)はワーカーがここから導出するので、起動側は渡さない |
 | `GPU_WORKER` | `1`ならGPU(NVIDIA)搭載ワーカー。GPU描画が必須でないタイトルもGPU描画(Xorg+nvidia)で録画し、録画・変換とも映像をNVENCでエンコードする(§5)。GPU系インスタンスで起動する場合だけ起動側が渡す |
 | `THPRAC_ATTACH_TIMEOUT_SEC` / `_CONFIRM_SEC` / `_ATTEMPTS` | th20 の thprac アタッチの予算([`titles/th20.md`](docs/titles/th20.md)) |
 | `TH10_BUGFIX_MARISA_B` | `1` で th10 の VsyncPatch(`vpatch.ini`の`BugFixTh10Power3`)を有効にして録画する
@@ -118,8 +118,8 @@
 | --- | --- | --- | --- |
 | th06/06c/07/08/09/10/11/12/128(640x480・等倍) | 960x720へ拡大 | **そのまま2本目として配信** | 生データが無加工で通用するので、再エンコードは配信版の1回だけで済む |
 | th20(1280x960・等倍) | 1280x960のまま | 出さない | 2本目はウォーターマークの有無しか違わず、S3保管料とCloudFront転送量が倍になるだけ |
-| th20(低速録画) | 1280x960のまま | 出さない | 生データが半分の速度でそのまま配信できない。別途出すには等倍化の再エンコードがもう1回要る |
-| th06nc(1280x720/1920x1080) | 元解像度のまま | 出さない | 既に720p以上のためth20と同じ理由(`needs_separate_raw_output()`は解像度・低速録画有無だけを見る汎用ロジックなので、th06nc固有の分岐は無い) |
+| 倍速録画 | 倍率に関わらず等倍へ戻した1本 | 出さない | 生データが等倍の速度でなく、別途出すには等倍化の再エンコードがもう1回要る |
+| th06nc(1280x720/1920x1080) | 元解像度のまま | 出さない | 既に720p以上のためth20と同じ理由(`needs_separate_raw_output()`は解像度・倍速録画有無だけを見る汎用ロジックなので、th06nc固有の分岐は無い) |
 
 640x480 の録画はそのままだと YouTube 側で60fpsと認識されないため拡大する(reports/21)。
 **逆に、元から720p以上ある録画を高さ720pxへ「合わせる」ことはしない**(th20を960x720へ縮小
@@ -155,10 +155,11 @@
 なので平均値で丸めずジョブ単位の実測を残す(生動画のサイズはチェックポイントから再開した
 ジョブが`record()`を通らないため`done`遷移時にも併せて書く)。
 
-## 5. 録画速度(倍速録画 Issue #288・低速録画 Issue #68)
+## 5. 録画速度(倍速録画 Issue #288)
 
-ゲームをN倍速(倍速録画は2〜4倍速、低速録画は1/2倍速)で走らせて録画し、後処理
-(`convert.py`)で等倍へ戻す。有効・無効は起動側が渡す `FPS_LIMIT_TARGET_HZ` の有無だけで
+ゲームを2〜4倍速で走らせて録画し、後処理(`convert.py`)で等倍へ戻す。旧低速録画(Issue #68、
+1/2倍速)は廃止済みで、th20はGPU(g6f.2xlarge)の等倍録画になった。`convert.py`のscale>1の
+等倍化だけは、旧ジョブのチェックポイントからの再開用に残してある。有効・無効は起動側が渡す `FPS_LIMIT_TARGET_HZ` の有無だけで
 決まる(未設定なら全タイトル従来どおり等倍)。ワーカー自身は自分が EC2 にいるのか自宅に
 いるのかを知らない。
 
@@ -167,7 +168,6 @@
 > また**倍率はフック・監視のタイムアウト・変換・品質チェックの閾値・進捗のすべてへ一貫して
 > 掛かっており**、1つでも据え置くと誤リトライ・誤終了検知・音ズレが起きる
 > ([`decisions/0014`](../docs/decisions/0014-slow-motion-scaling-across-pipeline.md))。
-> 低速録画の実機検証は [`reports/2026-08-11-th20-slow-motion-local.md`](../docs/reports/2026-08-11-th20-slow-motion-local.md)。
 
 倍速録画(touhou-recorder reports/84〜90で技術検証)は**GPUワーカー(`GPU_WORKER=1`、
 g6f.2xlarge)専用**。CPU描画(llvmpipe)では2倍速を維持できない。倍速時にパイプラインが
@@ -182,7 +182,7 @@ g6f.2xlarge)専用**。CPU描画(llvmpipe)では2倍速を維持できない。�
   ALACへ変換する(AACのサンプルレート上限96kHzのため)。
 - **監視**: 終了検知の連続回数・猶予・全体のタイムアウトはゲーム内時間で一定になるよう縮めるが、
   終了テンプレートの連続一致回数と、起動・メニュー操作を待つタイムアウトは縮めない
-  (`scaled_confirmation_count()`/`scaled_timeout_sec()`)。
+  (`scaled_confirmation_count()`)。
 - **変換**: 映像のPTSを倍率ぶん引き伸ばして60fpsへ揃え、音声は`asetrate`で読み替えて
   44100Hzへ戻す。
 
@@ -195,9 +195,6 @@ start_time差で補正する。
 # 2倍速(GPU搭載マシンでのみ意味がある)
 FPS_LIMIT_TARGET_HZ=120 GPU_WORKER=1 python3 record_th10.py \
   --replay-path games/th10/replay/th10_01.rpy --output /tmp/th10/out.mp4
-# 低速録画(th20)
-FPS_LIMIT_TARGET_HZ=30 python3 record_th20.py \
-  --replay-path games/th20/replay/th20_01.rpy --output /tmp/th20/out.mp4
 ```
 
 ## 6. Spot中断時のリトライと再開(Issue #11)
@@ -215,7 +212,7 @@ S3オブジェクトメタデータ(`sattori-time-scale`)として運ぶ。ま�
 > [`decisions/0015`](../docs/decisions/0015-resume-from-raw-video-checkpoint.md) を読むこと。**
 > ジョブレコードの `outputPath` で判定する・再開側で `FPS_LIMIT_TARGET_HZ` を読み直す、は
 > いずれも実害のある間違いで、前者は `done` だったジョブを `failed` へ書き換え、後者は
-> 半分の速度の動画をそのまま等倍として配信する。
+> 速度の違う動画をそのまま等倍として配信する。
 
 ## 7. ジョブレコードへの書き込み規約
 
@@ -284,7 +281,7 @@ AWS リソースには接続しない)。ルートの `pnpm test` (Turborepo) �
 
 ## 11. ローカルでの実行(ネットワーク不要)
 
-ゲーム資産を配置済みなら S3/DynamoDB 無しで録画本体だけを試せる(低速録画の例は §5)。配信用
+ゲーム資産を配置済みなら S3/DynamoDB 無しで録画本体だけを試せる(倍速録画の例は §5)。配信用
 変換だけなら ffmpeg/ffprobe があれば動く。**コマンドと並列実行時の音声分離の確認方法は
 [`docs/runbooks/worker-local-recording.md`](../docs/runbooks/worker-local-recording.md) §2。**
 
@@ -344,7 +341,7 @@ GPU用カスタムAMI(`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`)�
   対応 —— MOD 移植・実機検証。Issue #13 配下。同 §1)。
 - **th06nc(GPU描画必須)は自宅ワーカーでは録画できない**(GPU非搭載が前提。`apps/api/src/
   workerRouting.ts`で常にEC2へ固定される、Issue #241、[`titles/th06nc.md`](docs/titles/th06nc.md))。
-  低速録画にも非対応(D3D11経路の新規実装が必要、th06cと同じ扱い)。
+  倍速録画はGPU経路で対応(`GPU_WORKER=1`)。
 
 **想定尺より大幅に早く終了した/タイムアウトへ近づいたジョブでは、検知ロジック側を疑う前に
 まず録画された映像を目視して**不自然な被弾・ゲームオーバーが無いか確認すること(閾値調整や

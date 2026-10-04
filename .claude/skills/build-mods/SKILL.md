@@ -85,9 +85,9 @@ make -C worker/mods steam_api64_th06nc
 
 ### th09
 
-th09はth06/07/08/10/12と同じPressKey（DIK経由）を使う。低速録画フック（D3D8版
-Present間引き・DirectSound周波数スケーリング・fps表示補正）を実装済みだが
-`SLOW_MOTION_SUPPORTED_GAME_IDS`未登録のためユーザーには未公開（`worker/docs/titles/th09.md`）。
+th09はth06/07/08/10/12と同じPressKey（DIK経由）を使う。倍速録画フック（D3D8版
+Present間引き・DirectSound周波数スケーリング・fps表示補正、`worker/docs/titles/th09.md`）も
+ここで組み込む。
 `dllmain.cpp`がこれらのフックを呼ぶため、ビルド時は`fps_limiter_hook_d3d8.cpp`・
 `dsound_hook.cpp`・`fps_display_hook.cpp`を含める必要がある（th20と異なり`-static`は不要）。
 
@@ -133,8 +133,7 @@ make -C worker/mods th08
 ### th128
 
 th128はth10/th12と同じPressKey（DIK経由）を使う（`InstallKeyboardStateHook`は不要）。
-低速録画フック（Presentの間引き・DirectSound周波数スケーリング）を実装済みだが
-`SLOW_MOTION_SUPPORTED_GAME_IDS`未登録のためユーザーには未公開（`worker/docs/titles/th128.md`）。
+倍速録画フック（Presentの間引き・DirectSound周波数スケーリング、`worker/docs/titles/th128.md`）を含む。
 `dllmain.cpp`がこれらのフックを呼ぶため、ビルド時は`fps_limiter_hook.cpp`・
 `dsound_hook.cpp`を含める必要がある（th20と異なり`-static`は不要）。
 

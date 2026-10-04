@@ -27,7 +27,7 @@ describe("requiresGpuRecording", () => {
     expect(requiresGpuRecording(job("th06"))).toBe(false);
     expect(requiresGpuRecording(job("th06c", 1))).toBe(false);
     expect(requiresGpuRecording(job("th07"))).toBe(false);
-    expect(requiresGpuRecording(job("th20", 1))).toBe(false);
+    expect(requiresGpuRecording(job("th11", 1))).toBe(false);
     expect(requiresGpuRecording({ game: "th10" })).toBe(false);
   });
 

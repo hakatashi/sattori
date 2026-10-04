@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-10-04",
+    ja: "すべてのタイトルで録画速度（高速録画）を選べるように。あわせて低速録画を廃止し、東方錦上京 (th20) は等倍のままGPUで録画するようになり品質が向上",
+    en: "Recording speed (high-speed recording) can now be selected for all titles. Slow-motion recording has been retired, and Unfinished Dream of All Living Ghost (th20) is now recorded at normal speed on a GPU for better quality",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/288",
+    important: true,
+  },
+  {
     date: "2026-10-03",
     ja: "高速録画オプションを東方妖々夢 (th07) でも利用可能に",
     en: "The high-speed recording option is now also available for Perfect Cherry Blossom (th07)",

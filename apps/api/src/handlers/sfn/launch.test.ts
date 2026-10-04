@@ -61,7 +61,6 @@ function heartbeat(overrides: Partial<WorkerHeartbeat> = {}): WorkerHeartbeat {
     activeJobs: 0,
     maxConcurrency: 4,
     supportedGames: ["th07"],
-    capabilities: [],
     ttl: Math.floor(Date.now() / 1000) + 900,
     ...overrides,
   };

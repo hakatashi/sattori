@@ -22,12 +22,7 @@
   進行中は現在フェーズ内で実際に処理が完了した量(`progress`。全体に対する割合では
   なく、単位はフェーズ依存——recording/convertingは秒数、uploadingは転送済みバイト数
   でIssue #202フォローアップ、分母は`uploadTotalBytes`)とプレビュー画像URL
-  (`previewImageUrl`)も返す。低速録画で走るかどうか(`slowMotion`)も返す（後述） |
-| `GET /worker-availability` | 常駐ワーカー（自宅ワーカー、Issue #49）の空き状況。
-  ページAが詳細設定の「低速録画」を有効化してよいかの判定にだけ使う。**認証なしで
-  公開されるため`workerId`・台数・負荷は返さない**（開発者の自宅環境の稼働状況を
-  必要以上に外へ出さない）。あくまで「今の」状態で、実際に録画が始まるのはユーザーが
-  マジックリンクを開いた後（最大24時間後）なので、可否は一致しない前提 |
+  (`previewImageUrl`)も返す。録画速度は`options.recordingSpeed`に含まれる |
 | `POST /beacon` | Cookie無しの計測ビーコン（`src/analytics.ts`、Issue #142）。
   pageview/parse_errorイベントを送る。`apps/web`は`API_BASE`を経由しない固定の
   相対パスで叩く（CloudFront経由で`CloudFront-Viewer-Country`を得るため、
@@ -90,7 +85,7 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 自宅マシンはNAT配下でAWS側から到達できないため、割り当てはPull型:
 
 - `WorkerHeartbeat`: `WorkersTable`の1アイテム。自宅の常駐デーモンが15秒ごとに
-  自身の空き状況・対応タイトル・追加能力（`WorkerCapability`）を自己申告する。
+  自身の空き状況・対応タイトルを自己申告する。
   `isHeartbeatFresh()`が新鮮さ（45秒以内）を判定し、**新鮮でなければAWS側は
   オファー自体を行わない**（＝自宅が落ちている平常時に録画開始が遅れない）。
   未来方向のずれも同じ幅までしか許容しない（時計が進んだ止まったデーモンへ
@@ -98,35 +93,21 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 - `JobRecord`のオファー/claim関連フィールドは**`| null`ではなく optional**にしてある。
   DynamoDBのNULL型はGSIのキー属性として不適合で、「属性が無い」ことをそのまま
   条件式（`attribute_not_exists`）で表現したいため。
-- `WorkerCapability`に定義があること自体は「実装済み」を意味しない（能力の宣言は
-  デーモン側の設定で行う）。`slow-motion-recording`は低速録画（Issue #68、後述）。
 
-## 低速録画（`src/slowMotion.ts`、Issue #68）
+## 倍速録画・GPU必須タイトル（`src/recordingSpeed.ts`・`src/gpuRecording.ts`、Issue #288）
 
-ゲームを 1/2 倍速で走らせて録画し、後処理で等倍へ戻す方式。等倍では処理落ちして
-品質を担保できない th20（Issue #87）のための手段で、ユーザー向けの呼称は「低速録画」。
-フロントエンド・API・ワーカーが同じ定数を参照するためここに一本化してある。
+録画速度（`RecordingOptions.recordingSpeed`、1〜4倍速）とGPU必須タイトルの判定。
+フロント・API・ワーカーが同じ定数を参照するためここに一本化してある。
 
-- `SLOW_MOTION_TARGET_HZ`（30）: ワーカーへ`FPS_LIMIT_TARGET_HZ`として渡る値。
-- `SLOW_MOTION_TIME_SCALE`（2）: 録画フェーズが実時間で何倍かかるか。ジョブページの
-  進捗バジェット（`apps/web/src/hooks/jobProgressBudget.ts`）と録画のハードタイム
-  アウト（`worker/recording/pipeline.py`）が同じ係数を使う。
-- `EC2_SLOW_MOTION_SUPPORTED_GAME_IDS`（th20のみ）/ `supportsEc2SlowMotion()`: EC2環境で
-  低速録画を有効化するタイトル一覧。この設定を変更することでタイトルごとの有効/無効を
-  素早く切り替えられる（Issue #245）。
-- `SLOW_MOTION_DEFAULT_GAME_IDS`（th20のみ）/ `defaultSlowMotionFor()`: 既定でオンに
-  するタイトル。自宅ワーカーまたはEC2で低速録画が利用可能であればオンになる。
-- `isSlowMotionRecording(options, workerKind, game)`: **`options.slowMotion`はユーザーの希望に
-  すぎない**。オファーが時間内にclaimされずEC2へフォールバックした場合は、EC2低速録画対応
-  タイトル（`supportsEc2SlowMotion(game)`）でなければ等倍録画になるため、`workerKind`と
-  `game`まで見て「実際に低速録画で走るか」を判定する。割り当てが未確定（`null`）の間は
-  低速録画とみなす——ジョブページの残り時間推定が、割り当て確定の瞬間に大きく飛ぶのを避けるため。
-  `GET /jobs/{jobId}`の`slowMotion`はこの結果を返す。
-
-**低速録画の制御は起動側が渡す環境変数で表現する**（ワーカーコンテナ側は自分がどこで動いているかを
-知らず、`FPS_LIMIT_TARGET_HZ` の有無だけを見る。`apps/api/src/workerEnv.ts`、
-[`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)・
-[`docs/decisions/0045`](../../docs/decisions/0045-ec2-slow-motion-for-th20.md)）。
+- `GPU_RECORDING_GAME_IDS`（th06nc・th15・th20）: 常にGPUインスタンスで録画するタイトル。
+- `requiresGpuRecording(job)`: GPU必須タイトル、または倍速録画（2倍速以上）なら true。
+  GPU必須のジョブは自宅ワーカーへオファーしない。
+- 倍率は起動側が`FPS_LIMIT_TARGET_HZ`（60×倍率）と`GPU_WORKER=1`の環境変数で渡す。ワーカー
+  コンテナ側は自分がどこで動いているか・倍率の由来を知らず、環境変数の有無だけを見る
+  （`apps/api/src/workerEnv.ts`、
+  [`docs/decisions/0058`](../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)・
+  [`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
+- 旧「低速録画」（1/2倍速、Issue #68）は廃止した。
 
 契約の詳細と運用は`apps/api/README.md`「自宅ワーカーへのジョブ割り当て」・
 `home-worker/README.md`を参照。

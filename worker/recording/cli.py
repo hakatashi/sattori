@@ -57,9 +57,8 @@ def build_parser():
     parser.add_argument("--max-attempts", type=int, default=3, help="異常検知時の最大試行回数")
     parser.add_argument(
         "--max-duplicate-rate", type=float, default=30.0,
-        help="録画開始15秒以降の重複フレーム率(%%、**等倍換算**)がこれを超えたら処理落ちとみなし"
-             "自動リトライする。低速録画では生データの重複率が構造的に上がるため、閾値の方を"
-             "スケールに応じて換算する(recording.timing.duplicate_rate_threshold_for_raw())",
+        help="録画開始15秒以降の重複フレーム率(%%)がこれを超えたら処理落ちとみなし"
+             "自動リトライする",
     )
     return parser
 

@@ -3,7 +3,6 @@ import type {
   CreateUploadRequest,
   CreateUploadResponse,
   GetJobResponse,
-  GetWorkerAvailabilityResponse,
   RecordingOptions,
   RequestMagicLinkRequest,
   RequestMagicLinkResponse,
@@ -108,10 +107,3 @@ export function getJob(jobId: string): Promise<GetJobResponse> {
   return request<GetJobResponse>(`/jobs/${encodeURIComponent(jobId)}`);
 }
 
-/**
- * 常駐ワーカー（自宅ワーカー、Issue #49）の空き状況を取得する。ページAが
- * 「低速録画」（Issue #68）を選べるかの判定にだけ使う。
- */
-export function getWorkerAvailability(): Promise<GetWorkerAvailabilityResponse> {
-  return request<GetWorkerAvailabilityResponse>("/worker-availability");
-}

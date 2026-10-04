@@ -58,7 +58,7 @@ def audio_intermediate_extension(time_scale):
 def audio_encode_args(time_scale):
     """mux時の音声の引数。
 
-    - 等倍・低速録画: 録音時点でAAC 192kなので再エンコードせずコピーする
+    - 等倍: 録音時点でAAC 192kなので再エンコードせずコピーする
     - 倍速録画(録音レートがAACの上限以内、2倍速): AAC + 倍率分のビットレート + `-cutoff`。
       FFmpegのAACエンコーダは`-cutoff`未指定時、1チャンネルあたりのビットレートだけから
       **絶対周波数**で帯域を決める(192k/2chなら約19.3kHz)。倍速録画の音声は圧縮空間に

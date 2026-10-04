@@ -1,7 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import {
   calculateDownloadExpiresAt,
-  isSlowMotionRecording,
   recordingSpeedOf,
   OUTPUT_RETENTION_DAYS,
 } from "@sattori/shared";
@@ -122,19 +121,6 @@ export function JobDetailPage() {
                 </dd>
                 <dt>watermark</dt>
                 <dd>{data.job.options.watermark ? "true" : "false"}</dd>
-                {/*
-                  低速録画（Issue #68）。options はユーザーの希望で、実際に低速録画で
-                  走ったかは workerKind まで見ないと分からない（EC2へフォールバック
-                  したら等倍録画になる）。運用調査では両方見えたほうが早いので、
-                  「希望」と「実際」を並べて出す。
-                */}
-                <dt>slowMotion</dt>
-                <dd>
-                  {data.job.options.slowMotion ? "true" : "false"}
-                  {data.job.options.slowMotion &&
-                    `（実際: ${isSlowMotionRecording(data.job.options, data.job.workerKind, data.job.game) ? "低速録画" : "等倍録画にフォールバック"}）`}
-                </dd>
-                {/* 倍速録画（Issue #288）。割り当て先によるフォールバックは無い。 */}
                 <dt>recordingSpeed</dt>
                 <dd>{`${recordingSpeedOf(data.job.options)}x`}</dd>
                 <dt>th10BugfixMarisaB</dt>

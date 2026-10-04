@@ -33,7 +33,6 @@ const BASE: Omit<
   game: "th07",
   updatedAt: new Date().toISOString(),
   replayInfo: SAMPLE_REPLAY_INFO,
-  slowMotion: false,
   recordingSpeed: 1,
   desyncDetected: null,
   timedOut: null,

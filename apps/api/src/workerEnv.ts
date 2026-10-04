@@ -2,7 +2,6 @@ import {
   isSpeedupRecording,
   recordingSpeedOf,
   requiresGpuRecording,
-  SLOW_MOTION_TARGET_HZ,
   speedupTargetHz,
 } from "@sattori/shared";
 import type {
@@ -15,13 +14,6 @@ import type { ApiConfig } from "./config.js";
 
 /** `buildWorkerEnv()` の、ジョブレコードからは決まらない起動側の都合。 */
 export interface WorkerEnvOptions {
-  /**
-   * この起動で低速録画（Issue #68）を行うか。**ジョブの `options.slowMotion` を
-   * そのまま渡してはいけない**——低速録画は自宅ワーカーへのオファー、または
-   * EC2低速録画対応タイトル（`supportsEc2SlowMotion()`）でのみ有効。
-   * 呼び出し側（`ec2.buildUserData`/`handlers/sfn/launch.ts`）が割り当て先に応じて決める。
-   */
-  slowMotion: boolean;
   /**
    * EC2 Spot中断監視(`worker/interruption_watcher.py`)を起動するか（Issue #96）。
    * IMDS（`http://169.254.169.254`）はEC2にしか存在しないため、自宅ワーカーで
@@ -41,9 +33,8 @@ export interface WorkerEnvOptions {
  * そのまま `docker run` へ渡す。ワーカー側は「自分がどこで動いているか」を一切
  * 知らずに済み、環境差分はすべてこの関数の出力の違いとして表現される。
  *
- * この構造は Issue #68（1/2倍速録画。自宅ワーカーでのみ行う）の受け皿でもある。
- * 低速録画は「自宅ワーカーなら分岐する」ではなく「起動側が録画速度を指定する
- * 環境変数（`FPS_LIMIT_TARGET_HZ`）を足すかどうか」で表現する。ワーカーは
+ * 倍速録画（Issue #288）も「自宅ワーカーなら分岐する」ではなく「起動側が録画速度を
+ * 指定する環境変数（`FPS_LIMIT_TARGET_HZ`）を足すかどうか」で表現する。ワーカーは
  * 自分がEC2にいるのか自宅にいるのかを知らないまま、渡された値に従うだけでよい。
  */
 export function buildWorkerEnv(
@@ -84,12 +75,6 @@ export function buildWorkerEnv(
     // （2つの値が食い違う余地を作らないため、`worker/recording/config.py`）。
     // 倍速録画は常にGPUインスタンスで走るため、割り当て先で無効化されることは無い。
     env.FPS_LIMIT_TARGET_HZ = String(speedupTargetHz(recordingSpeed));
-  } else if (options.slowMotion) {
-    // MOD（Present/DirectSound/fps表示のフック）と録画スクリプトの実時間依存
-    // パラメータが、この1つの値から同じ比率でスケールする
-    // （`docs/decisions/0014-slow-motion-scaling-across-pipeline.md`）。
-    // **未指定＝等倍**が既定なので、等倍録画では付与しない。
-    env.FPS_LIMIT_TARGET_HZ = String(SLOW_MOTION_TARGET_HZ);
   }
   if (requiresGpuRecording(job)) {
     // GPU系インスタンス（g6f.2xlarge）で起動するジョブ。ワーカーはGPU描画必須でない

@@ -100,7 +100,7 @@ def test_keeps_both_outputs_when_the_resolution_changes(entrypoint, monkeypatch)
     assert s3.deleted == []
 
 
-# --- 出力が1本になる場合(th20・低速録画) ----------------------------------
+# --- 出力が1本になる場合(th20・倍速録画) ----------------------------------
 
 
 def test_collapses_to_one_output_when_the_resolution_does_not_change(entrypoint, monkeypatch):
@@ -253,9 +253,9 @@ def test_does_not_upload_or_record_a_poster_when_extraction_fails(entrypoint, mo
 def test_reads_the_time_scale_recorded_with_the_raw_checkpoint(entrypoint):
     """**環境変数から取り直してはいけない**。
 
-    自宅ワーカーが低速録画した後にリトライがEC2へ回ると、EC2側には
-    `FPS_LIMIT_TARGET_HZ` が渡らない(低速録画は自宅限定なので渡さないのが正しい)。
-    倍率を生データ自身に添えておかないと、半分の速度の動画をそのまま配信してしまう。
+    リトライ先には `FPS_LIMIT_TARGET_HZ` が渡るとは限らない(旧低速録画のscale>1の
+    チェックポイントからの再開もあり得る)。倍率を生データ自身に添えておかないと、
+    速度の違う動画をそのまま配信してしまう。
     """
     s3 = FakeS3(metadata={entrypoint.TIME_SCALE_METADATA_KEY: "2.0"})
 

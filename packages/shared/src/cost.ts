@@ -286,12 +286,11 @@ function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD
 }
 
 /**
- * ジョブからサイズ帯を推定する。GPU必須のジョブ（th06nc・th15と倍速録画、
+ * ジョブからサイズ帯を推定する。GPU必須のジョブ（th06nc・th15・th20と倍速録画、
  * `requiresGpuRecording()`）はGPU系`gpu`帯、それ以外はタイトルで決まる: th11・th12・th128は
- * `.2xlarge`帯、th20は`.4xlarge`帯（`apps/api/src/ec2.ts`の`TH11_CANDIDATE_INSTANCE_TYPES` /
+ * `.2xlarge`帯（`apps/api/src/ec2.ts`の`TH11_CANDIDATE_INSTANCE_TYPES` /
  * `TH12_CANDIDATE_INSTANCE_TYPES` / `TH128_CANDIDATE_INSTANCE_TYPES` /
- * `TH20_CANDIDATE_INSTANCE_TYPES` / `GPU_CANDIDATE_INSTANCE_TYPES`、touhou-recorder
- * reports/40・46・73・80・81・82・89）。
+ * `GPU_CANDIDATE_INSTANCE_TYPES`、touhou-recorder reports/40・73・80・81・82・89）。
  *
  * インスタンスタイプがまだ記録されていない段階（`launching`）や、リトライで
  * リセットされた場合（`retryJob.ts`）に使われる。ここが実態とずれると、`ec2.ts`の
@@ -306,8 +305,6 @@ function sizeClassOfJob(job: Pick<JobCostInput, "game" | "options">): keyof type
     case "th12":
     case "th128":
       return "2xlarge";
-    case "th20":
-      return "4xlarge";
     default:
       return "xlarge";
   }
