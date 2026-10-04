@@ -13,20 +13,21 @@ EC2 Fleet インスタンスの UserData から `docker run` で起動される�
      取得する) → S3からリプレイをダウンロード → recording状態 → GAMEに応じた
      record_{game}.py(recording/パッケージの共通録画パイプラインを使う、Issue #13)
      で録画(ProgressReporterが録画中のスクリーンショット/進捗をS3・DynamoDBへ反映する)
-  3. 録画完了直後、生動画をS3へアップロードしoutputPathを保存(=チェックポイント) →
+  3. 録画完了直後、生動画をS3へアップロードしoutputPathを保存(=チェックポイント。
+     配信版のカット範囲もオブジェクトメタデータとして添える、Issue #266) →
      status を converting に更新(併せてリプレイずれの事後検証結果 desyncDetected、
      タイムアウト打ち切りの有無 timedOut も書き込む。Issue #103・#161。
      recording.modlog.check_replay_desync() / recording.pipeline.attempt_recording() 参照)
-  4. 配信用変換(等倍への戻し・解像度合わせ・ウォーターマーク合成を1パスで。
-     進捗%を10秒間隔程度で報告)
+  4. 配信用変換(リプレイ再生区間外のカット・等倍への戻し・解像度合わせ・ウォーターマーク
+     合成を1パスで。進捗%を10秒間隔程度で報告)
   5. status を uploading に更新(アップロード予定バイト数 uploadTotalBytes を同時に
      記録、Issue #202) → 変換後動画をS3へアップロード(転送済みバイト数を progress
      として10秒間隔程度で報告、フロント側の実進捗バー・残り時間推定に使う) →
      配信版動画の90%地点のフレームをposter画像として切り出しS3へアップロード
      (Issue #171、`convert.extract_poster_frame()`。失敗してもジョブは失敗させず、
      プレビュープレイヤーのposterは従来どおり進捗中スクリーンショットへフォール
-     バックする) → status を done に更新。出力が1本か2本かは録画の内容で決まる
-     (`convert.needs_separate_raw_output()`、下記 convert_and_upload)
+     バックする) → status を done に更新 → 生動画のチェックポイントを削除。出力が1本か
+     2本かは録画の内容で決まる(`convert.needs_separate_raw_output()`、下記 convert_and_upload)
 
 バックグラウンドでは2つのスレッドが動く。TaskHeartbeat は Step Functions へ60秒間隔で
 `SendTaskHeartbeat` を送り、ワーカーが生きていることを知らせる(Issue #49。自宅ワーカーの
@@ -105,19 +106,32 @@ DESYNC_RESULT_PATH = f"{WORK_DIR}/desync_result.json"
 # リプレイ終了を検知できずタイムアウトで打ち切られたか(Issue #161)の結果。
 # DESYNC_RESULT_PATHと同じくrecording.artifacts.write_timeout_result()がファイル経由で書く。
 TIMEOUT_RESULT_PATH = f"{WORK_DIR}/timeout_result.json"
+# 配信版でカットする範囲(Issue #266、recording/cut.py)。recording.artifacts.write_cut_result()が書く。
+CUT_RESULT_PATH = f"{WORK_DIR}/cut_result.json"
+# 元の解像度版(解像度が変わる等倍録画でのみ作る、convert.needs_separate_raw_output())。
+OUTPUT_VIDEO_RAW = f"{WORK_DIR}/video_raw.mp4"
 # 出力オブジェクトキー。CloudFront はこのキーをパスとして配信する。
 # `OUTPUT_KEY` は録画直後の生データ(チェックポイント)の置き場でもある。
 # `_720p` という接尾辞は歴史的なもので、実際の解像度は録画によって変わる
-# (720pに満たない録画だけ引き上げ、th20の1280x960はそのまま。`convert.py`参照)。
+# (720p・1080pに満たない録画をそのすぐ上へ引き上げる。`convert.py`参照)。
 OUTPUT_KEY = f"videos/{JOB_ID}.mp4"
 OUTPUT_KEY_DELIVERY = f"videos/{JOB_ID}_720p.mp4"
 OUTPUT_KEY_POSTER = f"videos/{JOB_ID}_poster.jpg"
+# 元の解像度版。カット済みなので生データのチェックポイント(`OUTPUT_KEY`)とは別物で、
+# 別キーに置く(同じキーへ上書きすると、上書き後・done前に落ちたリトライが
+# カット済みの動画をもう一度カットしてしまう)。
+OUTPUT_KEY_RAW = f"videos/{JOB_ID}_raw.mp4"
 # 生データのチェックポイントに添えるS3オブジェクトメタデータのキー。倍速録画
 # (Issue #288)の生データは実時間が `time_scale` 倍に伸縮しており、等倍へ戻すにはその倍率が
 # 要る。**環境変数から取り直してはいけない**: リトライ先に`FPS_LIMIT_TARGET_HZ`が渡らない
 # と速度の違う動画をそのまま配信してしまう。倍率は生データ自身に添えて運ぶ(旧低速録画の
 # scale>1のチェックポイントからの再開もこれに依存するため、等倍化は残してある)。
 TIME_SCALE_METADATA_KEY = "sattori-time-scale"
+# 同じく、配信版でカットする範囲(Issue #266)も生データに添えて運ぶ。変換から再開した
+# 試行は録画をしないので、カット範囲を自分では決められない。値は秒数の文字列で、
+# カットしない側はキーごと付けない。
+CUT_START_METADATA_KEY = "sattori-cut-start"
+CUT_END_METADATA_KEY = "sattori-cut-end"
 WATERMARK_ASSET = f"{REPO}/assets/watermark/watermark-60fps.webm"
 # 配信用変換中のffmpeg生ログ(frame=/fps=/bitrate=等)の退避先。CloudWatch Logsには
 # 全行流さず(Issue #58フォローアップ)、ここへ書き出してから完了後にS3(期限付き)へ
@@ -285,9 +299,8 @@ def upload_poster_if_extracted(s3):
 def raw_checkpoint_exists(s3):
     """変換から再開できる生データのチェックポイントがS3に在るか。
 
-    **ジョブレコードの `outputPath` では判定できない**。出力を1本に集約する構成
-    (`convert.py` の `needs_separate_raw_output()` が False——th20や倍速録画)では、
-    完了時に `outputPath` が変換結果を指し、生データは削除される。完了済みのジョブが
+    **ジョブレコードの `outputPath` では判定できない**。完了時に `outputPath` は変換結果
+    (配信版か元の解像度版)を指し、生データは削除される。完了済みのジョブが
     Step Functions にリトライされた場合(ハートビート途切れなどで、コンテナ自体は
     完走していたケース)に「`outputPath` があるから再開できる」と誤認すると、存在
     しない生データを取りに行って落ち、`done` を `failed` へ書き換えてしまう。
@@ -304,10 +317,12 @@ def raw_checkpoint_exists(s3):
         return False
 
 
-def read_checkpoint_time_scale(s3):
-    """生データのチェックポイントに添えた実時間スケールを読む(既定1.0＝等倍)。
+def read_checkpoint_metadata(s3):
+    """生データのチェックポイントに添えた (実時間スケール, カット範囲) を読む。
 
-    取得に失敗した場合も1.0へ倒す。倍速・旧低速録画で録った生データを等倍とみなすと
+    実時間スケールの既定は1.0(等倍)、カット範囲の既定はカットしない。
+
+    取得に失敗した場合も1.0・カット無しへ倒す。倍速・旧低速録画で録った生データを等倍とみなすと
     速度の違う動画を配信してしまうが、ここで例外にすると**変換から再開できる
     はずだったジョブを録画からやり直させる**ことになる。メタデータが欠けるのは
     このフィールド導入前のジョブか、S3の一時障害に限られるため、ログを残して
@@ -315,14 +330,26 @@ def read_checkpoint_time_scale(s3):
     """
     try:
         head = s3.head_object(Bucket=OUTPUT_BUCKET, Key=OUTPUT_KEY)
-        raw = (head.get("Metadata") or {}).get(TIME_SCALE_METADATA_KEY)
-        if raw is None:
-            log(f"生データに{TIME_SCALE_METADATA_KEY}が無いため等倍として扱います")
-            return 1.0
-        return float(raw)
     except Exception as err:  # noqa: BLE001 - 取得失敗で変換からの再開自体を諦めない
-        log(f"生データのメタデータ取得に失敗しました(等倍として続行): {err}")
-        return 1.0
+        log(f"生データのメタデータ取得に失敗しました(等倍・カット無しとして続行): {err}")
+        return 1.0, dict(NO_CUT)
+    metadata = head.get("Metadata") or {}
+    raw = metadata.get(TIME_SCALE_METADATA_KEY)
+    time_scale = 1.0
+    if raw is None:
+        log(f"生データに{TIME_SCALE_METADATA_KEY}が無いため等倍として扱います")
+    else:
+        try:
+            time_scale = float(raw)
+        except ValueError:
+            log(f"生データの{TIME_SCALE_METADATA_KEY}を読めませんでした(等倍として続行): {raw!r}")
+    cut = dict(NO_CUT)
+    for key, metadata_key in (("startSec", CUT_START_METADATA_KEY), ("endSec", CUT_END_METADATA_KEY)):
+        try:
+            cut[key] = float(metadata[metadata_key]) if metadata_key in metadata else None
+        except ValueError:
+            log(f"生データの{metadata_key}を読めませんでした(その側はカットしません)")
+    return time_scale, cut
 
 
 def upload_diagnostics_snapshots_if_present(s3):
@@ -395,6 +422,7 @@ def record(s3):
             cmd += ["--expected-score", EXPECTED_SCORE]
         cmd += ["--desync-result-path", DESYNC_RESULT_PATH]
         cmd += ["--timeout-result-path", TIMEOUT_RESULT_PATH]
+        cmd += ["--cut-result-path", CUT_RESULT_PATH]
 
         result = subprocess.run(cmd)
     finally:
@@ -410,8 +438,10 @@ def record(s3):
     # 倍速録画ならこの生データは実時間が伸縮した状態なので、等倍へ戻すのに
     # 要る倍率をオブジェクトメタデータとして添える(`TIME_SCALE_METADATA_KEY`参照)。
     time_scale = recording_time_scale()
+    cut = read_cut_result()
     output_bytes = upload_video(
-        s3, OUTPUT_VIDEO, OUTPUT_KEY, metadata={TIME_SCALE_METADATA_KEY: str(time_scale)},
+        s3, OUTPUT_VIDEO, OUTPUT_KEY,
+        metadata={TIME_SCALE_METADATA_KEY: str(time_scale), **cut_to_metadata(cut)},
     )
     update_status(
         JOB_ID, "converting", output_path=OUTPUT_KEY, output_bytes=output_bytes,
@@ -422,6 +452,41 @@ def record(s3):
         desync_detected=read_desync_result(),
         timed_out=read_timeout_result(),
     )
+    return time_scale, cut
+
+
+NO_CUT = {"startSec": None, "endSec": None}
+
+
+def read_cut_result():
+    """record_thNN.pyが書き出した配信版のカット範囲(Issue #266)を読む。
+
+    読めなければカットしない(`NO_CUT`)。リプレイ区間外が残るだけで、動画としては正しい。
+    """
+    if not os.path.exists(CUT_RESULT_PATH):
+        return dict(NO_CUT)
+    try:
+        with open(CUT_RESULT_PATH) as f:
+            data = json.load(f)
+        return {key: _as_seconds(data.get(key)) for key in NO_CUT}
+    except (OSError, ValueError) as err:  # noqa: BLE001 - カット範囲の読み取り失敗でジョブは失敗させない
+        log(f"カット範囲の読み取りに失敗しました(カットせず続行): {err}")
+        return dict(NO_CUT)
+
+
+def _as_seconds(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def cut_to_metadata(cut):
+    metadata = {}
+    if cut.get("startSec") is not None:
+        metadata[CUT_START_METADATA_KEY] = f"{cut['startSec']:.6f}"
+    if cut.get("endSec") is not None:
+        metadata[CUT_END_METADATA_KEY] = f"{cut['endSec']:.6f}"
+    return metadata
 
 
 def read_desync_result():
@@ -459,20 +524,21 @@ def read_timeout_result():
         return None
 
 
-def convert_and_upload(s3, time_scale):
-    """録画結果を配信用の1本へ変換し、S3とDynamoDBへ反映する。
+def convert_and_upload(s3, time_scale, cut=NO_CUT):
+    """録画結果を配信用に変換し、S3とDynamoDBへ反映する。
 
-    **録画後の再エンコードはこの1パスだけ**で、等倍への戻し(倍速録画)・解像度合わせ・
-    ウォーターマーク合成をまとめて行う(`convert.py`)。
+    **録画後の再エンコードはこの1パスだけ**で、リプレイ区間外のカット(`cut`、Issue #266)・
+    等倍への戻し(倍速録画)・解像度合わせ・ウォーターマーク合成をまとめて行う(`convert.py`)。
 
     出力が1本になるか2本になるかは録画の内容で決まる(`needs_separate_raw_output()`):
 
-    - **2本**(th06/07/08/11の等倍録画): 生データがそのまま「元解像度版」として通用する。
-      既にチェックポイントとしてアップロード済みなので、変換結果を別キーへ足すだけ。
-    - **1本**(th20・倍速録画): 生データを別に出す意味が無い(解像度が同じでウォーター
-      マークの有無しか違わない)か、等倍の速度でなくそのままでは配信できない。変換結果だけを
-      配信し、**役目を終えた生データはS3から消す**(消さないとジョブあたりの保管量が
-      倍のまま残り、CloudFrontの無料枠を圧迫する。AGENTS.md §6)。
+    - **2本**(解像度が変わる等倍録画。640x480のタイトルとth15/th20): 配信版と、同じ変換で作る
+      元の解像度版(`OUTPUT_KEY_RAW`)。生データはカットされていないので、そのままは出さない。
+    - **1本**(th06nc・倍速録画): 元の解像度版を別に出す意味が無い(解像度が同じでウォーター
+      マークの有無しか違わない)か、等倍の速度でなくそのままでは配信できない。
+
+    どちらも、**役目を終えた生データのチェックポイントはS3から消す**(消さないとジョブ
+    あたりの保管量が増えたまま残り、CloudFrontの無料枠を圧迫する。AGENTS.md §6)。
     """
     # 変換フェーズの進捗をここから数え直す。上の record() から来た場合は
     # 「converting へ遷移した書き込み」が既に 0 へ戻しているが、生動画チェックポイント
@@ -491,6 +557,8 @@ def convert_and_upload(s3, time_scale):
         convert_for_delivery(
             OUTPUT_VIDEO, OUTPUT_VIDEO_DELIVERY,
             time_scale=time_scale,
+            cut_start=cut.get("startSec"), cut_end=cut.get("endSec"),
+            raw_output_path=OUTPUT_VIDEO_RAW if separate_raw else None,
             watermark_path=WATERMARK_ASSET if WATERMARK else None,
             on_progress=on_convert_progress, log=log,
             ffmpeg_log_path=FFMPEG_UPSCALE_LOG,
@@ -511,34 +579,37 @@ def convert_and_upload(s3, time_scale):
     # (`apps/web/src/hooks/jobProgressBudget.ts`、実測した自宅回線の速度は
     # docs/reports/2026-09-05-home-worker-upload-bandwidth.md)。
     upload_total_bytes = os.path.getsize(OUTPUT_VIDEO_DELIVERY)
+    if separate_raw:
+        upload_total_bytes += os.path.getsize(OUTPUT_VIDEO_RAW)
     update_status(JOB_ID, "uploading", reset_progress=True, upload_total_bytes=upload_total_bytes)
     delivery_bytes = upload_video(
         s3, OUTPUT_VIDEO_DELIVERY, OUTPUT_KEY_DELIVERY,
         on_progress=lambda transferred: update_progress(JOB_ID, transferred),
     )
+    if separate_raw:
+        raw_bytes = upload_video(
+            s3, OUTPUT_VIDEO_RAW, OUTPUT_KEY_RAW,
+            on_progress=lambda transferred: update_progress(JOB_ID, delivery_bytes + transferred),
+        )
     poster_key = upload_poster_if_extracted(s3)
     if separate_raw:
         update_status(
             JOB_ID, "done",
-            output_path=OUTPUT_KEY, output_path_720p=OUTPUT_KEY_DELIVERY,
-            # 生動画のサイズもここで併せて記録する。チェックポイントから再開した場合
-            # (record()を通らず download_checkpoint_video() で取得した場合)は
-            # record() 側の記録が走らないため。
-            output_bytes=os.path.getsize(OUTPUT_VIDEO),
+            output_path=OUTPUT_KEY_RAW, output_path_720p=OUTPUT_KEY_DELIVERY,
+            output_bytes=raw_bytes,
             output_bytes_720p=delivery_bytes,
             poster_image_path=poster_key,
         )
-        return
-
-    # 1本に集約する場合。`outputPath` を変換結果へ差し替え、`outputPath720p` は
-    # null のままにする(ページBのダウンロードボタンは `downloadUrl720p ?? downloadUrl`
-    # のフォールバックでそのまま1本になる)。
-    update_status(
-        JOB_ID, "done",
-        output_path=OUTPUT_KEY_DELIVERY,
-        output_bytes=delivery_bytes,
-        poster_image_path=poster_key,
-    )
+    else:
+        # 1本に集約する場合。`outputPath` を変換結果へ差し替え、`outputPath720p` は
+        # null のままにする(ページBのダウンロードボタンは `downloadUrl720p ?? downloadUrl`
+        # のフォールバックでそのまま1本になる)。
+        update_status(
+            JOB_ID, "done",
+            output_path=OUTPUT_KEY_DELIVERY,
+            output_bytes=delivery_bytes,
+            poster_image_path=poster_key,
+        )
     # **`done` を確定させてから**生データを消す。順序を逆にすると、削除後・status更新前に
     # 落ちた場合に「outputPathの指すオブジェクトが無い」ジョブが残り、変換からの再開も
     # できなくなる。ここまで来ていれば再開はもう起こらないので、削除は純粋な後始末。
@@ -583,15 +654,14 @@ def main():
             if raw_checkpoint_exists(s3):
                 log("生動画チェックポイントを検出しました。変換から再開します")
                 download_checkpoint_video(s3)
-                # 録画時の実時間スケールは生データ自身に添えてある。環境変数から
+                # 録画時の実時間スケールとカット範囲は生データ自身に添えてある。環境変数から
                 # 取り直すと、リトライ先で環境変数が違うと
                 # 速度の違う動画のまま配信してしまう(`TIME_SCALE_METADATA_KEY`参照)。
-                time_scale = read_checkpoint_time_scale(s3)
+                time_scale, cut = read_checkpoint_metadata(s3)
             else:
-                record(s3)
-                time_scale = recording_time_scale()
+                time_scale, cut = record(s3)
 
-            convert_and_upload(s3, time_scale)
+            convert_and_upload(s3, time_scale, cut)
 
         log("ジョブ完了")
         if watcher:

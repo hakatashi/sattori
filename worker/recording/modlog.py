@@ -8,6 +8,7 @@ MOD側の`fps_monitor.cpp`(GetDeviceStateフックの呼び出し頻度を5秒�
 スレッド)自体は残っているため、`FpsMonitor: N GetDeviceState calls in M ms (H.H Hz)`
 行はMODログに引き続き出力されるが、読み取って自動判定に使う経路は無い。
 """
+import datetime
 import os
 import re
 import time
@@ -72,6 +73,74 @@ def wait_for_log_marker(log_path, marker, timeout, poll_interval=0.1, log_all=Fa
                     return time.time()
         time.sleep(poll_interval)
     return None
+
+
+# ---------------------------------------------------------------------------
+# リプレイファイルを選択したキー入力の時刻(配信版のカット開始位置、Issue #266)
+# ---------------------------------------------------------------------------
+# 全タイトルのMOD(`mods/thNN_replay_autoplay/dllmain.cpp`)は、リプレイ一覧で1番目の
+# ファイルを選ぶEnterを押す**直前**にこの文言を含む行をログへ出す(Step番号はタイトルで
+# 違うので文言で拾う)。MODを足すときはこの文言を揃えること。
+REPLAY_SELECT_LOG_RE = re.compile(r"select 1st (?:user )?replay file|1番目のリプレイファイルを選択")
+# MODログの行頭の時刻(`mods/common/logging.cpp`、`GetLocalTime()`のローカル時刻・日付なし)。
+_LOG_LINE_TIME_RE = re.compile(r"^\[(\d{2}):(\d{2}):(\d{2})\.(\d{3})\] ")
+# 同期マーカー行(`recording/sync_marker.py`)。行頭のローカル時刻と壁時計のepoch秒の両方を
+# 持つので、ローカル時刻→epoch秒の換算(タイムゾーン差)を実測できる。
+_SYNC_MARKER_EPOCH_RE = re.compile(r"SYNC_MARKER played epoch=([0-9.]+)")
+_SECONDS_PER_DAY = 24 * 60 * 60
+
+
+def _seconds_of_day(match):
+    hour, minute, second, millis = (int(g) for g in match.groups())
+    return hour * 3600 + minute * 60 + second + millis / 1000
+
+
+def _nearest_epoch(seconds_of_day, offset, reference_epoch):
+    """`seconds_of_day + offset`(日付を除いたepoch秒)を、`reference_epoch`に最も近い日付へ戻す。"""
+    base = seconds_of_day + offset
+    days = round((reference_epoch - base) / _SECONDS_PER_DAY)
+    return base + days * _SECONDS_PER_DAY
+
+
+def find_replay_select_epoch(log_path, reference_epoch=None):
+    """MODがリプレイファイルを選択するキーを押した壁時計時刻(epoch秒)。見つからなければNone。
+
+    MODログの行頭時刻は`GetLocalTime()`(ミリ秒精度、日付なし)なので、同じログにある
+    同期マーカー行(行頭のローカル時刻と`epoch=`の両方を持つ)からタイムゾーン差を実測して
+    換算する。同期マーカーが無ければ、このプロセスのタイムゾーン(WineもPythonも同じ
+    コンテナの`TZ`を見る)で換算する。`GetLocalTime()`はスピードハック(QPC等の偽装、
+    `mods/common/speed_hack_hook.cpp`)の対象外なので、倍速録画でも実時間のまま。
+
+    `reference_epoch`(既定は現在時刻)は日付を補うための目安で、ログ時刻の前後12時間以内なら
+    よい(日付をまたいだ録画のため)。
+    """
+    try:
+        with open(log_path, errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+    select_sod = None
+    offset = None
+    for line in lines:
+        time_match = _LOG_LINE_TIME_RE.match(line)
+        if not time_match:
+            continue
+        if select_sod is None and REPLAY_SELECT_LOG_RE.search(line):
+            select_sod = _seconds_of_day(time_match)
+        marker_match = _SYNC_MARKER_EPOCH_RE.search(line)
+        if marker_match:
+            offset = float(marker_match.group(1)) - _seconds_of_day(time_match)
+    if select_sod is None:
+        return None
+    if reference_epoch is None:
+        reference_epoch = time.time()
+    if offset is None:
+        # どちらの方式でも offset は「ローカル0時のepoch秒」。日付が1日ずれていても
+        # _nearest_epoch() が直す。
+        local_midnight = datetime.datetime.fromtimestamp(reference_epoch).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        offset = local_midnight.timestamp()
+    return _nearest_epoch(select_sod, offset, reference_epoch)
 
 
 def read_verified_scores(log_path, game_id):
