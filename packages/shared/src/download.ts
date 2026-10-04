@@ -25,10 +25,12 @@ function shortGameTitle(replayInfo: ReplayInfo): string {
 
 /**
  * 動画の役割。**解像度ではなく役割で区別する**——`delivery`が常に720pとは限らない
- * ため（720pに満たない録画だけ引き上げ、th20の1280x960はそのまま。`worker/convert.py`）。
+ * ため（720p・1080pに満たない録画をそのすぐ上へ引き上げ、th06ncの1080pはそのまま。
+ * `worker/convert.py`）。
  *
  * - `delivery`: ユーザーへ渡す本命。ウォーターマークが合成されている
- * - `raw`: 録画そのままの版。解像度が実際に変わる録画でのみ副次リンクとして併せて提供する
+ * - `raw`: 録画の元の解像度の版（ウォーターマーク無し）。解像度が実際に変わる録画でのみ
+ *   副次リンクとして併せて提供する
  */
 export type VideoVariant = "delivery" | "raw";
 
