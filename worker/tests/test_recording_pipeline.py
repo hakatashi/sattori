@@ -1017,3 +1017,20 @@ def test_record_with_retry_measures_duplicates_from_the_video_start(monkeypatch)
 
     assert pipeline.record_with_retry(make_config(), "/replay.rpy", "/out.mp4", log=lambda m: None) is True
     assert calls == [(33.0, 30)]
+
+
+def test_duplicate_rate_window_keeps_legacy_window_for_long_content():
+    assert pipeline.duplicate_rate_window(32.3) == (15, pytest.approx(17.3))
+    assert pipeline.duplicate_rate_window(90.0) == (15, 30)
+
+
+def test_duplicate_rate_window_moves_before_content_end_for_short_content():
+    """th06nc 2倍速のスペルプラクティス(content_end_sec=17.5)で、窓が終了後の静止画面に
+    落ちて重複率87%と誤判定された(15〜20秒固定窓)。窓は5.5〜15.5秒になること。"""
+    start, duration = pipeline.duplicate_rate_window(17.5)
+    assert start == pytest.approx(5.5)
+    assert start + duration == pytest.approx(15.5)
+
+
+def test_duplicate_rate_window_is_skipped_when_content_too_short():
+    assert pipeline.duplicate_rate_window(9.0) is None

@@ -840,6 +840,21 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     }
 
 
+def duplicate_rate_window(content_end_sec):
+    """重複フレーム率の検査窓(映像の録画開始からの開始秒, 長さ秒)を返す。短すぎて検査できない
+    ならNone。コンテンツ終了が20秒以上なら従来どおり15秒始点。それより短いリプレイ(倍速録画の
+    スペルプラクティス等)では15秒始点だと窓が終了後の静止画面に落ちて誤判定するため(Issue #250と
+    同種、本番のth06nc 2倍速ジョブで確認)、終端を終了推定の2秒手前に置いて最大10秒遡る。
+    始点はメニュー操作・ロード区間を避けて5秒以降。"""
+    if content_end_sec >= 20:
+        return 15, min(30, content_end_sec - 15)
+    end = content_end_sec - 2
+    start = max(5, end - 10)
+    if end - start < 3:
+        return None
+    return start, end - start
+
+
 def record_with_retry(config, replay_path, output_path, *,
                        progress_dir=None, expected_duration_seconds=None, diagnostics_dir=None,
                        max_attempts=MAX_ATTEMPTS_DEFAULT, max_duplicate_rate=MAX_DUPLICATE_RATE_DEFAULT,
@@ -928,13 +943,17 @@ def _record_with_retry(config, replay_path, output_path, *,
         # 出力ファイル上では後ろにずれるので足す。足さないと窓がメニュー操作・ロード区間に
         # かかる(GPUワーカーのth06 4倍速で2.7%→28.6%)。
         video_offset_sec = result.get("video_offset_sec", 0.0)
-        dup_rate = measure_duplicate_rate(
-            output_path, 15 + video_offset_sec, min(30, max(5, content_end_sec - 15)),
-        )
-        log(
-            f"録画開始15秒以降の重複フレーム率: {dup_rate}% "
-            f"(閾値{threshold:.1f}%、time_scale={time_scale})"
-        )
+        window = duplicate_rate_window(content_end_sec)
+        if window is None:
+            log("コンテンツが短すぎるため重複フレーム率チェックをスキップします")
+            dup_rate = None
+        else:
+            window_start, window_duration = window
+            dup_rate = measure_duplicate_rate(output_path, window_start + video_offset_sec, window_duration)
+            log(
+                f"録画開始{window_start:g}秒以降{window_duration:g}秒の重複フレーム率: {dup_rate}% "
+                f"(閾値{threshold:.1f}%、time_scale={time_scale})"
+            )
         if dup_rate is not None and dup_rate > threshold:
             log(f"WARNING: 重複フレーム率({dup_rate}%)が閾値({threshold:.1f}%)を超えました。破棄してリトライします")
             # ここでの破棄はattempt_recording()が戻った後に判明するため、ライブキャプチャ
