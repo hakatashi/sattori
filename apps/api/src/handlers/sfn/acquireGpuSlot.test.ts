@@ -322,6 +322,136 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
     expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(0);
   });
 
+  describe("倍速録画の等倍フォールバック(Issue #289)", () => {
+    const speedupJob: JobRecord = createJobRecord({
+      game: "th07",
+      status: "queued",
+      jobId: "job-1",
+      options: { ...cpuJob.options, recordingSpeed: 2 },
+    });
+
+    /** 待機開始から`minutes`分経過した状態にする(markGpuQueueWaitingの戻り値)。 */
+    function waitedFor(minutes: number) {
+      const enteredAt = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+      ddbMock.on(UpdateCommand).resolves({ Attributes: { gpuQueueEnteredAt: enteredAt } });
+    }
+
+    function fallbackUpdates() {
+      return ddbMock
+        .commandCalls(UpdateCommand)
+        .filter((call) => String(call.args[0].input.UpdateExpression).includes("requestedRecordingSpeed"));
+    }
+
+    it("30分以上待った倍速録画ジョブは等倍へ書き換え、待機列から外してacquired:trueを返す", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
+      waitedFor(31);
+      ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+        Items: [waitingEntry("job-0", -60), waitingEntry("job-1", 0)],
+      });
+      ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({ Items: [] });
+
+      const { handler } = await import("./acquireGpuSlot.js");
+      const result = await handler({ jobId: "job-1", attempt: 1 });
+
+      expect(result).toEqual({ jobId: "job-1", attempt: 1, acquired: true, timedOut: false, waitSeconds: 0 });
+      expect(fallbackUpdates()).toHaveLength(1);
+      expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
+        ":native": 1,
+        ":from": 2,
+        ":reason": "gpu_queue_wait",
+      });
+      // FIFOの基準(gpuQueuedAt)も含めて待機列から完全に外す。
+      const removeUpdate = ddbMock
+        .commandCalls(UpdateCommand)
+        .find((call) => String(call.args[0].input.UpdateExpression).includes("REMOVE gpuQueueState"));
+      expect(removeUpdate?.args[0].input.UpdateExpression).toContain("gpuQueuedAt");
+      expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+    });
+
+    it("先頭で空きが無い場合も30分以上待っていればフォールバックする", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
+      waitedFor(31);
+      ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({ Items: [waitingEntry("job-1", 0)] });
+      ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+        Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA }],
+      });
+
+      const { handler } = await import("./acquireGpuSlot.js");
+      const result = await handler({ jobId: "job-1", attempt: 1 });
+
+      expect(result.acquired).toBe(true);
+      expect(fallbackUpdates()).toHaveLength(1);
+    });
+
+    it("30分以上待っていても枠を確保できたならフォールバックせず倍速のまま進む", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
+      waitedFor(31);
+      ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({ Items: [waitingEntry("job-1", 0)] });
+      ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+        Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 0 }],
+      });
+      ddbMock.on(TransactWriteCommand).resolves({});
+
+      const { handler } = await import("./acquireGpuSlot.js");
+      const result = await handler({ jobId: "job-1", attempt: 1 });
+
+      expect(result.acquired).toBe(true);
+      expect(fallbackUpdates()).toHaveLength(0);
+      expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(1);
+    });
+
+    it("待ち時間が30分未満なら待機を続ける", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
+      waitedFor(29);
+      ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+        Items: [waitingEntry("job-0", -60), waitingEntry("job-1", 0)],
+      });
+      ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({ Items: [] });
+
+      const { handler } = await import("./acquireGpuSlot.js");
+      const result = await handler({ jobId: "job-1", attempt: 1 });
+
+      expect(result.acquired).toBe(false);
+      expect(fallbackUpdates()).toHaveLength(0);
+    });
+
+    it("GPU必須タイトル(th15)の倍速録画はフォールバックしない(等倍でもGPUが要る)", async () => {
+      ddbMock.on(GetCommand).resolves({
+        Item: { ...gpuJob, options: { ...gpuJob.options, recordingSpeed: 2 } },
+      });
+      waitedFor(31);
+      ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+        Items: [waitingEntry("job-0", -60), waitingEntry("job-1", 0)],
+      });
+      ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({ Items: [] });
+
+      const { handler } = await import("./acquireGpuSlot.js");
+      const result = await handler({ jobId: "job-1", attempt: 1 });
+
+      expect(result.acquired).toBe(false);
+      expect(fallbackUpdates()).toHaveLength(0);
+    });
+
+    it("フォールバックの条件付き更新が弾かれたら(停止済み等)通常どおり待機する", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
+      const enteredAt = new Date(Date.now() - 31 * 60 * 1000).toISOString();
+      ddbMock.on(UpdateCommand).resolves({ Attributes: { gpuQueueEnteredAt: enteredAt } });
+      ddbMock
+        .on(UpdateCommand, { ExpressionAttributeValues: { ":reason": "gpu_queue_wait" } }, false)
+        .rejects(new ConditionalCheckFailedException({ message: "conditional", $metadata: {} }));
+      ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+        Items: [waitingEntry("job-0", -60), waitingEntry("job-1", 0)],
+      });
+      ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({ Items: [] });
+
+      const { handler } = await import("./acquireGpuSlot.js");
+      const result = await handler({ jobId: "job-1", attempt: 1 });
+
+      expect(result.acquired).toBe(false);
+      expect(result.timedOut).toBe(false);
+    });
+  });
+
   it("stopRequestedAtがあるジョブは待機列に入れない(markGpuQueueWaitingの条件不成立)", async () => {
     ddbMock.on(GetCommand).resolves({ Item: gpuJob });
     ddbMock

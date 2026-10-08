@@ -90,9 +90,11 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     previewImageUrl,
     posterImageUrl,
     replayInfo: job.replayInfo ?? null,
-    // 倍速録画（Issue #288）。常にGPUインスタンスで録るため割り当て先による
-    // フォールバックが無く、ユーザーの指定がそのまま実際の速度になる。
+    // 倍速録画（Issue #288）。GPUを確保できず等倍へフォールバックした（Issue #289）
+    // ジョブは`options.recordingSpeed`自体が1へ書き換わっているので、常に実際の速度になる。
     recordingSpeed: recordingSpeedOf(job.options),
+    // フォールバックしていないジョブには属性自体が無い（optional）。
+    requestedRecordingSpeed: job.requestedRecordingSpeed ?? null,
     // `errorCode`と同じ理由（Issue #103追加より前の旧ジョブでは属性自体が無く
     // `undefined`になりうる）で`?? null`を通す。
     desyncDetected: job.desyncDetected ?? null,

@@ -7,7 +7,7 @@ import {
 } from "@aws-sdk/client-ec2";
 import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import type { JobRecord } from "@sattori/shared";
+import { SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT, type JobRecord } from "@sattori/shared";
 import { MAX_ATTEMPTS, MAX_ATTEMPTS_DETERMINISTIC } from "../../retryPolicy.js";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
@@ -426,6 +426,114 @@ describe("sfn/handleFailure handler", () => {
 });
 
 describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #270）", () => {
+  describe("倍速録画の等倍フォールバック(Issue #289)", () => {
+    const speedupJob: JobRecord = {
+      ...baseJob,
+      game: "th07",
+      options: { ...baseJob.options, recordingSpeed: 2 },
+    };
+    const capacityError = {
+      Error: "Error",
+      Cause: JSON.stringify({
+        errorType: "Error",
+        errorMessage:
+          "EC2 Fleet でのインスタンス起動に失敗しました（InstanceId 不明）: InsufficientInstanceCapacity: no capacity",
+      }),
+    };
+
+    function fallbackUpdates() {
+      return ddbMock
+        .commandCalls(UpdateCommand)
+        .filter((call) => String(call.args[0].input.UpdateExpression).includes("requestedRecordingSpeed"));
+    }
+
+    it("容量不足が規定の試行回数目以降なら等倍へ書き換えてリトライする", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
+      ddbMock.on(UpdateCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({
+        jobId: "job-1",
+        attempt: SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT,
+        error: capacityError,
+      });
+
+      expect(result).toEqual({ shouldRetry: true });
+      expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
+        ":native": 1,
+        ":from": 2,
+        ":reason": "gpu_capacity",
+      });
+      expect(statusUpdates(ddbMock)).toHaveLength(0);
+    });
+
+    it("試行回数の上限に達していてもフォールバックした直後は1回リトライする", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
+      ddbMock.on(UpdateCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({ jobId: "job-1", attempt: MAX_ATTEMPTS, error: capacityError });
+
+      expect(result).toEqual({ shouldRetry: true });
+      expect(statusUpdates(ddbMock)).toHaveLength(0);
+    });
+
+    it("規定の試行回数に満たなければフォールバックせずGPUで再試行する", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
+      ddbMock.on(UpdateCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({
+        jobId: "job-1",
+        attempt: SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT - 1,
+        error: capacityError,
+      });
+
+      expect(result).toEqual({ shouldRetry: true });
+      expect(fallbackUpdates()).toHaveLength(0);
+    });
+
+    it("容量不足以外の失敗ではフォールバックしない", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
+      ddbMock.on(UpdateCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      await handler({ jobId: "job-1", attempt: SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT });
+
+      expect(fallbackUpdates()).toHaveLength(0);
+    });
+
+    it("GPU必須タイトル(th15)はフォールバックせず従来どおりcapacity_exhaustedで失敗させる", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: { ...speedupJob, game: "th15" } });
+      ddbMock.on(UpdateCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({ jobId: "job-1", attempt: MAX_ATTEMPTS, error: capacityError });
+
+      expect(result).toEqual({ shouldRetry: false });
+      expect(fallbackUpdates()).toHaveLength(0);
+      expect(statusUpdates(ddbMock)[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
+        ":ec": "capacity_exhausted",
+      });
+    });
+
+    it("フォールバックの条件付き更新が弾かれたら通常のリトライ判定に従う", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
+      ddbMock.on(UpdateCommand).resolves({});
+      ddbMock
+        .on(UpdateCommand, { ExpressionAttributeValues: { ":reason": "gpu_capacity" } }, false)
+        .rejects(new ConditionalCheckFailedException({ message: "conditional", $metadata: {} }));
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({ jobId: "job-1", attempt: MAX_ATTEMPTS, error: capacityError });
+
+      expect(result).toEqual({ shouldRetry: false });
+      expect(statusUpdates(ddbMock)[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
+        ":ec": "capacity_exhausted",
+      });
+    });
+  });
+
   it("失敗時にGPU vCPU容量リースを返却する", async () => {
     ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: baseJob });
     ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({

@@ -1,4 +1,5 @@
 import type { GameId } from "./games.js";
+import type { SpeedupFallbackReason } from "./gpuRecording.js";
 import type { RecordingSpeed } from "./recordingSpeed.js";
 import type { SupportedLanguage } from "./language.js";
 import type { ReplayInfo } from "./replay.js";
@@ -352,6 +353,18 @@ export interface JobRecord {
   gpuQueueHeartbeatAt?: string;
   gpuQueuePosition?: number;
   gpuQueueEtaSeconds?: number;
+  /**
+   * GPUを確保できなかったため倍速録画を等倍（CPU）へフォールバックしたジョブで、
+   * ユーザーが元々選んでいた録画速度（Issue #289、`docs/decisions/0060`）。フォールバックは
+   * `options.recordingSpeed`そのものを1へ書き換えることで行う——GPU要否・割り当て先・
+   * ワーカーへ渡す環境変数・コスト帯はすべて`options.recordingSpeed`から導かれるため、
+   * 書き換えた瞬間に以降の`AcquireGpuSlot`/`Launch`が等倍のジョブとして扱う。
+   * このフィールドは表示（ジョブページの注意書き）と運用調査のための記録で、
+   * フォールバックしていないジョブには属性自体が無い。
+   */
+  requestedRecordingSpeed?: RecordingSpeed;
+  /** フォールバックの理由（`requestedRecordingSpeed`と同時に書く）。 */
+  speedupFallbackReason?: SpeedupFallbackReason;
   /**
    * `POST /magic-links` 押下時点でユーザーが選択していた表示言語
    * （`RequestMagicLinkRequest.language` をそのまま転記）。マジックリンク
