@@ -705,25 +705,29 @@ def test_record_with_retry_falls_back_to_total_record_sec_without_content_end_se
     assert calls == [("/out.mp4", 15, 30)]
 
 
-def test_attempt_recording_content_end_sec_excludes_still_confirmation_tail(monkeypatch, tmp_path):
-    """still検知(画面静止)の場合、確認待ち`STILL_CONSECUTIVE_REQUIRED`(8) *
-    `POLL_INTERVAL_SEC`(2秒) = 16秒ぶんを`total_record_sec`から差し引いた
-    `content_end_sec`を返すこと(Issue #250)。"""
+@pytest.mark.parametrize("detected_by", ["still", "template"])
+def test_attempt_recording_content_end_sec_is_where_the_end_streak_started(monkeypatch, tmp_path, detected_by):
+    """終了検知した場合、`content_end_sec`は連続一致が始まったフレームの時刻
+    (`content_end_epoch`)を映像の録画開始からの秒数にしたもの(Issue #304)。確認待ちの
+    ポーリング回数を`total_record_sec`から差し引く以前の方式では、停止・muxの時間と
+    静止開始の1ポーリングぶんが残り、本番のth11 2倍速ジョブで約2.7秒遅れて検査窓に
+    「再生終了」メニューの静止画面が入り込み、3回とも誤ってリトライ・失敗した。"""
     config = make_config()
-    monkeypatch.setattr(pipeline, "load_end_template", lambda path: None)
+    monkeypatch.setattr(pipeline, "load_end_template", lambda path: object() if detected_by == "template" else None)
     monkeypatch.setattr(pipeline, "_launch_game", lambda *a, **k: 1234)
     monkeypatch.setattr(pipeline, "_settle_crop_geometry", lambda *a, **k: (0, 0, 640, 480))
     monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
     monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (True, "still", False, False, "the-last-frame", None),
+        pipeline, "_monitor_until_end",
+        lambda *a, **k: (True, detected_by, False, False, "the-last-frame", 122.3),
     )
     monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
     monkeypatch.setattr(pipeline, "compute_cut_range", lambda *a, **k: {"startSec": None, "endSec": None})
     monkeypatch.setattr(pipeline, "output_video_offset", lambda *a, **k: 0.0)
     monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
     monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
-    times = iter([100.0, 148.3])
+    times = iter([100.0, 133.0])
     monkeypatch.setattr(pipeline.time, "time", lambda: next(times))
 
     result = pipeline.attempt_recording(
@@ -731,41 +735,12 @@ def test_attempt_recording_content_end_sec_excludes_still_confirmation_tail(monk
         diagnostics_dir="/diag", attempt=1, log=lambda msg: None,
     )
 
-    assert result["total_record_sec"] == pytest.approx(48.3)
-    assert result["content_end_sec"] == pytest.approx(48.3 - 16.0)
-
-
-def test_attempt_recording_content_end_sec_excludes_template_confirmation_tail(monkeypatch, tmp_path):
-    """template検知の場合、確認待ち`END_TEMPLATE_CONSECUTIVE_REQUIRED`(2) *
-    `POLL_INTERVAL_SEC`(2秒) = 4秒ぶんを差し引くこと(Issue #250)。"""
-    config = make_config()
-    monkeypatch.setattr(pipeline, "load_end_template", lambda path: object())
-    monkeypatch.setattr(pipeline, "_launch_game", lambda *a, **k: 1234)
-    monkeypatch.setattr(pipeline, "_settle_crop_geometry", lambda *a, **k: (0, 0, 640, 480))
-    monkeypatch.setattr(pipeline, "build_still_mask", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "build_end_template_mask", lambda *a, **k: None)
-    monkeypatch.setattr(
-        pipeline, "_monitor_until_end", lambda *a, **k: (True, "template", False, False, "the-last-frame", None),
-    )
-    monkeypatch.setattr(pipeline, "_stop_and_mux", lambda *a, **k: True)
-    monkeypatch.setattr(pipeline, "compute_cut_range", lambda *a, **k: {"startSec": None, "endSec": None})
-    monkeypatch.setattr(pipeline, "output_video_offset", lambda *a, **k: 0.0)
-    monkeypatch.setattr(pipeline, "kill_wine_and_wait", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline.subprocess, "Popen", lambda *a, **k: object())
-    times = iter([100.0, 120.0])
-    monkeypatch.setattr(pipeline.time, "time", lambda: next(times))
-
-    result = pipeline.attempt_recording(
-        config, "/replay.rpy", str(tmp_path / "out.mp4"), None, None,
-        diagnostics_dir="/diag", attempt=1, log=lambda msg: None,
-    )
-
-    assert result["total_record_sec"] == pytest.approx(20.0)
-    assert result["content_end_sec"] == pytest.approx(20.0 - 4.0)
+    assert result["total_record_sec"] == pytest.approx(33.0)
+    assert result["content_end_sec"] == pytest.approx(22.3)
 
 
 def test_attempt_recording_content_end_sec_equals_total_record_sec_on_timeout(monkeypatch, tmp_path):
-    """timeout/frozen(detected_byがNone)の場合は差し引く確認待ちが無いため、
+    """timeout/frozen(detected_byがNone)の場合は`content_end_epoch`が無いため、
     `content_end_sec`は`total_record_sec`のままであること。"""
     config = make_config()
     monkeypatch.setattr(pipeline, "load_end_template", lambda path: None)
@@ -1030,6 +1005,14 @@ def test_duplicate_rate_window_moves_before_content_end_for_short_content():
     start, duration = pipeline.duplicate_rate_window(17.5)
     assert start == pytest.approx(5.5)
     assert start + duration == pytest.approx(15.5)
+
+
+def test_duplicate_rate_window_ends_at_content_end_for_th11_speedup_job():
+    """本番のth11 2倍速ジョブ(Issue #304): 映像の録画開始から22.3秒で「再生終了」メニューの
+    静止画面になる。窓は15〜22.3秒で、終了後の静止画面を含まないこと。"""
+    start, duration = pipeline.duplicate_rate_window(22.3)
+    assert start == 15
+    assert start + duration == pytest.approx(22.3)
 
 
 def test_duplicate_rate_window_is_skipped_when_content_too_short():
