@@ -16,6 +16,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-10-09",
+    ja: "倍速録画で、本編が数十秒程度の短いリプレイが「処理落ち」と誤判定されて録画に失敗することがある問題を修正",
+    en: "Fixed an issue where short replays (around tens of seconds) recorded at higher speed could be wrongly judged as lagging and fail to record",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/304",
+  },
+  {
     date: "2026-10-05",
     ja: "倍速録画で、本編の短いリプレイ（スペルプラクティス等）が「処理落ち」と誤判定されて録画に失敗する問題を修正",
     en: "Fixed an issue where short replays (such as Spell Practice) recorded at higher speed were wrongly judged as lagging and failed to record",
