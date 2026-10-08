@@ -44,6 +44,9 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
   // `gpuQueueState`はsparse GSI `GpuQueueIndex`のキー属性で、引き継ぐと新ジョブが
   // 起動前から「待機中」としてインデックスに載り、他のGPUジョブの投入順（FIFO）を
   // 塞いでしまう（`docs/decisions/0056-gpu-vcpu-lease-and-queue.md`）。
+  // 倍速録画の等倍フォールバック（Issue #289）も「結果側」の値なので引き継がず、
+  // `options.recordingSpeed`をユーザーが元々選んだ速度へ戻す（再実行時にGPUが空いていれば
+  // 倍速で録れるように。空いていなければ再びフォールバックする）。
   const {
     homeWorkerOfferState: _offerState,
     homeWorkerOfferExpiresAt: _offerExpiresAt,
@@ -57,10 +60,16 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
     gpuQueueHeartbeatAt: _gpuQueueHeartbeatAt,
     gpuQueuePosition: _gpuQueuePosition,
     gpuQueueEtaSeconds: _gpuQueueEtaSeconds,
+    requestedRecordingSpeed,
+    speedupFallbackReason: _speedupFallbackReason,
     ...carried
   } = source;
   return {
     ...carried,
+    options:
+      requestedRecordingSpeed === undefined
+        ? carried.options
+        : { ...carried.options, recordingSpeed: requestedRecordingSpeed },
     jobId: newJobId,
     // マジックリンク（メール確認）は元ジョブで済んでいるため`pending`を経由せず、
     // `queued`で作成して直ちにStep Functionsを起動する。`pendingExpiresAt`は

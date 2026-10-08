@@ -130,6 +130,16 @@ export function JobProgressView({ job, loadError }: ViewProps) {
                 {t("jobProgress.speedupHint", { speed: job.recordingSpeed })}
               </span>
             )}
+            {/*
+              倍速録画を等倍へフォールバックした（Issue #289）。`recordingSpeed`は既に1なので
+              上の倍速の案内は消え、代わりにこちらを出す。完了後も「なぜ倍速にならなかったか」の
+              説明として残す。
+            */}
+            {job.requestedRecordingSpeed !== null && (
+              <span className={styles.speedupHint}>
+                {t("jobProgress.speedupFallbackHint", { speed: job.requestedRecordingSpeed })}
+              </span>
+            )}
             {overall.retrySuspected && (
               <span className={styles.retryHint}>{t("jobProgress.retryHint")}</span>
             )}

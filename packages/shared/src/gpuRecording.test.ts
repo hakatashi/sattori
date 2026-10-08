@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { SUPPORTED_GAME_IDS } from "./games.js";
 import type { GameId } from "./games.js";
-import { GPU_RECORDING_GAME_IDS, requiresGpuRecording } from "./gpuRecording.js";
+import {
+  canFallBackToNativeSpeed,
+  GPU_RECORDING_GAME_IDS,
+  requiresGpuRecording,
+} from "./gpuRecording.js";
 import type { RecordingSpeed } from "./recordingSpeed.js";
 
 describe("GPU_RECORDING_GAME_IDS", () => {
@@ -41,5 +45,24 @@ describe("requiresGpuRecording", () => {
   it("不正な録画速度は等倍扱い", () => {
     expect(requiresGpuRecording({ game: "th07", options: { recordingSpeed: 5 } })).toBe(false);
     expect(requiresGpuRecording({ game: "th07", options: { recordingSpeed: "2" } })).toBe(false);
+  });
+});
+
+describe("canFallBackToNativeSpeed（Issue #289）", () => {
+  it("CPU系タイトルの倍速録画は等倍へフォールバックできる", () => {
+    for (const speed of [2, 3, 4] as const) {
+      expect(canFallBackToNativeSpeed({ game: "th07", options: { recordingSpeed: speed } })).toBe(true);
+    }
+  });
+
+  it("等倍録画(フォールバック済みを含む)はフォールバックしない", () => {
+    expect(canFallBackToNativeSpeed({ game: "th07", options: { recordingSpeed: 1 } })).toBe(false);
+    expect(canFallBackToNativeSpeed({ game: "th07" })).toBe(false);
+  });
+
+  it("GPU必須タイトルは倍速録画でもフォールバックしない(等倍でもGPUが要る)", () => {
+    for (const game of GPU_RECORDING_GAME_IDS) {
+      expect(canFallBackToNativeSpeed({ game, options: { recordingSpeed: 2 } })).toBe(false);
+    }
   });
 });

@@ -7,7 +7,14 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
-import type { JobRecord, JobStatus, WorkerKind } from "@sattori/shared";
+import { NATIVE_RECORDING_SPEED } from "@sattori/shared";
+import type {
+  JobRecord,
+  JobStatus,
+  RecordingSpeed,
+  SpeedupFallbackReason,
+  WorkerKind,
+} from "@sattori/shared";
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -466,4 +473,52 @@ export async function clearGpuQueueState(
       ExpressionAttributeValues: { ":u": new Date().toISOString() },
     }),
   );
+}
+
+/**
+ * GPUを確保できなかった倍速録画ジョブを等倍（CPU）へフォールバックする（Issue #289、
+ * `docs/decisions/0060`）。`options.recordingSpeed`を1へ書き換え、元の速度と理由を
+ * `requestedRecordingSpeed`/`speedupFallbackReason`へ残す。GPU要否・割り当て先・
+ * ワーカーの環境変数はすべて`options.recordingSpeed`から導かれるため、これ以上の
+ * 状態遷移は要らない（次の`AcquireGpuSlot`は即`acquired: true`、`Launch`はCPU系の
+ * Launch Templateか自宅ワーカーを選ぶ）。
+ *
+ * 条件付き更新にして、速度が`from`のまま・未フォールバック・未停止・非終端のときだけ書く。
+ * 書けなかったら false を返す（呼び出し側は通常のGPU経路の処理を続ける）。
+ */
+export async function fallBackToNativeSpeed(
+  table: string,
+  jobId: string,
+  from: RecordingSpeed,
+  reason: SpeedupFallbackReason,
+): Promise<boolean> {
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: table,
+        Key: { jobId },
+        UpdateExpression:
+          "SET #o.recordingSpeed = :native, requestedRecordingSpeed = :from, " +
+          "speedupFallbackReason = :reason, updatedAt = :u",
+        ConditionExpression:
+          "#o.recordingSpeed = :from AND attribute_not_exists(requestedRecordingSpeed) " +
+          "AND attribute_not_exists(stopRequestedAt) AND NOT #s IN (:done, :failed)",
+        ExpressionAttributeNames: { "#o": "options", "#s": "status" },
+        ExpressionAttributeValues: {
+          ":native": NATIVE_RECORDING_SPEED,
+          ":from": from,
+          ":reason": reason,
+          ":u": new Date().toISOString(),
+          ":done": "done",
+          ":failed": "failed",
+        },
+      }),
+    );
+    return true;
+  } catch (err) {
+    if (err instanceof ConditionalCheckFailedException) {
+      return false;
+    }
+    throw err;
+  }
 }

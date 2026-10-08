@@ -59,3 +59,45 @@ export function requiresGpuRecording(job: {
 }): boolean {
   return isGpuOnlyTitle(job.game) || isSpeedupRecording(recordingSpeedOf(job.options));
 }
+
+/**
+ * GPUを確保できなかった倍速録画ジョブを等倍（CPU）へフォールバックする理由（Issue #289）。
+ *
+ * - `gpu_queue_wait`: GPU vCPU枠の待ち行列で`SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES`以上待たされた
+ *   （`handlers/sfn/acquireGpuSlot.ts`）。
+ * - `gpu_capacity`: GPU枠は取れたが`CreateFleet`が容量不足で失敗し、それが
+ *   `SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT`回目以降の試行だった
+ *   （`handlers/sfn/handleFailure.ts`）。
+ */
+export const SPEEDUP_FALLBACK_REASONS = ["gpu_queue_wait", "gpu_capacity"] as const;
+export type SpeedupFallbackReason = (typeof SPEEDUP_FALLBACK_REASONS)[number];
+
+/**
+ * GPU待ち行列でこの分数以上待った倍速録画ジョブは等倍へフォールバックする（Issue #289）。
+ * 待ち行列そのもののタイムアウト（`GPU_QUEUE_MAX_WAIT_MINUTES`、120分）より十分短くする——
+ * 倍速録画を選ぶ動機は「早く仕上がること」なので、30分待ってなお枠が空かないなら、
+ * 等倍でもすぐ録り始めたほうが早く仕上がる見込みが高い。
+ */
+export const SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES = 30;
+
+/**
+ * GPU経路の起動試行が容量不足（`UnfulfillableCapacity`等）で失敗したとき、それが
+ * この回数目以降の試行なら等倍へフォールバックする（Issue #289）。1試行あたり
+ * `WaitBeforeCheck`の3分を挟むため、3なら最初の起動から約6〜9分で見切ることになる
+ * （`MAX_ATTEMPTS`=10回≒27分を待ってから`capacity_exhausted`で失敗させるより早い）。
+ */
+export const SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT = 3;
+
+/**
+ * GPUを確保できないときに等倍（CPU）へフォールバックできるジョブか（Issue #289）。
+ *
+ * 倍速録画（2倍速以上）で、かつ録画速度によらずGPUで録るタイトル（`GPU_RECORDING_GAME_IDS`）
+ * でないもの。th06nc・th15・th20は等倍でもGPUが要るので、落とす先が無い。
+ * 一度フォールバックしたジョブは`options.recordingSpeed`が1になるので、二度目は無い。
+ */
+export function canFallBackToNativeSpeed(job: {
+  game: GameId;
+  options?: { recordingSpeed?: unknown };
+}): boolean {
+  return !isGpuOnlyTitle(job.game) && isSpeedupRecording(recordingSpeedOf(job.options));
+}

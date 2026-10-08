@@ -219,6 +219,7 @@
     "timeoutWarning": "Recording was cut off after reaching the time limit without detecting the end of the replay. The final part of the replay may be missing from the video.",
     "timeoutWarningDetail": "Recording normally stops once the end of replay playback is detected, but this job reached the recording time limit before that could happen, so it was cut off partway through. Please check the recorded video to make sure the ending isn't missing. If it is, please try uploading the replay again.",
     "speedupHint": "Recording at {{speed}}x speed. The finished video plays back at normal speed.",
+    "speedupFallbackHint": "The recording servers were busy, so we switched from {{speed}}x speed to normal-speed recording.",
     "genericError": "A problem occurred while recording. Please try again.",
     "previewVideoLabel": "Preview of the recorded video",
     "download": "Download video",
