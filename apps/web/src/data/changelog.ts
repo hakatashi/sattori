@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-10-09",
+    ja: "倍速録画で録画サーバーが長く混雑しているとき、失敗させずに自動で通常の速度での録画へ切り替えるように（東方紅魔郷: New Classic (th06nc)・東方紺珠伝 (th15)・東方錦上京 (th20) を除く）",
+    en: "When the recording servers stay busy for a long time, higher-speed recordings now automatically switch to normal-speed recording instead of failing (except for Embodiment of Scarlet Devil: New Classic (th06nc), Legacy of Lunatic Kingdom (th15) and Unfinished Dream of All Living Ghost (th20))",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/289",
+  },
+  {
+    date: "2026-10-09",
     ja: "倍速録画で、本編が数十秒程度の短いリプレイが「処理落ち」と誤判定されて録画に失敗することがある問題を修正",
     en: "Fixed an issue where short replays (around tens of seconds) recorded at higher speed could be wrongly judged as lagging and fail to record",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/304",
