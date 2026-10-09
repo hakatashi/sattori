@@ -48,6 +48,7 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     posterImageUrl: null,
     replayInfo: REPLAY_INFO,
     recordingSpeed: 1,
+    requestedRecordingSpeed: null,
     desyncDetected: null,
     timedOut: null,
     queuePosition: null,
@@ -97,6 +98,20 @@ describe("JobProgressView のダウンロード", () => {
     render(<JobProgressView job={buildDoneJob({ downloadExpiresAt: null })} loadError={null} />);
 
     expect(screen.queryByText(/までダウンロードできます/)).toBeNull();
+  });
+});
+
+describe("JobProgressView の等倍フォールバック注意書き（Issue #289）", () => {
+  it("requestedRecordingSpeed があれば元の速度とともに切り替えたことを表示する", () => {
+    render(<JobProgressView job={buildDoneJob({ requestedRecordingSpeed: 3 })} loadError={null} />);
+
+    expect(screen.getByText(/3倍速ではなく通常の速度での録画に切り替えました/)).toBeTruthy();
+  });
+
+  it("フォールバックしていないジョブでは表示しない", () => {
+    render(<JobProgressView job={buildDoneJob()} loadError={null} />);
+
+    expect(screen.queryByText(/通常の速度での録画に切り替えました/)).toBeNull();
   });
 });
 
@@ -352,6 +367,7 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     posterImageUrl: null,
     replayInfo: REPLAY_INFO,
     recordingSpeed: 1,
+    requestedRecordingSpeed: null,
     desyncDetected: null,
     timedOut: null,
     queuePosition: null,

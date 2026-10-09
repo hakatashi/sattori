@@ -1,4 +1,5 @@
 import {
+  canFallBackToNativeSpeed,
   estimateGpuOccupancySeconds,
   estimateQueueWaitSeconds,
   GPU_QUEUE_INDEX,
@@ -9,16 +10,19 @@ import {
   recordingSpeedOf,
   requiresGpuRecording,
   reservableVcpu,
+  SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES,
 } from "@sattori/shared";
-import type { RecordingSpeed } from "@sattori/shared";
+import type { JobRecord, RecordingSpeed } from "@sattori/shared";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { loadConfig } from "../../config.js";
+import type { ApiConfig } from "../../config.js";
 import { entriesAhead, excludeStaleEntries, isQueueHead, queuePosition } from "../../gpuQueue.js";
 import type { QueueEntry } from "../../gpuQueue.js";
 import { acquireGpuSlot, listGpuSlots } from "../../gpuSlots.js";
 import {
   clearGpuQueueState,
+  fallBackToNativeSpeed,
   getJob,
   markGpuQueueWaiting,
   updateGpuQueueDisplay,
@@ -47,6 +51,11 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
  * 4. 先頭なら`GpuSlotsTable`の空きを見て確保を試みる。取れたら待機列から外し
  *    `acquired: true`。先頭でない・取れなかった場合は順位・推定待ち時間を
  *    `JobsTable`へ書き（表示用）、`waitSeconds`を返す。
+ * 5. ただし4で待つことになった倍速録画ジョブ（GPU必須タイトルを除く）が
+ *    `SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES`以上待っていたら、待たずに等倍（CPU）へ
+ *    フォールバックし、待機列から外して`acquired: true`を返す（Issue #289）。
+ *    `Launch`はジョブを読み直すので、等倍のジョブとしてCPU系インスタンスか
+ *    自宅ワーカーへ割り当てる。
  *
  * 詳細は `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`。
  */
@@ -119,6 +128,42 @@ async function queryWaitingJobs(
     estimatedDurationSeconds: item.estimatedDurationSeconds ?? null,
     recordingSpeed: recordingSpeedOf(item.options),
   }));
+}
+
+/**
+ * 待つことになった倍速録画ジョブを、待ち時間が長ければ等倍へフォールバックさせる
+ * （Issue #289）。フォールバックしたら`AcquireGpuSlotResult`を、しなければ null を返す。
+ *
+ * 判定を待機の分岐（確保できなかった後）でだけ行うのは、ちょうど枠が空いた周回で
+ * フォールバックしてしまい、ユーザーの選んだ倍速を無駄に捨てないようにするため。
+ */
+async function fallBackIfWaitedTooLong(
+  config: ApiConfig,
+  job: JobRecord,
+  event: AcquireGpuSlotEvent,
+  elapsedSeconds: number,
+): Promise<AcquireGpuSlotResult | null> {
+  if (!canFallBackToNativeSpeed(job) || elapsedSeconds < SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES * 60) {
+    return null;
+  }
+  const from = recordingSpeedOf(job.options);
+  const fellBack = await fallBackToNativeSpeed(config.jobsTable, event.jobId, from, "gpu_queue_wait");
+  if (!fellBack) {
+    return null;
+  }
+  // もうGPUジョブではないので、FIFOの基準（gpuQueuedAt）も含めて待機列から完全に外す。
+  await clearGpuQueueState(config.jobsTable, event.jobId);
+  console.log(
+    JSON.stringify({
+      event: "speedup_fallback",
+      jobId: event.jobId,
+      attempt: event.attempt,
+      reason: "gpu_queue_wait",
+      from,
+      elapsedSeconds: Math.round(elapsedSeconds),
+    }),
+  );
+  return { jobId: event.jobId, attempt: event.attempt, acquired: true, timedOut: false, waitSeconds: 0 };
 }
 
 export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlotResult> => {
@@ -221,6 +266,10 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
         JSON.stringify({ event: "gpu_slot_contended", jobId: event.jobId, attempt: event.attempt }),
       );
     }
+    const fallback = await fallBackIfWaitedTooLong(config, job, event, elapsedSeconds);
+    if (fallback) {
+      return fallback;
+    }
     // 先頭だが空きが無い場合、ETA計算用に実行中リースの残り時間を使う。
     const position = 1;
     const waitSeconds = nextPollIntervalSeconds(elapsedSeconds);
@@ -237,6 +286,10 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
   }
 
   // 先頭でない: 順位・ETAを計算して待つ。
+  const fallback = await fallBackIfWaitedTooLong(config, job, event, elapsedSeconds);
+  if (fallback) {
+    return fallback;
+  }
   const position = queuePosition(event.jobId, liveEntries) ?? liveEntries.length + 1;
   const ahead = entriesAhead(event.jobId, liveEntries);
   const aheadDurations = ahead.map((entry) => {

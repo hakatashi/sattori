@@ -119,6 +119,21 @@ describe("buildRetryJob", () => {
     expect(retried.gpuQueueEtaSeconds).toBeUndefined();
     expect("gpuQueueState" in retried).toBe(false);
   });
+
+  it("倍速録画を等倍へフォールバックしたジョブは元の速度へ戻して再実行する(Issue #289)", () => {
+    const fellBackJob: JobRecord = {
+      ...failedJob,
+      options: { ...failedJob.options, recordingSpeed: 1 },
+      requestedRecordingSpeed: 3,
+      speedupFallbackReason: "gpu_queue_wait",
+    };
+
+    const retried = buildRetryJob(fellBackJob, "job-2", new Date("2026-08-01T00:00:00.000Z"));
+
+    expect(retried.options.recordingSpeed).toBe(3);
+    expect("requestedRecordingSpeed" in retried).toBe(false);
+    expect("speedupFallbackReason" in retried).toBe(false);
+  });
 });
 
 describe("POST /admin/jobs/{jobId}/retry", () => {

@@ -41,6 +41,7 @@ function buildJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     posterImageUrl: null,
     replayInfo: REPLAY_INFO,
     recordingSpeed: 1,
+    requestedRecordingSpeed: null,
     desyncDetected: null,
     timedOut: null,
     queuePosition: null,
