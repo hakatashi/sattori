@@ -122,7 +122,12 @@ export function JobDetailPage() {
                 <dt>watermark</dt>
                 <dd>{data.job.options.watermark ? "true" : "false"}</dd>
                 <dt>recordingSpeed</dt>
-                <dd>{`${recordingSpeedOf(data.job.options)}x`}</dd>
+                <dd>
+                  {`${recordingSpeedOf(data.job.options)}x`}
+                  {/* GPUを確保できず等倍へフォールバックした（Issue #289）。 */}
+                  {data.job.requestedRecordingSpeed !== undefined &&
+                    ` (requested ${data.job.requestedRecordingSpeed}x, fallback: ${data.job.speedupFallbackReason ?? "-"})`}
+                </dd>
                 <dt>th10BugfixMarisaB</dt>
                 <dd>{data.job.options.th10BugfixMarisaB ? "true" : "false"}</dd>
                 <dt>progress</dt>

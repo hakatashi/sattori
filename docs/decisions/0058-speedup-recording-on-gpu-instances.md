@@ -69,7 +69,7 @@
 - **g6f.xlargeを候補に残す**。eu-south-2で長期間枯渇しており、倍速録画は4vCPUで未検証
   （reports/85で処理落ち）。
 - **GPUを確保できないときにCPUの等倍録画へ自動で落とす**。経路が複雑になるため今回は見送り、
-  Issue #289で扱う。
+  Issue #289で扱う（→ [`0060`](0060-speedup-fallback-to-native-speed.md)で実装）。
 
 ## 影響範囲
 

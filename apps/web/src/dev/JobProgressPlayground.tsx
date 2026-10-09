@@ -34,6 +34,7 @@ const BASE: Omit<
   updatedAt: new Date().toISOString(),
   replayInfo: SAMPLE_REPLAY_INFO,
   recordingSpeed: 1,
+  requestedRecordingSpeed: null,
   desyncDetected: null,
   timedOut: null,
   queuePosition: null,
@@ -77,6 +78,10 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
   {
     title: "status: recording（2倍速の倍速録画、Issue #288）",
     job: buildJob({ status: "recording", game: "th15", recordingSpeed: 2, progress: 300 }),
+  },
+  {
+    title: "status: recording（GPU混雑で等倍へフォールバック、Issue #289）",
+    job: buildJob({ status: "recording", game: "th07", requestedRecordingSpeed: 2, progress: 300 }),
   },
   {
     title: "status: recording（進捗・プレビュー画像あり）",

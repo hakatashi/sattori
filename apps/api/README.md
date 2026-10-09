@@ -66,6 +66,10 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    した待機者は先頭判定から除外する（head-of-line blocking対策）。非GPUジョブは
    `GpuSlotsTable`にも`gpuQueue*`属性にも一切触れず即座に通過する。詳細・設計根拠は
    [`0056`](../../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
+   GPU必須タイトル以外の倍速録画ジョブは、30分以上待ったら`options.recordingSpeed`を1へ
+   書き換えて（`jobs.ts`の`fallBackToNativeSpeed()`）待機列を抜け、等倍のジョブとして
+   `Launch`へ進む。`HandleFailure`も3回目以降の容量不足で同じフォールバックをする
+   （Issue #289、[`0060`](../../docs/decisions/0060-speedup-fallback-to-native-speed.md)）。
 3. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト150分・ハートビート
    タイムアウト15分）がワーカーを1台**割り当て**る。割り当て先は自宅ワーカー
    （Issue #49、§3）かEC2 Fleetのどちらかで、EC2の場合は

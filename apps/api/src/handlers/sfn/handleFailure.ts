@@ -1,9 +1,14 @@
-import { isTerminalStatus } from "@sattori/shared";
+import {
+  canFallBackToNativeSpeed,
+  isTerminalStatus,
+  recordingSpeedOf,
+  SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT,
+} from "@sattori/shared";
 import { loadConfig } from "../../config.js";
 import { findJobInstanceIds, terminateInstance } from "../../ec2.js";
 import { releaseGpuSlot } from "../../gpuSlots.js";
 import { releaseHomeWorkerAssignment } from "../../homeWorker.js";
-import { getJob, updateJobStatus } from "../../jobs.js";
+import { fallBackToNativeSpeed, getJob, updateJobStatus } from "../../jobs.js";
 import { MAX_ATTEMPTS, MAX_ATTEMPTS_DETERMINISTIC } from "../../retryPolicy.js";
 
 /**
@@ -18,6 +23,9 @@ import { MAX_ATTEMPTS, MAX_ATTEMPTS_DETERMINISTIC } from "../../retryPolicy.js";
  * - まだリトライ余地があれば `shouldRetry: true` を返し、ステートマシン側で
  *   `Launch` へ戻る。リトライ余地の判定は失敗種別で分岐する（`isDeterministicFailure`
  *   参照）。無ければジョブを `failed` に確定させる。
+ * - 倍速録画ジョブ（GPU必須タイトルを除く）のGPU起動が容量不足で
+ *   `SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT`回目以降も失敗したら、等倍（CPU）へ
+ *   フォールバックして必ずリトライさせる（Issue #289）。
  *
  * `:36` で読む `job` はこの関数の入口時点のスナップショットに過ぎず、その後の
  * terminate・割り当て解除に数秒〜十数秒かかる間にワーカーが完走して `done` を
@@ -215,7 +223,38 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
 
   const deterministic = isDeterministicFailure(event.error);
   const maxAttempts = deterministic ? MAX_ATTEMPTS_DETERMINISTIC : MAX_ATTEMPTS;
-  const shouldRetry = event.attempt < maxAttempts;
+  const capacityFailure = isCapacityFailure(event.error);
+  let shouldRetry = event.attempt < maxAttempts;
+
+  // GPUの容量不足が続く倍速録画ジョブは等倍（CPU）へフォールバックする（Issue #289）。
+  // 「容量不足が連続した回数」は数えておらず、試行回数で代用している——GPU経路の試行が
+  // 何回も失敗した末にさらに容量不足で落ちたなら、原因が何であれGPUに拘る理由は薄い。
+  // フォールバック直後は試行回数の上限に関係なく必ず1回は等倍で試す（フォールバックは
+  // 1ジョブにつき1回きりなので、上限超過も高々1回）。GPUリースは上で返却済みで、
+  // 次の`AcquireGpuSlot`は等倍になったジョブを即`acquired: true`で通す。
+  let fellBack = false;
+  if (
+    job &&
+    !isTerminalStatus(job.status) &&
+    capacityFailure &&
+    canFallBackToNativeSpeed(job) &&
+    event.attempt >= SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT
+  ) {
+    const from = recordingSpeedOf(job.options);
+    fellBack = await fallBackToNativeSpeed(config.jobsTable, event.jobId, from, "gpu_capacity");
+    if (fellBack) {
+      shouldRetry = true;
+      console.log(
+        JSON.stringify({
+          event: "speedup_fallback",
+          jobId: event.jobId,
+          attempt: event.attempt,
+          reason: "gpu_capacity",
+          from,
+        }),
+      );
+    }
+  }
 
   console.log(
     JSON.stringify({
@@ -225,6 +264,7 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
       error: event.error?.Error,
       deterministic,
       maxAttempts,
+      fellBack,
       shouldRetry,
     }),
   );
@@ -238,7 +278,6 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
     // Spot/vCPUクオータの容量不足由来なら、ユーザーに「一時的な混雑」であることが伝わる
     // 専用のerrorCode（`capacity_exhausted`）を使う（Issue #282）。それ以外（デシンク等の
     // 決定的失敗）は従来どおり`retries_exhausted`のまま。
-    const capacityFailure = isCapacityFailure(event.error);
     await updateJobStatus(
       config.jobsTable,
       event.jobId,

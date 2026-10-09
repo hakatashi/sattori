@@ -58,8 +58,10 @@ touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実�
   見せる時間が1秒より少し短くなる（Issue #266、[`decisions/0059`](decisions/0059-cut-range-decided-by-recorder.md)）。
   カット開始を決められなかった録画（MODログに再生確定の記録が無い等）では、映像の先頭から残るので
   マーカーが入りうる。
-- **GPU容量を確保できない場合のCPU等倍へのフォールバックは未実装**（Issue #289）。GPU待ち行列の
-  上限（120分）またはリトライ枯渇で失敗する。
+- **GPU容量を確保できない場合は等倍へフォールバックする**（Issue #289、
+  [`decisions/0060`](decisions/0060-speedup-fallback-to-native-speed.md)）。ただし**th06nc・th15・th20は
+  等倍でもGPUが要るため対象外**で、従来どおりGPU待ち行列の上限（120分）か容量不足のリトライ枯渇で
+  失敗する。フォールバックの閾値（待ち30分・3回目の容量不足）は本番の実測に基づかない初期値。
 
 ### th06nc（東方紅魔郷: New Classic）は録画対応済み。ただしGPU専用インスタンスでのみ録画可能
 

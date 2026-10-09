@@ -377,6 +377,29 @@ describe("GET /jobs/{jobId}", () => {
     expect(parseBody(legacy as APIGatewayProxyStructuredResultV2).recordingSpeed).toBe(1);
   });
 
+  it("等倍へフォールバックしたジョブは元の速度を requestedRecordingSpeed で返す(Issue #289)", async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: {
+        ...doneJob,
+        options: { watermark: true, recordingSpeed: 1 },
+        requestedRecordingSpeed: 2,
+        speedupFallbackReason: "gpu_capacity",
+      },
+    });
+    const { handler } = await import("./getJob.js");
+    const body = parseBody(
+      (await handler(makeEvent("job-1"), {} as never, () => {})) as APIGatewayProxyStructuredResultV2,
+    );
+    expect(body.recordingSpeed).toBe(1);
+    expect(body.requestedRecordingSpeed).toBe(2);
+
+    ddbMock.on(GetCommand).resolves({ Item: doneJob });
+    const plain = parseBody(
+      (await handler(makeEvent("job-1"), {} as never, () => {})) as APIGatewayProxyStructuredResultV2,
+    );
+    expect(plain.requestedRecordingSpeed).toBeNull();
+  });
+
 
   /**
    * 出力が1本のジョブ（th20・低速録画。`worker/convert.py` の
