@@ -10,7 +10,8 @@
     "@aws-cdk/aws-iam:minimizePolicies": true,
     "@aws-cdk/core:validateSnapshotRemovalPolicy": true,
     "gpuWorkerAmiIds": {
-      "eu-south-2": "ami-08b3f94444612a932"
+      "eu-south-2": "ami-08b3f94444612a932",
+      "eu-north-1": "ami-06257c9bafd920d3d"
     }
   }
 }
