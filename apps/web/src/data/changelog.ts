@@ -16,6 +16,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-10-11",
+    ja: "GPUを使う録画（東方紅魔郷: New Classic (th06nc)・東方紺珠伝 (th15)・東方錦上京 (th20) と倍速録画）で、録画サーバーが混雑しているときに別の地域の録画サーバーも使うように。混雑による録画の失敗が起きにくくなります",
+    en: "Recordings that use a GPU (Embodiment of Scarlet Devil: New Classic (th06nc), Legacy of Lunatic Kingdom (th15), Unfinished Dream of All Living Ghost (th20), and higher-speed recordings) now also use recording servers in another region when the usual servers are busy, making failures due to congestion less likely",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/296",
+  },
+  {
     date: "2026-10-09",
     ja: "倍速録画で録画サーバーが長く混雑しているとき、失敗させずに自動で通常の速度での録画へ切り替えるように（東方紅魔郷: New Classic (th06nc)・東方紺珠伝 (th15)・東方錦上京 (th20) を除く）",
     en: "When the recording servers stay busy for a long time, higher-speed recordings now automatically switch to normal-speed recording instead of failing (except for Embodiment of Scarlet Devil: New Classic (th06nc), Legacy of Lunatic Kingdom (th15) and Unfinished Dream of All Living Ghost (th20))",
