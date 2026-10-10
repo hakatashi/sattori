@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CreateFleetCommand,
   CreateLaunchTemplateVersionCommand,
   DescribeInstancesCommand,
   DescribeSpotPriceHistoryCommand,
+  DescribeSubnetsCommand,
   EC2Client,
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
@@ -13,8 +14,10 @@ import { DEFAULT_RECORDING_OPTIONS } from "@sattori/shared";
 import type { JobRecord, RecordingSpeed } from "@sattori/shared";
 import {
   buildUserData,
+  ecrRegionOf,
   fetchSpotPrice,
-  findJobInstanceIds,
+  findJobInstances,
+  FleetLaunchError,
   getCandidateInstanceTypes,
   launchRecordingInstance,
   listTaggedInstances,
@@ -23,6 +26,10 @@ import {
 import type { ApiConfig } from "./config.js";
 
 const ec2Mock = mockClient(EC2Client);
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const config: ApiConfig = {
   uploadBucket: "up-bucket",
@@ -48,6 +55,21 @@ const config: ApiConfig = {
     region: "ap-northeast-1",
     launchTemplateId: "lt-xxxx",
     gpuLaunchTemplateId: "lt-gpu-xxxx",
+    gpuFallback: null,
+  },
+};
+
+/** GPUフォールバック先（Issue #296）を設定した構成。 */
+const fallbackConfig: ApiConfig = {
+  ...config,
+  ec2: {
+    ...config.ec2,
+    gpuFallback: {
+      region: "eu-north-1",
+      launchTemplateName: "sattori-gpu-worker",
+      subnetTagKey: "sattori:gpuWorkerSubnet",
+      workerGpuImage: "123456789012.dkr.ecr.eu-north-1.amazonaws.com/sattori-worker-gpu:latest",
+    },
   },
 };
 
@@ -274,6 +296,7 @@ describe("launchRecordingInstance", () => {
 
     expect(instance).toEqual({
       instanceId: "i-0123456789abcdef0",
+      region: "ap-northeast-1",
       instanceType: "c7i.xlarge",
       availabilityZone: "ap-northeast-1a",
       spotPricePerHour: 0.0612,
@@ -540,6 +563,172 @@ describe("launchRecordingInstance", () => {
   });
 });
 
+describe("launchRecordingInstance（GPUの容量不足時リージョンフォールバック、Issue #296）", () => {
+  const gpuJob: JobRecord = { ...job, game: "th06nc" };
+
+  beforeEach(() => {
+    ec2Mock.reset();
+    ec2Mock.on(CreateLaunchTemplateVersionCommand).resolves({
+      LaunchTemplateVersion: { VersionNumber: 7 },
+    });
+    ec2Mock.on(DescribeSubnetsCommand).resolves({
+      Subnets: [{ SubnetId: "subnet-north-b" }, { SubnetId: "subnet-north-a" }],
+    });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({
+      SpotPriceHistory: [{ SpotPrice: "0.0886" }],
+    });
+  });
+
+  /** CreateFleetの結果を、呼び出されたクライアントのリージョンごとに返し分ける。 */
+  function fleetByRegion(results: Record<string, "ok" | string>) {
+    ec2Mock.on(CreateFleetCommand).callsFake(async (_input, getClient) => {
+      const region = await getClient().config.region();
+      const result = results[region];
+      if (result === "ok") {
+        return {
+          Instances: [
+            {
+              InstanceIds: [`i-${region}`],
+              InstanceType: "g6f.2xlarge",
+              AvailabilityZone: `${region}b`,
+            },
+          ],
+        };
+      }
+      return { Instances: [], Errors: [{ ErrorCode: result, ErrorMessage: "nope" }] };
+    });
+  }
+
+  it("一次リージョンで確保できればフォールバックしない", async () => {
+    fleetByRegion({ "ap-northeast-1": "ok", "eu-north-1": "ok" });
+    const instance = await launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc");
+    expect(instance.region).toBe("ap-northeast-1");
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+    expect(ec2Mock.commandCalls(DescribeSubnetsCommand)).toHaveLength(0);
+  });
+
+  it("一次リージョンが容量不足ならフォールバック先の固定名Launch Template・レプリカのイメージで起動する", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fleetByRegion({ "ap-northeast-1": "InsufficientInstanceCapacity", "eu-north-1": "ok" });
+
+    const instance = await launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc");
+
+    expect(instance).toEqual({
+      instanceId: "i-eu-north-1",
+      region: "eu-north-1",
+      instanceType: "g6f.2xlarge",
+      availabilityZone: "eu-north-1b",
+      spotPricePerHour: 0.0886,
+    });
+    const versionCalls = ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand);
+    expect(versionCalls[1]?.args[0].input).toMatchObject({
+      LaunchTemplateName: "sattori-gpu-worker",
+      SourceVersion: "$Latest",
+    });
+    expect(versionCalls[1]?.args[0].input.LaunchTemplateId).toBeUndefined();
+    // UserDataはフォールバック先のECRレプリカからpullし、ECRログインもそのリージョンで行う。
+    // 一方、ワーカーのAWS_REGION・awslogsは一次リージョン（データ面）のまま。
+    const userData = Buffer.from(
+      versionCalls[1]?.args[0].input.LaunchTemplateData?.UserData ?? "",
+      "base64",
+    ).toString("utf-8");
+    expect(userData).toContain("aws ecr get-login-password --region eu-north-1");
+    expect(userData).toContain(
+      "docker pull 123456789012.dkr.ecr.eu-north-1.amazonaws.com/sattori-worker-gpu:latest",
+    );
+    expect(userData).toContain("export AWS_DEFAULT_REGION=ap-northeast-1");
+    expect(userData).toContain("awslogs-region=ap-northeast-1");
+    expect(userData).toContain("-e AWS_REGION='ap-northeast-1'");
+
+    const fleetInput = ec2Mock.commandCalls(CreateFleetCommand)[1]?.args[0].input;
+    expect(fleetInput?.LaunchTemplateConfigs?.[0]?.LaunchTemplateSpecification).toEqual({
+      LaunchTemplateName: "sattori-gpu-worker",
+      Version: "7",
+    });
+    // フォールバック先のサブネットはタグで引いたもの（ソート済み）。
+    expect(fleetInput?.LaunchTemplateConfigs?.[0]?.Overrides).toEqual([
+      { SubnetId: "subnet-north-a", InstanceType: "g6f.2xlarge" },
+      { SubnetId: "subnet-north-b", InstanceType: "g6f.2xlarge" },
+    ]);
+    expect(ec2Mock.commandCalls(DescribeSubnetsCommand)[0]?.args[0].input.Filters).toEqual([
+      { Name: "tag:sattori:gpuWorkerSubnet", Values: ["true"] },
+    ]);
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it("クォータ超過（VcpuLimitExceeded）ではフォールバックしない", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fleetByRegion({ "ap-northeast-1": "VcpuLimitExceeded", "eu-north-1": "ok" });
+
+    await expect(launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc")).rejects.toThrow(
+      /VcpuLimitExceeded/,
+    );
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+    errorSpy.mockRestore();
+  });
+
+  it("CPU系ジョブは容量不足でもフォールバックしない", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fleetByRegion({ "ap-northeast-1": "InsufficientInstanceCapacity", "eu-north-1": "ok" });
+
+    await expect(launchRecordingInstance(fallbackConfig, job, "task-token-abc")).rejects.toThrow();
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+    errorSpy.mockRestore();
+  });
+
+  it("両リージョンとも容量不足なら両方のエラーコードを含めて失敗する", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fleetByRegion({
+      "ap-northeast-1": "InsufficientInstanceCapacity",
+      "eu-north-1": "UnfulfillableCapacity",
+    });
+
+    const err = await launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc").catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(FleetLaunchError);
+    // handleFailure.tsの容量不足判定は例外メッセージの部分一致で行う（Issue #282）。
+    expect((err as Error).message).toContain("InsufficientInstanceCapacity");
+    expect((err as Error).message).toContain("UnfulfillableCapacity");
+    expect((err as FleetLaunchError).errorCodes).toEqual([
+      "InsufficientInstanceCapacity",
+      "UnfulfillableCapacity",
+    ]);
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it("forceFallbackRegionなら一次リージョンを試さずフォールバック先で起動する", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    fleetByRegion({ "ap-northeast-1": "ok", "eu-north-1": "ok" });
+
+    const instance = await launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc", {
+      forceFallbackRegion: true,
+    });
+    expect(instance.region).toBe("eu-north-1");
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+    logSpy.mockRestore();
+  });
+
+  it("フォールバック先が未設定ならforceFallbackRegionも無視する", async () => {
+    fleetByRegion({ "ap-northeast-1": "ok" });
+    const instance = await launchRecordingInstance(config, gpuJob, "task-token-abc", {
+      forceFallbackRegion: true,
+    });
+    expect(instance.region).toBe("ap-northeast-1");
+  });
+});
+
+describe("ecrRegionOf", () => {
+  it("ECRのレジストリホスト名からリージョンを取り出す", () => {
+    expect(ecrRegionOf("123456789012.dkr.ecr.eu-north-1.amazonaws.com")).toBe("eu-north-1");
+    expect(ecrRegionOf("docker.io")).toBeNull();
+  });
+});
+
 describe("terminateInstance", () => {
   beforeEach(() => {
     ec2Mock.reset();
@@ -564,9 +753,19 @@ describe("terminateInstance", () => {
     ec2Mock.on(TerminateInstancesCommand).rejects(err);
     await expect(terminateInstance("i-0123456789abcdef0")).rejects.toThrow("boom");
   });
+
+  it("リージョンを指定すればそのリージョンのクライアントで呼ぶ（Issue #296）", async () => {
+    const regions: string[] = [];
+    ec2Mock.on(TerminateInstancesCommand).callsFake(async (_input, getClient) => {
+      regions.push(await getClient().config.region());
+      return {};
+    });
+    await terminateInstance("i-0123456789abcdef0", "eu-north-1");
+    expect(regions).toEqual(["eu-north-1"]);
+  });
 });
 
-describe("findJobInstanceIds", () => {
+describe("findJobInstances", () => {
   beforeEach(() => {
     ec2Mock.reset();
   });
@@ -582,7 +781,10 @@ describe("findJobInstanceIds", () => {
       ],
     });
 
-    await expect(findJobInstanceIds("job-1")).resolves.toEqual(["i-aaa", "i-bbb"]);
+    await expect(findJobInstances("job-1")).resolves.toEqual([
+      { instanceId: "i-aaa", region: "eu-south-2" },
+      { instanceId: "i-bbb", region: "eu-south-2" },
+    ]);
     expect(ec2Mock.commandCalls(DescribeInstancesCommand)[0]?.args[0].input.Filters).toEqual([
       { Name: "tag:sattori:jobId", Values: ["job-1"] },
       { Name: "instance-state-name", Values: ["pending", "running", "stopping", "stopped"] },
@@ -591,7 +793,20 @@ describe("findJobInstanceIds", () => {
 
   it("該当インスタンスが無ければ空配列", async () => {
     ec2Mock.on(DescribeInstancesCommand).resolves({});
-    await expect(findJobInstanceIds("job-1")).resolves.toEqual([]);
+    await expect(findJobInstances("job-1")).resolves.toEqual([]);
+  });
+
+  it("GPUフォールバック先が設定されていれば両リージョンを探す（Issue #296）", async () => {
+    vi.stubEnv("GPU_FALLBACK_REGION", "eu-north-1");
+    ec2Mock.on(DescribeInstancesCommand).callsFake(async (_input, getClient) => {
+      const region = await getClient().config.region();
+      return { Reservations: [{ Instances: [{ InstanceId: `i-${region}` }] }] };
+    });
+
+    await expect(findJobInstances("job-1")).resolves.toEqual([
+      { instanceId: "i-eu-south-2", region: "eu-south-2" },
+      { instanceId: "i-eu-north-1", region: "eu-north-1" },
+    ]);
   });
 });
 
@@ -630,10 +845,10 @@ describe("listTaggedInstances", () => {
     });
 
     await expect(listTaggedInstances()).resolves.toEqual([
-      { instanceId: "i-aaa", jobId: "job-1", launchTime, instanceType: "g6f.xlarge" },
+      { instanceId: "i-aaa", region: "eu-south-2", jobId: "job-1", launchTime, instanceType: "g6f.xlarge" },
       // LaunchTime・InstanceTypeが返らなかった場合はnull
       // （判定側が「たった今起動した」扱いにする。GPUリコンサイラも同様に扱う）。
-      { instanceId: "i-bbb", jobId: "job-2", launchTime: null, instanceType: null },
+      { instanceId: "i-bbb", region: "eu-south-2", jobId: "job-2", launchTime: null, instanceType: null },
     ]);
     expect(ec2Mock.commandCalls(DescribeInstancesCommand)[0]?.args[0].input.Filters).toEqual([
       { Name: "tag-key", Values: ["sattori:jobId"] },

@@ -18,7 +18,16 @@ import { OUTPUT_RETENTION_DAYS } from "./job.js";
  * 再度移す場合はここの定数も入れ替えること。
  */
 
-/** 単価の対象リージョン。表示に添えて「どこの単価か」を明示するために持つ。 */
+/**
+ * 単価の対象リージョン。表示に添えて「どこの単価か」を明示するために持つ。
+ *
+ * GPUジョブは一次リージョンの容量不足時だけ`eu-north-1`で起動する（Issue #296、
+ * `docs/decisions/0061`）が、単価定数はこのリージョンのものだけを持つ。EC2 Spotは
+ * 起動したリージョンで実測した単価（`spotPricePerHour`）を記録するので影響せず、
+ * EBS gp3（eu-north-1は$0.0836で約5%安い）・パブリックIPv4（全リージョン一律）の
+ * 差はジョブ単価に対して無視できるため。代わりに、このリージョン以外で動いたジョブには
+ * リージョン間データ転送料（`interRegionTransfer`）を計上する。
+ */
 export const COST_PRICING_REGION = "eu-south-2";
 
 /** 単価表の調査時点（`docs/research/aws-region-cost-analysis.md`）。 */
@@ -58,6 +67,24 @@ export const PUBLIC_IPV4_USD_PER_HOUR = 0.005;
  * （`docs/research/aws-region-cost-analysis.md` §4.2・§5）。
  */
 export const MISC_USD_PER_JOB = 2.0 / 1000;
+
+/**
+ * リージョン間データ転送の単価（USD/GB）。`eu-south-2`⇄`eu-north-1`の両方向とも
+ * $0.02/GB（送信元リージョン側で課金される。AWS Price List API〔AWSDataTransfer〕で
+ * 2026-10-11に両方向とも確認、Issue #296）。データ面（S3・DynamoDB・ログ）はすべて`COST_PRICING_REGION`に
+ * あるため、それ以外のリージョンで動いたワーカーの読み書きがこの単価で課金される。
+ */
+export const INTER_REGION_TRANSFER_USD_PER_GB = 0.02;
+
+/**
+ * `titleAssetsBytes`が記録されていないジョブ（このフィールドの追加より前のジョブ、
+ * またはワーカーが記録する前に失敗したジョブ）に使うタイトル資産サイズのフォールバック
+ * （バイト）。2026-10-11時点のTitleAssetsBucketの12タイトルの中央値（約650MiB、
+ * 最小th128の396MiB〜最大th06ncの1.3GiB）。タイトルごとに持たないのは、資産の
+ * 差し替え（`upload-title-assets` skill）のたびに定数が古びるのを避けるため——
+ * 実測値はワーカーが記録するので、これは旧ジョブ・記録漏れ専用の概算でよい。
+ */
+export const FALLBACK_TITLE_ASSETS_BYTES = 650 * 1024 ** 2;
 
 /**
  * CloudFront の常時無料枠（GB/月）。12ヶ月限定ではなく Always Free。
@@ -167,6 +194,9 @@ export type JobCostInput = { options?: { recordingSpeed?: unknown } } & Pick<
   | "outputPath720p"
   | "outputBytes"
   | "outputBytes720p"
+  | "workerRegion"
+  | "titleAssetsBytes"
+  | "rawCheckpointBytes"
 >;
 
 /** コストの内訳（USD）。加算できるよう、集計側でも同じ形を使う。 */
@@ -181,11 +211,16 @@ export interface CostBreakdown {
   s3Storage: number;
   /** Lambda/Step Functions/DynamoDB/SES/CloudWatch Logs の概算。 */
   misc: number;
+  /**
+   * リージョン間データ転送料（Issue #296）。`COST_PRICING_REGION`以外のリージョンで
+   * 起動したワーカー（GPUの容量不足フォールバック）だけが計上する。
+   */
+  interRegionTransfer: number;
 }
 
 /** 空の内訳（集計の初期値）。 */
 export function emptyCostBreakdown(): CostBreakdown {
-  return { ec2Spot: 0, ebs: 0, publicIpv4: 0, s3Storage: 0, misc: 0 };
+  return { ec2Spot: 0, ebs: 0, publicIpv4: 0, s3Storage: 0, misc: 0, interRegionTransfer: 0 };
 }
 
 /** 内訳を足し合わせる（集計用。`total`は`sumCostBreakdown`で別途求める）。 */
@@ -196,6 +231,7 @@ export function addCostBreakdown(a: CostBreakdown, b: CostBreakdown): CostBreakd
     publicIpv4: a.publicIpv4 + b.publicIpv4,
     s3Storage: a.s3Storage + b.s3Storage,
     misc: a.misc + b.misc,
+    interRegionTransfer: a.interRegionTransfer + b.interRegionTransfer,
   };
 }
 
@@ -206,7 +242,8 @@ export function sumCostBreakdown(breakdown: CostBreakdown): number {
     breakdown.ebs +
     breakdown.publicIpv4 +
     breakdown.s3Storage +
-    breakdown.misc
+    breakdown.misc +
+    breakdown.interRegionTransfer
   );
 }
 
@@ -267,6 +304,16 @@ export interface JobCostEstimate {
    * `s3Storage`と`deliveryBytes`は過小になる。
    */
   outputSizeUnknown: boolean;
+  /**
+   * リージョン間で転送したと見なしたバイト数（Issue #296）。一次リージョン
+   * （`COST_PRICING_REGION`）で動いたジョブ・自宅ワーカーでは0。
+   */
+  interRegionTransferBytes: number;
+  /**
+   * `interRegionTransferBytes`の一部に、実測値ではなくフォールバック値
+   * （`FALLBACK_TITLE_ASSETS_BYTES`や出力動画サイズでの代用）が混ざっているか。
+   */
+  interRegionTransferEstimated: boolean;
 }
 
 /**
@@ -398,6 +445,40 @@ function resolveBilledSeconds(
 }
 
 /**
+ * リージョン間で転送したバイト数を推定する（Issue #296）。
+ *
+ * ワーカーが`COST_PRICING_REGION`以外で動いた場合、次の読み書きがリージョンを跨ぐ:
+ *
+ * - タイトル資産のダウンロード（`titleAssetsBytes`、未記録なら`FALLBACK_TITLE_ASSETS_BYTES`）
+ * - 生動画チェックポイントのアップロード（`rawCheckpointBytes`、未記録なら元解像度版の
+ *   出力サイズで代用）
+ * - 出力動画（元解像度版・720p版）のアップロード
+ *
+ * ECRイメージはフォールバック先リージョンのレプリカからpullするのでジョブ単位の
+ * 転送は無い（レプリケーション自体の転送はpushごとの固定費で、ジョブへ配分できない）。
+ * リプレイ・進捗スクリーンショット・ログ・DynamoDB/Step Functionsの通信は数MB以下で
+ * 無視する。**リトライを跨いだ重複ダウンロードは数えない**（`resolveBilledSeconds`と
+ * 同じく、試行ごとの記録を持たない単純なモデル）ため、フォールバック先で何度も
+ * 再試行したジョブでは過小になる。
+ */
+function resolveInterRegionTransfer(job: JobCostInput): { bytes: number; estimated: boolean } {
+  if (
+    job.workerKind === "home" ||
+    job.workerRegion === undefined ||
+    job.workerRegion === COST_PRICING_REGION
+  ) {
+    return { bytes: 0, estimated: false };
+  }
+  const titleAssets = job.titleAssetsBytes ?? FALLBACK_TITLE_ASSETS_BYTES;
+  const rawCheckpoint = job.rawCheckpointBytes ?? job.outputBytes ?? 0;
+  const outputs = (job.outputBytes ?? 0) + (job.outputBytes720p ?? 0);
+  const estimated =
+    job.titleAssetsBytes === undefined ||
+    (job.rawCheckpointBytes === undefined && job.outputBytes !== null);
+  return { bytes: titleAssets + rawCheckpoint + outputs, estimated };
+}
+
+/**
  * ジョブ1件のコストを推定する。純関数（`now`を明示的に受け取る）にしてあるのは、
  * 実行中ジョブの推定値が呼び出しごとに揺れるのをテストで固定できるようにするため。
  */
@@ -414,6 +495,7 @@ export function estimateJobCost(job: JobCostInput, now: Date = new Date()): JobC
   const outputSizeUnknown =
     (job.outputPath !== null && job.outputBytes === null) ||
     (job.outputPath720p !== null && job.outputBytes720p === null);
+  const interRegion = resolveInterRegionTransfer(job);
 
   const breakdown: CostBreakdown = {
     ec2Spot: spotPricePerHour * billedHours,
@@ -426,6 +508,7 @@ export function estimateJobCost(job: JobCostInput, now: Date = new Date()): JobC
       S3_STANDARD_USD_PER_GB_MONTH *
       ((OUTPUT_RETENTION_DAYS * 24) / HOURS_PER_MONTH),
     misc: MISC_USD_PER_JOB,
+    interRegionTransfer: (interRegion.bytes / BYTES_PER_GB) * INTER_REGION_TRANSFER_USD_PER_GB,
   };
 
   return {
@@ -438,6 +521,8 @@ export function estimateJobCost(job: JobCostInput, now: Date = new Date()): JobC
     deliveryBytes: job.outputBytes720p ?? job.outputBytes ?? 0,
     storedBytes,
     outputSizeUnknown,
+    interRegionTransferBytes: interRegion.bytes,
+    interRegionTransferEstimated: interRegion.estimated,
   };
 }
 

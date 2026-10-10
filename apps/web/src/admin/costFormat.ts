@@ -104,4 +104,6 @@ export const COST_ITEM_LABELS = [
   ["publicIpv4", "パブリックIPv4"],
   ["ebs", "EBS (gp3)"],
   ["misc", "その他(Lambda/SFN/DynamoDB/SES)"],
+  // GPUの容量不足フォールバック(Issue #296)で一次リージョン外に起動したジョブだけが計上する。
+  ["interRegionTransfer", "リージョン間転送"],
 ] as const;

@@ -1,6 +1,8 @@
 #!/usr/bin/env tsx
 import { App } from "aws-cdk-lib";
+import { GPU_FALLBACK_REGION } from "../lib/gpu-fallback.ts";
 import { SattoriEdgeStack } from "../lib/sattori-edge-stack.ts";
+import { SattoriGpuFallbackStack } from "../lib/sattori-gpu-fallback-stack.ts";
 import { SattoriStack } from "../lib/sattori-stack.ts";
 
 const app = new App();
@@ -45,3 +47,14 @@ const mainStack = new SattoriStack(app, "SattoriStack", {
   description: "Sattori 東方リプレイ録画サービス (フェーズ1)",
 });
 mainStack.addDependency(edgeStack);
+
+// GPUワーカーの容量不足時フォールバック先（Issue #296、`docs/decisions/0061`）。本体との間に
+// CloudFormation参照は張らず固定名で受け渡す（`lib/gpu-fallback.ts`）が、**デプロイ順は
+// フォールバック → 本体**にする: 本体のECRレジストリ複製設定が先に有効になると、
+// 次のpushでECRが受け皿のリポジトリをライフサイクル無しで自動作成し、このスタックの
+// リポジトリ作成と衝突するため。
+const gpuFallbackStack = new SattoriGpuFallbackStack(app, "SattoriGpuFallbackStack", {
+  env: { account, region: GPU_FALLBACK_REGION },
+  description: "Sattori 東方リプレイ録画サービス - GPUワーカーの容量不足時フォールバック先(eu-north-1)",
+});
+mainStack.addDependency(gpuFallbackStack);

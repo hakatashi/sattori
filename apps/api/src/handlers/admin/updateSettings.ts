@@ -16,20 +16,29 @@ import { updateSettings } from "../../settings.js";
  * false`がキルスイッチ本体——`requestMagicLink.ts`はキャッシュせず毎回参照するため、
  * ここでの変更は次のリクエストから即座に反映される。`monthlyCostLimitUsd`側は
  * ユーザー向け経路が当月コストを数分キャッシュしている（`costGuard.ts`参照）ため、
- * 閾値変更の反映が最大数分遅れうる。
+ * 閾値変更の反映が最大数分遅れうる。`forceGpuFallbackRegion`（Issue #296）は
+ * `Launch`が起動のたびに読むため、次のGPUジョブの起動から反映される。
  */
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const config = loadConfig();
   const body = parseBody<UpdateAdminSettingsRequest>(event);
-  if (!body || (body.acceptingNewJobs === undefined && body.monthlyCostLimitUsd === undefined)) {
+  if (
+    !body ||
+    (body.acceptingNewJobs === undefined &&
+      body.monthlyCostLimitUsd === undefined &&
+      body.forceGpuFallbackRegion === undefined)
+  ) {
     return error(
       400,
       "invalid_request",
-      "acceptingNewJobs か monthlyCostLimitUsd のいずれかを指定してください",
+      "acceptingNewJobs・monthlyCostLimitUsd・forceGpuFallbackRegion のいずれかを指定してください",
     );
   }
   if (body.acceptingNewJobs !== undefined && typeof body.acceptingNewJobs !== "boolean") {
     return error(400, "invalid_request", "acceptingNewJobs はboolean で指定してください");
+  }
+  if (body.forceGpuFallbackRegion !== undefined && typeof body.forceGpuFallbackRegion !== "boolean") {
+    return error(400, "invalid_request", "forceGpuFallbackRegion はboolean で指定してください");
   }
   if (body.monthlyCostLimitUsd !== undefined) {
     if (typeof body.monthlyCostLimitUsd !== "number" || !Number.isFinite(body.monthlyCostLimitUsd) || body.monthlyCostLimitUsd <= 0) {

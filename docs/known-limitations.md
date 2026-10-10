@@ -370,6 +370,17 @@ eu-south-2 移設により EC2 Fleet の Spot キャパシティプール数が 
 後退している（詳細は [`decisions/0001`](decisions/0001-region-eu-south-2-ses-us-east-1.md)・
 [`decisions/0016`](decisions/0016-ec2-fleet-instance-type-diversification.md)）。起動失敗率が有意に悪化していないか移設後しばらくは監視すること。
 
+GPU（g6f.2xlarge）は eu-south-2 で長期的に枯渇しており、容量不足時だけ eu-north-1 で起動する
+（[`decisions/0061`](decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)）。ただし次の制約がある。
+
+- **eu-north-1 の G 系 Spot クォータは 8 vCPU のまま**（2026-10-11 時点。サポートは 32 へ
+  引き上げたと回答したが、適用されているのは On-Demand 枠のほうだった疑い）。訂正されるまで、
+  フォールバック先で同時に動かせるのは g6f.2xlarge 1台だけ。
+- eu-north-1 にも余裕は無い（1a は取れず 1b 頼み、[`reports/2026-10-11`](reports/2026-10-11-gpu-capacity-eu-south-2-vs-eu-north-1.md)）。
+  両リージョンとも枯渇すれば従来どおり容量不足で失敗する。
+- GPU 台帳（[`decisions/0056`](decisions/0056-gpu-vcpu-lease-and-queue.md)）は両リージョン合計で
+  32 vCPU の1本のまま。リージョン別のクォータは見ていない。
+
 ## 6. 濫用対策・管理画面の現状
 
 濫用対策（Issue #14）はメールアドレス単位のレート制限（`apps/api/src/rateLimit.ts`、
@@ -397,6 +408,13 @@ IP 単位のレート制限・reCAPTCHA 等の追加 bot ゲートは、**メー
 - 自宅ワーカー（Issue #49）が処理したジョブは EC2/EBS/IPv4 の課金が発生しないため 0 で
   計上する（自宅の電気代・回線費は AWS の請求に現れず按分する意味も無いので一切計上しない）。
 - リトライで試行ごとにワーカー種別が変わったジョブの推定は過少になる（Issue #94）。
+- GPU の容量不足フォールバック（eu-north-1、Issue #296）で動いたジョブには**リージョン間転送料**
+  （`interRegionTransfer`、$0.02/GB）を計上する。転送量はワーカーが記録したタイトル資産・
+  生動画チェックポイントのサイズと出力サイズの合計で、未記録の旧ジョブは概算値で補う。
+  `workerRegion` は最後の試行のリージョンしか持たないため、**試行ごとにリージョンが変わった
+  ジョブ・フォールバック先で何度も再試行したジョブでは転送料が不正確**になる（重複ダウンロードは
+  数えない）。ECR レプリケーション・AMI スナップショットの固定費（月$1〜2）はジョブに配分できず
+  計上していない。
 - 管理画面は USD / 円を切り替えて表示できるが、**円換算は固定レート定数**
   （`USD_TO_JPY_RATE`、2026-08-03 時点）による概算で、計算・API 応答はすべて USD のまま
   （換算は表示の直前だけ）。

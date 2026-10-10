@@ -5,10 +5,12 @@ import { LAUNCH_LAMBDA_TIMEOUT_SECONDS, ORPHAN_SWEEP_INTERVAL_MINUTES } from "@s
 import { SattoriStack } from "../lib/sattori-stack.ts";
 
 function synth(): Template {
-  // gpuWorkerAmiId(GPU描画必須タイトル用カスタムAMI、Issue #241)はコンテキスト値
-  // 未設定時にsynth自体が失敗する設計(誤ってCPU系AMIのままGPU系を起動する事故を
-  // 防ぐため)。テストではダミー値を渡す。
-  const app = new App({ context: { gpuWorkerAmiId: "ami-0123456789abcdef0" } });
+  // gpuWorkerAmiIds(GPU描画必須タイトル用カスタムAMI、Issue #241。リージョン別、Issue #296)は
+  // コンテキスト値未設定時にsynth自体が失敗する設計(誤ってCPU系AMIのままGPU系を起動する
+  // 事故を防ぐため)。テストではダミー値を渡す。
+  const app = new App({
+    context: { gpuWorkerAmiIds: { "ap-northeast-1": "ami-0123456789abcdef0" } },
+  });
   const stack = new SattoriStack(app, "TestStack", {
     env: { account: "123456789012", region: "ap-northeast-1" },
     webDomainName: "sattori.hakatashi.com",
@@ -308,7 +310,7 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("gpuWorkerAmiIdコンテキスト値が未設定だとsynth自体が失敗する(誤ってCPU系AMIのままGPU系を起動する事故を防ぐ)", () => {
+  it("gpuWorkerAmiIdsコンテキスト値が未設定だとsynth自体が失敗する(誤ってCPU系AMIのままGPU系を起動する事故を防ぐ)", () => {
     const app = new App();
     expect(
       () =>
@@ -320,7 +322,55 @@ describe("SattoriStack", () => {
           sesConfigurationSetName: "test-config-set",
           opsAlertEmail: "ops@example.com",
         }),
-    ).toThrow(/gpuWorkerAmiId/);
+    ).toThrow(/gpuWorkerAmiIds/);
+  });
+
+  it("GPUフォールバック先(Issue #296)向けに固定名のインスタンスプロファイルを追加で作る", () => {
+    template.hasResourceProperties("AWS::IAM::InstanceProfile", {
+      InstanceProfileName: "sattori-gpu-worker-remote",
+    });
+    // 既存のプロファイル(名前なし)も残る＝置き換えではなく追加。
+    expect(Object.keys(template.findResources("AWS::IAM::InstanceProfile"))).toHaveLength(2);
+  });
+
+  it("GPUイメージだけをフォールバック先リージョンへ複製する(Issue #296)", () => {
+    template.hasResourceProperties("AWS::ECR::ReplicationConfiguration", {
+      ReplicationConfiguration: {
+        Rules: [
+          {
+            Destinations: [{ Region: "eu-north-1", RegistryId: "123456789012" }],
+            RepositoryFilters: [{ Filter: "sattori-worker-gpu", FilterType: "PREFIX_MATCH" }],
+          },
+        ],
+      },
+    });
+  });
+
+  it("ワーカーロールはフォールバック先のECRレプリカからpullできる(Issue #296)", () => {
+    template.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith(["ecr:BatchGetImage"]),
+            Resource: "arn:aws:ecr:eu-north-1:123456789012:repository/sattori-worker-gpu",
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("Lambdaへフォールバック先の固定名を環境変数で渡す(Issue #296)", () => {
+    template.hasResourceProperties("AWS::Lambda::Function", {
+      Environment: {
+        Variables: Match.objectLike({
+          GPU_FALLBACK_REGION: "eu-north-1",
+          GPU_FALLBACK_LAUNCH_TEMPLATE_NAME: "sattori-gpu-worker",
+          GPU_FALLBACK_SUBNET_TAG_KEY: "sattori:gpuWorkerSubnet",
+          GPU_FALLBACK_WORKER_GPU_IMAGE:
+            "123456789012.dkr.ecr.eu-north-1.amazonaws.com/sattori-worker-gpu:latest",
+        }),
+      },
+    });
   });
 
   it("StartJob Lambda に Step Functions 実行開始権限が付与されている", () => {

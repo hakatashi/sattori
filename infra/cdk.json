@@ -9,6 +9,8 @@
     "@aws-cdk/core:checkSecretUsage": true,
     "@aws-cdk/aws-iam:minimizePolicies": true,
     "@aws-cdk/core:validateSnapshotRemovalPolicy": true,
-    "gpuWorkerAmiId": "ami-08b3f94444612a932"
+    "gpuWorkerAmiIds": {
+      "eu-south-2": "ami-08b3f94444612a932"
+    }
   }
 }

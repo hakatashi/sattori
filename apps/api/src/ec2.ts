@@ -4,16 +4,62 @@ import {
   DescribeInstancesCommand,
   type DescribeInstancesCommandOutput,
   DescribeSpotPriceHistoryCommand,
+  DescribeSubnetsCommand,
   EC2Client,
   type _InstanceType as InstanceType,
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import type { JobRecord } from "@sattori/shared";
 import { requiresGpuRecording, vcpusForInstanceType } from "@sattori/shared";
-import type { ApiConfig } from "./config.js";
+import type { ApiConfig, GpuFallbackConfig } from "./config.js";
+import { workerRegions } from "./config.js";
 import { buildWorkerEnv } from "./workerEnv.js";
 
-const ec2 = new EC2Client({});
+/**
+ * リージョン別のEC2クライアント（Issue #296）。GPUジョブは容量不足時に
+ * フォールバック先リージョン（`eu-north-1`）で起動するため、EC2のAPIは常に
+ * 「どのリージョンに対して呼ぶか」を明示する。`region`省略時はLambda自身の
+ * リージョン（一次リージョン）。
+ */
+const ec2Clients = new Map<string, EC2Client>();
+
+function ec2ClientFor(region?: string): EC2Client {
+  const key = region ?? "";
+  let client = ec2Clients.get(key);
+  if (!client) {
+    client = new EC2Client(region ? { region } : {});
+    ec2Clients.set(key, client);
+  }
+  return client;
+}
+
+/**
+ * GPUジョブを一次リージョンからフォールバック先へ逃がす契機になる`CreateFleet`の
+ * エラーコード（Issue #296）。**Spot在庫そのものの枯渇だけ**に限る。
+ * `VcpuLimitExceeded`/`MaxSpotInstanceCountExceeded`（クォータ超過）は一次リージョンの
+ * 台帳（`gpuSlots.ts`）とAWS側の実使用量のずれが原因で、他リージョンへ逃がしても
+ * 解消しないため含めない。
+ */
+export const GPU_FALLBACK_TRIGGER_ERROR_CODES = [
+  "InsufficientInstanceCapacity",
+  "UnfulfillableCapacity",
+];
+
+/**
+ * `CreateFleet`が1台も確保できなかったことを表す例外。フォールバック判定のために
+ * エラーコードを構造化して持つ。メッセージには`ErrorCode: ErrorMessage`をそのまま
+ * 含める——`handleFailure.ts`の`CAPACITY_ERROR_CODES`は例外メッセージの部分一致で
+ * 容量不足を判定している（Issue #282）ため、この形式を崩さないこと。
+ */
+export class FleetLaunchError extends Error {
+  constructor(
+    message: string,
+    readonly errorCodes: string[],
+  ) {
+    super(message);
+    this.name = "FleetLaunchError";
+  }
+}
 
 /** インスタンスに付与しているジョブ識別用のタグキー（`buildCreateFleetInput`と対で使う）。 */
 export const JOB_ID_TAG_KEY = "sattori:jobId";
@@ -139,6 +185,12 @@ export interface LaunchConstraints {
    * `undefined` なら制約なし（従来どおり全候補。非GPU経路はこちら）。
    */
   maxVcpu?: number;
+  /**
+   * GPUジョブを一次リージョンを飛ばしてフォールバック先リージョンで起動する
+   * （管理設定`forceGpuFallbackRegion`、Issue #296。本番での実機検証用）。
+   * フォールバック先が未設定・非GPUジョブでは無視する。
+   */
+  forceFallbackRegion?: boolean;
 }
 
 /** module-privateではなくexportする（`ec2.test.ts`から直接検証するため）。 */
@@ -207,15 +259,25 @@ function shellEscape(value: string): string {
  * `taskToken` は Step Functions の `waitForTaskToken` パターンのトークン。ワーカーが
  * 録画/変換の成功・失敗を `SendTaskSuccess`/`SendTaskFailure` で直接通知するために渡す。
  */
-export function buildUserData(config: ApiConfig, job: JobRecord, taskToken: string): string {
+export function buildUserData(
+  config: ApiConfig,
+  job: JobRecord,
+  taskToken: string,
+  options: { workerImage?: string } = {},
+): string {
   // GPU必須のジョブ（th06nc・th15と倍速録画、Issue #241・#288）は別ECRイメージ（`worker-gpu`）・
   // GPU用カスタムAMI（Launch Templateはこの関数の外、`launchRecordingInstance()`側で
   // 分岐する）を使う。AMIにNVIDIA GRIDドライバ・nvidia-container-toolkitを事前導入
   // 済みのため、`docker run`にGPUを渡す`--gpus all`を追加するだけでよい
   // （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
   const isGpuJob = requiresGpuRecording(job);
-  const workerImage = isGpuJob ? config.workerGpuImage : config.workerImage;
+  // フォールバック先リージョン（Issue #296）で起動する場合は、そのリージョンのECR
+  // レプリカのイメージを呼び出し側が渡す。ECRのログイン先はイメージのレジストリから
+  // 導く——**`AWS_DEFAULT_REGION`・awslogs・Step Functions通知は一次リージョンの
+  // ままにする**（データ面はすべて一次リージョンにあり、taskTokenもリージョン固有）。
+  const workerImage = options.workerImage ?? (isGpuJob ? config.workerGpuImage : config.workerImage);
   const registry = workerImage.split("/")[0] ?? "";
+  const ecrRegion = ecrRegionOf(registry) ?? config.ec2.region;
 
   // 環境変数の中身は自宅ワーカー（Issue #49）と共有する（`workerEnv.ts`）。
   // taskToken だけはスクリプト冒頭で $TASK_TOKEN に格納済み（bootstrap 失敗時の
@@ -330,7 +392,7 @@ command -v aws >/dev/null 2>&1 || dnf install -y awscli >/dev/null 2>&1 || dnf i
 
 login_ok=0
 for attempt in 1 2 3; do
-  if aws ecr get-login-password --region ${config.ec2.region} | docker login --username AWS --password-stdin ${registry}; then
+  if aws ecr get-login-password --region ${ecrRegion} | docker login --username AWS --password-stdin ${registry}; then
     login_ok=1
     break
   fi
@@ -367,9 +429,20 @@ docker run ${dockerRunFlags} \\
   return Buffer.from(script, "utf-8").toString("base64");
 }
 
+/**
+ * ECRのレジストリホスト名（`<account>.dkr.ecr.<region>.amazonaws.com`）からリージョンを
+ * 取り出す。形式が違えば null（呼び出し側が一次リージョンへ縮退する）。
+ */
+export function ecrRegionOf(registry: string): string | null {
+  const match = /^\d+\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com$/.exec(registry);
+  return match?.[1] ?? null;
+}
+
 /** `launchRecordingInstance` が実際に確保できたインスタンスの情報。 */
 export interface LaunchedInstance {
   instanceId: string;
+  /** インスタンスを起動したリージョン（Issue #296）。 */
+  region: string;
   /** `CreateFleet` レスポンスに含まれなかった場合は null。 */
   instanceType: string | null;
   /** `CreateFleet` レスポンスに含まれなかった場合は null。 */
@@ -396,12 +469,13 @@ export interface LaunchedInstance {
 export async function fetchSpotPrice(
   instanceType: string | null,
   availabilityZone: string | null,
+  region?: string,
 ): Promise<number | null> {
   if (instanceType === null || availabilityZone === null) {
     return null;
   }
   try {
-    const result = await ec2.send(
+    const result = await ec2ClientFor(region).send(
       new DescribeSpotPriceHistoryCommand({
         InstanceTypes: [instanceType as InstanceType],
         AvailabilityZone: availabilityZone,
@@ -453,6 +527,13 @@ export async function fetchSpotPrice(
  * 別のLaunch Templateであり、`CreateLaunchTemplateVersion`・`CreateFleet`の両方で
  * 参照先を切り替える（サブネット候補はCPU系と同じ全AZ、Issue #281で
  * `eu-south-2a`の暫定除外[`decisions/0055`]を撤回済み）。
+ *
+ * **GPUジョブは一次リージョンが容量不足（`GPU_FALLBACK_TRIGGER_ERROR_CODES`）のときだけ、
+ * 同じ呼び出しの中でフォールバック先リージョン（`eu-north-1`）へ起動し直す**
+ * （Issue #296、`docs/decisions/0061`）。価格では振り分けない——リージョン間転送料が
+ * Spotの価格差を上回るため。リトライ時も毎回一次リージョンから試す（チェックポイント・
+ * 出力はすべて一次リージョンのS3にあるので、そちらを優先するのが自然に安い）。
+ * CPU系ジョブは一次リージョン固定（CPU系のLaunch Template・AMIを複製していない）。
  */
 export async function launchRecordingInstance(
   config: ApiConfig,
@@ -460,15 +541,135 @@ export async function launchRecordingInstance(
   taskToken: string,
   constraints: LaunchConstraints = {},
 ): Promise<LaunchedInstance> {
-  const userData = buildUserData(config, job, taskToken);
   const candidateInstanceTypes = getCandidateInstanceTypes(job, constraints);
   const isGpuJob = requiresGpuRecording(job);
-  const launchTemplateId = isGpuJob ? config.ec2.gpuLaunchTemplateId : config.ec2.launchTemplateId;
-  const subnetIds = config.ec2.subnetIds;
+  const fallback = isGpuJob ? config.ec2.gpuFallback : null;
+
+  const primary = async () =>
+    launchInRegion(config, job, taskToken, candidateInstanceTypes, {
+      region: config.ec2.region,
+      launchTemplate: {
+        LaunchTemplateId: isGpuJob ? config.ec2.gpuLaunchTemplateId : config.ec2.launchTemplateId,
+      },
+      subnetIds: config.ec2.subnetIds,
+      workerImage: undefined,
+    });
+
+  if (fallback === null) {
+    return primary();
+  }
+  if (constraints.forceFallbackRegion) {
+    console.log(
+      JSON.stringify({ event: "gpu_fallback_forced", jobId: job.jobId, region: fallback.region }),
+    );
+    return launchInFallbackRegion(config, job, taskToken, candidateInstanceTypes, fallback);
+  }
+
+  try {
+    return await primary();
+  } catch (err) {
+    if (
+      !(err instanceof FleetLaunchError) ||
+      !err.errorCodes.some((code) => GPU_FALLBACK_TRIGGER_ERROR_CODES.includes(code))
+    ) {
+      throw err;
+    }
+    console.warn(
+      JSON.stringify({
+        event: "gpu_fallback_region_attempt",
+        jobId: job.jobId,
+        primaryRegion: config.ec2.region,
+        fallbackRegion: fallback.region,
+        primaryErrorCodes: err.errorCodes,
+      }),
+    );
+    try {
+      return await launchInFallbackRegion(config, job, taskToken, candidateInstanceTypes, fallback);
+    } catch (fallbackErr) {
+      // 両リージョンとも失敗した。両方のエラーをメッセージに残す——
+      // `handleFailure.ts`の容量不足判定（部分一致）と運用調査の両方が使う。
+      const fallbackMessage =
+        fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      throw new FleetLaunchError(
+        `${err.message} / フォールバック先(${fallback.region}): ${fallbackMessage}`,
+        [
+          ...err.errorCodes,
+          ...(fallbackErr instanceof FleetLaunchError ? fallbackErr.errorCodes : []),
+        ],
+      );
+    }
+  }
+}
+
+/** `launchInRegion()`の起動先。 */
+interface LaunchTarget {
+  region: string;
+  launchTemplate: { LaunchTemplateId: string } | { LaunchTemplateName: string };
+  subnetIds: string[];
+  /** 省略時は`buildUserData()`の既定（一次リージョンのECR）。 */
+  workerImage: string | undefined;
+}
+
+/**
+ * フォールバック先のサブネットID（Lambdaのコンテナ内でキャッシュする）。
+ * 本体スタックとフォールバックスタックの間でクロスリージョン参照を張らない
+ * （`infra/README.md`）ため、CDKの出力ではなくタグで実行時に引く。
+ */
+const fallbackSubnetCache = new Map<string, string[]>();
+
+async function resolveFallbackSubnetIds(fallback: GpuFallbackConfig): Promise<string[]> {
+  const cached = fallbackSubnetCache.get(fallback.region);
+  if (cached) {
+    return cached;
+  }
+  const result = await ec2ClientFor(fallback.region).send(
+    new DescribeSubnetsCommand({
+      Filters: [{ Name: `tag:${fallback.subnetTagKey}`, Values: ["true"] }],
+    }),
+  );
+  const subnetIds = (result.Subnets ?? [])
+    .map((subnet) => subnet.SubnetId)
+    .filter((subnetId): subnetId is string => subnetId !== undefined)
+    .sort();
+  if (subnetIds.length === 0) {
+    throw new Error(
+      `フォールバック先(${fallback.region})にタグ ${fallback.subnetTagKey} の付いたサブネットがありません`,
+    );
+  }
+  fallbackSubnetCache.set(fallback.region, subnetIds);
+  return subnetIds;
+}
+
+async function launchInFallbackRegion(
+  config: ApiConfig,
+  job: JobRecord,
+  taskToken: string,
+  candidateInstanceTypes: InstanceType[],
+  fallback: GpuFallbackConfig,
+): Promise<LaunchedInstance> {
+  return launchInRegion(config, job, taskToken, candidateInstanceTypes, {
+    region: fallback.region,
+    launchTemplate: { LaunchTemplateName: fallback.launchTemplateName },
+    subnetIds: await resolveFallbackSubnetIds(fallback),
+    workerImage: fallback.workerGpuImage,
+  });
+}
+
+/** 1リージョンぶんの`CreateLaunchTemplateVersion` → `CreateFleet`。 */
+async function launchInRegion(
+  config: ApiConfig,
+  job: JobRecord,
+  taskToken: string,
+  candidateInstanceTypes: InstanceType[],
+  target: LaunchTarget,
+): Promise<LaunchedInstance> {
+  const ec2 = ec2ClientFor(target.region);
+  const userData = buildUserData(config, job, taskToken, { workerImage: target.workerImage });
+  const isGpuJob = requiresGpuRecording(job);
 
   const version = await ec2.send(
     new CreateLaunchTemplateVersionCommand({
-      LaunchTemplateId: launchTemplateId,
+      ...target.launchTemplate,
       // "$Default"ではなく"$Latest"を使う。CDKの`CfnLaunchTemplate`はAMI・SG等の
       // プロパティ変更のたびに新しいバージョンを作るが、そのバージョンを
       // `DefaultVersionNumber`へ自動的には昇格しない(`ModifyLaunchTemplate`の
@@ -493,10 +694,10 @@ export async function launchRecordingInstance(
       LaunchTemplateConfigs: [
         {
           LaunchTemplateSpecification: {
-            LaunchTemplateId: launchTemplateId,
+            ...target.launchTemplate,
             Version: String(versionNumber),
           },
-          Overrides: subnetIds.flatMap((subnetId) =>
+          Overrides: target.subnetIds.flatMap((subnetId) =>
             candidateInstanceTypes.map((instanceType) => ({
               SubnetId: subnetId,
               InstanceType: instanceType,
@@ -534,30 +735,32 @@ export async function launchRecordingInstance(
     // 失敗理由をCloudWatch Logsへ構造化して残す（Issue #270）。`errorCodes`は
     // `InsufficientInstanceCapacity`（Spot在庫の一時的な枯渇）と
     // `VcpuLimitExceeded`/`MaxSpotInstanceCountExceeded`（G系スポットのvCPUクオータ
-    // 超過、eu-south-2では32vCPU）を区別するためのもの。例外メッセージ自体にも
-    // 含めているが、CloudWatch Logs Insightsで集計・アラート判定するには構造化された
-    // フィールドが要る。
+    // 超過）を区別するためのもの。例外メッセージ自体にも含めているが、
+    // CloudWatch Logs Insightsで集計・アラート判定するには構造化されたフィールドが要る。
     console.error(
       JSON.stringify({
         event: "create_fleet_failed",
         jobId: job.jobId,
         game: job.game,
+        region: target.region,
         isGpuJob,
         candidateInstanceTypes,
         errorCodes,
       }),
     );
-    throw new Error(
+    throw new FleetLaunchError(
       `EC2 Fleet でのインスタンス起動に失敗しました（InstanceId 不明）${reason ? `: ${reason}` : ""}`,
+      errorCodes,
     );
   }
   const instanceType = launchedInstance.InstanceType ?? null;
   const availabilityZone = launchedInstance.AvailabilityZone ?? null;
   return {
     instanceId,
+    region: target.region,
     instanceType,
     availabilityZone,
-    spotPricePerHour: await fetchSpotPrice(instanceType, availabilityZone),
+    spotPricePerHour: await fetchSpotPrice(instanceType, availabilityZone, target.region),
   };
 }
 
@@ -565,10 +768,15 @@ export async function launchRecordingInstance(
  * ジョブ失敗（Spot中断・タイムアウト等）時に、孤児化した可能性のあるインスタンスを
  * terminate する。既に終了済み・存在しない場合も冪等に成功扱いとする
  * （リトライの度に毎回呼ばれるため）。
+ *
+ * `region`はインスタンスのあるリージョン（Issue #296）。省略時は一次リージョン。
+ * 別リージョンのインスタンスIDを渡すと`InvalidInstanceID.NotFound`で空振りする
+ * （＝終了できないまま成功扱いになる）ため、`JobRecord.workerRegion`や
+ * `findJobInstances()`の結果のリージョンを必ず渡すこと。
  */
-export async function terminateInstance(instanceId: string): Promise<void> {
+export async function terminateInstance(instanceId: string, region?: string): Promise<void> {
   try {
-    await ec2.send(new TerminateInstancesCommand({ InstanceIds: [instanceId] }));
+    await ec2ClientFor(region).send(new TerminateInstancesCommand({ InstanceIds: [instanceId] }));
   } catch (err) {
     const name = err instanceof Error ? err.name : undefined;
     if (name === "InvalidInstanceID.NotFound") {
@@ -588,26 +796,43 @@ export async function terminateInstance(instanceId: string): Promise<void> {
  * Lambda呼び出しをキャンセルしないため、`StopExecution`後も`CreateFleet`は完了しうる）。
  * タグはインスタンス作成時に`TagSpecifications`で付くのでDynamoDBへの書き込みを
  * 待たずに発見でき、Step Functionsのリトライで複数台が孤児化した場合もまとめて拾える。
+ *
+ * GPUジョブはフォールバック先リージョンでも起動しうる（Issue #296）ため、
+ * **ワーカーを起動しうる全リージョン**（`workerRegions()`）を探す。
  */
-export async function findJobInstanceIds(jobId: string): Promise<string[]> {
-  const result = await ec2.send(
-    new DescribeInstancesCommand({
-      Filters: [
-        { Name: `tag:${JOB_ID_TAG_KEY}`, Values: [jobId] },
-        { Name: "instance-state-name", Values: LIVE_INSTANCE_STATES },
-      ],
+export async function findJobInstances(jobId: string): Promise<RegionalInstance[]> {
+  const perRegion = await Promise.all(
+    workerRegions().map(async (region) => {
+      const result = await ec2ClientFor(region).send(
+        new DescribeInstancesCommand({
+          Filters: [
+            { Name: `tag:${JOB_ID_TAG_KEY}`, Values: [jobId] },
+            { Name: "instance-state-name", Values: LIVE_INSTANCE_STATES },
+          ],
+        }),
+      );
+      return (result.Reservations ?? []).flatMap((reservation) =>
+        (reservation.Instances ?? [])
+          .map((instance) => instance.InstanceId)
+          .filter((instanceId): instanceId is string => instanceId !== undefined)
+          .map((instanceId) => ({ instanceId, region })),
+      );
     }),
   );
-  return (result.Reservations ?? []).flatMap((reservation) =>
-    (reservation.Instances ?? [])
-      .map((instance) => instance.InstanceId)
-      .filter((instanceId): instanceId is string => instanceId !== undefined),
-  );
+  return perRegion.flat();
+}
+
+/** リージョン付きのインスタンスID（Issue #296）。 */
+export interface RegionalInstance {
+  instanceId: string;
+  region: string;
 }
 
 /** タグ(`sattori:jobId`)から見つけた、まだ生きている録画インスタンス1台ぶんの情報。 */
 export interface TaggedInstance {
   instanceId: string;
+  /** インスタンスのあるリージョン（Issue #296）。 */
+  region: string;
   /** タグに書かれたジョブID。 */
   jobId: string;
   /**
@@ -635,10 +860,17 @@ export interface TaggedInstance {
  * 向きを逆にすることが要点。
  */
 export async function listTaggedInstances(): Promise<TaggedInstance[]> {
+  // GPUのフォールバック先リージョン（Issue #296）も走査する。1リージョンの列挙失敗は
+  // 例外のまま上げる（掃除役が「何も見えていないのに正常終了」しないように）。
+  const perRegion = await Promise.all(workerRegions().map(listTaggedInstancesIn));
+  return perRegion.flat();
+}
+
+async function listTaggedInstancesIn(region: string): Promise<TaggedInstance[]> {
   const instances: TaggedInstance[] = [];
   let nextToken: string | undefined;
   do {
-    const result: DescribeInstancesCommandOutput = await ec2.send(
+    const result: DescribeInstancesCommandOutput = await ec2ClientFor(region).send(
       new DescribeInstancesCommand({
         Filters: [
           // 値は問わずタグの有無だけで絞る（jobIdは事前に分からないため）。
@@ -657,6 +889,7 @@ export async function listTaggedInstances(): Promise<TaggedInstance[]> {
         }
         instances.push({
           instanceId,
+          region,
           jobId,
           launchTime: instance.LaunchTime ?? null,
           instanceType: instance.InstanceType ?? null,
