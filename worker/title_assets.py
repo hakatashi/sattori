@@ -59,11 +59,15 @@ def _extraction_filter(member, dest_path):
 
 
 def _download_and_extract(s3, bucket, game, dest_dir, *, log):
-    """タイトル資産アーカイブをS3から取得し `dest_dir` 直下へ展開する。"""
+    """タイトル資産アーカイブをS3から取得し `dest_dir` 直下へ展開する。
+
+    ダウンロードしたアーカイブのバイト数を返す(リージョン間転送料の推定用、Issue #296)。
+    """
     key = f"titles/{game}/assets.tar.gz"
     archive_path = f"{DOWNLOAD_DIR}/sattori-title-assets-{game}.tar.gz"
     log(f"タイトル資産をダウンロードします: s3://{bucket}/{key}")
     s3.download_file(bucket, key, archive_path)
+    downloaded_bytes = os.path.getsize(archive_path)
 
     try:
         log(f"タイトル資産を展開します: {archive_path} -> {dest_dir}")
@@ -71,6 +75,7 @@ def _download_and_extract(s3, bucket, game, dest_dir, *, log):
             tar.extractall(dest_dir, filter=_extraction_filter)
     finally:
         os.remove(archive_path)
+    return downloaded_bytes
 
 
 def _link_into_repo(version_dir, repo, *, log):
@@ -194,17 +199,26 @@ def ensure_title_assets(s3, bucket, game, *, log=print, env=None):
     `TITLE_ASSETS_CACHE_DIR`(自宅ワーカーのみが渡す。Issue #104)が設定されている
     場合は、直接S3からダウンロードする代わりにそのディレクトリ配下のキャッシュを
     使う。EC2はこの環境変数を渡さないため常に従来どおりの直接ダウンロードになる。
+
+    戻り値はS3から実際にダウンロードしたバイト数で、ダウンロードしなかった場合
+    (展開済み・キャッシュ利用)は None。管理画面のリージョン間転送料の推定
+    (`packages/shared/src/cost.ts`、Issue #296)に使う——ワーカーは自分がどの
+    リージョンで動いているかを知らないまま、常に記録だけする。
     """
     marker = f"{REPO}/games/{game}"
     if os.path.exists(marker):
         log(f"タイトル資産は展開済みのためスキップします: game={game}")
-        return
+        return None
 
     cache_dir = (env if env is not None else os.environ).get("TITLE_ASSETS_CACHE_DIR")
     if not cache_dir:
-        _download_and_extract(s3, bucket, game, REPO, log=log)
+        downloaded_bytes = _download_and_extract(s3, bucket, game, REPO, log=log)
         log(f"タイトル資産の展開が完了しました: game={game}")
-        return
+        return downloaded_bytes
 
     version_dir = _ensure_cached_version(s3, bucket, game, cache_dir, log=log)
     _link_into_repo(version_dir, REPO, log=log)
+    # キャッシュ経由(自宅ワーカー専用)の転送量は記録しない。自宅ワーカーにはリージョン
+    # 間転送料という概念が無く(`cost.ts`も自宅ワーカーには計上しない)、キャッシュヒットか
+    # どうかをここまで伝搬させる複雑さに見合わないため。
+    return None

@@ -1,7 +1,6 @@
 # infra
 
-AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-south-2移設に伴い、
-**2スタック構成**になっている。
+AWS CDK（TypeScript）による Sattori のインフラ定義。**3スタック構成**になっている。
 
 - **`SattoriStack`**（`lib/sattori-stack.ts`、**eu-south-2**固定）: 録画基盤・API・
   DynamoDB・VPC・Web配信など、ほぼ全てのリソース。
@@ -10,13 +9,39 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   ため、2026-08-03時点確認）だけを持つ小さな付帯スタック。`SattoriStack`は
   `crossRegionReferences`経由でこの証明書ARNを受け取り、Lambda側は`SES_REGION`
   環境変数でこのリージョンのSESを明示して呼ぶ（`apps/api/src/ses.ts`）。
+- **`SattoriGpuFallbackStack`**（`lib/sattori-gpu-fallback-stack.ts`、**eu-north-1**固定）:
+  GPUワーカーをeu-south-2の容量不足時だけ起動する先（Issue #296）。VPC（g6f.2xlargeを
+  提供する1a/1bのパブリックサブネットのみ・NATなし、サブネットにタグ
+  `sattori:gpuWorkerSubnet=true`）・送信のみのSG・固定名のGPU Launch Template
+  （`sattori-gpu-worker`）・ECRレプリカの受け皿（`sattori-worker-gpu`、`maxImageCount: 2`）
+  だけを持ち、データ面は持たない。
 
 > リージョン移設の経緯・SESとACMだけをus-east-1に残す判断・受け入れたトレードオフは
 > [`docs/decisions/0001`](../docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)。
+> GPUだけeu-north-1へ逃がす例外とその設計は
+> [`docs/decisions/0061`](../docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)。
 
-両スタックは`bin/sattori.ts`から起こし、`pnpm run deploy`（＝`cdk deploy --all`）で
-まとめてデプロイする。単体でどちらかだけをデプロイしたい場合は
-`cdk deploy SattoriEdgeStack` / `cdk deploy SattoriStack` のようにスタックIDを指定する。
+全スタックは`bin/sattori.ts`から起こし、`pnpm run deploy`（＝`cdk deploy --all`）で
+まとめてデプロイする。順序は`SattoriEdgeStack`・`SattoriGpuFallbackStack`→`SattoriStack`。
+単体でデプロイしたい場合は `cdk deploy SattoriStack` のようにスタックIDを指定する。
+
+**`SattoriStack`と`SattoriGpuFallbackStack`の間にはCloudFormationの参照を張っていない**。
+本体はフォールバック先のLaunch Template・サブネットを、フォールバック先は本体の
+インスタンスプロファイルを必要とし、参照を張ると循環するため。代わりに固定名
+（`lib/gpu-fallback.ts`）で受け渡す:
+
+| 固定名 | 作るスタック | 使う側 |
+| --- | --- | --- |
+| Launch Template `sattori-gpu-worker` | フォールバック | Launch Lambda（`GPU_FALLBACK_LAUNCH_TEMPLATE_NAME`） |
+| サブネットのタグ `sattori:gpuWorkerSubnet` | フォールバック | Launch Lambda（`DescribeSubnets`で実行時に引く） |
+| インスタンスプロファイル `sattori-gpu-worker-remote` | 本体（既存の`WorkerRole`に追加） | フォールバックのLaunch Template |
+| ECRリポジトリ `sattori-worker-gpu` | 両方（本体が原本、フォールバックが受け皿） | 本体のレジストリ複製設定・UserData |
+
+**フォールバックを本体より先にデプロイすること**（`bin/sattori.ts`で`addDependency`済み）。
+本体のECRレジストリ複製設定が先に有効になると、次のpushでECRが受け皿のリポジトリを
+ライフサイクル無しで自動作成し、フォールバックスタックのリポジトリ作成と衝突する。
+Launch Templateは作成時にインスタンスプロファイルの存在を検証しないため、
+フォールバックが先でも作成は通る。
 
 ## リソース一覧
 
@@ -153,10 +178,17 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。2026-08のeu-so
   [`docs/decisions/0002`](../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)。
   GPU必須のジョブ（th06nc・th15と倍速録画）専用にもう1本`GpuWorkerLaunchTemplate`を持つ
   （`g6f.2xlarge`固定——Issue #288で起動候補を`g6f.2xlarge`だけにした、AMIはSSM動的解決ではなく事前構築したカスタムAMIをコンテキスト値
-  `gpuWorkerAmiId`で固定参照する。**未設定のままsynthすると例外で失敗する**——
-  `cdk.json`の`context`に設定するか`-c gpuWorkerAmiId=ami-xxxx`で指定すること、
+  `gpuWorkerAmiIds`（リージョン→AMI IDの対応表。フォールバック先のeu-north-1には
+  `copy-image`した別IDが要る）で固定参照する。**どちらかのリージョンが未設定のままsynthすると
+  例外で失敗する**——`cdk.json`の`context`に設定するか、一時的には
+  `-c 'gpuWorkerAmiIds={"eu-south-2":"ami-…","eu-north-1":"ami-…"}'`で指定すること、
   AMI構築手順は`build-gpu-worker-ami` skill、
   [`docs/decisions/0046`](../docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)）。
+- **GPUのフォールバック先向け**（Issue #296）: 既存の`WorkerRole`に固定名のインスタンス
+  プロファイル`sattori-gpu-worker-remote`を追加で持ち、`WorkerRole`にeu-north-1のECR
+  レプリカのpull権限を足す。ECRはレジストリ単位の複製設定（`WorkerGpuReplication`）で
+  `sattori-worker-gpu`だけをeu-north-1へ複製する。Lambdaには`GPU_FALLBACK_*`の環境変数で
+  固定名を渡す（`apps/api/README.md` §12）。
 - **Step Functions**: `RecordingStateMachine`（Standard）。開始状態は`AcquireGpuSlot`
   （GPU vCPU容量リース、Issue #270。非GPUジョブは即通過し空きが無ければ
   `WaitForGpuSlot`→自分自身へ戻るループ、待機はリトライ回数を消費しない）→
@@ -306,21 +338,25 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの 
 0. （初回のみ）管理画面用トークンをSSMへ手動で作成する（上記「管理画面」参照。
    CDKでは作成できないSecureStringのため、忘れると`/admin/*`が403になり続ける。
    `--region eu-south-2`を指定すること）
-0.5. （初回のみ）GPU描画必須タイトル（th06nc等）用カスタムAMIを構築し、
-   `infra/cdk.json`の`context.gpuWorkerAmiId`へAMI IDを設定する（`build-gpu-worker-ami`
-   skill）。**未設定のままsynth/deployすると例外で失敗する**（誤ってCPU系AMIのまま
-   GPU系を起動する事故を防ぐための意図的な設計）。
+0.5. （初回のみ）GPU描画必須タイトル（th06nc等）用カスタムAMIを構築してeu-north-1へ
+   `copy-image`し、`infra/cdk.json`の`context.gpuWorkerAmiIds`へ両リージョンのAMI IDを
+   設定する（`build-gpu-worker-ami` skill）。**未設定のままsynth/deployすると例外で
+   失敗する**（誤ってCPU系AMIのままGPU系を起動する事故を防ぐための意図的な設計）。
 1. `pnpm build`（`apps/web/dist`が無いと`BucketDeployment`はスキップされる）
-2. `cdk bootstrap`（初回のみ。`SattoriEdgeStack`用にus-east-1でも必要。
-   `cdk bootstrap aws://<account>/us-east-1 aws://<account>/eu-south-2`）→
+2. `cdk bootstrap`（初回のみ。`SattoriEdgeStack`用にus-east-1、`SattoriGpuFallbackStack`用に
+   eu-north-1でも必要。
+   `cdk bootstrap aws://<account>/us-east-1 aws://<account>/eu-south-2 aws://<account>/eu-north-1`）→
    `pnpm run deploy`（`infra`の`deploy`スクリプト＝`cdk deploy --all`を呼び、
-   `SattoriEdgeStack`→`SattoriStack`の順にデプロイする）
+   `SattoriEdgeStack`・`SattoriGpuFallbackStack`→`SattoriStack`の順にデプロイする）
 3. ワーカーイメージをECRへ push（`docker build worker/` → `docker push`。
    ECRリポジトリはeu-south-2側）。**`Launch`のハートビートタイムアウト（Issue #49）を
    追加・変更するデプロイでは、この手順を`cdk deploy`より先に行うこと**
    ——ハートビートを送らない古いイメージが残っていると全ジョブが15分で
    タイムアウトする。th06nc等を変更した場合は`worker/Dockerfile.gpu`から
-   `sattori-worker-gpu`イメージも同様にpushする（`deploy-sattori` skill）
+   `sattori-worker-gpu`イメージも同様にpushする（`deploy-sattori` skill）。GPUイメージは
+   pushするとECRがeu-north-1へ自動で複製する。**複製は複製設定より後のpushにしか効かない**ため、
+   複製設定を初めて有効にした直後は一度pushし直し、eu-north-1のレプリカのダイジェストが
+   原本と一致するのを確かめること
 4. ACM証明書のDNS検証用CNAME・SESのDKIM用CNAME・MAIL FROM用MX/TXT
    （`SesMailFromMxRecord`・`SesMailFromSpfRecord`）を、`cdk deploy`完了後の
    `SattoriEdgeStack`のCfnOutputを確認して外部DNSへ手動追加する
@@ -342,7 +378,7 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの 
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth
 ```
 
-`cdk synth`はスタックIDを省略すると両スタックとも`cdk.out`へ合成するが、標準出力への
+`cdk synth`はスタックIDを省略すると全スタックを`cdk.out`へ合成するが、標準出力への
 テンプレート表示にはスタックID（`SattoriEdgeStack`または`SattoriStack`）の指定が要る。
 
 > 注: この環境はasdfのpnpmを使う。CDKの`NodejsFunction`は**リポジトリルートから

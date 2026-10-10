@@ -87,6 +87,53 @@ export interface Ec2LaunchConfig {
    * （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
    */
   gpuLaunchTemplateId: string;
+  /**
+   * GPUジョブの容量不足時フォールバック先（Issue #296、`docs/decisions/0061`）。
+   * 未設定（`GPU_FALLBACK_REGION`が無い）ならフォールバックしない。
+   *
+   * `region`（制御面＝データ面のリージョン。ワーカーの`AWS_REGION`・ログ送信先にも使う）
+   * とは**別の概念**で、ここで変わるのは「EC2を起動する先」と「ECRレプリカの場所」だけ。
+   */
+  gpuFallback: GpuFallbackConfig | null;
+}
+
+export interface GpuFallbackConfig {
+  /** フォールバック先リージョン（`eu-north-1`）。 */
+  region: string;
+  /**
+   * フォールバック先のGPU Launch Template名。`SattoriGpuFallbackStack`が固定名で作る
+   * （本体スタックとの間でクロスリージョン参照を張らないため、IDではなく名前で引く。
+   * `infra/README.md`）。
+   */
+  launchTemplateName: string;
+  /** 起動先サブネットを見つけるためのタグキー（値は`"true"`）。 */
+  subnetTagKey: string;
+  /** フォールバック先リージョンのECRレプリカ上のGPUワーカーイメージ。 */
+  workerGpuImage: string;
+}
+
+/**
+ * EC2ワーカーを起動しうる全リージョン（一次リージョンが先頭）。terminate対象の探索・
+ * 孤児掃除のように「どのリージョンにあるか分からないインスタンス」を探す処理が使う。
+ * `loadConfig()`を使わないLambda（孤児掃除）からも呼べるよう、環境変数から直接読む。
+ */
+export function workerRegions(): string[] {
+  const primary = process.env.AWS_REGION ?? "eu-south-2";
+  const fallback = process.env.GPU_FALLBACK_REGION;
+  return fallback && fallback !== primary ? [primary, fallback] : [primary];
+}
+
+function loadGpuFallback(): GpuFallbackConfig | null {
+  const region = process.env.GPU_FALLBACK_REGION;
+  if (!region) {
+    return null;
+  }
+  return {
+    region,
+    launchTemplateName: required("GPU_FALLBACK_LAUNCH_TEMPLATE_NAME"),
+    subnetTagKey: required("GPU_FALLBACK_SUBNET_TAG_KEY"),
+    workerGpuImage: required("GPU_FALLBACK_WORKER_GPU_IMAGE"),
+  };
 }
 
 /**
@@ -132,6 +179,7 @@ export function loadConfig(): ApiConfig {
       region: process.env.AWS_REGION ?? "eu-south-2",
       launchTemplateId: required("WORKER_LAUNCH_TEMPLATE_ID"),
       gpuLaunchTemplateId: required("GPU_WORKER_LAUNCH_TEMPLATE_ID"),
+      gpuFallback: loadGpuFallback(),
     },
   };
 }

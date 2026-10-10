@@ -56,6 +56,7 @@ describe("GET /admin/settings", () => {
     expect(body).toEqual({
       acceptingNewJobs: true,
       monthlyCostLimitUsd: DEFAULT_MONTHLY_COST_LIMIT_USD,
+      forceGpuFallbackRegion: false,
       currentMonthCostUsd: 0,
       costLimitReached: false,
     });

@@ -22,6 +22,11 @@ interface Props {
   workerKind: WorkerKind | null;
   instanceId: string | null;
   /**
+   * `instanceId`のリージョン（`JobRecord.workerRegion`、Issue #296）。GPUの容量不足
+   * フォールバックで別リージョンに起動したインスタンスのコンソール出力を引くために渡す。
+   */
+  workerRegion?: string;
+  /**
    * 720p変換のffmpeg生ログ(S3署名付きGET URL)。ワーカーが再デプロイ済みのジョブでは
    * CloudWatchへ流さずここへ退避されるため、下のチェックボックス(過去のジョブ向け、
    * ノートを参照)ではなくこちらが主なアクセス手段になる(Issue #58フォローアップ)。
@@ -108,7 +113,7 @@ export function mergeTailEvents(
  * 追尾する（`tail -f`相当）。履歴を遡って読んでいる最中に勝手に末尾へ飛ばされる
  * のを避けるため、末尾判定はstateではなく毎回DOMの実際のスクロール位置で行う。
  */
-export function LogsPanel({ jobId, status, workerKind, instanceId, ffmpegLogUrl }: Props) {
+export function LogsPanel({ jobId, status, workerKind, instanceId, workerRegion, ffmpegLogUrl }: Props) {
   const { token, onUnauthorized } = useAdminAuth();
   const [events, setEvents] = useState<AdminLogEvent[]>([]);
   const [logStreamFound, setLogStreamFound] = useState(true);
@@ -148,7 +153,7 @@ export function LogsPanel({ jobId, status, workerKind, instanceId, ffmpegLogUrl 
     setLoading(true);
     setError(null);
 
-    fetchAdminLogs(token, jobId, { instanceId })
+    fetchAdminLogs(token, jobId, { instanceId, region: workerRegion })
       .then((res) => {
         if (cancelled) {
           return;
@@ -178,7 +183,7 @@ export function LogsPanel({ jobId, status, workerKind, instanceId, ffmpegLogUrl 
       cancelled = true;
     };
     // onUnauthorizedはdepsに含めない(useAdminResource.tsと同じ方針)。
-  }, [jobId, instanceId, token]);
+  }, [jobId, instanceId, workerRegion, token]);
 
   /**
    * 予約されていれば末尾までスクロールする。`<pre>`の描画より先に予約が立つ
@@ -208,7 +213,7 @@ export function LogsPanel({ jobId, status, workerKind, instanceId, ffmpegLogUrl 
         return;
       }
       refreshingRef.current = true;
-      fetchAdminLogs(token, jobId, { instanceId })
+      fetchAdminLogs(token, jobId, { instanceId, region: workerRegion })
         .then((res) => {
           if (cancelled) {
             return;
@@ -245,14 +250,14 @@ export function LogsPanel({ jobId, status, workerKind, instanceId, ffmpegLogUrl 
       window.clearInterval(timer);
     };
     // onUnauthorizedはdepsに含めない(useAdminResource.tsと同じ方針)。
-  }, [jobId, instanceId, token, status, loading]);
+  }, [jobId, instanceId, workerRegion, token, status, loading]);
 
   const loadOlder = () => {
     if (!nextBackwardToken || loadingMore) {
       return;
     }
     setLoadingMore(true);
-    fetchAdminLogs(token, jobId, { cursor: nextBackwardToken, instanceId })
+    fetchAdminLogs(token, jobId, { cursor: nextBackwardToken, instanceId, region: workerRegion })
       .then((res) => {
         applyLogs([...res.events, ...eventsRef.current]);
         setNextBackwardToken(res.nextBackwardToken);

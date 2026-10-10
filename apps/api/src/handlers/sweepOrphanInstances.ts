@@ -98,11 +98,12 @@ export const handler = async (): Promise<SweepResult> => {
           event: "orphan_instance_detected",
           jobId: candidate.jobId,
           instanceId: candidate.instanceId,
+          region: candidate.region,
           reason: candidate.reason,
         }),
       );
       try {
-        await terminateInstance(candidate.instanceId);
+        await terminateInstance(candidate.instanceId, candidate.region);
         result.terminated += 1;
         terminatedIds.add(candidate.instanceId);
       } catch (err) {

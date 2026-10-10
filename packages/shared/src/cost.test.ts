@@ -9,6 +9,8 @@ import {
   estimateJobCost,
   FALLBACK_BILLED_HOURS,
   FALLBACK_SPOT_PRICE_USD_PER_HOUR,
+  FALLBACK_TITLE_ASSETS_BYTES,
+  INTER_REGION_TRANSFER_USD_PER_GB,
   MISC_USD_PER_JOB,
   sumCostBreakdown,
   usdToJpy,
@@ -264,6 +266,76 @@ describe("estimateJobCost", () => {
   });
 });
 
+describe("estimateJobCost（リージョン間転送、Issue #296）", () => {
+  const now = new Date("2026-08-02T00:00:00.000Z");
+  const MiB = 1024 ** 2;
+
+  it("workerRegionが無い（旧ジョブ・一次リージョン）なら計上しない", () => {
+    const estimate = estimateJobCost(makeJob(), now);
+    expect(estimate.breakdown.interRegionTransfer).toBe(0);
+    expect(estimate.interRegionTransferBytes).toBe(0);
+    expect(estimate.interRegionTransferEstimated).toBe(false);
+  });
+
+  it("一次リージョン（eu-south-2）で動いたジョブは計上しない", () => {
+    const estimate = estimateJobCost(
+      makeJob({ workerRegion: "eu-south-2", titleAssetsBytes: 700 * MiB, rawCheckpointBytes: 900 * MiB }),
+      now,
+    );
+    expect(estimate.breakdown.interRegionTransfer).toBe(0);
+  });
+
+  it("フォールバック先で動いたジョブは資産・チェックポイント・出力の合計に単価を掛ける", () => {
+    const job = makeJob({
+      workerRegion: "eu-north-1",
+      titleAssetsBytes: 700 * MiB,
+      rawCheckpointBytes: 900 * MiB,
+    });
+    const estimate = estimateJobCost(job, now);
+    const bytes = (700 + 900 + 694 + 1036) * MiB;
+    expect(estimate.interRegionTransferBytes).toBe(bytes);
+    expect(estimate.interRegionTransferEstimated).toBe(false);
+    expect(estimate.breakdown.interRegionTransfer).toBeCloseTo(
+      (bytes / BYTES_PER_GB) * INTER_REGION_TRANSFER_USD_PER_GB,
+      10,
+    );
+    // 合計にも含まれる（コストガードの入力になるため）。
+    expect(estimate.totalUsd).toBeCloseTo(sumCostBreakdown(estimate.breakdown), 10);
+    expect(estimate.breakdown.interRegionTransfer).toBeGreaterThan(0);
+  });
+
+  it("サイズ未記録ならフォールバック値で補い、推定であることを示す", () => {
+    const estimate = estimateJobCost(makeJob({ workerRegion: "eu-north-1" }), now);
+    // チェックポイントは元解像度版の出力サイズで代用する。
+    expect(estimate.interRegionTransferBytes).toBe(
+      FALLBACK_TITLE_ASSETS_BYTES + 694 * MiB + (694 + 1036) * MiB,
+    );
+    expect(estimate.interRegionTransferEstimated).toBe(true);
+  });
+
+  it("録画前に失敗したジョブはタイトル資産ぶんだけ計上する", () => {
+    const estimate = estimateJobCost(
+      makeJob({
+        status: "failed",
+        workerRegion: "eu-north-1",
+        titleAssetsBytes: 700 * MiB,
+        outputPath: null,
+        outputPath720p: null,
+        outputBytes: null,
+        outputBytes720p: null,
+      }),
+      now,
+    );
+    expect(estimate.interRegionTransferBytes).toBe(700 * MiB);
+    expect(estimate.interRegionTransferEstimated).toBe(false);
+  });
+
+  it("自宅ワーカーは計上しない", () => {
+    const estimate = estimateJobCost(makeJob({ workerKind: "home", workerRegion: "eu-north-1" }), now);
+    expect(estimate.breakdown.interRegionTransfer).toBe(0);
+  });
+});
+
 describe("costBucketKey", () => {
   it("daily は UTC の日付", () => {
     expect(costBucketKey(new Date("2026-08-02T23:30:00.000Z"), "daily")).toBe("2026-08-02");
@@ -297,9 +369,9 @@ describe("estimateCloudFrontCost", () => {
 
 describe("addCostBreakdown", () => {
   it("項目ごとに加算する", () => {
-    const a = { ec2Spot: 1, ebs: 2, publicIpv4: 3, s3Storage: 4, misc: 5 };
+    const a = { ec2Spot: 1, ebs: 2, publicIpv4: 3, s3Storage: 4, misc: 5, interRegionTransfer: 6 };
     expect(addCostBreakdown(emptyCostBreakdown(), a)).toEqual(a);
-    expect(sumCostBreakdown(addCostBreakdown(a, a))).toBe(30);
+    expect(sumCostBreakdown(addCostBreakdown(a, a))).toBe(42);
   });
 });
 

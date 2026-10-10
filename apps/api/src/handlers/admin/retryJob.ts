@@ -62,6 +62,10 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
     gpuQueueEtaSeconds: _gpuQueueEtaSeconds,
     requestedRecordingSpeed,
     speedupFallbackReason: _speedupFallbackReason,
+    // 試行ごとに記録される実行結果（Issue #296）。新しいジョブには引き継がない。
+    workerRegion: _workerRegion,
+    titleAssetsBytes: _titleAssetsBytes,
+    rawCheckpointBytes: _rawCheckpointBytes,
     ...carried
   } = source;
   return {

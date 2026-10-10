@@ -25,6 +25,7 @@ function lease(overrides: Partial<GpuLease> = {}): GpuLease {
 function taggedInstance(overrides: Partial<TaggedInstance> = {}): TaggedInstance {
   return {
     instanceId: "i-1",
+    region: "eu-south-2",
     jobId: "job-1",
     launchTime: new Date(NOW.getTime() - 20 * 60 * 1000),
     instanceType: "g6f.xlarge",

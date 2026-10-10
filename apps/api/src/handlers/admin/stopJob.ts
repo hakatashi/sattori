@@ -3,7 +3,8 @@ import { ExecutionDoesNotExist, SFNClient, StopExecutionCommand } from "@aws-sdk
 import { ADMIN_STOPPED_JOB_ERROR, isTerminalStatus } from "@sattori/shared";
 import type { AdminStopJobResponse } from "@sattori/shared";
 import { loadConfig, required } from "../../config.js";
-import { findJobInstanceIds, terminateInstance } from "../../ec2.js";
+import { findJobInstances, terminateInstance } from "../../ec2.js";
+import type { RegionalInstance } from "../../ec2.js";
 import { releaseGpuSlot } from "../../gpuSlots.js";
 import { releaseHomeWorkerAssignment } from "../../homeWorker.js";
 import { error, json } from "../../http.js";
@@ -75,9 +76,9 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
    * 検索の失敗自体は致命ではない（記録済みinstanceIdでの終了処理は続けられる）ので、
    * 例外にせず`failed`フラグで返す。
    */
-  const lookupLiveInstances = async (): Promise<{ ids: string[]; failed: boolean }> => {
+  const lookupLiveInstances = async (): Promise<{ ids: RegionalInstance[]; failed: boolean }> => {
     try {
-      return { ids: await findJobInstanceIds(jobId), failed: false };
+      return { ids: await findJobInstances(jobId), failed: false };
     } catch (err) {
       console.error(
         JSON.stringify({
@@ -173,15 +174,20 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   // ことがある）。既に終了済みのインスタンスへの`TerminateInstances`は冪等な
   // 空振りで済むので、対象を広めに取ることのコストは無い。
   const instancesAfterStop = await lookupLiveInstances();
-  const instanceIds = new Set([...instancesBeforeStop.ids, ...instancesAfterStop.ids]);
+  // インスタンスID→リージョン（Issue #296。GPUジョブはフォールバック先リージョンで
+  // 動いていることがあり、リージョンを取り違えるとterminateが空振りする）。
+  const instanceIds = new Map<string, string | undefined>();
   if (job.instanceId) {
-    instanceIds.add(job.instanceId);
+    instanceIds.set(job.instanceId, job.workerRegion);
+  }
+  for (const { instanceId, region } of [...instancesBeforeStop.ids, ...instancesAfterStop.ids]) {
+    instanceIds.set(instanceId, region);
   }
 
   let instanceTerminated = false;
-  for (const instanceId of instanceIds) {
+  for (const [instanceId, region] of instanceIds) {
     try {
-      await terminateInstance(instanceId);
+      await terminateInstance(instanceId, region);
       instanceTerminated = true;
     } catch (err) {
       console.error(
@@ -277,7 +283,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       previousStatus: job.status,
       executionLiveness: liveness,
       executionStopped,
-      terminatedInstanceIds: [...instanceIds],
+      terminatedInstanceIds: [...instanceIds.keys()],
       homeWorkerReleased,
       statusUpdated,
     }),

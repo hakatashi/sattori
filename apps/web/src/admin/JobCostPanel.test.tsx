@@ -56,6 +56,29 @@ describe("JobCostPanel", () => {
     expect(screen.getByText("（起動時に記録した実測値）")).toBeTruthy();
   });
 
+  it("一次リージョンで動いたジョブはリージョン間転送量を出さない（Issue #296）", () => {
+    render(<JobCostPanel job={makeJob()} />);
+
+    expect(screen.getByText("リージョン間転送")).toBeTruthy();
+    expect(screen.queryByText("リージョン間転送量")).toBeNull();
+  });
+
+  it("フォールバック先リージョンで動いたジョブはリージョン間転送量を表示する（Issue #296）", () => {
+    render(
+      <JobCostPanel
+        job={makeJob({
+          workerRegion: "eu-north-1",
+          titleAssetsBytes: 700 * 1024 * 1024,
+          rawCheckpointBytes: 900 * 1024 * 1024,
+        })}
+      />,
+    );
+
+    expect(screen.getByText("リージョン間転送量")).toBeTruthy();
+    expect(screen.getByText(/eu-north-1⇄eu-south-2/)).toBeTruthy();
+    expect(screen.queryByText(/未記録のため推定値/)).toBeNull();
+  });
+
   it("実行中のジョブは増加中である旨を注記する", () => {
     render(<JobCostPanel job={makeJob({ status: "recording", doneAt: null })} />);
 

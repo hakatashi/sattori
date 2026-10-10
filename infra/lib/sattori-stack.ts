@@ -42,6 +42,14 @@ import {
 } from "@sattori/shared";
 import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import type { Construct } from "constructs";
+import {
+  GPU_FALLBACK_LAUNCH_TEMPLATE_NAME,
+  GPU_FALLBACK_REGION,
+  GPU_FALLBACK_SUBNET_TAG_KEY,
+  GPU_WORKER_REMOTE_INSTANCE_PROFILE_NAME,
+  GPU_WORKER_REPOSITORY_NAME,
+  gpuWorkerAmiIdFor,
+} from "./gpu-fallback.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const API_HANDLERS = join(HERE, "../../apps/api/src/handlers");
@@ -327,10 +335,27 @@ export class SattoriStack extends Stack {
     // (Issue #241・#82)を収録するが、将来th20等をGPU化する際の受け皿としても使える構造
     // （GPU化しない限り既存th20の録画経路自体は変更しない）。
     const workerGpuRepo = new ecr.Repository(this, "WorkerGpuRepo", {
-      repositoryName: "sattori-worker-gpu",
+      repositoryName: GPU_WORKER_REPOSITORY_NAME,
       removalPolicy: RemovalPolicy.DESTROY,
       emptyOnDelete: true,
       lifecycleRules: [{ maxImageCount: 2 }],
+    });
+
+    // GPUイメージだけをフォールバック先（eu-north-1、Issue #296）へ複製する。pushのたびに
+    // ECRが自動で複製するため、デプロイ手順はレプリカへの到着確認を足すだけでよい
+    // （`deploy-sattori` skill）。受け皿のリポジトリ（ライフサイクル付き）は
+    // `SattoriGpuFallbackStack`が先に作る。レジストリ単位の設定（1リージョンに1つ）。
+    new ecr.CfnReplicationConfiguration(this, "WorkerGpuReplication", {
+      replicationConfiguration: {
+        rules: [
+          {
+            destinations: [{ region: GPU_FALLBACK_REGION, registryId: this.account }],
+            repositoryFilters: [
+              { filter: GPU_WORKER_REPOSITORY_NAME, filterType: "PREFIX_MATCH" },
+            ],
+          },
+        ],
+      },
     });
 
     // タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD、`titles/{game}/assets.tar.gz`)を
@@ -422,6 +447,30 @@ export class SattoriStack extends Stack {
       role: workerRole,
     });
 
+    // GPUの容量不足時フォールバック先（eu-north-1、Issue #296）のLaunch Templateが名前で
+    // 参照するインスタンスプロファイル。ロールは同じ`WorkerRole`（IAMはグローバル）。
+    // 既存の`WorkerInstanceProfile`に固定名を付けると置き換えになるため、別に足す
+    // （`gpu-fallback.ts`）。
+    new iam.InstanceProfile(this, "GpuWorkerRemoteInstanceProfile", {
+      role: workerRole,
+      instanceProfileName: GPU_WORKER_REMOTE_INSTANCE_PROFILE_NAME,
+    });
+    // フォールバック先のワーカーはそのリージョンのECRレプリカからpullする。
+    // `grantPull`は同一リージョンのリポジトリARNにしか付かないため明示的に足す
+    // （`ecr:GetAuthorizationToken`はgrantPull済みでResource:*）。
+    workerRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+        ],
+        resources: [
+          `arn:aws:ecr:${GPU_FALLBACK_REGION}:${this.account}:repository/${GPU_WORKER_REPOSITORY_NAME}`,
+        ],
+      }),
+    );
+
     // 自宅サーバーの常駐デーモン(`home-worker/`、Issue #49)が assume するロール。
     // 権限は「EC2ワーカーができること」+「オファーの探索とclaim」+「コンテナログの
     // CloudWatch転送」に限定する。EC2ワーカーと違いインスタンスプロファイルを
@@ -498,14 +547,9 @@ export class SattoriStack extends Stack {
     // AMI IDはCDKコンテキスト値として与える(cdk.jsonにコミットし、更新をgit履歴で
     // 追跡できるようにする)。未設定のままsynthすると気づけるよう例外を投げる——
     // うっかりCPU系AMIのままGPU系を起動する事故を防ぐため。
-    const gpuWorkerAmiId = this.node.tryGetContext("gpuWorkerAmiId") as string | undefined;
-    if (!gpuWorkerAmiId) {
-      throw new Error(
-        "gpuWorkerAmiId コンテキスト値が未設定です。cdk.json の context に" +
-          " GPU用カスタムAMI ID を設定するか、`cdk deploy -c gpuWorkerAmiId=ami-xxxx`" +
-          " で指定してください（`build-gpu-worker-ami` skill参照）。",
-      );
-    }
+    // AMIはリージョン固有のため、フォールバック先（eu-north-1、Issue #296）のコピーと
+    // 合わせてリージョン→AMI IDの対応表で持つ（`gpu-fallback.ts`）。
+    const gpuWorkerAmiId = gpuWorkerAmiIdFor(this.node.tryGetContext("gpuWorkerAmiIds"), this.region);
     const gpuWorkerLaunchTemplate = new ec2.CfnLaunchTemplate(this, "GpuWorkerLaunchTemplate", {
       launchTemplateData: {
         imageId: gpuWorkerAmiId,
@@ -524,6 +568,13 @@ export class SattoriStack extends Stack {
     // レガシーAZが無いためフィルタリングは不要。
     const workerSubnets = vpc.publicSubnets;
 
+    const gpuFallbackEnv: Record<string, string> = {
+      GPU_FALLBACK_REGION,
+      GPU_FALLBACK_LAUNCH_TEMPLATE_NAME,
+      GPU_FALLBACK_SUBNET_TAG_KEY,
+      GPU_FALLBACK_WORKER_GPU_IMAGE: `${this.account}.dkr.ecr.${GPU_FALLBACK_REGION}.amazonaws.com/${GPU_WORKER_REPOSITORY_NAME}:latest`,
+    };
+
     const commonEnv: Record<string, string> = {
       UPLOAD_BUCKET: uploadBucket.bucketName,
       OUTPUT_BUCKET: outputBucket.bucketName,
@@ -536,6 +587,9 @@ export class SattoriStack extends Stack {
       WORKER_SUBNET_IDS: workerSubnets.map((subnet) => subnet.subnetId).join(","),
       WORKER_LAUNCH_TEMPLATE_ID: workerLaunchTemplate.ref,
       GPU_WORKER_LAUNCH_TEMPLATE_ID: gpuWorkerLaunchTemplate.ref,
+      // GPUの容量不足時フォールバック先（Issue #296、`apps/api/src/config.ts`）。
+      // フォールバックスタックとはCloudFormation参照を張らず、固定名で受け渡す。
+      ...gpuFallbackEnv,
       EMAIL_RATE_LIMIT_TABLE: emailRateLimitTable.tableName,
       SETTINGS_TABLE: settingsTable.tableName,
       WORKERS_TABLE: workersTable.tableName,
@@ -705,6 +759,8 @@ export class SattoriStack extends Stack {
     // TransactWriteItemsを発行するLambda全てで同様に行う。
     gpuSlotsTable.grantReadWriteData(launchFn);
     gpuSlotsTable.grant(launchFn, "dynamodb:TransactWriteItems");
+    // 管理設定`forceGpuFallbackRegion`(Issue #296)をGPUジョブの起動ごとに読む。
+    settingsTable.grantReadData(launchFn);
     // launchFn は EC2 Fleet を起動し、ワーカーロールを PassRole する。
     launchFn.addToRolePolicy(
       new iam.PolicyStatement({
@@ -716,6 +772,8 @@ export class SattoriStack extends Stack {
           // 確保できたインスタンスのSpot単価をJobRecordへ記録するため(Issue #60、
           // コスト推定の入力)。リソース単位の絞り込みができない読み取り専用API。
           "ec2:DescribeSpotPriceHistory",
+          // GPUのフォールバック先(Issue #296)のサブネットをタグで引くため。
+          "ec2:DescribeSubnets",
         ],
         resources: ["*"],
       }),
@@ -950,7 +1008,12 @@ export class SattoriStack extends Stack {
       "sweepOrphanInstances.ts",
       // commonEnvは使わない(必要なのはジョブレコードの参照と実行ARNの組み立て、
       // GPU vCPU容量リースの台帳のみ)。
-      { JOBS_TABLE: jobsTable.tableName, GPU_SLOTS_TABLE: gpuSlotsTable.tableName },
+      // GPU_FALLBACK_REGIONはフォールバック先(Issue #296)の孤児も走査するため。
+      {
+        JOBS_TABLE: jobsTable.tableName,
+        GPU_SLOTS_TABLE: gpuSlotsTable.tableName,
+        GPU_FALLBACK_REGION,
+      },
       // 生存インスタンス1台につきDescribeExecution+GetItemを直列に引くため、
       // 既定の30秒では孤児が多数溜まった場合に足りない可能性がある。走査対象は
       // 通常0〜数台なので、広げてもコストはほぼ増えない。GPU vCPU容量リースの
@@ -1066,6 +1129,8 @@ export class SattoriStack extends Stack {
     // (フロントが`GET /admin/jobs/{jobId}`で既に持つ値をクエリパラメータで渡す)。
     const adminGetLogsFn = makeHandler("AdminGetLogsFn", "admin/getLogs.ts", {
       WORKER_LOG_GROUP: workerLogGroup.logGroupName,
+      // フォールバック先(Issue #296)のインスタンスのコンソール出力も引けるようにする。
+      GPU_FALLBACK_REGION,
     });
     workerLogGroup.grantRead(adminGetLogsFn);
     // UserData(bootstrap)段階の失敗はCloudWatch Logsに乗らないため、EC2コンソール出力を
@@ -1075,7 +1140,10 @@ export class SattoriStack extends Stack {
     adminGetLogsFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["ec2:GetConsoleOutput"],
-        resources: [`arn:aws:ec2:${this.region}:${this.account}:instance/*`],
+        resources: [
+          `arn:aws:ec2:${this.region}:${this.account}:instance/*`,
+          `arn:aws:ec2:${GPU_FALLBACK_REGION}:${this.account}:instance/*`,
+        ],
       }),
     );
 

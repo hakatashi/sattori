@@ -19,6 +19,7 @@ import {
   updateJobStatus,
   updateJobWorkerKind,
 } from "../../jobs.js";
+import { getSettings } from "../../settings.js";
 import { buildWorkerEnv } from "../../workerEnv.js";
 import { routingPolicyFor, selectHomeWorker } from "../../workerRouting.js";
 
@@ -81,7 +82,27 @@ export const handler = async (event: LaunchTaskEvent): Promise<void> => {
     maxVcpu = lease.vcpu;
   }
 
-  const instance = await launchRecordingInstance(config, job, event.taskToken, { maxVcpu });
+  // 管理設定でフォールバック先リージョンの強制が有効なら、一次リージョンを飛ばす
+  // （Issue #296、本番での実機検証用）。設定の読み取り失敗でGPUジョブを落とさない。
+  const forceFallbackRegion = isGpuJob && config.ec2.gpuFallback !== null
+    ? await getSettings(config.settingsTable)
+        .then((settings) => settings.forceGpuFallbackRegion)
+        .catch((err: unknown) => {
+          console.error(
+            JSON.stringify({
+              event: "launch_settings_read_failed",
+              jobId: event.jobId,
+              message: err instanceof Error ? err.message : String(err),
+            }),
+          );
+          return false;
+        })
+    : false;
+
+  const instance = await launchRecordingInstance(config, job, event.taskToken, {
+    maxVcpu,
+    forceFallbackRegion,
+  });
   // **`instanceId` の永続化を他の更新より先に行う**（Issue #23）。`CreateFleet` が
   // 返った時点で課金は始まっており、ここでLambdaがタイムアウトすると誰も
   // terminateできない孤児が残る。この窓は原理的には消せない（起動と記録は

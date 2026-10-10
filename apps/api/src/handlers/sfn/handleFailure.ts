@@ -5,7 +5,7 @@ import {
   SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT,
 } from "@sattori/shared";
 import { loadConfig } from "../../config.js";
-import { findJobInstanceIds, terminateInstance } from "../../ec2.js";
+import { findJobInstances, terminateInstance } from "../../ec2.js";
 import { releaseGpuSlot } from "../../gpuSlots.js";
 import { releaseHomeWorkerAssignment } from "../../homeWorker.js";
 import { fallBackToNativeSpeed, getJob, updateJobStatus } from "../../jobs.js";
@@ -188,13 +188,15 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
   // 前の試行のterminateに失敗して複数台生き残っている場合もまとめて拾える。
   // 検索自体の失敗は握りつぶす（記録済みinstanceIdでの終了処理は続けられるし、
   // 取りこぼしても定期掃除（`handlers/sweepOrphanInstances.ts`）が最後の網になる）。
-  const instanceIds = new Set<string>();
+  // インスタンスID→リージョン。GPUジョブはフォールバック先リージョン（Issue #296）で
+  // 動いていることがあり、リージョンを取り違えるとterminateが空振りする。
+  const instances = new Map<string, string | undefined>();
   if (job?.instanceId) {
-    instanceIds.add(job.instanceId);
+    instances.set(job.instanceId, job.workerRegion);
   }
   try {
-    for (const instanceId of await findJobInstanceIds(event.jobId)) {
-      instanceIds.add(instanceId);
+    for (const { instanceId, region } of await findJobInstances(event.jobId)) {
+      instances.set(instanceId, region);
     }
   } catch (err) {
     console.error(
@@ -206,9 +208,9 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
     );
   }
 
-  for (const instanceId of instanceIds) {
+  for (const [instanceId, region] of instances) {
     try {
-      await terminateInstance(instanceId);
+      await terminateInstance(instanceId, region);
     } catch (err) {
       console.error(
         JSON.stringify({

@@ -30,7 +30,7 @@ def test_skips_download_when_already_extracted(tmp_path, monkeypatch):
     (tmp_path / "games" / "th07").mkdir(parents=True)
     s3 = MagicMock()
 
-    ta.ensure_title_assets(s3, "assets-bucket", "th07")
+    assert ta.ensure_title_assets(s3, "assets-bucket", "th07") is None
 
     s3.download_file.assert_not_called()
 
@@ -55,8 +55,10 @@ def test_downloads_and_extracts_when_missing(tmp_path, monkeypatch):
     s3 = MagicMock()
     s3.download_file.side_effect = fake_download(archive_path)
 
-    ta.ensure_title_assets(s3, "assets-bucket", "th07")
+    downloaded = ta.ensure_title_assets(s3, "assets-bucket", "th07")
 
+    # リージョン間転送料の推定用に、ダウンロードしたアーカイブのバイト数を返す(Issue #296)。
+    assert downloaded == os.path.getsize(archive_path)
     s3.download_file.assert_called_once_with(
         "assets-bucket", "titles/th07/assets.tar.gz", str(download_dir / "sattori-title-assets-th07.tar.gz")
     )
@@ -160,7 +162,8 @@ class TestTitleAssetsCache:
         s3 = make_s3_with_archive(archive_path)
         env = {"TITLE_ASSETS_CACHE_DIR": str(cache_dir)}
 
-        ta.ensure_title_assets(s3, "assets-bucket", "th07", env=env)
+        # キャッシュ経由(自宅ワーカー)は転送量を記録しない。
+        assert ta.ensure_title_assets(s3, "assets-bucket", "th07", env=env) is None
 
         assert s3.download_file.call_count == 1
         assert (repo / "games" / "th07" / "th07.exe").read_bytes() == b"game-body"

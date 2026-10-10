@@ -19,6 +19,7 @@ describe("settings", () => {
       expect(settings).toEqual({
         acceptingNewJobs: true,
         monthlyCostLimitUsd: DEFAULT_MONTHLY_COST_LIMIT_USD,
+        forceGpuFallbackRegion: false,
       });
     });
 
@@ -27,7 +28,11 @@ describe("settings", () => {
         Item: { settingKey: "global", acceptingNewJobs: false, monthlyCostLimitUsd: 30 },
       });
       const settings = await getSettings("settings-table");
-      expect(settings).toEqual({ acceptingNewJobs: false, monthlyCostLimitUsd: 30 });
+      expect(settings).toEqual({
+        acceptingNewJobs: false,
+        monthlyCostLimitUsd: 30,
+        forceGpuFallbackRegion: false,
+      });
     });
   });
 
@@ -39,7 +44,11 @@ describe("settings", () => {
       ddbMock.on(PutCommand).resolves({});
 
       const updated = await updateSettings("settings-table", { acceptingNewJobs: false });
-      expect(updated).toEqual({ acceptingNewJobs: false, monthlyCostLimitUsd: 50 });
+      expect(updated).toEqual({
+        acceptingNewJobs: false,
+        monthlyCostLimitUsd: 50,
+        forceGpuFallbackRegion: false,
+      });
 
       const putCalls = ddbMock.commandCalls(PutCommand);
       expect(putCalls).toHaveLength(1);
@@ -47,6 +56,7 @@ describe("settings", () => {
         settingKey: "global",
         acceptingNewJobs: false,
         monthlyCostLimitUsd: 50,
+        forceGpuFallbackRegion: false,
       });
     });
 
@@ -55,7 +65,11 @@ describe("settings", () => {
       ddbMock.on(PutCommand).resolves({});
 
       const updated = await updateSettings("settings-table", { monthlyCostLimitUsd: 80 });
-      expect(updated).toEqual({ acceptingNewJobs: true, monthlyCostLimitUsd: 80 });
+      expect(updated).toEqual({
+        acceptingNewJobs: true,
+        monthlyCostLimitUsd: 80,
+        forceGpuFallbackRegion: false,
+      });
     });
   });
 });

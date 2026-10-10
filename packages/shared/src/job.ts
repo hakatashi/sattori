@@ -206,6 +206,31 @@ export interface JobRecord {
    */
   spotPricePerHour: number | null;
   /**
+   * EC2ワーカーを起動したAWSリージョン（例: `eu-south-2`、Issue #296）。GPUジョブは
+   * 一次リージョンで容量不足になったときだけ`eu-north-1`へフォールバック起動する
+   * （`apps/api/src/ec2.ts`、`docs/decisions/0061`）ため、`instanceId`だけでは
+   * どのリージョンのインスタンスか判別できない。terminate・コンソール出力の取得・
+   * リージョン間転送料のコスト推定（`cost.ts`）が使う。`instanceId`と同じく
+   * 試行ごとに上書きする（＝最後の試行のリージョン）。
+   *
+   * 自宅ワーカー・未起動・このフィールド追加より前の旧ジョブでは属性自体が無い
+   * （旧ジョブはすべて一次リージョンで起動している）。
+   */
+  workerRegion?: string;
+  /**
+   * ワーカーがS3からダウンロードしたタイトル資産（`titles/{game}/assets.tar.gz`）の
+   * バイト数（Issue #296）。リージョン間転送料の推定（`cost.ts`）の入力。ワーカーは
+   * 起動先のリージョンを知らないまま常に記録する（`worker/title_assets.py`）。
+   * 自宅ワーカーのキャッシュヒット時・旧ジョブでは属性自体が無い。
+   */
+  titleAssetsBytes?: number;
+  /**
+   * 生動画チェックポイント（変換フェーズ再開用、`worker/entrypoint.py`）として
+   * S3へアップロードしたバイト数（Issue #296）。`titleAssetsBytes`と同じく
+   * リージョン間転送料の推定にだけ使う。チェックポイント未到達・旧ジョブでは属性自体が無い。
+   */
+  rawCheckpointBytes?: number;
+  /**
    * リプレイの推定再生時間（秒）。`ReplayInfo.estimatedDurationSeconds` の値を
    * ジョブ作成時に転記したもの。ワーカーが録画フェーズの進捗率算出に使う
    * （取得できなければ null）。
