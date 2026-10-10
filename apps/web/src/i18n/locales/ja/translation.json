@@ -103,6 +103,7 @@
     "thpracPurposeFreezeFix": "リプレイ選択直後にゲーム本体が停止する不具合を回避するため、録画時に適用しています"
   },
   "uploadForm": {
+    "gpuOutageNotice": "現在、eu-south-2リージョンにおけるGPUインスタンスの長期的な枯渇により、録画にGPUを必要とするタイトル (東方紅魔郷: New Classic、東方紺珠伝、東方錦上京) の録画ができない状況が続いております。現在状況改善に向けて動いておりますので、今しばらくお待ちください。",
     "supportedTitlesLabel": "現在録画対応中のタイトル ({{count}}作品)",
     "step1Label": "リプレイファイルを選択",
     "step2Label": "内容を確認",
