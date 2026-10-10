@@ -308,6 +308,12 @@ export function UploadForm() {
 
   return (
     <section className={styles.card}>
+      {/* eu-south-2でのGPUインスタンス枯渇に伴う一時的なお知らせ。状況が改善したら削除する。 */}
+      <div className={clsx(styles.notice, styles.siteNotice)} role="note">
+        <p className={styles.siteNoticeText}>
+          {t("uploadForm.gpuOutageNotice")}
+        </p>
+      </div>
       <p className={styles.supportedTitlesLabel}>
         {t("uploadForm.supportedTitlesLabel", {
           count: SUPPORTED_GAME_IDS.length,
