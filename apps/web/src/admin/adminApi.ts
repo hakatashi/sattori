@@ -79,6 +79,8 @@ export interface FetchAdminLogsParams {
   cursor?: string;
   /** ログストリームが見つからない場合のコンソール出力フォールバック用。 */
   instanceId?: string | null;
+  /** `instanceId`のリージョン（`JobRecord.workerRegion`、Issue #296）。 */
+  region?: string;
 }
 
 export function fetchAdminLogs(
@@ -92,6 +94,9 @@ export function fetchAdminLogs(
   }
   if (params.instanceId) {
     query.set("instanceId", params.instanceId);
+  }
+  if (params.region) {
+    query.set("region", params.region);
   }
   const queryString = query.toString();
   return adminRequest<AdminLogsResponse>(

@@ -182,6 +182,10 @@ export function JobDetailPage() {
                     <dd>{data.job.instanceId ?? "-"}</dd>
                     <dt>instanceType</dt>
                     <dd>{data.job.instanceType ?? "-"}</dd>
+                    {/* GPUの容量不足フォールバック(Issue #296)で一次リージョン以外に起動した
+                        ジョブを見分けられるようにする。旧ジョブは属性が無い(一次リージョン)。 */}
+                    <dt>workerRegion</dt>
+                    <dd>{data.job.workerRegion ?? "-"}</dd>
                     <dt>availabilityZone</dt>
                     <dd>{data.job.availabilityZone ?? "-"}</dd>
                     <dt>spotPricePerHour</dt>
@@ -292,6 +296,7 @@ export function JobDetailPage() {
             status={data.job.status}
             workerKind={data.job.workerKind}
             instanceId={data.job.instanceId}
+            workerRegion={data.job.workerRegion}
             ffmpegLogUrl={data.downloads.ffmpegLogUrl}
           />
         </>

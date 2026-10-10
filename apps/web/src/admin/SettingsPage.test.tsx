@@ -17,6 +17,7 @@ const mocked = vi.mocked(adminApi);
 const baseResponse: AdminSettingsResponse = {
   acceptingNewJobs: true,
   monthlyCostLimitUsd: 50,
+  forceGpuFallbackRegion: false,
   currentMonthCostUsd: 12.5,
   costLimitReached: false,
 };
@@ -90,6 +91,29 @@ describe("SettingsPage", () => {
         monthlyCostLimitUsd: 80,
       });
     });
+  });
+
+  it("GPUフォールバックリージョンの強制を有効にできる（Issue #296）", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mocked.updateAdminSettings.mockResolvedValue({ ...baseResponse, forceGpuFallbackRegion: true });
+    renderPage();
+
+    expect(await screen.findByText("通常（容量不足時のみ）")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "フォールバック先を強制する" }));
+
+    await waitFor(() => {
+      expect(mocked.updateAdminSettings).toHaveBeenCalledWith("token", {
+        forceGpuFallbackRegion: true,
+      });
+    });
+  });
+
+  it("強制中なら状態と解除ボタンを表示する", async () => {
+    mocked.fetchAdminSettings.mockResolvedValue({ ...baseResponse, forceGpuFallbackRegion: true });
+    renderPage();
+
+    expect(await screen.findByText("フォールバック先を強制中")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "通常の起動に戻す" })).toBeTruthy();
   });
 
   it("上限額が現在値と同じままなら保存ボタンは無効", async () => {

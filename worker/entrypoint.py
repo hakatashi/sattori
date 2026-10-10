@@ -391,12 +391,16 @@ def upload_ffmpeg_upscale_log_if_present(s3):
 
 def record(s3):
     """録画を実行し、完了直後に生動画をS3へチェックポイントとしてアップロードする。"""
-    ensure_title_assets(s3, TITLE_ASSETS_BUCKET, GAME, log=log)
+    title_assets_bytes = ensure_title_assets(s3, TITLE_ASSETS_BUCKET, GAME, log=log)
     download_replay(s3)
     start_pulseaudio()
     # リトライで再入した場合、progress には前の試行の値が残っている。status と同じ
     # 更新で 0 に戻し、「録画中 + 前の試行の進捗」が見える窓を作らない(Issue #108)。
-    update_status(JOB_ID, "recording", reset_progress=True)
+    # タイトル資産のダウンロード量はリージョン間転送料の推定用(Issue #296、
+    # ダウンロードしなかった場合は None で「触れない」)。
+    update_status(
+        JOB_ID, "recording", reset_progress=True, title_assets_bytes=title_assets_bytes,
+    )
 
     script = RECORDING_SCRIPTS.get(GAME)
     if script is None:
@@ -445,6 +449,9 @@ def record(s3):
     )
     update_status(
         JOB_ID, "converting", output_path=OUTPUT_KEY, output_bytes=output_bytes,
+        # `output_bytes` は done で配信用動画のサイズに上書きされるため、生動画
+        # チェックポイントのサイズは別に残す(リージョン間転送料の推定用、Issue #296)。
+        raw_checkpoint_bytes=output_bytes,
         # 録画フェーズ末尾の進捗(=リプレイ全長)を持ち越さない。status だけ先に
         # 書き換えると、変換フェーズの進捗が届くまでの数秒間「変換中 100%」に
         # 見えてしまう(Issue #108)。

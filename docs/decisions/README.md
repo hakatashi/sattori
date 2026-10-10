@@ -72,6 +72,7 @@
 | [0058](0058-speedup-recording-on-gpu-instances.md) | 2026-09-30 | packages/shared / apps/api / infra / worker | 倍速録画(2〜4倍速)を導入し、2倍速以上はGPUインスタンス(g6f.2xlargeのみ)で録画する。GPU要否はタイトルではなくジョブ(タイトル+録画速度)で決まる(Issue #288) | 有効 |
 | [0059](0059-cut-range-decided-by-recorder.md) | 2026-10-04 | worker | 配信版のカット範囲は録画スクリプトがMODログと終了検知の時刻から決め、元の解像度版も同じ変換で作り直す。同期マーカーは音声の録音をゲーム起動直後に始めてカット区間へ追い出す(Issue #266) | 有効 |
 | [0060](0060-speedup-fallback-to-native-speed.md) | 2026-10-09 | packages/shared / apps/api / apps/web | GPUを確保できない倍速録画ジョブ(GPU必須タイトルを除く)は、待ち行列30分超か3回目以降の容量不足で`options.recordingSpeed`を1へ書き換えて等倍(CPU)へ落とす(Issue #289) | 有効 |
+| [0061](0061-gpu-capacity-fallback-to-eu-north-1.md) | 2026-10-11 | apps/api / infra / packages/shared / worker / apps/web | GPUジョブはeu-south-2のSpot在庫枯渇時だけeu-north-1で起動する。データ面は移さず、価格では振り分けない。0001の単一リージョン原則の例外(Issue #296) | 有効 |
 
 ## 書き方
 

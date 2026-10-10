@@ -20,7 +20,9 @@ th06nc等のGPU描画必須タイトルは、CPU系ワーカー（Amazon Linux 2
 
 - 対象リージョン: `eu-south-2`（本番）。検証は別リージョン（us-west-2等、G系スポット
   クォータの都合）で行ってもよいが、**最終的なAMIはeu-south-2で作成すること**
-  （AMIはリージョンをまたいで直接使えない）。
+  （AMIはリージョンをまたいで直接使えない）。作ったAMIは§5.5で**容量不足時の
+  フォールバック先`eu-north-1`へもコピーする**（Issue #296、
+  [`decisions/0061`](../../../docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)）。
 - g6f.xlargeのG系スポット/オンデマンドクォータが確保されていること
   （`aws service-quotas get-service-quota --region eu-south-2 --service-code ec2
   --quota-code L-3819A6DF`、touhou-recorder reports/81 §1）。
@@ -159,16 +161,41 @@ aws ec2 create-image --region eu-south-2 \
 整合性はやや落ちるが、動作確認済みの状態を変えずに済む）。心配なら`--reboot`
 （デフォルト）でスナップショット前に再起動させてもよい。
 
-## 6. CDKへの反映
+## 5.5. フォールバック先（eu-north-1）へのコピー
 
-`infra/lib/sattori-stack.ts`の`gpuWorkerAmiId`コンテキスト値を新しいAMI IDへ更新する
-（`cdk.json`にコミットする運用、詳細は`infra/README.md`）。
+GPUジョブはeu-south-2のSpot枯渇時だけeu-north-1で起動する（Issue #296）。eu-north-1の
+Launch Template（`SattoriGpuFallbackStack`）も同じAMIを使うため、**AMIを作り直すたびに
+コピーすること**。コピーしないと、フォールバック先だけ古いドライバのまま動き続ける。
 
 ```bash
-# cdk.jsonのcontext.gpuWorkerAmiIdを更新してからコミット
+# eu-south-2のAMIが available になってから実行する
+aws ec2 describe-images --region eu-south-2 --image-ids <新AMI ID> --query 'Images[0].State'
+aws ec2 copy-image --region eu-north-1 \
+  --source-region eu-south-2 --source-image-id <新AMI ID> \
+  --name "sattori-worker-gpu-YYYYMMDD" \
+  --description "eu-south-2 <新AMI ID> のコピー(Issue #296)"
+# 返ってきたAMI IDが available になるまで待つ(40GiBで十数分)
+aws ec2 wait image-available --region eu-north-1 --image-ids <コピー先AMI ID>
+```
+
+スナップショットは非暗号化なのでKMSの指定は要らない（2026-10-11時点の
+`ami-08b3f94444612a932`で確認。暗号化したAMIを作った場合は`--kms-key-id`が要る）。
+
+## 6. CDKへの反映
+
+`infra/cdk.json`の`context.gpuWorkerAmiIds`（リージョン→AMI IDの対応表）を、**両リージョン
+とも**新しいAMI IDへ更新する（`cdk.json`にコミットする運用、詳細は`infra/README.md`）。
+片方でも未設定ならsynthが例外で失敗する。
+
+```bash
+# cdk.jsonのcontext.gpuWorkerAmiIdsの eu-south-2 と eu-north-1 を更新してからコミット
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth  # 構文確認
 pnpm run deploy
 ```
+
+ロールバックに備え、旧AMIはしばらく残してよい。不要になったら**両リージョンで**
+`deregister-image`し、対応するスナップショットも`delete-snapshot`する（AMIを登録解除しても
+スナップショットは残り、課金され続ける）。
 
 **AMI更新後は必ず`worker-gpu`イメージ（`worker/Dockerfile.gpu`）の再ビルド・再pushも
 行うこと**（`deploy-sattori` skill）。AMI側のドライババージョンとコンテナ内で期待する

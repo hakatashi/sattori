@@ -65,7 +65,8 @@ EC2 の候補インスタンスタイプも eu-south-2 で提供される `c7i` 
   `.2xlarge` 6プール/2タイプで、us-east-1 の 30/6・20/4 を大きく下回る。候補リストを
   絞った上でもプール数は us-east-1 の半分以下に留まる。**起動失敗率
   （`InsufficientInstanceCapacity` によるリトライ発生率）を監視すること**
-  （`docs/known-limitations.md` §5）。
+  （`docs/known-limitations.md` §5）。GPU（g6f.2xlarge）の長期枯渇に対しては、容量不足時だけ
+  eu-north-1で起動する例外を設けた（[`0061`](0061-gpu-capacity-fallback-to-eu-north-1.md)）。
 
 依存しているコード・ドキュメント:
 

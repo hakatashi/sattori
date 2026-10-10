@@ -12,6 +12,7 @@ const NOW = new Date("2026-08-14T12:00:00.000Z");
 function instance(instanceId: string, minutesAgo: number, jobId = "job-1"): TaggedInstance {
   return {
     instanceId,
+    region: "eu-south-2",
     jobId,
     launchTime: new Date(NOW.getTime() - minutesAgo * 60 * 1000),
     instanceType: null,
@@ -28,8 +29,8 @@ describe("selectOrphanInstances", () => {
     });
 
     expect(orphans).toEqual([
-      { instanceId: "i-aaa", jobId: "job-1", reason: "execution_not_running" },
-      { instanceId: "i-bbb", jobId: "job-1", reason: "execution_not_running" },
+      { instanceId: "i-aaa", region: "eu-south-2", jobId: "job-1", reason: "execution_not_running" },
+      { instanceId: "i-bbb", region: "eu-south-2", jobId: "job-1", reason: "execution_not_running" },
     ]);
   });
 
@@ -55,8 +56,8 @@ describe("selectOrphanInstances", () => {
     });
 
     expect(orphans).toEqual([
-      { instanceId: "i-old", jobId: "job-1", reason: "superseded_by_newer_attempt" },
-      { instanceId: "i-older", jobId: "job-1", reason: "superseded_by_newer_attempt" },
+      { instanceId: "i-old", region: "eu-south-2", jobId: "job-1", reason: "superseded_by_newer_attempt" },
+      { instanceId: "i-older", region: "eu-south-2", jobId: "job-1", reason: "superseded_by_newer_attempt" },
     ]);
   });
 
@@ -87,7 +88,7 @@ describe("selectOrphanInstances", () => {
   it("起動時刻が読めないインスタンスは常に残す（判定できないものは殺さない）", () => {
     const orphans = selectOrphanInstances({
       instances: [
-        { instanceId: "i-unknown", jobId: "job-1", launchTime: null, instanceType: null },
+        { instanceId: "i-unknown", region: "eu-south-2", jobId: "job-1", launchTime: null, instanceType: null },
         instance("i-old", 120),
       ],
       executionLiveness: "finished",
@@ -109,8 +110,8 @@ describe("selectOrphanInstances", () => {
     });
 
     expect(orphans).toEqual([
-      { instanceId: "i-old", jobId: "job-1", reason: "stop_requested" },
-      { instanceId: "i-new", jobId: "job-1", reason: "stop_requested" },
+      { instanceId: "i-old", region: "eu-south-2", jobId: "job-1", reason: "stop_requested" },
+      { instanceId: "i-new", region: "eu-south-2", jobId: "job-1", reason: "stop_requested" },
     ]);
   });
 

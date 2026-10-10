@@ -11,6 +11,11 @@
  *   が閾値に達したら新規受付を止める。今後、自宅サーバーを追加録画ワーカーとして
  *   導入する構想（Issue #49）でジョブ単価が一様でなくなる見込みのため、回数ではなく
  *   金額で制御する。
+ * - `forceGpuFallbackRegion`: GPUジョブを一次リージョン（eu-south-2）を飛ばして
+ *   フォールバックリージョン（eu-north-1）で起動させる検証用の上書き（Issue #296）。
+ *   通常は false で、GPUジョブは一次リージョンの容量不足時にだけフォールバックする。
+ *   フォールバック先での実機検証（AGENTS.md §3）を本番で確実に行うためのもので、
+ *   検証が終わったら必ず false へ戻すこと（`docs/decisions/0061`）。
  */
 
 /** `monthlyCostLimitUsd`の既定値（USD）。当面の目安として設定した金額。 */
@@ -20,12 +25,14 @@ export const DEFAULT_MONTHLY_COST_LIMIT_USD = 50;
 export interface AdminSettings {
   acceptingNewJobs: boolean;
   monthlyCostLimitUsd: number;
+  forceGpuFallbackRegion: boolean;
 }
 
 /** POST /admin/settings のリクエストボディ。指定したフィールドだけを更新する。 */
 export interface UpdateAdminSettingsRequest {
   acceptingNewJobs?: boolean;
   monthlyCostLimitUsd?: number;
+  forceGpuFallbackRegion?: boolean;
 }
 
 /**

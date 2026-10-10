@@ -400,3 +400,32 @@ def test_update_progress_with_preview_image(monkeypatch):
     assert kwargs["ExpressionAttributeValues"][":p"] == 42
     assert kwargs["ExpressionAttributeValues"][":pi"] == "progress/job-1/1.jpg"
     assert "previewImagePath = :pi" in kwargs["UpdateExpression"]
+
+
+def test_update_status_includes_transfer_bytes(monkeypatch):
+    """リージョン間転送料の推定用のバイト数(Issue #296)。"""
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status(
+        "job-1", "converting", title_assets_bytes=700, raw_checkpoint_bytes=900,
+    )
+
+    _, kwargs = mock_table.update_item.call_args
+    assert kwargs["ExpressionAttributeValues"][":tab"] == 700
+    assert kwargs["ExpressionAttributeValues"][":rcb"] == 900
+    assert "titleAssetsBytes = :tab" in kwargs["UpdateExpression"]
+    assert "rawCheckpointBytes = :rcb" in kwargs["UpdateExpression"]
+
+
+def test_update_status_omits_transfer_bytes_by_default(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "recording")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "titleAssetsBytes" not in kwargs["UpdateExpression"]
+    assert "rawCheckpointBytes" not in kwargs["UpdateExpression"]
