@@ -173,7 +173,7 @@ aws ec2 describe-images --region eu-south-2 --image-ids <新AMI ID> --query 'Ima
 aws ec2 copy-image --region eu-north-1 \
   --source-region eu-south-2 --source-image-id <新AMI ID> \
   --name "sattori-worker-gpu-YYYYMMDD" \
-  --description "eu-south-2 <新AMI ID> のコピー(Issue #296)"
+  --description "Copy of eu-south-2 <新AMI ID> (Issue #296)"  # 説明はASCIIのみ(日本語はInvalidParameterValue)
 # 返ってきたAMI IDが available になるまで待つ(40GiBで十数分)
 aws ec2 wait image-available --region eu-north-1 --image-ids <コピー先AMI ID>
 ```
