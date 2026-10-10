@@ -276,6 +276,16 @@ li.supportedTitle.supported {
   font-size: 0.9rem;
 }
 
+/* カード冒頭に出すサービス全体のお知らせ(GPUインスタンス枯渇など)。 */
+.siteNotice {
+  margin: 0 0 1.25rem;
+}
+
+.siteNoticeText {
+  margin: 0;
+  color: var(--warning-text);
+}
+
 .noticeTitle {
   margin: 0 0 0.4rem;
   font-weight: 600;
