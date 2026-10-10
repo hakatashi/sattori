@@ -174,6 +174,24 @@ Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決では
 32bit互換ライブラリを自動マウントしないため。[`0052`](../../docs/decisions/0052-gpu-xorg-driver-file-level-mount-not-directory.md)・
 [`0053`](../../docs/decisions/0053-mount-32bit-nvidia-client-libraries-for-wine.md)）。
 
+**GPUジョブは容量不足時だけeu-north-1へフォールバックする**（Issue #296、
+[`docs/decisions/0061`](../../docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)）。
+`launchRecordingInstance()`は常にeu-south-2を先に試し、GPUジョブでエラーコードが
+`GPU_FALLBACK_TRIGGER_ERROR_CODES`（`InsufficientInstanceCapacity`/`UnfulfillableCapacity`）
+のときだけ、同じ呼び出しの中でフォールバック先（`config.ec2.gpuFallback`）へ`CreateFleet`
+し直す。フォールバック先では固定名のLaunch Template（`LaunchTemplateName`で指定）・
+タグで引いたサブネット（`DescribeSubnets`、Lambdaのコンテナ内でキャッシュ）・ECRレプリカの
+イメージを使う。両方失敗したら`FleetLaunchError`に両方のエラーコードを入れて投げる
+（`handleFailure.ts`の容量不足判定は例外メッセージの部分一致なので、この形式を崩さないこと）。
+クォータ超過（`VcpuLimitExceeded`等）・CPU系ジョブはフォールバックしない。管理設定
+`forceGpuFallbackRegion`（`settings.ts`）が立っていれば、GPUジョブは一次リージョンを
+試さずフォールバック先で起動する（本番での実機検証用）。
+
+EC2のAPIは常にリージョンを明示して呼ぶ（`ec2ClientFor(region)`）。起動したリージョンは
+`JobRecord.workerRegion`に記録し、terminateはそのリージョンへ、タグでの探索
+（`findJobInstances()`・`listTaggedInstances()`）は`workerRegions()`（`config.ts`）の
+全リージョンを走査する。
+
 `CreateFleet`が実際に確保したインスタンスタイプ・AZは `result.Instances[0]` から
 そのまま取得でき、追加の`DescribeInstances`呼び出しは不要。`JobRecord.instanceType`/
 `.availabilityZone`として記録する（`jobs.ts`の`updateJobInstance()`）。これは録画品質の
@@ -194,8 +212,9 @@ Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決では
 1. **窓を狭める**: `launch.ts` は `CreateFleet` の直後に `updateJobInstance()` を
    呼ぶ（`updateJobStatus`/`updateJobWorkerKind`より先）。
 2. **後始末でタグからも引く**: `sfn/handleFailure.ts`・`admin/stopJob.ts` は
-   `JobRecord.instanceId` だけでなく `findJobInstanceIds()`（タグ`sattori:jobId`での
-   `DescribeInstances`）の結果も terminate する。
+   `JobRecord.instanceId` だけでなく `findJobInstances()`（タグ`sattori:jobId`での
+   `DescribeInstances`、GPUのフォールバック先も含む全ワーカーリージョン）の結果も
+   terminate する。
 3. **定期掃除**: `handlers/sweepOrphanInstances.ts` がEventBridgeのスケジュール
    （`ORPHAN_SWEEP_INTERVAL_MINUTES` = 10分間隔）で走る。**走査の起点はジョブ
    レコードではなくAWS上に実在するインスタンス**（`listTaggedInstances()`）。
@@ -246,7 +265,10 @@ UserDataスクリプトがやること:
 
 - `systemctl disable --now ecs`（ECS最適化AMIをプレーンなdockerホストとして使う）
 - `trap 'shutdown -h now' EXIT`（どこで失敗しても必ずインスタンスを終了させる）
-- ECRログイン → pull → `docker run`（`--log-opt awslogs-stream=${jobId}`）
+- ECRログイン → pull → `docker run`（`--log-opt awslogs-stream=${jobId}`）。ECRのログイン先は
+  イメージのレジストリから導く（`ecrRegionOf()`）——GPUのフォールバック先（Issue #296）では
+  そのリージョンのレプリカからpullするが、`AWS_DEFAULT_REGION`・awslogs・ワーカーの
+  `AWS_REGION`は一次リージョン（データ面）のままにする
 - コンテナ起動前段階で失敗したら`aws stepfunctions send-task-failure`で即時通知
 
 > **この3点はいずれも事故を経て入れた対策で、消すと再発する**。理由は
@@ -330,8 +352,15 @@ UserDataスクリプトがやること:
 `sweepOrphanInstances.ts`/`sweepStalledJobs.ts`専用の`JOBS_TABLE`単独指定
 （前者は`GPU_SLOTS_TABLE`も、Issue #270）、
 `admin/getCosts.ts`専用のCloudFront実配信量取得用`CLOUDFRONT_DISTRIBUTION_ID`、
-Issue #163）から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
+Issue #163、`admin/getLogs.ts`・`sweepOrphanInstances.ts`専用の`GPU_FALLBACK_REGION`
+単独指定、Issue #296）から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
 `admin/getLogs.ts`・`RecordAnalyticsEventFn`以外の管理API用Lambdaは`commonEnv`を使う）。
+
+`GPU_FALLBACK_REGION`・`GPU_FALLBACK_LAUNCH_TEMPLATE_NAME`・`GPU_FALLBACK_SUBNET_TAG_KEY`・
+`GPU_FALLBACK_WORKER_GPU_IMAGE`はGPUの容量不足時フォールバック先（Issue #296）。
+`SattoriGpuFallbackStack`とはCloudFormation参照を張らず固定名で受け取る（`infra/README.md`）。
+`GPU_FALLBACK_REGION`が無ければフォールバックしない（`config.ec2.gpuFallback`が`null`）。
+設定するなら残り3つも必須。
 
 `SES_CONFIGURATION_SET`は`SattoriEdgeStack`が作った`ses.ConfigurationSet`名
 （`crossRegionReferences`経由）。`ses.ts`が`SendEmailCommand`へ指定し、

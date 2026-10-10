@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CreateFleetCommand,
   CreateLaunchTemplateVersionCommand,
   DescribeSpotPriceHistoryCommand,
+  DescribeSubnetsCommand,
   EC2Client,
 } from "@aws-sdk/client-ec2";
 import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
@@ -75,6 +76,10 @@ beforeEach(() => {
   ddbMock.reset();
   // 既定では自宅ワーカーは1台も動いていない（＝従来どおりEC2 Fleetを起動する）。
   ddbMock.on(ScanCommand).resolves({ Items: [] });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("sfn/launch handler", () => {
@@ -428,6 +433,49 @@ describe("sfn/launch handler（GPU vCPU容量リース、Issue #270）", () => {
     await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
 
     expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("管理設定forceGpuFallbackRegionならフォールバック先で起動しworkerRegionを記録する（Issue #296）", async () => {
+    vi.stubEnv("GPU_FALLBACK_REGION", "eu-north-1");
+    vi.stubEnv("GPU_FALLBACK_LAUNCH_TEMPLATE_NAME", "sattori-gpu-worker");
+    vi.stubEnv("GPU_FALLBACK_SUBNET_TAG_KEY", "sattori:gpuWorkerSubnet");
+    vi.stubEnv(
+      "GPU_FALLBACK_WORKER_GPU_IMAGE",
+      "123456789012.dkr.ecr.eu-north-1.amazonaws.com/sattori-worker-gpu:latest",
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: gpuJob });
+    ddbMock
+      .on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE })
+      .resolves({ Item: gpuLeaseItem(8) });
+    ddbMock
+      .on(GetCommand, { TableName: REQUIRED_ENV.SETTINGS_TABLE })
+      .resolves({ Item: { settingKey: "global", forceGpuFallbackRegion: true } });
+    ddbMock.on(UpdateCommand).resolves({});
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(DescribeSubnetsCommand).resolves({ Subnets: [{ SubnetId: "subnet-north-b" }] });
+    const fleetRegions: string[] = [];
+    ec2Mock.on(CreateFleetCommand).callsFake(async (_input, getClient) => {
+      fleetRegions.push(await getClient().config.region());
+      return {
+        Instances: [
+          { InstanceIds: ["i-gpu"], InstanceType: "g6f.2xlarge", AvailabilityZone: "eu-north-1b" },
+        ],
+      };
+    });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(fleetRegions).toEqual(["eu-north-1"]);
+    const instanceUpdate = ddbMock
+      .commandCalls(UpdateCommand)
+      .find((call) => call.args[0].input.UpdateExpression?.includes("workerRegion"));
+    expect(instanceUpdate?.args[0].input.ExpressionAttributeValues?.[":r"]).toBe("eu-north-1");
+    logSpy.mockRestore();
   });
 
   it("GPUジョブなのにリースが見つからなければ例外を投げる(Launchのcatchへ委ねる)", async () => {

@@ -46,6 +46,8 @@ export type OrphanReason =
 
 export interface OrphanCandidate {
   instanceId: string;
+  /** インスタンスのあるリージョン（Issue #296）。terminate先の指定に使う。 */
+  region: string;
   jobId: string;
   reason: OrphanReason;
 }
@@ -110,6 +112,7 @@ export function selectOrphanInstances({
     .filter((instance) => now.getTime() - launchedAtMs(instance, now) >= graceMs)
     .map((instance) => ({
       instanceId: instance.instanceId,
+      region: instance.region,
       jobId: instance.jobId,
       reason,
     }));

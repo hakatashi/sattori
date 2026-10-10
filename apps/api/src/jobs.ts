@@ -272,13 +272,15 @@ export async function releaseJobRetryLink(
  * インスタンスタイプ・アベイラビリティゾーン）を記録する。instanceId は Step Functions
  * の失敗ハンドラ（handleFailure）がリトライ/タイムアウト時にどのインスタンスを
  * terminate すべきか判定するために使う。instanceType/availabilityZone は録画品質
- * （重複フレーム率）の分析・運用調査用。
+ * （重複フレーム率）の分析・運用調査用。`workerRegion`（Issue #296）は
+ * terminate先の特定とリージョン間転送料の推定に使う。
  */
 export async function updateJobInstance(
   table: string,
   jobId: string,
   instance: {
     instanceId: string;
+    region: string;
     instanceType: string | null;
     availabilityZone: string | null;
     spotPricePerHour: number | null;
@@ -289,9 +291,10 @@ export async function updateJobInstance(
       TableName: table,
       Key: { jobId },
       UpdateExpression:
-        "SET instanceId = :i, instanceType = :t, availabilityZone = :az, spotPricePerHour = :sp, updatedAt = :u",
+        "SET instanceId = :i, workerRegion = :r, instanceType = :t, availabilityZone = :az, spotPricePerHour = :sp, updatedAt = :u",
       ExpressionAttributeValues: {
         ":i": instance.instanceId,
+        ":r": instance.region,
         ":t": instance.instanceType,
         ":az": instance.availabilityZone,
         ":sp": instance.spotPricePerHour,

@@ -21,7 +21,9 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
 **リージョンは `eu-south-2`（スペイン）**。**SESとCloudFront用ACM証明書だけ`us-east-1`に
 残している**（eu-south-2にSESが無いため。`SES_REGION`、`apps/api/src/ses.ts`。両者は
 `SattoriEdgeStack`にまとめてある、`infra/README.md`）。移設の経緯と受け入れた
-トレードオフは[`0001`](docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)。
+トレードオフは[`0001`](docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)。**GPUワーカーだけは
+eu-south-2のSpot枯渇時に`eu-north-1`で起動する**（データ面は移さずワーカーの`AWS_REGION`も
+eu-south-2のまま。EC2のAPIはリージョンを明示して呼ぶこと、[`0061`](docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)）。
 
 ```
 [ブラウザ: React/Vite SPA]

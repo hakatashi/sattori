@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   DescribeInstancesCommand,
@@ -78,6 +78,10 @@ beforeEach(() => {
   ddbMock.reset();
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("sfn/handleFailure handler", () => {
   it("インスタンスをterminateし、attemptがMAX未満ならリトライ指示のみでfailedにはしない", async () => {
     ddbMock.on(GetCommand).resolves({ Item: baseJob });
@@ -93,6 +97,38 @@ describe("sfn/handleFailure handler", () => {
     // 自宅ワーカー(Issue #49)の割り当て解除だけは毎回走る。statusは書き換えない。
     expect(statusUpdates(ddbMock)).toHaveLength(0);
     expect(releaseUpdates(ddbMock)).toHaveLength(1);
+  });
+
+  it("フォールバック先リージョンで動いたインスタンスはそのリージョンでterminateする（Issue #296）", async () => {
+    vi.stubEnv("AWS_REGION", "eu-south-2");
+    vi.stubEnv("GPU_FALLBACK_REGION", "eu-north-1");
+    vi.stubEnv("GPU_FALLBACK_LAUNCH_TEMPLATE_NAME", "sattori-gpu-worker");
+    vi.stubEnv("GPU_FALLBACK_SUBNET_TAG_KEY", "sattori:gpuWorkerSubnet");
+    vi.stubEnv(
+      "GPU_FALLBACK_WORKER_GPU_IMAGE",
+      "123456789012.dkr.ecr.eu-north-1.amazonaws.com/sattori-worker-gpu:latest",
+    );
+    ddbMock.on(GetCommand).resolves({ Item: { ...baseJob, workerRegion: "eu-north-1" } });
+    ec2Mock.on(DescribeInstancesCommand).callsFake(async (_input, getClient) => {
+      const region = await getClient().config.region();
+      // タグ検索では、記録済みのインスタンスとは別に同じジョブの孤児が一次リージョンにも残っている。
+      return region === "eu-south-2"
+        ? { Reservations: [{ Instances: [{ InstanceId: "i-orphan-south" }] }] }
+        : { Reservations: [{ Instances: [{ InstanceId: "i-abc123" }] }] };
+    });
+    const terminated: [string, string][] = [];
+    ec2Mock.on(TerminateInstancesCommand).callsFake(async (input, getClient) => {
+      terminated.push([input.InstanceIds[0], await getClient().config.region()]);
+      return {};
+    });
+
+    const { handler } = await import("./handleFailure.js");
+    await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(terminated).toEqual([
+      ["i-abc123", "eu-north-1"],
+      ["i-orphan-south", "eu-south-2"],
+    ]);
   });
 
   it("attemptが上限に達したらジョブをfailedにする", async () => {

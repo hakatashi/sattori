@@ -93,6 +93,19 @@ export function JobCostPanel({ job }: Props) {
             </>
           )}
         </dd>
+        {estimate.interRegionTransferBytes > 0 && (
+          // GPUの容量不足フォールバック(Issue #296)で一次リージョン外に起動したジョブだけ。
+          <>
+            <dt>リージョン間転送量</dt>
+            <dd>
+              {formatBytes(estimate.interRegionTransferBytes)}
+              <span className={styles.note}>
+                （{job.workerRegion}⇄{COST_PRICING_REGION}。タイトル資産・生動画・出力動画
+                {estimate.interRegionTransferEstimated ? "、一部は未記録のため推定値" : ""}）
+              </span>
+            </dd>
+          </>
+        )}
         <dt>CloudFront配信量</dt>
         <dd>
           {formatBytes(estimate.deliveryBytes)}

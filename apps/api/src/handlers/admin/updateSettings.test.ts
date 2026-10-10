@@ -101,6 +101,27 @@ describe("POST /admin/settings", () => {
     expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
   });
 
+  it("forceGpuFallbackRegionを更新できる（Issue #296）", async () => {
+    const { handler } = await import("./updateSettings.js");
+    const res = (await handler(
+      makeEvent({ forceGpuFallbackRegion: true }),
+      {} as never,
+      () => {},
+    )) as APIGatewayProxyStructuredResultV2;
+    expect(res.statusCode).toBe(200);
+    expect(parseBody(res).forceGpuFallbackRegion).toBe(true);
+  });
+
+  it("forceGpuFallbackRegionがboolean以外なら400", async () => {
+    const { handler } = await import("./updateSettings.js");
+    const res = (await handler(
+      makeEvent({ forceGpuFallbackRegion: "yes" }),
+      {} as never,
+      () => {},
+    )) as APIGatewayProxyStructuredResultV2;
+    expect(res.statusCode).toBe(400);
+  });
+
   it("acceptingNewJobsがboolean以外なら400", async () => {
     const { handler } = await import("./updateSettings.js");
     const res = (await handler(

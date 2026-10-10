@@ -6,11 +6,22 @@ import {
 } from "@aws-sdk/client-cloudwatch-logs";
 import { EC2Client, GetConsoleOutputCommand } from "@aws-sdk/client-ec2";
 import type { AdminLogsResponse } from "@sattori/shared";
-import { required } from "../../config.js";
+import { required, workerRegions } from "../../config.js";
 import { error, json } from "../../http.js";
 
 const logs = new CloudWatchLogsClient({});
-const ec2 = new EC2Client({});
+/** リージョン別のEC2クライアント（GPUのフォールバック先リージョン、Issue #296）。 */
+const ec2Clients = new Map<string, EC2Client>();
+
+function ec2ClientFor(region: string | undefined): EC2Client {
+  const key = region ?? "";
+  let client = ec2Clients.get(key);
+  if (!client) {
+    client = new EC2Client(region ? { region } : {});
+    ec2Clients.set(key, client);
+  }
+  return client;
+}
 
 /** 1リクエストあたりの取得件数。管理画面での目視確認用途のため大きくしすぎない。 */
 const LOG_EVENTS_LIMIT = 500;
@@ -31,9 +42,14 @@ const MAX_EMPTY_PAGE_RETRIES = 5;
  * 内`trap`コメント、AGENTS.md参照）。インスタンスが既に終了している場合は取得できず
  * `Output`が空になりうるが、その場合は素直にnullへ縮退させる（500にしない）。
  */
-async function tryGetConsoleOutput(instanceId: string): Promise<string | null> {
+async function tryGetConsoleOutput(
+  instanceId: string,
+  region: string | undefined,
+): Promise<string | null> {
   try {
-    const result = await ec2.send(new GetConsoleOutputCommand({ InstanceId: instanceId }));
+    const result = await ec2ClientFor(region).send(
+      new GetConsoleOutputCommand({ InstanceId: instanceId }),
+    );
     if (!result.Output) {
       return null;
     }
@@ -53,6 +69,9 @@ async function tryGetConsoleOutput(instanceId: string): Promise<string | null> {
  * `jobsTable`読み取り権限を持たせない（`getExecution.ts`と同じ最小権限の考え方）。
  * 呼び出し元（フロント）は既に`GET /admin/jobs/{jobId}`で`job.instanceId`を持っているため、
  * ログストリームが見つからない場合のコンソール出力フォールバック用にクエリパラメータで渡す。
+ * GPUジョブはフォールバック先リージョン（Issue #296）で動いていることがあるため、
+ * `job.workerRegion`も`region`として渡す（ワーカーを起動しうるリージョン以外は無視して
+ * 一次リージョンで引く——任意リージョンへのAPI呼び出しの踏み台にさせない）。
  */
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const jobId = event.pathParameters?.jobId;
@@ -63,6 +82,11 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const logGroupName = required("WORKER_LOG_GROUP");
   const cursor = event.queryStringParameters?.cursor;
   const instanceId = event.queryStringParameters?.instanceId;
+  const requestedRegion = event.queryStringParameters?.region;
+  const region =
+    requestedRegion !== undefined && workerRegions().includes(requestedRegion)
+      ? requestedRegion
+      : undefined;
 
   try {
     let nextToken = cursor;
@@ -115,7 +139,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     return json(200, response);
   } catch (err) {
     if (err instanceof ResourceNotFoundException) {
-      const consoleOutput = instanceId ? await tryGetConsoleOutput(instanceId) : null;
+      const consoleOutput = instanceId ? await tryGetConsoleOutput(instanceId, region) : null;
       const response: AdminLogsResponse = {
         logStreamFound: false,
         events: [],

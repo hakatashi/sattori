@@ -7,6 +7,7 @@ import {
   BYTES_PER_GB,
   CLOUDFRONT_FREE_TIER_GB_PER_MONTH,
   FALLBACK_SPOT_PRICE_USD_PER_HOUR,
+  INTER_REGION_TRANSFER_USD_PER_GB,
 } from "@sattori/shared";
 import type { JobCostInput } from "@sattori/shared";
 import { estimateCurrentMonthCostUsd, parseGranularity, summarizeCosts } from "./adminCosts.js";
@@ -101,6 +102,35 @@ describe("自宅ワーカーのジョブの扱い（Issue #49）", () => {
     // 同じ出力サイズなのでS3/miscは同額。差はまるごとEC2系の有無になる。
     expect(homeOnly).toBeLessThan(ec2Only);
     expect(ec2Only - homeOnly).toBeCloseTo(0.06 * 0.6 + (30 * 0.088 * (0.6 / 730)) + 0.005 * 0.6, 6);
+  });
+});
+
+describe("リージョン間転送料（Issue #296）", () => {
+  beforeEach(() => {
+    ddbMock.reset();
+  });
+
+  it("フォールバック先リージョンで動いたジョブの転送料を内訳と合計に含める", async () => {
+    const MiB = 1024 * 1024;
+    ddbMock.on(ScanCommand).resolves({
+      Items: [
+        job(),
+        job({ workerRegion: "eu-north-1", titleAssetsBytes: 700 * MiB, rawCheckpointBytes: 800 * MiB }),
+      ],
+    });
+
+    const result = await summarizeCosts("jobs", { granularity: "monthly", limit: 12, now: NOW });
+    const bucket = result.buckets[0]!;
+    const expectedBytes = (700 + 800 + 700 + 1024) * MiB;
+    expect(bucket.breakdown.interRegionTransfer).toBeCloseTo(
+      (expectedBytes / BYTES_PER_GB) * INTER_REGION_TRANSFER_USD_PER_GB,
+      10,
+    );
+    // Scanの射影で新しい属性を読んでいること（読み落とすと静かに0になる）。
+    const projection = ddbMock.commandCalls(ScanCommand)[0]?.args[0].input.ProjectionExpression;
+    expect(projection).toContain("workerRegion");
+    expect(projection).toContain("titleAssetsBytes");
+    expect(projection).toContain("rawCheckpointBytes");
   });
 });
 

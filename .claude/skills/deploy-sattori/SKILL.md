@@ -85,6 +85,23 @@ aws ecr get-login-password --region "$SATTORI_REGION" \
 docker push "${SATTORI_ECR_GPU_REPO}:latest"
 ```
 
+**pushしたらeu-north-1のレプリカへの到着を確認してから`pnpm run deploy`へ進むこと**
+（Issue #296）。GPUジョブはeu-south-2の容量不足時にeu-north-1で起動し、そのリージョンの
+ECRレプリカからpullする。ECRのレジストリ複製は数分で終わるが非同期なので、到着前に
+フォールバック先で起動すると古いイメージで録画される。
+
+```bash
+SRC=$(aws ecr describe-images --region "$SATTORI_REGION" --repository-name sattori-worker-gpu \
+  --image-ids imageTag=latest --query 'imageDetails[0].imageDigest' --output text)
+until [ "$(aws ecr describe-images --region eu-north-1 --repository-name sattori-worker-gpu \
+  --image-ids imageTag=latest --query 'imageDetails[0].imageDigest' --output text 2>/dev/null)" = "$SRC" ]; do
+  echo "レプリカ待ち…"; sleep 15
+done
+```
+
+**複製は複製設定（`SattoriStack`の`WorkerGpuReplication`）より後のpushにしか効かない**。
+複製設定を初めてデプロイした直後はレプリカが空なので、§4の初回手順のとおり一度pushし直す。
+
 **GPU用カスタムAMI（`build-gpu-worker-ami` skill）を更新した場合は、このイメージの
 再ビルド・再pushもセットで行うこと。** AMI側のNVIDIA GRIDドライバのバージョンと
 コンテナが期待するユーザースペースライブラリのバージョンが食い違うと、Xorg/DXVKの
@@ -112,6 +129,26 @@ aws ssm get-parameter --region "$SATTORI_REGION" --name /sattori/admin/token \
 
 > Lambda Authorizer 側に SSM 取得結果のキャッシュ（5分）と API Gateway 側の authorizer
 > `resultsCache`（5分）があるため、**旧トークンの失効反映は最大10分遅れる**。
+
+## 4. GPUフォールバック先（eu-north-1）の初回セットアップ（Issue #296）
+
+`SattoriGpuFallbackStack`を初めてデプロイするときだけ行う（[`decisions/0061`](../../../docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)、
+`infra/README.md`）。順序を守らないと、ECRが受け皿のリポジトリを自動作成してスタックの作成が衝突する。
+
+1. GPU AMIをeu-north-1へコピーし、`infra/cdk.json`の`gpuWorkerAmiIds`に`eu-north-1`を足して
+   コミットする（`build-gpu-worker-ami` skill §5.5・§6）。
+2. eu-north-1をbootstrapする: `pnpm --filter @sattori/infra exec cdk bootstrap aws://${SATTORI_AWS_ACCOUNT_ID}/eu-north-1`
+3. フォールバックスタックを本体より先にデプロイする:
+   `pnpm --filter @sattori/infra exec cdk deploy SattoriGpuFallbackStack`
+4. §2のとおりCPU系・GPU系の両イメージをpushする（このときはまだ複製設定が無いので複製されない）。
+5. `pnpm run deploy`で本体（複製設定・固定名のインスタンスプロファイル・Lambdaの環境変数）を
+   デプロイする。
+6. GPUイメージを**もう一度push**して（中身は同じでよい）、§2のレプリカ到着確認を通す。
+7. 管理画面の設定で「GPUフォールバックリージョンの強制」を有効にし、`verify-recording-in-production`
+   skillの方法でth06nc・th15・倍速録画を1本ずつ流す。終わったら必ず解除する。
+
+eu-north-1のG系Spotクォータ（L-3819A6DF）も確認しておく。2026-10-11時点では8 vCPU
+（g6f.2xlarge 1台分）のままだった（`docs/known-limitations.md` §5）。
 
 ## 関連
 

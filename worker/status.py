@@ -48,6 +48,7 @@ def update_status(
     poster_image_path=None, upload_total_bytes=None,
     error=None, error_code=None, reset_progress=False,
     desync_detected=None, timed_out=None,
+    title_assets_bytes=None, raw_checkpoint_bytes=None,
 ):
     """ジョブの status(と任意で outputPath / outputPath720p / 出力サイズ / error)を更新する。
 
@@ -72,6 +73,12 @@ def update_status(
     軸になる（Issue #138）。error を渡す呼び出しでは可能な限り併せて指定すること。
 
     output_bytes / output_bytes_720p は管理画面のコスト推定(Issue #60)の入力。
+
+    title_assets_bytes / raw_checkpoint_bytes はS3からダウンロードしたタイトル資産と、
+    S3へアップロードした生動画チェックポイントのバイト数(Issue #296)。管理画面の
+    リージョン間転送料の推定にだけ使う。ワーカーは自分がどのリージョンで動いているかを
+    知らないまま常に記録し、計上するかどうかはコスト推定側(`cost.ts`)が
+    `workerRegion` を見て決める(ワーカー内にリージョンの分岐を作らない、AGENTS.md §3)。
 
     upload_total_bytes は配信用動画のアップロード開始時点(転送前)に分かっているアップロード
     予定バイト数(Issue #202フォローアップ)。`status="uploading"`への遷移でのみ渡される想定で、
@@ -151,6 +158,12 @@ def update_status(
     if timed_out is not None:
         expr += ", timedOut = :to"
         values[":to"] = timed_out
+    if title_assets_bytes is not None:
+        expr += ", titleAssetsBytes = :tab"
+        values[":tab"] = int(title_assets_bytes)
+    if raw_checkpoint_bytes is not None:
+        expr += ", rawCheckpointBytes = :rcb"
+        values[":rcb"] = int(raw_checkpoint_bytes)
     remove_clauses = []
     if status == "done":
         # ダウンロード期限表示(ジョブ画面・完了メール)の起点。"done"への遷移は

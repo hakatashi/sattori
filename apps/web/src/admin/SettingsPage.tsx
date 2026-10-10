@@ -28,7 +28,7 @@ export function SettingsPage() {
   const { data, loading, error, reload } = useAdminResource((t) => fetchAdminSettings(t), []);
 
   const [limitInput, setLimitInput] = useState("");
-  const [saving, setSaving] = useState<"killSwitch" | "limit" | null>(null);
+  const [saving, setSaving] = useState<"killSwitch" | "limit" | "gpuRegion" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // サーバー側の値が届いたら入力欄を初期化する（再取得のたびに上書きされないよう、
@@ -88,6 +88,30 @@ export function SettingsPage() {
     setSaving("limit");
     setActionError(null);
     updateAdminSettings(token, { monthlyCostLimitUsd: parsed })
+      .then(() => reload())
+      .catch((err: unknown) => {
+        if (err instanceof AdminUnauthorizedError) {
+          onUnauthorized();
+          return;
+        }
+        setActionError(err instanceof Error ? err.message : "不明なエラーが発生しました");
+      })
+      .finally(() => setSaving(null));
+  };
+
+  const handleToggleGpuFallbackRegion = () => {
+    const next = !data.forceGpuFallbackRegion;
+    const confirmed = window.confirm(
+      next
+        ? "以降のGPUジョブを、一次リージョン(eu-south-2)を試さずフォールバック先リージョン(eu-north-1)で起動します。実機検証のための設定です。検証が終わったら必ず解除してください。よろしいですか？"
+        : "GPUジョブの起動を通常どおり(一次リージョン優先、容量不足時のみフォールバック)に戻します。よろしいですか？",
+    );
+    if (!confirmed) {
+      return;
+    }
+    setSaving("gpuRegion");
+    setActionError(null);
+    updateAdminSettings(token, { forceGpuFallbackRegion: next })
       .then(() => reload())
       .catch((err: unknown) => {
         if (err instanceof AdminUnauthorizedError) {
@@ -170,6 +194,34 @@ export function SettingsPage() {
           </button>
         </div>
         <p className={styles.cardNote}>既定値は ${DEFAULT_MONTHLY_COST_LIMIT_USD} です。</p>
+      </div>
+
+      <div className={styles.card}>
+        <h2 className={styles.cardHeading}>GPUフォールバックリージョンの強制</h2>
+        <p className={styles.cardNote}>
+          GPUジョブは通常、一次リージョン（eu-south-2）が容量不足のときだけフォールバック先
+          リージョン（eu-north-1）で起動します。これを有効にすると、一次リージョンを試さず常に
+          フォールバック先で起動します。フォールバック先での実機検証（Issue #296）用の設定で、
+          リージョン間転送料がかかるため検証後は必ず解除してください。
+        </p>
+        <p className={styles.status}>
+          現在の状態:{" "}
+          <span className={data.forceGpuFallbackRegion ? styles.statusStopped : styles.statusOk}>
+            {data.forceGpuFallbackRegion ? "フォールバック先を強制中" : "通常（容量不足時のみ）"}
+          </span>
+        </p>
+        <button
+          type="button"
+          className={styles.button}
+          onClick={handleToggleGpuFallbackRegion}
+          disabled={saving !== null}
+        >
+          {saving === "gpuRegion"
+            ? "更新中…"
+            : data.forceGpuFallbackRegion
+              ? "通常の起動に戻す"
+              : "フォールバック先を強制する"}
+        </button>
       </div>
 
       {actionError && <p className={styles.error}>{actionError}</p>}

@@ -11,6 +11,7 @@
   --series-3: #1baf7a; /* パブリックIPv4 */
   --series-4: #eda100; /* EBS */
   --series-5: #e87ba4; /* その他 */
+  --series-6: #008300; /* リージョン間転送 */
 
   background: var(--panel);
   border: 1px solid var(--panel-border);
@@ -26,6 +27,7 @@
     --series-3: #199e70;
     --series-4: #c98500;
     --series-5: #d55181;
+    --series-6: #008300;
   }
 }
 
@@ -126,7 +128,8 @@
 .swatch2,
 .swatch3,
 .swatch4,
-.swatch5 {
+.swatch5,
+.swatch6 {
   width: 0.75rem;
   height: 0.75rem;
   border-radius: 2px;
@@ -151,6 +154,10 @@
 
 .swatch5 {
   background: var(--series-5);
+}
+
+.swatch6 {
+  background: var(--series-6);
 }
 
 /* --- 積み上げ棒 ---------------------------------------------------------- */
@@ -190,7 +197,8 @@
 .segment2,
 .segment3,
 .segment4,
-.segment5 {
+.segment5,
+.segment6 {
   min-width: 1px;
 }
 
@@ -214,6 +222,14 @@
 
 .segment5 {
   background: var(--series-5);
+}
+
+.segment6 {
+  background: var(--series-6);
+}
+
+/* 末尾の系列は0円だと描画しない（`CostBar`）ため、先端の丸めは位置で決める。 */
+.bar > :last-child {
   border-radius: 0 2px 2px 0;
 }
 
