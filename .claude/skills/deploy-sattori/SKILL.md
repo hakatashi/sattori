@@ -30,6 +30,14 @@ pnpm run deploy
 
 > 注: `pnpm deploy`（`run` なし）は pnpm の組み込みコマンドと名前が衝突するため使えない。
 > 必ず `pnpm run deploy` と明示すること。
+>
+> 注: IAM・セキュリティグループの変更を含むデプロイでは、`cdk deploy`が承認を求めて
+> 対話入力を待つ。非対話の環境（エージェントの実行等）では入力が来ないまま**そのスタックを
+> スキップして正常終了したように見える**（2026-10-11、`SattoriStack`だけ更新されなかった）。
+> `pnpm run deploy -- --require-approval never`では2段のpnpmスクリプトを越えて渡らないため、
+> 非対話で流すときは
+> `pnpm --filter @sattori/infra exec cdk deploy --all --require-approval never`を使い、
+> 各スタックが`✅`で終わったことを確認すること。
 
 ### なぜ push が先なのか（順序を逆にすると事故になる）
 
@@ -100,7 +108,10 @@ done
 ```
 
 **複製は複製設定（`SattoriStack`の`WorkerGpuReplication`）より後のpushにしか効かない**。
-複製設定を初めてデプロイした直後はレプリカが空なので、§4の初回手順のとおり一度pushし直す。
+複製設定を初めてデプロイした直後はレプリカが空なので、§4の初回手順で種を撒く。
+**中身の変わらないイメージを`docker push`し直しても複製は起きない**（ECRにとって同一
+マニフェストの再pushは何もしない操作で、`describe-image-replication-status`も空のまま。
+2026-10-11の初回セットアップで確認）。
 
 **GPU用カスタムAMI（`build-gpu-worker-ami` skill）を更新した場合は、このイメージの
 再ビルド・再pushもセットで行うこと。** AMI側のNVIDIA GRIDドライバのバージョンと
@@ -143,7 +154,30 @@ aws ssm get-parameter --region "$SATTORI_REGION" --name /sattori/admin/token \
 4. §2のとおりCPU系・GPU系の両イメージをpushする（このときはまだ複製設定が無いので複製されない）。
 5. `pnpm run deploy`で本体（複製設定・固定名のインスタンスプロファイル・Lambdaの環境変数）を
    デプロイする。
-6. GPUイメージを**もう一度push**して（中身は同じでよい）、§2のレプリカ到着確認を通す。
+6. レプリカへイメージを届ける。上の注意のとおり同じイメージの再pushは効かないので、
+   **別タグを付けて複製を起こし、レプリカ側で`latest`を原本と同一バイトのマニフェストで付ける**。
+   マニフェストは`jq`等で整形し直さないこと（空白が変わると別ダイジェストの別イメージになる）。
+
+   ```bash
+   SEED=replication-seed-$(date +%Y%m%d)
+   aws ecr batch-get-image --region eu-south-2 --repository-name sattori-worker-gpu \
+     --image-ids imageTag=latest --accepted-media-types application/vnd.oci.image.index.v1+json \
+     --query 'images[0].imageManifest' --output text > /tmp/gpu-manifest.json
+   aws ecr put-image --region eu-south-2 --repository-name sattori-worker-gpu --image-tag "$SEED" \
+     --image-manifest "$(cat /tmp/gpu-manifest.json)" --image-manifest-media-type application/vnd.oci.image.index.v1+json
+   # 複製の完了を待つ（COMPLETEになるまで）
+   aws ecr describe-image-replication-status --region eu-south-2 --repository-name sattori-worker-gpu \
+     --image-id imageTag="$SEED" --query 'replicationStatuses[0].status'
+   aws ecr put-image --region eu-north-1 --repository-name sattori-worker-gpu --image-tag latest \
+     --image-manifest "$(cat /tmp/gpu-manifest.json)" --image-manifest-media-type application/vnd.oci.image.index.v1+json
+   # 種のタグは両リージョンで消す（タグだけのつもりでも世代数のライフサイクルを1枠使うため）
+   for r in eu-south-2 eu-north-1; do
+     aws ecr batch-delete-image --region $r --repository-name sattori-worker-gpu --image-ids imageTag="$SEED"
+   done
+   ```
+
+   最後に§2のレプリカ到着確認（ダイジェストの一致）を通す。2回目以降は、中身の変わった
+   イメージのpushで自動的に複製されるのでこの手順は要らない。
 7. 管理画面の設定で「GPUフォールバックリージョンの強制」を有効にし、`verify-recording-in-production`
    skillの方法でth06nc・th15・倍速録画を1本ずつ流す。終わったら必ず解除する。
 
