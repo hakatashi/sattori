@@ -1,6 +1,6 @@
 # 0061. GPUワーカーはeu-south-2の容量不足時だけeu-north-1で起動する（価格では振り分けない）
 
-- **状態**: 有効
+- **状態**: 有効（ただし「データ面は一切移さない」は[`0062`](0062-gpu-fallback-region-local-output-and-title-assets.md)で置き換え済み。出力バケットとタイトル資産のレプリカはフォールバック先に置く。リージョンの選び方・リトライでリージョンを固定しない方針は引き続き有効）
 - **決定日**: 2026-10-11
 - **対象**: apps/api / infra / packages/shared / worker / apps/web
 - **関連**: Issue #296、#288、#289、[`docs/reports/2026-10-11-gpu-capacity-eu-south-2-vs-eu-north-1.md`](../reports/2026-10-11-gpu-capacity-eu-south-2-vs-eu-north-1.md)、[`0001`](0001-region-eu-south-2-ses-us-east-1.md)・[`0046`](0046-gpu-ec2-instance-and-fixed-ami.md)・[`0056`](0056-gpu-vcpu-lease-and-queue.md)・[`0058`](0058-speedup-recording-on-gpu-instances.md)・[`0060`](0060-speedup-fallback-to-native-speed.md)

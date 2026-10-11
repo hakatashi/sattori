@@ -330,6 +330,28 @@ aws s3 cp /tmp/th128-assets.tar.gz \
   "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th128/assets.tar.gz"
 ```
 
+### アップロード後: フォールバック先のレプリカへの複製を確かめる
+
+TitleAssetsBucket の `titles/` は、GPU の容量不足フォールバック先（eu-north-1）のレプリカへ
+S3 レプリケーションで自動複製される（Issue #313、
+[`decisions/0062`](../../../docs/decisions/0062-gpu-fallback-region-local-output-and-title-assets.md)）。
+複製は非同期で、1GB 前後のアーカイブなら数分かかる。**複製が終わるまでの間、フォールバック先で動く
+GPU ジョブは旧資産を読む**。差し替えたタイトルの検証ジョブは、完了を確かめてから流すこと。
+
+```bash
+GAME=th06nc  # アップロードしたタイトル
+# 原本の複製状態が COMPLETED になるまで待つ（PENDING → COMPLETED。FAILED なら設定を疑う）
+until [ "$(aws s3api head-object --region eu-south-2 --bucket "$SATTORI_TITLE_ASSETS_BUCKET"   --key "titles/$GAME/assets.tar.gz" --query ReplicationStatus --output text)" = COMPLETED ]; do
+  echo "複製待ち…"; sleep 15
+done
+# レプリカのETagが原本と一致することを確かめる
+for b in "eu-south-2 $SATTORI_TITLE_ASSETS_BUCKET" \
+         "eu-north-1 sattori-title-assets-${SATTORI_AWS_ACCOUNT_ID}-eu-north-1"; do
+  set -- $b
+  aws s3api head-object --region "$1" --bucket "$2" --key "titles/$GAME/assets.tar.gz" --query ETag --output text
+done
+```
+
 ## 3. WINEPREFIX の作成・更新（`setup_wineprefix.sh`）
 
 9タイトル（th06〜th20・th128の32bitタイトル）は同じ手順（`wineboot -u` 初期化 + MS Gothic /
