@@ -53,9 +53,46 @@ describe("SattoriGpuFallbackStack（Issue #296）", () => {
     });
   });
 
-  it("データ面(S3・DynamoDB)は持たない", () => {
-    template.resourceCountIs("AWS::S3::Bucket", 0);
+  it("DynamoDBは持たず、S3は出力バケットとタイトル資産のレプリカだけ（Issue #313）", () => {
     template.resourceCountIs("AWS::DynamoDB::Table", 0);
+    template.resourceCountIs("AWS::S3::Bucket", 2);
+    template.hasResourceProperties("AWS::S3::Bucket", {
+      BucketName: "sattori-output-123456789012-eu-north-1",
+      LifecycleConfiguration: {
+        Rules: Match.arrayWith([
+          Match.objectLike({ ExpirationInDays: 7, Status: "Enabled" }),
+          Match.objectLike({ Prefix: "worker-logs/", ExpirationInDays: 3 }),
+        ]),
+      },
+    });
+    // レプリケーションの宛先はバージョニングが必須。
+    template.hasResourceProperties("AWS::S3::Bucket", {
+      BucketName: "sattori-title-assets-123456789012-eu-north-1",
+      VersioningConfiguration: { Status: "Enabled" },
+    });
+  });
+
+  it("出力バケットはこのアカウントのCloudFront（OAC）からの読み取りを許可する", () => {
+    template.hasResourceProperties("AWS::S3::BucketPolicy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: "s3:GetObject",
+            Principal: { Service: "cloudfront.amazonaws.com" },
+            Condition: {
+              StringLike: { "AWS:SourceArn": "arn:aws:cloudfront::123456789012:distribution/*" },
+            },
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("同じリージョンのS3へはGateway Endpoint経由で通信する", () => {
+    template.hasResourceProperties("AWS::EC2::VPCEndpoint", {
+      VpcEndpointType: "Gateway",
+      ServiceName: Match.objectLike({}),
+    });
   });
 
   it("フォールバック先のAMIが未設定ならsynth自体が失敗する", () => {

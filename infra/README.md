@@ -13,13 +13,14 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。**3スタック
   GPUワーカーをeu-south-2の容量不足時だけ起動する先（Issue #296）。VPC（g6f.2xlargeを
   提供する1a/1bのパブリックサブネットのみ・NATなし、サブネットにタグ
   `sattori:gpuWorkerSubnet=true`）・送信のみのSG・固定名のGPU Launch Template
-  （`sattori-gpu-worker`）・ECRレプリカの受け皿（`sattori-worker-gpu`、`maxImageCount: 2`）
-  だけを持ち、データ面は持たない。
+  （`sattori-gpu-worker`）・ECRレプリカの受け皿（`sattori-worker-gpu`、`maxImageCount: 2`）に加え、
+  そこで動くワーカー用の出力バケット・タイトル資産のレプリカ・S3 Gateway Endpointを持つ
+  （Issue #313）。DynamoDB・Step Functions・ログ・リプレイは持たない。
 
 > リージョン移設の経緯・SESとACMだけをus-east-1に残す判断・受け入れたトレードオフは
 > [`docs/decisions/0001`](../docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)。
-> GPUだけeu-north-1へ逃がす例外とその設計は
-> [`docs/decisions/0061`](../docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)。
+> GPUだけeu-north-1へ逃がす例外は[`docs/decisions/0061`](../docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)、
+> 出力とタイトル資産もそちらに置く判断は[`0062`](../docs/decisions/0062-gpu-fallback-region-local-output-and-title-assets.md)。
 
 全スタックは`bin/sattori.ts`から起こし、`pnpm run deploy`（＝`cdk deploy --all`）で
 まとめてデプロイする。順序は`SattoriEdgeStack`・`SattoriGpuFallbackStack`→`SattoriStack`。
@@ -36,12 +37,15 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。**3スタック
 | サブネットのタグ `sattori:gpuWorkerSubnet` | フォールバック | Launch Lambda（`DescribeSubnets`で実行時に引く） |
 | インスタンスプロファイル `sattori-gpu-worker-remote` | 本体（既存の`WorkerRole`に追加） | フォールバックのLaunch Template |
 | ECRリポジトリ `sattori-worker-gpu` | 両方（本体が原本、フォールバックが受け皿） | 本体のレジストリ複製設定・UserData |
+| S3バケット `sattori-output-<account>-eu-north-1` | フォールバック | 本体のMediaCdn（`/eu-north-1/*`のオリジン）・`WorkerRole`・Lambda（`GPU_FALLBACK_OUTPUT_BUCKET`） |
+| S3バケット `sattori-title-assets-<account>-eu-north-1` | フォールバック | 本体のTitleAssetsBucketのレプリケーション先・`WorkerRole`・Lambda（`GPU_FALLBACK_TITLE_ASSETS_BUCKET`） |
 
 **フォールバックを本体より先にデプロイすること**（`bin/sattori.ts`で`addDependency`済み）。
 本体のECRレジストリ複製設定が先に有効になると、次のpushでECRが受け皿のリポジトリを
 ライフサイクル無しで自動作成し、フォールバックスタックのリポジトリ作成と衝突する。
 Launch Templateは作成時にインスタンスプロファイルの存在を検証しないため、
-フォールバックが先でも作成は通る。
+フォールバックが先でも作成は通る。S3レプリケーションの宛先・MediaCdnのオリジン（OAC許可は
+フォールバック側のバケットポリシー）も、フォールバック側のバケットが先に在る前提。
 
 ## リソース一覧
 
@@ -189,6 +193,9 @@ Launch Templateは作成時にインスタンスプロファイルの存在を�
   レプリカのpull権限を足す。ECRはレジストリ単位の複製設定（`WorkerGpuReplication`）で
   `sattori-worker-gpu`だけをeu-north-1へ複製する。Lambdaには`GPU_FALLBACK_*`の環境変数で
   固定名を渡す（`apps/api/README.md` §12）。
+  `WorkerRole`はフォールバック先の出力バケット・タイトル資産レプリカも読み書きできる（Issue #313）。
+  TitleAssetsBucketの`titles/`はレプリカへS3レプリケーションで複製し、MediaCdnの`eu-north-1/*`は
+  `MediaStripRegionPrefixFn`でプレフィックスを外してフォールバック先の出力バケットから配信する。
 - **Step Functions**: `RecordingStateMachine`（Standard）。開始状態は`AcquireGpuSlot`
   （GPU vCPU容量リース、Issue #270。非GPUジョブは即通過し空きが無ければ
   `WaitForGpuSlot`→自分自身へ戻るループ、待機はリトライ回数を消費しない）→
