@@ -66,6 +66,9 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
     workerRegion: _workerRegion,
     titleAssetsBytes: _titleAssetsBytes,
     rawCheckpointBytes: _rawCheckpointBytes,
+    // 出力パス（下でnullにする）とセットで意味を持つ値（Issue #313）。
+    titleAssetsRegion: _titleAssetsRegion,
+    outputRegion: _outputRegion,
     ...carried
   } = source;
   return {

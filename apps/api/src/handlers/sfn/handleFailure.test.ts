@@ -108,6 +108,8 @@ describe("sfn/handleFailure handler", () => {
       "GPU_FALLBACK_WORKER_GPU_IMAGE",
       "123456789012.dkr.ecr.eu-north-1.amazonaws.com/sattori-worker-gpu:latest",
     );
+    vi.stubEnv("GPU_FALLBACK_OUTPUT_BUCKET", "sattori-output-123456789012-eu-north-1");
+    vi.stubEnv("GPU_FALLBACK_TITLE_ASSETS_BUCKET", "sattori-title-assets-123456789012-eu-north-1");
     ddbMock.on(GetCommand).resolves({ Item: { ...baseJob, workerRegion: "eu-north-1" } });
     ec2Mock.on(DescribeInstancesCommand).callsFake(async (_input, getClient) => {
       const region = await getClient().config.region();

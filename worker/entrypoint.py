@@ -2,7 +2,8 @@
 """Sattori 録画ワーカーのエントリポイント。
 
 EC2 Fleet インスタンスの UserData から `docker run` で起動される。処理の流れ:
-  1. 生動画チェックポイント(S3の`videos/{jobId}.mp4`)の有無を確認する。既にあれば
+  1. 生動画チェックポイント(`CHECKPOINT_BUCKET`の`videos/{jobId}.mp4`。前回の試行が
+     別リージョンで動いていれば、そのリージョンの出力バケット)の有無を確認する。既にあれば
      「変換から再開」(録画をスキップし、S3から生動画をダウンロードする)。これは
      録画完了後・変換中にSpot中断でリトライになった場合、録画からやり直さず変換だけ
      再実行できるようにするためのもの(Issue #11)。併せてDynamoDBのジョブレコードも
@@ -76,6 +77,18 @@ REPLAY_BUCKET = os.environ["REPLAY_BUCKET"]
 REPLAY_KEY = os.environ["REPLAY_KEY"]
 OUTPUT_BUCKET = os.environ["OUTPUT_BUCKET"]
 TITLE_ASSETS_BUCKET = os.environ["TITLE_ASSETS_BUCKET"]
+# 各バケットのリージョン(Issue #313)。GPUの容量不足フォールバック先で動くときは、起動側が
+# そのリージョンの出力バケット・タイトル資産レプリカを渡す(`apps/api/src/workerEnv.ts`)。
+# ワーカーは渡されたリージョンでS3クライアントを作るだけで、自分がどこにいるかは知らない
+# (AGENTS.md §3)。未設定(この変数の追加前のLaunch Lambda)なら`AWS_REGION`のクライアントを使う。
+OUTPUT_BUCKET_REGION = os.environ.get("OUTPUT_BUCKET_REGION") or None
+TITLE_ASSETS_BUCKET_REGION = os.environ.get("TITLE_ASSETS_BUCKET_REGION") or None
+# 変換から再開するときに読む生データのチェックポイントの置き場。前回の試行が別リージョンで
+# 動いていれば、そのリージョンの出力バケットを指す(リトライでリージョンは固定しない、
+# `docs/decisions/0061`)。読み戻したあとの出力は自分のリージョン(`OUTPUT_BUCKET`)へ書き、
+# チェックポイントはこちらから消す。
+CHECKPOINT_BUCKET = os.environ.get("CHECKPOINT_BUCKET") or OUTPUT_BUCKET
+CHECKPOINT_BUCKET_REGION = os.environ.get("CHECKPOINT_BUCKET_REGION") or OUTPUT_BUCKET_REGION
 WATERMARK = os.environ.get("WATERMARK", "1") == "1"
 # EC2 Fleetでのみ有効(Issue #96)。IMDSが無い自宅ワーカーでは`SPOT_INTERRUPTION_WATCH`が
 # 渡されず、常にタイムアウトし続けるだけの`InterruptionWatcher`を起動しない
@@ -224,14 +237,25 @@ def start_pulseaudio():
     time.sleep(2.0)
 
 
+def s3_client(region):
+    """リージョンを指定したS3クライアント。`None`なら`AWS_REGION`のもの。
+
+    別リージョンのバケットを既定リージョンのクライアントで扱うと、boto3はリダイレクトを
+    追って動きはするが、毎回余計な往復が挟まる。リージョンが分かっているので明示する。
+    """
+    if region:
+        return boto3.client("s3", region_name=region)
+    return boto3.client("s3")
+
+
 def download_replay(s3):
     log(f"リプレイをダウンロード: s3://{REPLAY_BUCKET}/{REPLAY_KEY}")
     s3.download_file(REPLAY_BUCKET, REPLAY_KEY, REPLAY_PATH)
 
 
 def download_checkpoint_video(s3):
-    log(f"生動画をダウンロード(変換から再開): s3://{OUTPUT_BUCKET}/{OUTPUT_KEY}")
-    s3.download_file(OUTPUT_BUCKET, OUTPUT_KEY, OUTPUT_VIDEO)
+    log(f"生動画をダウンロード(変換から再開): s3://{CHECKPOINT_BUCKET}/{OUTPUT_KEY}")
+    s3.download_file(CHECKPOINT_BUCKET, OUTPUT_KEY, OUTPUT_VIDEO)
 
 
 def upload_video(s3, path, key, metadata=None, on_progress=None):
@@ -310,7 +334,7 @@ def raw_checkpoint_exists(s3):
     出来上がるものは正しい。
     """
     try:
-        s3.head_object(Bucket=OUTPUT_BUCKET, Key=OUTPUT_KEY)
+        s3.head_object(Bucket=CHECKPOINT_BUCKET, Key=OUTPUT_KEY)
         return True
     except Exception as err:  # noqa: BLE001 - 404も一時障害も「再開しない」に倒す
         log(f"生データのチェックポイントは見つかりませんでした(録画から開始): {err}")
@@ -329,7 +353,7 @@ def read_checkpoint_metadata(s3):
     続行する側に倒す。
     """
     try:
-        head = s3.head_object(Bucket=OUTPUT_BUCKET, Key=OUTPUT_KEY)
+        head = s3.head_object(Bucket=CHECKPOINT_BUCKET, Key=OUTPUT_KEY)
     except Exception as err:  # noqa: BLE001 - 取得失敗で変換からの再開自体を諦めない
         log(f"生データのメタデータ取得に失敗しました(等倍・カット無しとして続行): {err}")
         return 1.0, dict(NO_CUT)
@@ -389,10 +413,16 @@ def upload_ffmpeg_upscale_log_if_present(s3):
         log(f"ffmpeg変換ログのアップロードに失敗しました(継続): {err}")
 
 
-def record(s3):
-    """録画を実行し、完了直後に生動画をS3へチェックポイントとしてアップロードする。"""
-    title_assets_bytes = ensure_title_assets(s3, TITLE_ASSETS_BUCKET, GAME, log=log)
-    download_replay(s3)
+def record(s3, *, title_assets_s3=None, replay_s3=None):
+    """録画を実行し、完了直後に生動画をS3へチェックポイントとしてアップロードする。
+
+    `s3`は出力バケット用のクライアント。タイトル資産・リプレイは別リージョンのバケットに
+    ありうるため、それぞれのクライアントを渡す(省略時は`s3`)。
+    """
+    title_assets_bytes = ensure_title_assets(
+        title_assets_s3 or s3, TITLE_ASSETS_BUCKET, GAME, log=log,
+    )
+    download_replay(replay_s3 or s3)
     start_pulseaudio()
     # リトライで再入した場合、progress には前の試行の値が残っている。status と同じ
     # 更新で 0 に戻し、「録画中 + 前の試行の進捗」が見える窓を作らない(Issue #108)。
@@ -531,7 +561,7 @@ def read_timeout_result():
         return None
 
 
-def convert_and_upload(s3, time_scale, cut=NO_CUT):
+def convert_and_upload(s3, time_scale, cut=NO_CUT, *, checkpoint_s3=None):
     """録画結果を配信用に変換し、S3とDynamoDBへ反映する。
 
     **録画後の再エンコードはこの1パスだけ**で、リプレイ区間外のカット(`cut`、Issue #266)・
@@ -620,14 +650,14 @@ def convert_and_upload(s3, time_scale, cut=NO_CUT):
     # **`done` を確定させてから**生データを消す。順序を逆にすると、削除後・status更新前に
     # 落ちた場合に「outputPathの指すオブジェクトが無い」ジョブが残り、変換からの再開も
     # できなくなる。ここまで来ていれば再開はもう起こらないので、削除は純粋な後始末。
-    delete_raw_checkpoint(s3)
+    delete_raw_checkpoint(checkpoint_s3 or s3)
 
 
 def delete_raw_checkpoint(s3):
     """役目を終えた生データのチェックポイントをS3から削除する(失敗しても続行)。"""
     try:
-        s3.delete_object(Bucket=OUTPUT_BUCKET, Key=OUTPUT_KEY)
-        log(f"生データのチェックポイントを削除しました: s3://{OUTPUT_BUCKET}/{OUTPUT_KEY}")
+        s3.delete_object(Bucket=CHECKPOINT_BUCKET, Key=OUTPUT_KEY)
+        log(f"生データのチェックポイントを削除しました: s3://{CHECKPOINT_BUCKET}/{OUTPUT_KEY}")
     except Exception as err:  # noqa: BLE001 - 完了済みジョブを削除失敗で失敗扱いにしない
         # 残ってもライフサイクルルール(OUTPUT_RETENTION_DAYS日)でいずれ消える。
         log(f"生データのチェックポイント削除に失敗しました(継続): {err}")
@@ -635,7 +665,12 @@ def delete_raw_checkpoint(s3):
 
 def main():
     os.makedirs(WORK_DIR, exist_ok=True)
-    s3 = boto3.client("s3")
+    # 出力(`s3`)・チェックポイント・タイトル資産は、それぞれのバケットのリージョンの
+    # クライアントで扱う(Issue #313)。リプレイは常に一次リージョン(`AWS_REGION`)にある。
+    s3 = s3_client(OUTPUT_BUCKET_REGION)
+    checkpoint_s3 = s3_client(CHECKPOINT_BUCKET_REGION)
+    title_assets_s3 = s3_client(TITLE_ASSETS_BUCKET_REGION)
+    replay_s3 = s3_client(None)
     log(f"ジョブ開始 job_id={JOB_ID} game={GAME} watermark={WATERMARK}")
 
     watcher = InterruptionWatcher(on_interruption, log=log) if SPOT_INTERRUPTION_WATCH else None
@@ -658,17 +693,17 @@ def main():
             # 完了メールをもう一度飛ばす分だけ悪い。何もせず成功として通知する。
             log("ジョブは既に完了しています。録画をやり直さず成功として通知します")
         else:
-            if raw_checkpoint_exists(s3):
+            if raw_checkpoint_exists(checkpoint_s3):
                 log("生動画チェックポイントを検出しました。変換から再開します")
-                download_checkpoint_video(s3)
+                download_checkpoint_video(checkpoint_s3)
                 # 録画時の実時間スケールとカット範囲は生データ自身に添えてある。環境変数から
                 # 取り直すと、リトライ先で環境変数が違うと
                 # 速度の違う動画のまま配信してしまう(`TIME_SCALE_METADATA_KEY`参照)。
-                time_scale, cut = read_checkpoint_metadata(s3)
+                time_scale, cut = read_checkpoint_metadata(checkpoint_s3)
             else:
-                time_scale, cut = record(s3)
+                time_scale, cut = record(s3, title_assets_s3=title_assets_s3, replay_s3=replay_s3)
 
-            convert_and_upload(s3, time_scale, cut)
+            convert_and_upload(s3, time_scale, cut, checkpoint_s3=checkpoint_s3)
 
         log("ジョブ完了")
         if watcher:

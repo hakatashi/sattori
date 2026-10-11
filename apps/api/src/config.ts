@@ -1,3 +1,4 @@
+import type { MediaCdn } from "./downloads.js";
 /**
  * Lambda 実行時の環境変数から設定を読み込む。CDK 側（infra/）でこれらを注入する。
  */
@@ -110,6 +111,58 @@ export interface GpuFallbackConfig {
   subnetTagKey: string;
   /** フォールバック先リージョンのECRレプリカ上のGPUワーカーイメージ。 */
   workerGpuImage: string;
+  /**
+   * フォールバック先リージョンの出力バケット（Issue #313、`docs/decisions/0062`）。
+   * そこで動くワーカーは一次リージョンではなくこちらへ書き、MediaCdnの
+   * `/<region>/*`から配信する。
+   */
+  outputBucket: string;
+  /** フォールバック先リージョンにあるタイトル資産のレプリカ（S3レプリケーションで複製）。 */
+  titleAssetsBucket: string;
+}
+
+/** ワーカーが読み書きするS3バケットの組（`dataBucketsFor()`）。 */
+export interface DataBuckets {
+  /** バケットのリージョン。 */
+  region: string;
+  outputBucket: string;
+  titleAssetsBucket: string;
+}
+
+/**
+ * 指定したリージョンで動くワーカーが使う出力バケット・タイトル資産バケットを返す
+ * （Issue #313、`docs/decisions/0062`）。フォールバック先リージョンなら、そのリージョンに
+ * 置いたバケットを返す。それ以外（一次リージョン・未知のリージョン）は一次リージョンの
+ * バケットを返す——未知の値でも、少なくとも実在するバケットを指すように倒す。
+ *
+ * リプレイ（UploadBucket）・DynamoDB・ログは常に一次リージョンにあり、ここには含めない。
+ */
+export function dataBucketsFor(config: ApiConfig, region: string | undefined): DataBuckets {
+  const fallback = config.ec2.gpuFallback;
+  if (fallback && region === fallback.region) {
+    return {
+      region: fallback.region,
+      outputBucket: fallback.outputBucket,
+      titleAssetsBucket: fallback.titleAssetsBucket,
+    };
+  }
+  return {
+    region: config.ec2.region,
+    outputBucket: config.outputBucket,
+    titleAssetsBucket: config.titleAssetsBucket,
+  };
+}
+
+/**
+ * MediaCdn（CloudFront）の配信先（`downloads.ts`の`cdnPathFor()`）。出力バケットを
+ * 置いたリージョンのうち、一次リージョン以外はパスに`/<region>/`を付けて配信する（Issue #313）。
+ */
+export function mediaCdnOf(config: ApiConfig): MediaCdn {
+  return {
+    domain: config.cdnDomain,
+    primaryRegion: config.ec2.region,
+    secondaryRegions: config.ec2.gpuFallback ? [config.ec2.gpuFallback.region] : [],
+  };
 }
 
 /**
@@ -133,6 +186,8 @@ function loadGpuFallback(): GpuFallbackConfig | null {
     launchTemplateName: required("GPU_FALLBACK_LAUNCH_TEMPLATE_NAME"),
     subnetTagKey: required("GPU_FALLBACK_SUBNET_TAG_KEY"),
     workerGpuImage: required("GPU_FALLBACK_WORKER_GPU_IMAGE"),
+    outputBucket: required("GPU_FALLBACK_OUTPUT_BUCKET"),
+    titleAssetsBucket: required("GPU_FALLBACK_TITLE_ASSETS_BUCKET"),
   };
 }
 

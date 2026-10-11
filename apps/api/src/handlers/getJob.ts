@@ -4,7 +4,7 @@ import {
   type GetJobResponse,
   recordingSpeedOf,
 } from "@sattori/shared";
-import { loadConfig } from "../config.js";
+import { loadConfig, mediaCdnOf } from "../config.js";
 import { buildCdnUrl, buildVideoDownloadUrl } from "../downloads.js";
 import { error, json } from "../http.js";
 import { getJob } from "../jobs.js";
@@ -25,6 +25,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   if (!job) {
     return error(404, "not_found", "ジョブが見つかりません");
   }
+  const cdn = mediaCdnOf(config);
 
   // `outputPath` が何を指すかはジョブによって変わる。解像度が実際に変わる録画
   // （th06/07/08/11）では録画そのままの副次版だが、解像度が変わらない録画
@@ -34,11 +35,11 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const outputPathVariant = job.outputPath720p === null ? "delivery" : "raw";
   const downloadUrl =
     job.status === "done" && job.outputPath
-      ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath, job, outputPathVariant)
+      ? buildVideoDownloadUrl(cdn, job.outputPath, job, outputPathVariant)
       : null;
   const downloadUrl720p =
     job.status === "done" && job.outputPath720p
-      ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath720p, job, "delivery")
+      ? buildVideoDownloadUrl(cdn, job.outputPath720p, job, "delivery")
       : null;
   // ページBのプレビュープレイヤー(Issue #71)用のURL。ダウンロード用と違い
   // `response-content-disposition`を付けない(付けるとCloudFrontのキャッシュキーが
@@ -48,7 +49,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   const previewOutputPath =
     job.status === "done" ? (job.outputPath720p ?? job.outputPath ?? null) : null;
   const previewVideoUrl = previewOutputPath
-    ? buildCdnUrl(config.cdnDomain, previewOutputPath)
+    ? buildCdnUrl(cdn, job.outputRegion, previewOutputPath)
     : null;
   // プレビュー画像は録画・変換の進行中の進捗表示サムネイルに加え、完了後は
   // (posterImageUrlが無い場合の)プレビュープレイヤーの poster フォールバックとして
@@ -59,7 +60,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       job.status === "uploading" ||
       job.status === "done") &&
     job.previewImagePath
-      ? buildCdnUrl(config.cdnDomain, job.previewImagePath)
+      ? buildCdnUrl(cdn, job.outputRegion, job.previewImagePath)
       : null;
   // 完了後のプレビュープレイヤー専用のposter(Issue #171)。配信版動画の90%地点の
   // フレームを切り出したもので、previewImageUrlより動画の内容を反映している。
@@ -67,7 +68,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   // previewImageUrlへフォールバック)。
   const posterImageUrl =
     job.status === "done" && job.posterImagePath
-      ? buildCdnUrl(config.cdnDomain, job.posterImagePath)
+      ? buildCdnUrl(cdn, job.outputRegion, job.posterImagePath)
       : null;
 
   const response: GetJobResponse = {
