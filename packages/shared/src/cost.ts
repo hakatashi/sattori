@@ -197,6 +197,8 @@ export type JobCostInput = { options?: { recordingSpeed?: unknown } } & Pick<
   | "workerRegion"
   | "titleAssetsBytes"
   | "rawCheckpointBytes"
+  | "titleAssetsRegion"
+  | "outputRegion"
 >;
 
 /** コストの内訳（USD）。加算できるよう、集計側でも同じ形を使う。 */
@@ -447,12 +449,20 @@ function resolveBilledSeconds(
 /**
  * リージョン間で転送したバイト数を推定する（Issue #296）。
  *
- * ワーカーが`COST_PRICING_REGION`以外で動いた場合、次の読み書きがリージョンを跨ぐ:
+ * ワーカーが`COST_PRICING_REGION`以外で動いた場合、次の読み書きがリージョンを跨ぎうる:
  *
  * - タイトル資産のダウンロード（`titleAssetsBytes`、未記録なら`FALLBACK_TITLE_ASSETS_BYTES`）
  * - 生動画チェックポイントのアップロード（`rawCheckpointBytes`、未記録なら元解像度版の
  *   出力サイズで代用）
  * - 出力動画（元解像度版・720p版）のアップロード
+ *
+ * Issue #313（`docs/decisions/0062`）以降、フォールバック先のワーカーはそのリージョンの
+ * タイトル資産レプリカから読み、そのリージョンの出力バケットへ書くので、どちらも跨がない。
+ * どのバケットを使ったかはワーカーが記録する（`titleAssetsRegion`・`outputRegion`）。
+ * 属性が無い（それより前のジョブ）なら一次リージョンのバケットを使ったものとみなす。
+ * チェックポイントと出力は`outputRegion`で一括して判定する——リトライでリージョンが
+ * 変わり、別リージョンのチェックポイントを読み戻した分（`workerEnv.ts`の
+ * `CHECKPOINT_BUCKET`）は記録が無いため数えない。
  *
  * ECRイメージはフォールバック先リージョンのレプリカからpullするのでジョブ単位の
  * 転送は無い（レプリケーション自体の転送はpushごとの固定費で、ジョブへ配分できない）。
@@ -469,13 +479,22 @@ function resolveInterRegionTransfer(job: JobCostInput): { bytes: number; estimat
   ) {
     return { bytes: 0, estimated: false };
   }
-  const titleAssets = job.titleAssetsBytes ?? FALLBACK_TITLE_ASSETS_BYTES;
-  const rawCheckpoint = job.rawCheckpointBytes ?? job.outputBytes ?? 0;
-  const outputs = (job.outputBytes ?? 0) + (job.outputBytes720p ?? 0);
-  const estimated =
-    job.titleAssetsBytes === undefined ||
-    (job.rawCheckpointBytes === undefined && job.outputBytes !== null);
-  return { bytes: titleAssets + rawCheckpoint + outputs, estimated };
+  const workerRegion = job.workerRegion;
+  const titleAssetsCrossed = (job.titleAssetsRegion ?? COST_PRICING_REGION) !== workerRegion;
+  const outputsCrossed = (job.outputRegion ?? COST_PRICING_REGION) !== workerRegion;
+
+  let bytes = 0;
+  let estimated = false;
+  if (titleAssetsCrossed) {
+    bytes += job.titleAssetsBytes ?? FALLBACK_TITLE_ASSETS_BYTES;
+    estimated ||= job.titleAssetsBytes === undefined;
+  }
+  if (outputsCrossed) {
+    bytes += job.rawCheckpointBytes ?? job.outputBytes ?? 0;
+    bytes += (job.outputBytes ?? 0) + (job.outputBytes720p ?? 0);
+    estimated ||= job.rawCheckpointBytes === undefined && job.outputBytes !== null;
+  }
+  return { bytes, estimated };
 }
 
 /**

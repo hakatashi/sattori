@@ -12,6 +12,57 @@ import type { JobRecord, VideoVariant } from "@sattori/shared";
 const s3 = new S3Client({});
 
 /**
+ * リージョンを指定したS3クライアント（Issue #313）。GPUの容量不足フォールバック先の
+ * 出力バケット（eu-north-1）を署名付きURL・HeadObjectで扱うには、そのリージョンの
+ * エンドポイントを使う必要がある（Lambdaの既定リージョンのクライアントで署名すると、
+ * URLが別リージョンのエンドポイントを指してリダイレクトになる）。
+ */
+const regionalS3Clients = new Map<string, S3Client>();
+
+function s3ClientFor(region: string | undefined): S3Client {
+  if (region === undefined) {
+    return s3;
+  }
+  let client = regionalS3Clients.get(region);
+  if (client === undefined) {
+    client = new S3Client({ region });
+    regionalS3Clients.set(region, client);
+  }
+  return client;
+}
+
+/**
+ * MediaCdn（CloudFront）の配信先。一次リージョン以外の出力バケットは、
+ * パスの先頭に`/<region>/`を付けたbehaviorから配信する（Issue #313、
+ * `infra/lib/sattori-stack.ts`。CloudFront Functionがプレフィックスを外してオリジンへ渡す）。
+ */
+export interface MediaCdn {
+  /** CloudFront 配信ドメイン（例: dxxxx.cloudfront.net）。 */
+  domain: string;
+  /** 一次リージョン。`outputRegion`がこれと同じ（または未設定）ならプレフィックスを付けない。 */
+  primaryRegion: string;
+  /**
+   * 一次リージョン以外に出力バケットを置いたリージョン。ここに無い値の`outputRegion`は
+   * プレフィックスを付けない（DynamoDBの値をそのままURLへ埋め込まないため）。
+   */
+  secondaryRegions: string[];
+}
+
+/**
+ * 出力バケット上のキーを、MediaCdnの配信パスに変換する。
+ */
+export function cdnPathFor(cdn: MediaCdn, outputRegion: string | undefined, key: string): string {
+  if (
+    outputRegion === undefined ||
+    outputRegion === cdn.primaryRegion ||
+    !cdn.secondaryRegions.includes(outputRegion)
+  ) {
+    return key;
+  }
+  return `${outputRegion}/${key}`;
+}
+
+/**
  * ファイルダウンロード関連の共通処理。`uploads.ts` はアップロード(PUT)用の
  * 署名発行の場所なので、GET系(動画URL組み立て・.rpyの署名付きダウンロード)は
  * こちらにまとめる（Issue #51、管理画面から使うほか `getJob.ts` の動画URL組み立ても
@@ -26,20 +77,23 @@ const s3 = new S3Client({});
  * fetch+Blob化が不要。詳細はAGENTS.md参照）。
  */
 export function buildVideoDownloadUrl(
-  cdnDomain: string,
+  cdn: MediaCdn,
   outputPath: string,
-  job: Pick<JobRecord, "jobId" | "replayInfo">,
+  job: Pick<JobRecord, "jobId" | "replayInfo" | "outputRegion">,
   variant: VideoVariant,
 ): string {
   const filename = buildDownloadFilename(job.jobId, job.replayInfo, variant);
-  const url = new URL(`https://${cdnDomain}/${outputPath}`);
+  const url = new URL(`https://${cdn.domain}/${cdnPathFor(cdn, job.outputRegion, outputPath)}`);
   url.searchParams.set("response-content-disposition", buildContentDispositionValue(filename));
   return url.toString();
 }
 
-/** CloudFront配信パスから配信URLを組み立てる（進捗プレビュー画像など）。 */
-export function buildCdnUrl(cdnDomain: string, path: string): string {
-  return `https://${cdnDomain}/${path}`;
+/**
+ * 出力バケット上のキーから配信URLを組み立てる（進捗プレビュー画像など）。
+ * `outputRegion`はそのキーを書いたジョブの`JobRecord.outputRegion`。
+ */
+export function buildCdnUrl(cdn: MediaCdn, outputRegion: string | undefined, path: string): string {
+  return `https://${cdn.domain}/${cdnPathFor(cdn, outputRegion, path)}`;
 }
 
 /**
@@ -81,9 +135,13 @@ export function buildFfmpegUpscaleLogKey(jobId: string): string {
  * ffmpeg生ログへの署名付きGET URLを発行する（管理画面専用）。動画と違いCDN配信は
  * しない（一般ユーザー向け配信物ではなく、ライフサイクルルールで3日と短命なため）。
  */
-export async function createPresignedFfmpegLogDownloadUrl(bucket: string, key: string): Promise<string> {
+export async function createPresignedFfmpegLogDownloadUrl(
+  bucket: string,
+  key: string,
+  region?: string,
+): Promise<string> {
   const command = new GetObjectCommand({ Bucket: bucket, Key: key });
-  return getSignedUrl(s3, command, { expiresIn: REPLAY_DOWNLOAD_URL_TTL_SEC });
+  return getSignedUrl(s3ClientFor(region), command, { expiresIn: REPLAY_DOWNLOAD_URL_TTL_SEC });
 }
 
 /**
@@ -94,9 +152,9 @@ export async function createPresignedFfmpegLogDownloadUrl(bucket: string, key: s
  * 「無いこと」を根拠に処理そのものを止める側（`retryJob.ts`）は、一時障害を
  * 「削除済み」と誤断定しないよう`objectExistsStrict()`を使うこと。
  */
-export async function objectExists(bucket: string, key: string): Promise<boolean> {
+export async function objectExists(bucket: string, key: string, region?: string): Promise<boolean> {
   try {
-    return await objectExistsStrict(bucket, key);
+    return await objectExistsStrict(bucket, key, region);
   } catch {
     return false;
   }
@@ -110,9 +168,13 @@ export async function objectExists(bucket: string, key: string): Promise<boolean
  * 処理の中断理由にする場合、一時障害を「削除済み」と report してしまうと運用者を
  * 誤った原因調査へ誘導するため（Issue #59のレビュー指摘）。
  */
-export async function objectExistsStrict(bucket: string, key: string): Promise<boolean> {
+export async function objectExistsStrict(
+  bucket: string,
+  key: string,
+  region?: string,
+): Promise<boolean> {
   try {
-    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    await s3ClientFor(region).send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
     return true;
   } catch (err) {
     // HeadObjectはボディを返さないため、SDKは`NoSuchKey`ではなく汎用の`NotFound`

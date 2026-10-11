@@ -19,6 +19,12 @@ const REPLAY_INFO: ReplayInfo = {
   estimatedDurationSeconds: 847,
 };
 
+const CDN = {
+  domain: "cdn.example.net",
+  primaryRegion: "eu-south-2",
+  secondaryRegions: ["eu-north-1"],
+};
+
 describe("downloads", () => {
   beforeEach(() => {
     s3Mock.reset();
@@ -32,7 +38,7 @@ describe("downloads", () => {
   it("buildVideoDownloadUrl: response-content-dispositionクエリ付きのURLを組み立てる", async () => {
     const { buildVideoDownloadUrl } = await import("./downloads.js");
     const url = buildVideoDownloadUrl(
-      "cdn.example.net",
+      CDN,
       "videos/job-1_720p.mp4",
       { jobId: "job-1", replayInfo: REPLAY_INFO },
       "delivery",
@@ -44,9 +50,49 @@ describe("downloads", () => {
 
   it("buildCdnUrl: CloudFront配信URLを組み立てる", async () => {
     const { buildCdnUrl } = await import("./downloads.js");
-    expect(buildCdnUrl("cdn.example.net", "progress/job-1/123.jpg")).toBe(
+    expect(buildCdnUrl(CDN, undefined, "progress/job-1/123.jpg")).toBe(
       "https://cdn.example.net/progress/job-1/123.jpg",
     );
+    expect(buildCdnUrl(CDN, "eu-south-2", "progress/job-1/123.jpg")).toBe(
+      "https://cdn.example.net/progress/job-1/123.jpg",
+    );
+  });
+
+  it("buildCdnUrl: 一次リージョン以外の出力は/<region>/を前置する(Issue #313)", async () => {
+    const { buildCdnUrl } = await import("./downloads.js");
+    expect(buildCdnUrl(CDN, "eu-north-1", "videos/job-1_poster.jpg")).toBe(
+      "https://cdn.example.net/eu-north-1/videos/job-1_poster.jpg",
+    );
+  });
+
+  it("buildCdnUrl: 配信先として知らないリージョンはプレフィックスを付けない", async () => {
+    const { buildCdnUrl } = await import("./downloads.js");
+    expect(buildCdnUrl(CDN, "../evil", "videos/job-1.mp4")).toBe(
+      "https://cdn.example.net/videos/job-1.mp4",
+    );
+  });
+
+  it("buildVideoDownloadUrl: outputRegionが一次以外ならパスに/<region>/を付ける(Issue #313)", async () => {
+    const { buildVideoDownloadUrl } = await import("./downloads.js");
+    const url = buildVideoDownloadUrl(
+      CDN,
+      "videos/job-1_720p.mp4",
+      { jobId: "job-1", replayInfo: REPLAY_INFO, outputRegion: "eu-north-1" },
+      "delivery",
+    );
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe("/eu-north-1/videos/job-1_720p.mp4");
+    expect(parsed.searchParams.get("response-content-disposition")).toContain("attachment;");
+  });
+
+  it("createPresignedFfmpegLogDownloadUrl: リージョンを渡すとそのリージョンのエンドポイントで署名する", async () => {
+    const { createPresignedFfmpegLogDownloadUrl } = await import("./downloads.js");
+    const url = await createPresignedFfmpegLogDownloadUrl(
+      "out-eun1",
+      "worker-logs/job-1/ffmpeg-upscale.log",
+      "eu-north-1",
+    );
+    expect(new URL(url).host).toBe("out-eun1.s3.eu-north-1.amazonaws.com");
   });
 
   it("createPresignedReplayDownloadUrl: 署名クエリとContent-Dispositionを含むURLを返す", async () => {

@@ -69,6 +69,8 @@ const fallbackConfig: ApiConfig = {
       launchTemplateName: "sattori-gpu-worker",
       subnetTagKey: "sattori:gpuWorkerSubnet",
       workerGpuImage: "123456789012.dkr.ecr.eu-north-1.amazonaws.com/sattori-worker-gpu:latest",
+      outputBucket: "out-bucket-eun1",
+      titleAssetsBucket: "title-assets-eun1",
     },
   },
 };
@@ -640,6 +642,18 @@ describe("launchRecordingInstance（GPUの容量不足時リージョンフォ�
     expect(userData).toContain("export AWS_DEFAULT_REGION=ap-northeast-1");
     expect(userData).toContain("awslogs-region=ap-northeast-1");
     expect(userData).toContain("-e AWS_REGION='ap-northeast-1'");
+    // 出力とタイトル資産はフォールバック先リージョンのバケットを使う（Issue #313）。
+    expect(userData).toContain("-e OUTPUT_BUCKET='out-bucket-eun1'");
+    expect(userData).toContain("-e OUTPUT_BUCKET_REGION='eu-north-1'");
+    expect(userData).toContain("-e TITLE_ASSETS_BUCKET='title-assets-eun1'");
+    expect(userData).toContain("-e TITLE_ASSETS_BUCKET_REGION='eu-north-1'");
+    // 一次リージョンで試したぶん（versionCalls[0]）は一次リージョンのバケットのまま。
+    const primaryUserData = Buffer.from(
+      versionCalls[0]?.args[0].input.LaunchTemplateData?.UserData ?? "",
+      "base64",
+    ).toString("utf-8");
+    expect(primaryUserData).toContain("-e OUTPUT_BUCKET='out-bucket'");
+    expect(primaryUserData).toContain("-e OUTPUT_BUCKET_REGION='ap-northeast-1'");
 
     const fleetInput = ec2Mock.commandCalls(CreateFleetCommand)[1]?.args[0].input;
     expect(fleetInput?.LaunchTemplateConfigs?.[0]?.LaunchTemplateSpecification).toEqual({
