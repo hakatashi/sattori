@@ -64,6 +64,7 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
     speedupFallbackReason: _speedupFallbackReason,
     // 試行ごとに記録される実行結果（Issue #296）。新しいジョブには引き継がない。
     workerRegion: _workerRegion,
+    capacityExhaustedTargets: _capacityExhaustedTargets,
     titleAssetsBytes: _titleAssetsBytes,
     rawCheckpointBytes: _rawCheckpointBytes,
     // 出力パス（下でnullにする）とセットで意味を持つ値（Issue #313）。

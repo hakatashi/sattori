@@ -1,9 +1,14 @@
-import { requiresGpuRecording, vcpusForInstanceType } from "@sattori/shared";
+import {
+  canFallBackToNativeSpeed,
+  recordingSpeedOf,
+  requiresGpuRecording,
+  vcpusForInstanceType,
+} from "@sattori/shared";
 import type { JobRecord, WorkerHeartbeat } from "@sattori/shared";
 import { loadConfig } from "../../config.js";
 import type { ApiConfig } from "../../config.js";
-import { launchRecordingInstance } from "../../ec2.js";
-import { getGpuLease, shrinkGpuLease } from "../../gpuSlots.js";
+import { launchRecordingInstance, LaunchTiersExhaustedError } from "../../ec2.js";
+import { getGpuLease, releaseGpuSlot, shrinkGpuLease } from "../../gpuSlots.js";
 import {
   getHomeWorkerAssignment,
   listWorkerHeartbeats,
@@ -13,12 +18,15 @@ import {
   withdrawHomeWorkerOffer,
 } from "../../homeWorker.js";
 import {
+  fallBackToNativeSpeed,
   getJob,
   markJobLaunched,
+  updateCapacityExhaustedTargets,
   updateJobInstance,
   updateJobStatus,
   updateJobWorkerKind,
 } from "../../jobs.js";
+import { CAPACITY_EXHAUSTED_MESSAGE } from "../../retryPolicy.js";
 import { getSettings } from "../../settings.js";
 import { buildWorkerEnv } from "../../workerEnv.js";
 import { routingPolicyFor, selectHomeWorker } from "../../workerRouting.js";
@@ -64,10 +72,133 @@ export const handler = async (event: LaunchTaskEvent): Promise<void> => {
     JSON.stringify({ event: "launch_attempt", jobId: event.jobId, attempt: event.attempt }),
   );
 
+  try {
+    await assignWorker(config, job, event);
+  } catch (err) {
+    if (!(err instanceof LaunchTiersExhaustedError)) {
+      throw err;
+    }
+    await handleTiersExhausted(config, job, event, err);
+  }
+};
+
+/** 自宅ワーカーへのオファー、だめならEC2 Fleetの起動。 */
+async function assignWorker(
+  config: ApiConfig,
+  job: JobRecord,
+  event: LaunchTaskEvent,
+): Promise<void> {
   if (await tryOfferToHomeWorker(config, job, event)) {
     return;
   }
+  await launchOnEc2(config, job, event);
+}
 
+/**
+ * ジョブが試せる段を容量不足で使い切ったときの処理（Issue #315、`docs/decisions/0063`）。
+ *
+ * 倍速録画（GPU必須タイトルを除く）は同じ呼び出しの中で等倍へ落として割り当て直す。
+ * ステートマシンへ戻すと`WaitBeforeCheck`の3分を待つことになるため。それ以外は待っても
+ * 在庫が戻る見込みが無いのでその場で失敗させる。例外を投げ直すのは`waitForTaskToken`の
+ * 実行を終わらせるためで、Catchの先の`HandleFailure`は後始末だけしてリトライしない。
+ */
+async function handleTiersExhausted(
+  config: ApiConfig,
+  job: JobRecord,
+  event: LaunchTaskEvent,
+  exhausted: LaunchTiersExhaustedError,
+): Promise<void> {
+  if (!canFallBackToNativeSpeed(job)) {
+    await failForCapacity(config, event, exhausted);
+    return;
+  }
+
+  const from = recordingSpeedOf(job.options);
+  if (!(await fallBackToNativeSpeed(config.jobsTable, event.jobId, from, "gpu_capacity"))) {
+    // 緊急停止などで条件付き更新が弾かれた。判断は`HandleFailure`に任せる。
+    throw exhausted;
+  }
+  console.log(
+    JSON.stringify({
+      event: "speedup_fallback",
+      jobId: event.jobId,
+      attempt: event.attempt,
+      reason: "gpu_capacity",
+      from,
+    }),
+  );
+  await releaseGpuLease(config, event.jobId);
+
+  const nativeJob = await getJob(config.jobsTable, event.jobId);
+  if (!nativeJob) {
+    throw new Error(`ジョブが見つかりません: ${event.jobId}`);
+  }
+  try {
+    await assignWorker(config, nativeJob, event);
+  } catch (err) {
+    if (err instanceof LaunchTiersExhaustedError) {
+      await failForCapacity(config, event, err);
+    }
+    throw err;
+  }
+}
+
+/** 全段が容量不足のジョブを失敗させ、ステートマシンのCatchへ渡すために例外を投げる。 */
+async function failForCapacity(
+  config: ApiConfig,
+  event: LaunchTaskEvent,
+  exhausted: LaunchTiersExhaustedError,
+): Promise<never> {
+  await releaseGpuLease(config, event.jobId);
+  await updateJobStatus(config.jobsTable, event.jobId, "failed", CAPACITY_EXHAUSTED_MESSAGE, {
+    unlessDone: true,
+    errorCode: "capacity_exhausted",
+  });
+  throw exhausted;
+}
+
+/**
+ * GPUの段を離れるジョブのリースを返却する。失敗しても録画は止めない
+ * （`HandleFailure`と同じく、取りこぼしはリコンサイラが期限切れで回収する）。
+ */
+async function releaseGpuLease(config: ApiConfig, jobId: string): Promise<void> {
+  try {
+    await releaseGpuSlot(config.gpuSlotsTable, jobId);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "release_gpu_slot_failed",
+        jobId,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+}
+
+/** 容量不足の段の記録。失敗してもリトライで同じ段をもう一度試すだけなので起動は続ける。 */
+async function recordExhaustedTiers(
+  config: ApiConfig,
+  jobId: string,
+  tierIds: string[],
+): Promise<void> {
+  try {
+    await updateCapacityExhaustedTargets(config.jobsTable, jobId, tierIds);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "capacity_exhausted_targets_write_failed",
+        jobId,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+}
+
+async function launchOnEc2(
+  config: ApiConfig,
+  job: JobRecord,
+  event: LaunchTaskEvent,
+): Promise<void> {
   const isGpuJob = requiresGpuRecording(job);
   let maxVcpu: number | undefined;
   if (isGpuJob) {
@@ -102,6 +233,7 @@ export const handler = async (event: LaunchTaskEvent): Promise<void> => {
   const instance = await launchRecordingInstance(config, job, event.taskToken, {
     maxVcpu,
     forceFallbackRegion,
+    onTierExhausted: (tierIds) => recordExhaustedTiers(config, event.jobId, tierIds),
   });
   // **`instanceId` の永続化を他の更新より先に行う**（Issue #23）。`CreateFleet` が
   // 返った時点で課金は始まっており、ここでLambdaがタイムアウトすると誰も
@@ -132,7 +264,7 @@ export const handler = async (event: LaunchTaskEvent): Promise<void> => {
       );
     }
   }
-};
+}
 
 /**
  * 自宅ワーカーへのオファーを試みる。claimされた（＝このジョブの面倒はデーモンが見る）

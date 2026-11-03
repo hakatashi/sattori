@@ -238,6 +238,8 @@ describe("SattoriStack", () => {
           Match.objectLike({
             Action: Match.arrayWith([
               "ec2:CreateFleet",
+              // 試行ごとに作るバージョンを使い終えたら消す(Issue #315)。
+              "ec2:DeleteLaunchTemplateVersions",
               "ec2:RunInstances",
               // 確保したインスタンスのSpot単価をコスト推定用に記録する(Issue #60)。
               "ec2:DescribeSpotPriceHistory",
