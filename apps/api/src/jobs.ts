@@ -305,6 +305,25 @@ export async function updateJobInstance(
 }
 
 /**
+ * 容量不足で使い切った起動手段の段を記録する（Issue #315）。書くのはそのジョブの`Launch`
+ * だけで同時に走らないので、リスト全体を上書きする。
+ */
+export async function updateCapacityExhaustedTargets(
+  table: string,
+  jobId: string,
+  targets: string[],
+): Promise<void> {
+  await client.send(
+    new UpdateCommand({
+      TableName: table,
+      Key: { jobId },
+      UpdateExpression: "SET capacityExhaustedTargets = :targets, updatedAt = :u",
+      ExpressionAttributeValues: { ":targets": targets, ":u": new Date().toISOString() },
+    }),
+  );
+}
+
+/**
  * ジョブを実行するワーカーの種別を記録する（Issue #49）。EC2 Fleetの起動に成功した
  * 時点（`ec2`）に`Launch`が書き込む。`home`は自宅ワーカーがclaimと同時に自分で
  * 書き込むため、ここを通らない。

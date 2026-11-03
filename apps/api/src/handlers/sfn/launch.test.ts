@@ -508,3 +508,169 @@ describe("sfn/launch handler（GPU vCPU容量リース、Issue #270）", () => {
     expect(ddbMock.commandCalls(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE })).toHaveLength(0);
   });
 });
+
+describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
+  const lease = {
+    slotKey: "gpu",
+    itemKey: "job#job-1",
+    jobId: "job-1",
+    vcpu: 8,
+    acquiredAt: "a",
+    expiresAt: "b",
+    expectedFinishAt: "c",
+  };
+  const capacityFailure = {
+    Instances: [],
+    Errors: [{ ErrorCode: "UnfulfillableCapacity", ErrorMessage: "no capacity" }],
+  };
+
+  function mockSpeedupJobStore(initial: JobRecord): void {
+    // `fallBackToNativeSpeed`の書き込みを、後続の読み直しへ反映する。
+    let current = initial;
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).callsFake(async () => ({ Item: current }));
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({ Item: lease });
+    ddbMock.on(TransactWriteCommand).resolves({});
+    ddbMock.on(UpdateCommand).callsFake(async (input) => {
+      if (String(input.UpdateExpression).includes("requestedRecordingSpeed")) {
+        current = { ...current, options: { ...current.options, recordingSpeed: 1 } };
+      }
+      return {};
+    });
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+  }
+
+  function updateExpressions(): string[] {
+    return ddbMock.commandCalls(UpdateCommand).map((call) => String(call.args[0].input.UpdateExpression));
+  }
+
+  function statusValues() {
+    return ddbMock
+      .commandCalls(UpdateCommand)
+      .map((call) => call.args[0].input.ExpressionAttributeValues)
+      .filter((values) => values?.[":s"] !== undefined);
+  }
+
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+
+  it("倍速録画はGPUの段を使い切ったら同じ呼び出しの中で等倍のCPU系へ起動し直し、リースを返却する", async () => {
+    mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
+    ec2Mock
+      .on(CreateFleetCommand)
+      .resolvesOnce(capacityFailure)
+      .resolves({
+        Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.xlarge", AvailabilityZone: "a" }],
+      });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    const fleets = ec2Mock.commandCalls(CreateFleetCommand);
+    expect(fleets).toHaveLength(2);
+    expect(fleets[1]?.args[0].input.LaunchTemplateConfigs?.[0]?.LaunchTemplateSpecification?.LaunchTemplateId).toBe(
+      "lt-xxxx",
+    );
+    expect(updateExpressions().some((e) => e.includes("capacityExhaustedTargets"))).toBe(true);
+    expect(updateExpressions().some((e) => e.includes("requestedRecordingSpeed"))).toBe(true);
+    expect(ddbMock.commandCalls(TransactWriteCommand).length).toBeGreaterThan(0);
+    expect(statusValues()).toEqual([expect.objectContaining({ ":s": "launching" })]);
+  });
+
+  it("等倍へ落としたジョブは自宅ワーカーへオファーする", async () => {
+    mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
+    ddbMock.on(ScanCommand).resolves({ Items: [heartbeat()] });
+    ec2Mock.on(CreateFleetCommand).resolves(capacityFailure);
+    // オファーの書き込みと同時にclaimされた状態を返す。
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).callsFake(async (input) =>
+      input.ProjectionExpression
+        ? { Item: { assignedWorkerId: "home-1" } }
+        : {
+            Item: ddbMock
+              .commandCalls(UpdateCommand)
+              .some((call) => String(call.args[0].input.UpdateExpression).includes("requestedRecordingSpeed"))
+              ? job
+              : { ...job, options: { ...job.options, recordingSpeed: 2 } },
+          },
+    );
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+    expect(updateExpressions().some((e) => e.includes("SET homeWorkerOfferState"))).toBe(true);
+  });
+
+  it("GPU必須タイトルは全段が容量不足ならcapacity_exhaustedで直ちに失敗させ、リースを返却して例外を投げる", async () => {
+    mockSpeedupJobStore({ ...job, game: "th06nc" });
+    ec2Mock.on(CreateFleetCommand).resolves(capacityFailure);
+
+    const { handler } = await import("./launch.js");
+    const { LaunchTiersExhaustedError } = await import("../../ec2.js");
+    await expect(
+      handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" }),
+    ).rejects.toBeInstanceOf(LaunchTiersExhaustedError);
+
+    expect(statusValues()).toEqual([
+      expect.objectContaining({ ":s": "failed", ":ec": "capacity_exhausted", ":done": "done" }),
+    ]);
+    expect(ddbMock.commandCalls(TransactWriteCommand).length).toBeGreaterThan(0);
+  });
+
+  it("CPU系ジョブも全段が容量不足なら直ちに失敗させる", async () => {
+    mockSpeedupJobStore(job);
+    ec2Mock.on(CreateFleetCommand).resolves(capacityFailure);
+
+    const { handler } = await import("./launch.js");
+    await expect(handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" })).rejects.toThrow(
+      /UnfulfillableCapacity/,
+    );
+
+    expect(statusValues()).toEqual([expect.objectContaining({ ":ec": "capacity_exhausted" })]);
+  });
+
+  it("等倍へのフォールバックが条件付き更新で弾かれたらジョブを失敗させずHandleFailureへ委ねる", async () => {
+    mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
+    ec2Mock.on(CreateFleetCommand).resolves(capacityFailure);
+    ddbMock
+      .on(UpdateCommand, { ExpressionAttributeValues: { ":reason": "gpu_capacity" } }, false)
+      .rejects(new ConditionalCheckFailedException({ message: "conditional", $metadata: {} }));
+
+    const { handler } = await import("./launch.js");
+    await expect(handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" })).rejects.toThrow();
+
+    expect(statusValues()).toEqual([]);
+  });
+
+  it("容量不足の記録に失敗しても次の段へ進む", async () => {
+    mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
+    ec2Mock
+      .on(CreateFleetCommand)
+      .resolvesOnce(capacityFailure)
+      .resolves({
+        Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.xlarge", AvailabilityZone: "a" }],
+      });
+    ddbMock
+      .on(UpdateCommand, { UpdateExpression: "SET capacityExhaustedTargets = :targets, updatedAt = :u" }, false)
+      .rejects(new Error("throttled"));
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(2);
+  });
+});

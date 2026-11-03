@@ -882,6 +882,8 @@ export class SattoriStack extends Stack {
         actions: [
           "ec2:CreateFleet",
           "ec2:CreateLaunchTemplateVersion",
+          // 試行ごとに作るバージョンを使い終えたら消す(Issue #315)。
+          "ec2:DeleteLaunchTemplateVersions",
           "ec2:RunInstances",
           "ec2:CreateTags",
           // 確保できたインスタンスのSpot単価をJobRecordへ記録するため(Issue #60、

@@ -65,8 +65,9 @@ export function requiresGpuRecording(job: {
  *
  * - `gpu_queue_wait`: GPU vCPU枠の待ち行列で`SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES`以上待たされた
  *   （`handlers/sfn/acquireGpuSlot.ts`）。
- * - `gpu_capacity`: GPU枠は取れたが`CreateFleet`が容量不足で失敗し、それが
- *   `SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT`回目以降の試行だった
+ * - `gpu_capacity`: GPU枠は取れたが起動できなかった。全リージョンのSpot在庫の枯渇
+ *   （`handlers/sfn/launch.ts`、Issue #315）か、クォータ超過などが
+ *   `SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT`回目以降の試行まで続いた場合
  *   （`handlers/sfn/handleFailure.ts`）。
  */
 export const SPEEDUP_FALLBACK_REASONS = ["gpu_queue_wait", "gpu_capacity"] as const;
@@ -81,12 +82,12 @@ export type SpeedupFallbackReason = (typeof SPEEDUP_FALLBACK_REASONS)[number];
 export const SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES = 30;
 
 /**
- * GPU経路の起動試行が容量不足（`UnfulfillableCapacity`等）で失敗したとき、それが
+ * GPU経路の起動試行がクォータ超過（`VcpuLimitExceeded`等）などで失敗したとき、それが
  * この回数目以降の試行なら等倍へフォールバックする（Issue #289）。1試行あたり
- * `WaitBeforeCheck`の3分を挟むため、3なら最初の起動から約6〜9分で見切ることになる
- * （`MAX_ATTEMPTS`=10回≒27分を待ってから`capacity_exhausted`で失敗させるより早い）。
+ * `WaitBeforeCheck`の3分を挟むため、3なら最初の起動から約6〜9分で見切ることになる。
+ * Spot在庫の枯渇は待たずにフォールバックするので、この定数は使わない（Issue #315）。
  */
-export const SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT = 3;
+export const SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT = 3;
 
 /**
  * GPUを確保できないときに等倍（CPU）へフォールバックできるジョブか（Issue #289）。
