@@ -16,6 +16,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-11-04",
+    ja: "倍速録画でGPUの録画サーバーに空きが無いとき、約10分待たずにすぐ通常の速度での録画へ切り替えるように。東方紅魔郷: New Classic (th06nc)・東方紺珠伝 (th15)・東方錦上京 (th20) は、どの地域にも空きが無いときに約30分待たずにすぐお知らせするように",
+    en: "When no GPU recording servers are available, higher-speed recordings now switch to normal-speed recording right away instead of after about 10 minutes. For Embodiment of Scarlet Devil: New Classic (th06nc), Legacy of Lunatic Kingdom (th15) and Unfinished Dream of All Living Ghost (th20), you are now told right away when no region has available servers, instead of after about 30 minutes",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/315",
+  },
+  {
     date: "2026-10-11",
     ja: "GPUを使う録画（東方紅魔郷: New Classic (th06nc)・東方紺珠伝 (th15)・東方錦上京 (th20) と倍速録画）で、録画サーバーが混雑しているときに別の地域の録画サーバーも使うように。混雑による録画の失敗が起きにくくなります",
     en: "Recordings that use a GPU (Embodiment of Scarlet Devil: New Classic (th06nc), Legacy of Lunatic Kingdom (th15), Unfinished Dream of All Living Ghost (th20), and higher-speed recordings) now also use recording servers in another region when the usual servers are busy, making failures due to congestion less likely",
