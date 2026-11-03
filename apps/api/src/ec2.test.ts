@@ -8,6 +8,7 @@ import {
   DescribeSpotPriceHistoryCommand,
   DescribeSubnetsCommand,
   EC2Client,
+  type FleetLaunchTemplateOverridesRequest,
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import { mockClient } from "aws-sdk-client-mock";
@@ -606,6 +607,10 @@ describe("isTierCapacityExhausted（Issue #315）", () => {
     ).toBe(false);
   });
 
+  it("組み合わせの書かれていないエラーだけなら使い切りと判定しない", () => {
+    expect(isTierCapacityExhausted([{ ErrorCode: "UnfulfillableCapacity" }], ["a"], types)).toBe(false);
+  });
+
   it("エラーが無ければ使い切りと判定しない", () => {
     expect(isTierCapacityExhausted([], ["a"], types)).toBe(false);
   });
@@ -629,7 +634,7 @@ describe("launchRecordingInstance（GPUの容量不足時リージョンフォ�
 
   /** CreateFleetの結果を、呼び出されたクライアントのリージョンごとに返し分ける。 */
   function fleetByRegion(results: Record<string, "ok" | string>) {
-    ec2Mock.on(CreateFleetCommand).callsFake(async (_input, getClient) => {
+    ec2Mock.on(CreateFleetCommand).callsFake(async (input, getClient) => {
       const region = await getClient().config.region();
       const result = results[region];
       if (result === "ok") {
@@ -643,7 +648,17 @@ describe("launchRecordingInstance（GPUの容量不足時リージョンフォ�
           ],
         };
       }
-      return { Instances: [], Errors: [{ ErrorCode: result, ErrorMessage: "nope" }] };
+      // 実際のCreateFleetと同じく、失敗した組み合わせごとに1件返す。
+      const overrides: FleetLaunchTemplateOverridesRequest[] =
+        input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+      return {
+        Instances: [],
+        Errors: overrides.map((override) => ({
+          ErrorCode: result,
+          ErrorMessage: "nope",
+          LaunchTemplateAndOverrides: { Overrides: override },
+        })),
+      };
     });
   }
 
@@ -753,8 +768,11 @@ describe("launchRecordingInstance（GPUの容量不足時リージョンフォ�
     // handleFailure.tsの容量不足判定は例外メッセージの部分一致で行う（Issue #282）。
     expect((err as Error).message).toContain("InsufficientInstanceCapacity");
     expect((err as Error).message).toContain("UnfulfillableCapacity");
+    // 失敗した組み合わせごとに1件（この設定は各リージョン2サブネット×1タイプ）。
     expect((err as FleetLaunchError).errorCodes).toEqual([
       "InsufficientInstanceCapacity",
+      "InsufficientInstanceCapacity",
+      "UnfulfillableCapacity",
       "UnfulfillableCapacity",
     ]);
     warnSpy.mockRestore();

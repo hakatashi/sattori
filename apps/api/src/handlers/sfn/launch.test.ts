@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CreateFleetCommand,
+  type CreateFleetCommandInput,
   CreateLaunchTemplateVersionCommand,
   DescribeSpotPriceHistoryCommand,
   DescribeSubnetsCommand,
@@ -519,10 +520,17 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
     expiresAt: "b",
     expectedFinishAt: "c",
   };
-  const capacityFailure = {
-    Instances: [],
-    Errors: [{ ErrorCode: "UnfulfillableCapacity", ErrorMessage: "no capacity" }],
-  };
+  /** 実際のCreateFleetと同じく、失敗した組み合わせごとに1件返す。 */
+  function capacityFailure(input: CreateFleetCommandInput) {
+    return {
+      Instances: [],
+      Errors: (input.LaunchTemplateConfigs?.[0]?.Overrides ?? []).map((override) => ({
+        ErrorCode: "UnfulfillableCapacity",
+        ErrorMessage: "no capacity",
+        LaunchTemplateAndOverrides: { Overrides: override },
+      })),
+    };
+  }
 
   function mockSpeedupJobStore(initial: JobRecord): void {
     // `fallBackToNativeSpeed`の書き込みを、後続の読み直しへ反映する。
@@ -572,7 +580,7 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
     mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
     ec2Mock
       .on(CreateFleetCommand)
-      .resolvesOnce(capacityFailure)
+      .callsFakeOnce(capacityFailure)
       .resolves({
         Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.xlarge", AvailabilityZone: "a" }],
       });
@@ -594,7 +602,7 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
   it("等倍へ落としたジョブは自宅ワーカーへオファーする", async () => {
     mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
     ddbMock.on(ScanCommand).resolves({ Items: [heartbeat()] });
-    ec2Mock.on(CreateFleetCommand).resolves(capacityFailure);
+    ec2Mock.on(CreateFleetCommand).callsFake(capacityFailure);
     // オファーの書き込みと同時にclaimされた状態を返す。
     ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).callsFake(async (input) =>
       input.ProjectionExpression
@@ -617,7 +625,7 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
 
   it("GPU必須タイトルは全段が容量不足ならcapacity_exhaustedで直ちに失敗させ、リースを返却して例外を投げる", async () => {
     mockSpeedupJobStore({ ...job, game: "th06nc" });
-    ec2Mock.on(CreateFleetCommand).resolves(capacityFailure);
+    ec2Mock.on(CreateFleetCommand).callsFake(capacityFailure);
 
     const { handler } = await import("./launch.js");
     const { LaunchTiersExhaustedError } = await import("../../ec2.js");
@@ -633,7 +641,7 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
 
   it("CPU系ジョブも全段が容量不足なら直ちに失敗させる", async () => {
     mockSpeedupJobStore(job);
-    ec2Mock.on(CreateFleetCommand).resolves(capacityFailure);
+    ec2Mock.on(CreateFleetCommand).callsFake(capacityFailure);
 
     const { handler } = await import("./launch.js");
     await expect(handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" })).rejects.toThrow(
@@ -643,9 +651,35 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
     expect(statusValues()).toEqual([expect.objectContaining({ ":ec": "capacity_exhausted" })]);
   });
 
+  it("前の試行でワーカーがfailedを書いたジョブ（リトライ中）も等倍へ落とせる条件で更新する", async () => {
+    mockSpeedupJobStore({
+      ...job,
+      status: "failed",
+      errorCode: "recording_failed",
+      options: { ...job.options, recordingSpeed: 2 },
+    });
+    ec2Mock
+      .on(CreateFleetCommand)
+      .callsFakeOnce(capacityFailure)
+      .resolves({
+        Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.xlarge", AvailabilityZone: "a" }],
+      });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 2, taskToken: "token-xyz" });
+
+    const fallback = ddbMock
+      .commandCalls(UpdateCommand)
+      .find((call) => String(call.args[0].input.UpdateExpression).includes("requestedRecordingSpeed"));
+    // ワーカーが書く`failed`はリトライの対象なので、`failed`では弾かない。
+    expect(fallback?.args[0].input.ConditionExpression).toContain("#s <> :done");
+    expect(fallback?.args[0].input.ExpressionAttributeValues).not.toHaveProperty(":failed");
+    expect(statusValues()).toEqual([expect.objectContaining({ ":s": "launching" })]);
+  });
+
   it("等倍へのフォールバックが条件付き更新で弾かれたらジョブを失敗させずHandleFailureへ委ねる", async () => {
     mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
-    ec2Mock.on(CreateFleetCommand).resolves(capacityFailure);
+    ec2Mock.on(CreateFleetCommand).callsFake(capacityFailure);
     ddbMock
       .on(UpdateCommand, { ExpressionAttributeValues: { ":reason": "gpu_capacity" } }, false)
       .rejects(new ConditionalCheckFailedException({ message: "conditional", $metadata: {} }));
@@ -654,13 +688,15 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
     await expect(handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" })).rejects.toThrow();
 
     expect(statusValues()).toEqual([]);
+    // WaitBeforeCheckの3分間リースを塞がない。
+    expect(ddbMock.commandCalls(TransactWriteCommand).length).toBeGreaterThan(0);
   });
 
   it("容量不足の記録に失敗しても次の段へ進む", async () => {
     mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
     ec2Mock
       .on(CreateFleetCommand)
-      .resolvesOnce(capacityFailure)
+      .callsFakeOnce(capacityFailure)
       .resolves({
         Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.xlarge", AvailabilityZone: "a" }],
       });

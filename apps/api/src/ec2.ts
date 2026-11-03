@@ -724,8 +724,8 @@ async function resolveFallbackSubnetIds(fallback: GpuFallbackConfig): Promise<st
  * その段の全サブネット・全候補がSpot在庫の枯渇で失敗したか（Issue #315）。1AZの失敗で段全体を
  * 外さないよう、クォータ超過などが1件でも混ざっていれば false にする。
  *
- * `CreateFleet`は失敗した組み合わせごとに`Errors`を返す（本番では1タイプ×サブネット数の件数）。
- * 組み合わせが書かれているのに報告の無いものがあれば、試し切っていないとみなす。
+ * `CreateFleet`は失敗した組み合わせごとに`Errors`を返す（2026-11-04に2タイプ×3サブネットで
+ * 実機確認）。報告の無い組み合わせがあれば、試し切っていないとみなす。
  */
 export function isTierCapacityExhausted(
   errors: CreateFleetError[],
@@ -743,11 +743,8 @@ export function isTierCapacityExhausted(
       o?.SubnetId && o.InstanceType ? [`${o.SubnetId}/${o.InstanceType}`] : [],
     ),
   );
-  return (
-    reported.size === 0 ||
-    subnetIds.every((subnetId) =>
-      candidateInstanceTypes.every((type) => reported.has(`${subnetId}/${type}`)),
-    )
+  return subnetIds.every((subnetId) =>
+    candidateInstanceTypes.every((type) => reported.has(`${subnetId}/${type}`)),
   );
 }
 

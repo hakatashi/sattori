@@ -114,7 +114,10 @@ async function handleTiersExhausted(
   }
 
   const from = recordingSpeedOf(job.options);
-  if (!(await fallBackToNativeSpeed(config.jobsTable, event.jobId, from, "gpu_capacity"))) {
+  const fellBack = await fallBackToNativeSpeed(config.jobsTable, event.jobId, from, "gpu_capacity");
+  // どちらの場合もGPUの段はもう使わない（リトライは`AcquireGpuSlot`で取り直す）。
+  await releaseGpuLease(config, event.jobId);
+  if (!fellBack) {
     // 緊急停止などで条件付き更新が弾かれた。判断は`HandleFailure`に任せる。
     throw exhausted;
   }
@@ -127,7 +130,6 @@ async function handleTiersExhausted(
       from,
     }),
   );
-  await releaseGpuLease(config, event.jobId);
 
   const nativeJob = await getJob(config.jobsTable, event.jobId);
   if (!nativeJob) {
