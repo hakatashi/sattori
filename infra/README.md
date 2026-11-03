@@ -206,6 +206,7 @@ Launch Templateは作成時にインスタンスプロファイルの存在を�
   `HandleFailure` → `ShouldRetry?`（`shouldRetry`なら`IncrementAttempt`して
   **`Launch`ではなく`AcquireGpuSlot`へ**、そうでなければ`Fail`）。詳細・設計根拠は
   [`docs/decisions/0056`](../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
+  Spot在庫の枯渇はこのループを使わない（[`0063`](../docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
   `HandleFailure`自体が例外を投げても
   （DynamoDB/EC2 APIの一時的なスロットリング等）実行全体を即失敗させず、
   3回リトライ後になお失敗すれば`HandleFailureCrashed`へ倒して実行を必ず終端させる

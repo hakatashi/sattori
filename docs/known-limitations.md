@@ -58,10 +58,11 @@ touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実�
   見せる時間が1秒より少し短くなる（Issue #266、[`decisions/0059`](decisions/0059-cut-range-decided-by-recorder.md)）。
   カット開始を決められなかった録画（MODログに再生確定の記録が無い等）では、映像の先頭から残るので
   マーカーが入りうる。
-- **GPU容量を確保できない場合は等倍へフォールバックする**（Issue #289、
-  [`decisions/0060`](decisions/0060-speedup-fallback-to-native-speed.md)）。ただし**th06nc・th15・th20は
-  等倍でもGPUが要るため対象外**で、従来どおりGPU待ち行列の上限（120分）か容量不足のリトライ枯渇で
-  失敗する。フォールバックの閾値（待ち30分・3回目の容量不足）は本番の実測に基づかない初期値。
+- **GPU容量を確保できない場合は等倍へフォールバックする**（Issue #289・#315、
+  [`decisions/0060`](decisions/0060-speedup-fallback-to-native-speed.md)・[`0063`](decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
+  ただし**th06nc・th15・th20は等倍でもGPUが要るため対象外**で、GPU待ち行列の上限（120分）か、全段の
+  Spot在庫の枯渇で失敗する。フォールバックの閾値（待ち30分・クォータ超過などの3回目）は本番の実測に
+  基づかない初期値。
 
 ### th06nc（東方紅魔郷: New Classic）は録画対応済み。ただしGPU専用インスタンスでのみ録画可能
 
@@ -377,7 +378,12 @@ GPU（g6f.2xlarge）は eu-south-2 で長期的に枯渇しており、容量不
   引き上げたと回答したが、適用されているのは On-Demand 枠のほうだった疑い）。訂正されるまで、
   フォールバック先で同時に動かせるのは g6f.2xlarge 1台だけ。
 - eu-north-1 にも余裕は無い（1a は取れず 1b 頼み、[`reports/2026-10-11`](reports/2026-10-11-gpu-capacity-eu-south-2-vs-eu-north-1.md)）。
-  両リージョンとも枯渇すれば従来どおり容量不足で失敗する。
+  **両リージョンとも枯渇すれば、th06nc・th15・th20は待たずに`capacity_exhausted`で失敗する**
+  （[`decisions/0063`](decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。回復までの
+  実績は中央値約13時間で、ユーザーが時間をあけて再投入するしかない。CPU系ジョブも全段の枯渇で
+  同じように失敗するが、2026-09-20〜11-04のログでは発生していない。
+- ジョブの中で容量不足になったリージョンは、そのジョブでは回復しても使わない（Spot中断後のリトライを含む）。
+  Spot中断後に残りのリージョンも枯渇していれば失敗する。
 - GPU 台帳（[`decisions/0056`](decisions/0056-gpu-vcpu-lease-and-queue.md)）は両リージョン合計で
   32 vCPU の1本のまま。リージョン別のクォータは見ていない。
 - タイトル資産のレプリカ（[`decisions/0062`](decisions/0062-gpu-fallback-region-local-output-and-title-assets.md)）は
