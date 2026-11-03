@@ -524,7 +524,7 @@ export async function fallBackToNativeSpeed(
           "speedupFallbackReason = :reason, updatedAt = :u",
         ConditionExpression:
           "#o.recordingSpeed = :from AND attribute_not_exists(requestedRecordingSpeed) " +
-          "AND attribute_not_exists(stopRequestedAt) AND NOT #s IN (:done, :failed)",
+          "AND attribute_not_exists(stopRequestedAt) AND #s <> :done",
         ExpressionAttributeNames: { "#o": "options", "#s": "status" },
         ExpressionAttributeValues: {
           ":native": NATIVE_RECORDING_SPEED,
@@ -532,7 +532,6 @@ export async function fallBackToNativeSpeed(
           ":reason": reason,
           ":u": new Date().toISOString(),
           ":done": "done",
-          ":failed": "failed",
         },
       }),
     );

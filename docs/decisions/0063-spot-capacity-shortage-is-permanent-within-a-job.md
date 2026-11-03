@@ -41,6 +41,9 @@
 - **クォータ超過の扱いは変えない**。台帳のずれが原因で次のリージョンでは解消しないため。この失敗での
   等倍フォールバック（`SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT`=3回目以降）も`HandleFailure`に残す。
 - **待ち行列の30分での等倍フォールバック（0060）は変えない**。
+- **`fallBackToNativeSpeed()`の条件を`failed`でも通す**（`done`・緊急停止だけ弾く）。ワーカーが書く
+  `failed`のままリトライ中のジョブは、起動に成功するまで`status`が`failed`のままで、弾くと等倍へ落ちず
+  全段スキップのまま試行回数を使い切っていた。
 - **Launch Templateのバージョンは試行ごとに消す**（`deleteLaunchTemplateVersion()`）。
 - **案内文を見直す**。枯渇は数日続くことがあるので「一時的な混雑」とは書かず、回復に数時間から数日
   かかりうると伝える（`errors.capacity_exhausted`、`CAPACITY_EXHAUSTED_MESSAGE`）。
@@ -49,8 +52,10 @@
 
 - **段の判定材料**: 直近45日のLaunchFnのログでは、`CreateFleet`の`Errors`はサブネットごとに1件ずつ
   返っていた（eu-south-2は3件、eu-north-1は2件）。`MaxSpotInstanceCountExceeded`との混在も実在する。
-  単一タイプの段でしか確かめていないので、複数候補のCPU系の段で`Errors`が全組み合わせを報告しないと、
-  使い切りと判定されず従来どおりのリトライになる（安全側）。
+  2026-11-04に起動しない価格（`MaxPrice`）の使い捨てリクエストで、2タイプ×3サブネットに6件の
+  `LaunchTemplateAndOverrides`付きエラーが返ることも確認した（エラーコードは`InvalidParameterValue`で、
+  容量不足のレスポンスの形そのものではない）。組み合わせの報告が欠ければ使い切りと判定せず、従来どおりの
+  リトライになる（安全側）。
 - **CPU系ジョブも同じ扱いにする理由**: 同じ45日で`create_fleet_failed`のCPU系ジョブは0件。実害の
   見込みが無く、分岐を増やす理由が無い。
 - **ステートマシンを変えない理由**: 実行中のジョブは旧定義のまま新しいLambdaを呼ぶので、Lambdaの中で
@@ -73,6 +78,8 @@
 - **`HandleFailure`で失敗を確定する。** 失敗の表示が3分遅れ、その間GPUリースも塞がる。
 - **`HandleFailure`の等倍フォールバックを完全に消す。** クォータ超過が続く倍速録画が、等倍で
   録れるのに失敗するようになる。
+- **`HandleFailure`の容量不足判定に`LaunchTiersExhaustedError`を足す。** 全段枯渇のジョブは`Launch`が
+  確定させるか等倍へ落とすので、`HandleFailure`へ来るのは緊急停止か完了の競合だけで、判定を使う場面が無い。
 - **`status === "failed"`だけでリトライを止める。** ワーカーが書く`failed`はSpot中断以外でも
   リトライの対象なので、`errorCode`も見る必要がある。
 - **成功した試行のバージョンを残して定期的に掃除する。** 消す役を別に持つ理由が無い。インスタンスの
