@@ -35,10 +35,12 @@ from .modlog import check_replay_desync, wait_for_log_marker
 from .process import attach_thprac, find_live_game_pid, kill_wine_and_wait
 from .timing import (
     audio_capture_rate_hz,
+    duplicate_rate_threshold_for_raw,
     is_speedup,
     recording_time_scale,
     scaled_confirmation_count,
     scaled_poll_count,
+    scaled_timeout_sec,
     speedup_multiplier,
 )
 from .vision import (
@@ -59,17 +61,21 @@ from .window import (
 )
 
 
-# 連続回数はいずれも「等倍録画での秒数」をポーリング回数で表したもの。倍速録画では
+# 連続回数はいずれも「等倍録画での秒数」をポーリング回数で表したもの。倍速・低速録画では
 # _monitor_until_end() が time_scale 倍して使う(ポーリング間隔は実時間駆動なので、
 # 回数を据え置くとゲーム内時間で必要な静止の長さが伸び縮みしてしまう)。
 STILL_CONSECUTIVE_REQUIRED = 8  # 8 * POLL_INTERVAL_SEC = 16秒(等倍録画時)
 POLL_INTERVAL_SEC = 2.0
 POST_START_GRACE_SEC = 15.0
 TIMEOUT_SEC = 60 * 60
+# 実時間での録画タイムアウトの上限。ステートマシンの`taskTimeout`(150分)から変換・アップロードの
+# 余裕(30分)を引いた値。1/3倍速は`TIMEOUT_SEC`が180分になり、`taskTimeout`に先に当たると
+# 録画を丸ごと失ってリトライを繰り返すので、ここで打ち切って録れたぶんを配信する。
+MAX_WALL_CLOCK_TIMEOUT_SEC = 120 * 60
 
 
 # テンプレート照合そのものの説明と閾値は `recording/vision.py` にある。
-END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録画時。倍速録画では
+END_TEMPLATE_CONSECUTIVE_REQUIRED = 2  # 2 * POLL_INTERVAL_SEC = 4秒(等倍録画時。倍速・低速録画では
                                        # time_scale 倍されるが、2回より減らさない)。
                                        # 動画圧縮ノイズ等による単発の偶然一致を弾くため連続一致を
                                        # 要求する(reports/34、scaled_confirmation_count())
@@ -387,13 +393,13 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
 
     時間に関する定数はすべてここで `time_scale` 倍する。ポーリングは実時間駆動
     (`POLL_INTERVAL_SEC`)なので、回数を据え置くと**ゲーム内時間で必要な静止の長さが
-    1/time_scale に伸び縮みする**——据え置くと、2倍速で16秒→32秒相当になり
-    終了検知が遅れ、スケールの掛け忘れはリプレイ途中の誤検知を招く(しかも classification は "good" に
+    1/time_scale に伸び縮みする**——据え置くと、2倍速で16秒→32秒相当になり終了検知が遅れ、
+    1/2倍速で16秒→8秒相当になりリプレイ途中の誤検知を招く(しかも classification は "good" に
     なるためリトライされず、途中で切れた動画がそのまま配信される)。
     """
     x, y, w, h = geometry
     post_start_grace_sec = POST_START_GRACE_SEC * time_scale
-    timeout_sec = TIMEOUT_SEC * time_scale
+    timeout_sec = min(TIMEOUT_SEC * time_scale, MAX_WALL_CLOCK_TIMEOUT_SEC)
     still_consecutive_required = scaled_poll_count(STILL_CONSECUTIVE_REQUIRED, time_scale)
     end_template_consecutive_required = scaled_confirmation_count(
         END_TEMPLATE_CONSECUTIVE_REQUIRED, time_scale,
@@ -404,9 +410,11 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     end_template_mad_threshold = detection.template_mad_threshold
     still_mask = detection.still_mask
 
-    # 倍速録画でもタイムアウトは縮めない(th06c/th06ncのメニュー操作は実時間のSleepで待つため)。
+    # MODのメニュー自動操作(dllmain.cppのScaledSleep)は低速録画では同じ比率で実時間が伸びるので、
+    # タイムアウトも伸ばす(1/3倍速のth15は約24秒かかる)。倍速録画では縮めない
+    # (th06c/th06ncのメニュー操作は実時間のSleepで待つため、`scaled_timeout_sec()`)。
     sequence_complete_time = wait_for_log_marker(
-        config.log_path, "sequence complete", timeout=20,
+        config.log_path, "sequence complete", timeout=scaled_timeout_sec(20, time_scale),
         poll_interval=0.1,
         log_all=True, seen_lines=seen_lines, log=log,
     )
@@ -713,7 +721,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     診断用証跡として`diagnostics_dir`へ書き出す(Issue #159、`save_diagnostics_snapshot()`)。
     """
     env = config.build_env()
-    # 録画速度(倍速録画 Issue #288)のスケール係数。等倍なら1.0で、
+    # 録画速度(倍速録画 Issue #288・低速録画 Issue #316)のスケール係数。等倍なら1.0で、
     # 時間依存パラメータはすべて従来値のままになる(実際のスケーリングは `_monitor_until_end()`)。
     time_scale = recording_time_scale(env)
     if is_speedup(time_scale):
@@ -723,8 +731,13 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
             f"SPEED_HACK_MULTIPLIER={env.get('SPEED_HACK_MULTIPLIER')}。実時間はゲーム内時間の"
             f"{time_scale:.2f}倍。変換時に等倍へ戻します)"
         )
-    # GPU描画(Xorg+nvidia)で録画する場合はNVENCで映像をエンコードする。GPU描画必須
-    # タイトル(th06nc/th15)とGPUワーカーで動くタイトル(`with_runtime_overrides()`)が該当。
+    elif time_scale != 1.0:
+        log(
+            f"低速録画モード: FPS_LIMIT_TARGET_HZ={env.get('FPS_LIMIT_TARGET_HZ')} "
+            f"(実時間はゲーム内時間の{time_scale:.2f}倍。変換時に等倍へ戻します)"
+        )
+    # GPU描画(Xorg+nvidia)で録画する場合はNVENCで映像をエンコードする。GPUワーカーで動く
+    # タイトル(th06nc・th15と`with_runtime_overrides()`)が該当。
     gpu_encode = config.gpu_display
     end_template = load_end_template(config.end_template_path)
     if end_template is None:
@@ -827,7 +840,8 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
         # 配信版でカットする範囲(Issue #266、`recording/cut.py`)。出力が無ければNone。
         "cut": cut,
         # この試行の録画に適用されていた実時間スケール(等倍なら1.0)。出力は等倍へ
-        # 戻す前の生データなので、呼び出し側の診断ログに使う。
+        # 戻す前の生データなので、重複フレーム率の判定にこの値が要る
+        # (`duplicate_rate_threshold_for_raw()`)。
         "time_scale": time_scale,
     }
 
@@ -923,9 +937,9 @@ def _record_with_retry(config, replay_path, output_path, *,
             log(f"WARNING: 試行{attempt}中にWineがクラッシュしたため、この試行を破棄してリトライします")
             continue
 
-        # 倍速録画はキャプチャ自体を60N fpsで行うため構造的な重複が無く、閾値は換算しない。
+        # 判定対象は等倍へ戻す前の生データなので、低速録画では閾値を換算する。
         time_scale = result.get("time_scale", 1.0)
-        threshold = max_duplicate_rate
+        threshold = duplicate_rate_threshold_for_raw(max_duplicate_rate, time_scale)
         # total_record_secではなくcontent_end_secを使う。短いリプレイでは終了検知の
         # 確認待ちで録画に付加される静止画面(選択画面等)が固定30秒窓の大半を占め、
         # 閾値超過と誤判定する(本番のth06ncジョブで確認、Issue #250・#304)。

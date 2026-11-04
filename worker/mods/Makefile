@@ -177,7 +177,7 @@ $(TARGET_TH128): th128_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LI
 
 # 9. th15 hook（32bit、GetDeviceState方式・D3D9フレームレート制限・DirectSound周波数フック、
 #    -static。touhou-recorder reports/82参照）
-$(TARGET_TH15): th15_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM)
+$(TARGET_TH15): th15_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_FPS_DISP)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -static -o $@ $^
 
