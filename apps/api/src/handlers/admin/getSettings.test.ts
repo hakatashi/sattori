@@ -57,6 +57,7 @@ describe("GET /admin/settings", () => {
       acceptingNewJobs: true,
       monthlyCostLimitUsd: DEFAULT_MONTHLY_COST_LIMIT_USD,
       forceGpuFallbackRegion: false,
+      skipFractionalGpuTiers: false,
       currentMonthCostUsd: 0,
       costLimitReached: false,
     });

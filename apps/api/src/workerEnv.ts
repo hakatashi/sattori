@@ -1,8 +1,8 @@
 import {
-  isSpeedupRecording,
+  NATIVE_RECORDING_SPEED,
   recordingSpeedOf,
+  recordingTargetHz,
   requiresGpuRecording,
-  speedupTargetHz,
 } from "@sattori/shared";
 import type {
   AdminJobRecord,
@@ -40,7 +40,7 @@ export interface WorkerEnvOptions {
  * そのまま `docker run` へ渡す。ワーカー側は「自分がどこで動いているか」を一切
  * 知らずに済み、環境差分はすべてこの関数の出力の違いとして表現される。
  *
- * 倍速録画（Issue #288）も「自宅ワーカーなら分岐する」ではなく「起動側が録画速度を
+ * 録画速度（Issue #288・#316）も「自宅ワーカーなら分岐する」ではなく「起動側が録画速度を
  * 指定する環境変数（`FPS_LIMIT_TARGET_HZ`）を足すかどうか」で表現する。ワーカーは
  * 自分がEC2にいるのか自宅にいるのかを知らないまま、渡された値に従うだけでよい。
  */
@@ -91,16 +91,16 @@ export function buildWorkerEnv(
     env.EXPECTED_SCORE = String(job.replayInfo.score);
   }
   const recordingSpeed = recordingSpeedOf(job.options);
-  if (isSpeedupRecording(recordingSpeed)) {
-    // 倍速録画（Issue #288）。MOD（QPC偽装・Present上限・音声周波数）と録画スクリプトの
-    // 実時間依存パラメータが、この1つの値（60×倍率）から同じ比率でスケールする。
+  if (recordingSpeed !== NATIVE_RECORDING_SPEED) {
+    // 倍速録画（Issue #288）・低速録画（Issue #316）。MOD（QPC偽装・Present上限・音声周波数）と
+    // 録画スクリプトの実時間依存パラメータが、この1つの値（60×倍率）から同じ比率でスケールする。
     // QPC偽装の倍率（`SPEED_HACK_MULTIPLIER`）はワーカーがここから導出するので渡さない
     // （2つの値が食い違う余地を作らないため、`worker/recording/config.py`）。
-    // 倍速録画は常にGPUインスタンスで走るため、割り当て先で無効化されることは無い。
-    env.FPS_LIMIT_TARGET_HZ = String(speedupTargetHz(recordingSpeed));
+    // 倍速はGPU、低速はEC2のCPU系でしか走らないため、割り当て先で無効化されることは無い。
+    env.FPS_LIMIT_TARGET_HZ = String(recordingTargetHz(recordingSpeed));
   }
   if (requiresGpuRecording(job)) {
-    // GPU系インスタンス（g6f.2xlarge）で起動するジョブ。ワーカーはGPU描画必須でない
+    // GPU系インスタンス（g6f.2xlarge・g6.2xlarge）で起動するジョブ。ワーカーはGPU描画必須でない
     // タイトルもGPU描画（Xorg+nvidia）で録り、録画・変換ともNVENCでエンコードする
     // （`worker/recording/timing.py`の`gpu_worker()`）。「どこで動くか」ではなく
     // 「何が使えるか」を表す値で、GPUジョブは自宅ワーカーへは決してオファーされない

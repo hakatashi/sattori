@@ -1,6 +1,7 @@
 import { requiresGpuRecording } from "./gpuRecording.js";
 import type { JobRecord } from "./job.js";
 import { OUTPUT_RETENTION_DAYS } from "./job.js";
+import { isSlowMotionRecording, recordingSpeedOf } from "./recordingSpeed.js";
 
 /**
  * 録画ジョブ1件あたりのコスト推定（Issue #60）。管理画面のジョブ詳細と
@@ -136,12 +137,16 @@ export const CLOUDFRONT_USD_PER_GB = 0.085;
  * Spot単価（$0.061〜0.117/時、中央値付近$0.075）と、2026-09-16〜30のSpot価格履歴
  * （eu-south-2a平均$0.075、2b平均$0.088。2cは$0.24前後と突出して高く
  * `price-capacity-optimized`では選ばれにくい）から$0.08を暫定値とする。
+ *
+ * `gpuFull`はth06ncの最後の段の`g6.2xlarge`（L4フル、Issue #316）。2026-11-04の実測で
+ * eu-south-2の各AZが$0.37〜0.45/時と`g6f`の数倍なので分ける（touhou-recorder reports/92）。
  */
 export const FALLBACK_SPOT_PRICE_USD_PER_HOUR = {
   xlarge: 0.045,
   "2xlarge": 0.092,
   "4xlarge": 0.118,
   gpu: 0.08,
+  gpuFull: 0.4,
 } as const;
 
 /**
@@ -328,6 +333,9 @@ function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD
   if (instanceType.startsWith("g6f.")) {
     return "gpu";
   }
+  if (instanceType.startsWith("g6.")) {
+    return "gpuFull";
+  }
   if (instanceType.endsWith(".4xlarge")) {
     return "4xlarge";
   }
@@ -336,7 +344,8 @@ function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD
 
 /**
  * ジョブからサイズ帯を推定する。GPU必須のジョブ（th06nc・th15・th20と倍速録画、
- * `requiresGpuRecording()`）はGPU系`gpu`帯、それ以外はタイトルで決まる: th11・th12・th128は
+ * `requiresGpuRecording()`）はGPU系`gpu`帯、CPU低速録画は`4xlarge`帯（Issue #316、
+ * `SLOW_MOTION_CANDIDATE_INSTANCE_TYPES`）、それ以外はタイトルで決まる: th11・th12・th128は
  * `.2xlarge`帯（`apps/api/src/ec2.ts`の`TH11_CANDIDATE_INSTANCE_TYPES` /
  * `TH12_CANDIDATE_INSTANCE_TYPES` / `TH128_CANDIDATE_INSTANCE_TYPES` /
  * `GPU_CANDIDATE_INSTANCE_TYPES`、touhou-recorder reports/40・73・80・81・82・89）。
@@ -348,6 +357,9 @@ function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD
 function sizeClassOfJob(job: Pick<JobCostInput, "game" | "options">): keyof typeof FALLBACK_SPOT_PRICE_USD_PER_HOUR {
   if (requiresGpuRecording(job)) {
     return "gpu";
+  }
+  if (isSlowMotionRecording(recordingSpeedOf(job.options))) {
+    return "4xlarge";
   }
   switch (job.game) {
     case "th11":

@@ -16,7 +16,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import type { JobRecord, WorkerHeartbeat } from "@sattori/shared";
+import type { JobRecord, RecordingSpeed, WorkerHeartbeat } from "@sattori/shared";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -533,14 +533,15 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
   }
 
   function mockSpeedupJobStore(initial: JobRecord): void {
-    // `fallBackToNativeSpeed`の書き込みを、後続の読み直しへ反映する。
+    // `fallBackRecordingSpeed`の書き込みを、後続の読み直しへ反映する。
     let current = initial;
     ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).callsFake(async () => ({ Item: current }));
     ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({ Item: lease });
     ddbMock.on(TransactWriteCommand).resolves({});
     ddbMock.on(UpdateCommand).callsFake(async (input) => {
       if (String(input.UpdateExpression).includes("requestedRecordingSpeed")) {
-        current = { ...current, options: { ...current.options, recordingSpeed: 1 } };
+        const to = input.ExpressionAttributeValues?.[":to"] as RecordingSpeed;
+        current = { ...current, options: { ...current.options, recordingSpeed: to } };
       }
       return {};
     });
@@ -622,6 +623,50 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
     expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
     expect(updateExpressions().some((e) => e.includes("SET homeWorkerOfferState"))).toBe(true);
   });
+
+  it.each([
+    ["th20", "Lunatic", "30"],
+    ["th15", "Hard", "30"],
+    ["th15", "Extra", "20"],
+  ] as const)(
+    "%s(%s)はGPUの段を使い切ったら自宅へオファーせずc7i.4xlargeの低速録画で起動する（Issue #316）",
+    async (game, difficulty, targetHz) => {
+      mockSpeedupJobStore({
+        ...job,
+        game,
+        replayInfo: { difficulty },
+        options: { ...job.options, recordingSpeed: 1 },
+      } as unknown as JobRecord);
+      ec2Mock
+        .on(CreateFleetCommand)
+        .callsFakeOnce(capacityFailure)
+        .resolves({
+          Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.4xlarge", AvailabilityZone: "a" }],
+        });
+
+      const { handler } = await import("./launch.js");
+      await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+      const fleets = ec2Mock.commandCalls(CreateFleetCommand);
+      expect(fleets).toHaveLength(2);
+      const config = fleets[1]?.args[0].input.LaunchTemplateConfigs?.[0];
+      expect(config?.LaunchTemplateSpecification?.LaunchTemplateId).toBe("lt-xxxx");
+      expect(config?.Overrides?.map((o) => o.InstanceType)).toEqual(
+        config?.Overrides?.map(() => "c7i.4xlarge"),
+      );
+      const userData = Buffer.from(
+        String(
+          ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[1]?.args[0].input.LaunchTemplateData
+            ?.UserData,
+        ),
+        "base64",
+      ).toString();
+      expect(userData).toContain(`-e FPS_LIMIT_TARGET_HZ='${targetHz}'`);
+      expect(userData).not.toContain("-e GPU_WORKER");
+      // 自宅ワーカーのハートビートは読みに行かない（低速録画はオファーしない）。
+      expect(ddbMock.commandCalls(ScanCommand)).toHaveLength(0);
+    },
+  );
 
   it("GPU必須タイトルは全段が容量不足ならcapacity_exhaustedで直ちに失敗させ、リースを返却して例外を投げる", async () => {
     mockSpeedupJobStore({ ...job, game: "th06nc" });

@@ -1,5 +1,5 @@
 import {
-  canFallBackToNativeSpeed,
+  fallbackRecordingSpeedFor,
   recordingSpeedOf,
   requiresGpuRecording,
   vcpusForInstanceType,
@@ -18,7 +18,7 @@ import {
   withdrawHomeWorkerOffer,
 } from "../../homeWorker.js";
 import {
-  fallBackToNativeSpeed,
+  fallBackRecordingSpeed,
   getJob,
   markJobLaunched,
   updateCapacityExhaustedTargets,
@@ -97,7 +97,8 @@ async function assignWorker(
 /**
  * ジョブが試せる段を容量不足で使い切ったときの処理（Issue #315、`docs/decisions/0063`）。
  *
- * 倍速録画（GPU必須タイトルを除く）は同じ呼び出しの中で等倍へ落として割り当て直す。
+ * 落とせる速度があるジョブ（`fallbackRecordingSpeedFor()`: 倍速録画は等倍、th15・th20は
+ * CPU低速）は同じ呼び出しの中で速度を落として割り当て直す。
  * ステートマシンへ戻すと`WaitBeforeCheck`の3分を待つことになるため。それ以外は待っても
  * 在庫が戻る見込みが無いのでその場で失敗させる。例外を投げ直すのは`waitForTaskToken`の
  * 実行を終わらせるためで、Catchの先の`HandleFailure`は後始末だけしてリトライしない。
@@ -108,13 +109,14 @@ async function handleTiersExhausted(
   event: LaunchTaskEvent,
   exhausted: LaunchTiersExhaustedError,
 ): Promise<void> {
-  if (!canFallBackToNativeSpeed(job)) {
+  const to = fallbackRecordingSpeedFor(job);
+  if (to === null) {
     await failForCapacity(config, event, exhausted);
     return;
   }
 
   const from = recordingSpeedOf(job.options);
-  const fellBack = await fallBackToNativeSpeed(config.jobsTable, event.jobId, from, "gpu_capacity");
+  const fellBack = await fallBackRecordingSpeed(config.jobsTable, event.jobId, from, to, "gpu_capacity");
   // どちらの場合もGPUの段はもう使わない（リトライは`AcquireGpuSlot`で取り直す）。
   await releaseGpuLease(config, event.jobId);
   if (!fellBack) {
@@ -128,15 +130,16 @@ async function handleTiersExhausted(
       attempt: event.attempt,
       reason: "gpu_capacity",
       from,
+      to,
     }),
   );
 
-  const nativeJob = await getJob(config.jobsTable, event.jobId);
-  if (!nativeJob) {
+  const fallenBackJob = await getJob(config.jobsTable, event.jobId);
+  if (!fallenBackJob) {
     throw new Error(`ジョブが見つかりません: ${event.jobId}`);
   }
   try {
-    await assignWorker(config, nativeJob, event);
+    await assignWorker(config, fallenBackJob, event);
   } catch (err) {
     if (err instanceof LaunchTiersExhaustedError) {
       await failForCapacity(config, event, err);
@@ -215,26 +218,25 @@ async function launchOnEc2(
     maxVcpu = lease.vcpu;
   }
 
-  // 管理設定でフォールバック先リージョンの強制が有効なら、一次リージョンを飛ばす
-  // （Issue #296、本番での実機検証用）。設定の読み取り失敗でGPUジョブを落とさない。
-  const forceFallbackRegion = isGpuJob && config.ec2.gpuFallback !== null
-    ? await getSettings(config.settingsTable)
-        .then((settings) => settings.forceGpuFallbackRegion)
-        .catch((err: unknown) => {
-          console.error(
-            JSON.stringify({
-              event: "launch_settings_read_failed",
-              jobId: event.jobId,
-              message: err instanceof Error ? err.message : String(err),
-            }),
-          );
-          return false;
-        })
-    : false;
+  // 管理設定で起動する段の強制が有効なら従う（Issue #296・#316、本番での実機検証用）。
+  // 設定の読み取り失敗でGPUジョブを落とさない。
+  const settings = isGpuJob
+    ? await getSettings(config.settingsTable).catch((err: unknown) => {
+        console.error(
+          JSON.stringify({
+            event: "launch_settings_read_failed",
+            jobId: event.jobId,
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
+        return null;
+      })
+    : null;
 
   const instance = await launchRecordingInstance(config, job, event.taskToken, {
     maxVcpu,
-    forceFallbackRegion,
+    forceFallbackRegion: settings?.forceGpuFallbackRegion ?? false,
+    skipFractionalGpuTiers: settings?.skipFractionalGpuTiers ?? false,
     onTierExhausted: (tierIds) => recordExhaustedTiers(config, event.jobId, tierIds),
   });
   // **`instanceId` の永続化を他の更新より先に行う**（Issue #23）。`CreateFleet` が

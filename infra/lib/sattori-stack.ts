@@ -974,9 +974,8 @@ export class SattoriStack extends Stack {
       // 内訳は「録画自体のタイムアウト + 720pアップスケール変換・S3アップロード・
       // DynamoDB更新・taskToken通知の余裕(30分)」。
       //
-      // 録画のタイムアウト(`worker/recording/pipeline.py`の`TIMEOUT_SEC`)は等倍で60分。
-      // 低速録画(旧Issue #68、実時間が2倍かかり120分になった)は廃止したが、デプロイ時点で
-      // 走っている旧ジョブへの影響を避けるためこの値は縮めていない(120 + 30 = 150分)。
+      // 録画のタイムアウト(`worker/recording/pipeline.py`の`TIMEOUT_SEC`)は等倍で60分、
+      // 低速録画(Issue #316)で実時間120分が上限(`MAX_WALL_CLOCK_TIMEOUT_SEC`)。120 + 30 = 150分。
       // このフェイルセーフはジョブごとに変えられないが、ハートビート(下記、15分)が実際の
       // 死活監視を担っており、ワーカーが黙ればそちらが先に発火するため不利にはならない。
       taskTimeout: sfn.Timeout.duration(Duration.minutes(150)),

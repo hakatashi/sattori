@@ -67,7 +67,8 @@ export interface RecordingOptions {
    */
   th06ncHighResolution: boolean;
   /**
-   * 録画速度（Issue #288、倍速録画）。1〜4倍速。詳細と定数は `recordingSpeed.ts` 参照。
+   * 録画速度（Issue #288、倍速録画）。1〜4倍速と、GPUを確保できないth15・th20の低速
+   * （1/2・1/3、Issue #316）。詳細と定数は `recordingSpeed.ts` 参照。
    *
    * **2倍速以上はGPUインスタンス必須**で、自宅ワーカーへはオファーしない
    * （`requiresGpuRecording()`）。
@@ -404,11 +405,11 @@ export interface JobRecord {
   gpuQueuePosition?: number;
   gpuQueueEtaSeconds?: number;
   /**
-   * GPUを確保できなかったため倍速録画を等倍（CPU）へフォールバックしたジョブで、
-   * ユーザーが元々選んでいた録画速度（Issue #289、`docs/decisions/0060`）。フォールバックは
-   * `options.recordingSpeed`そのものを1へ書き換えることで行う——GPU要否・割り当て先・
+   * GPUを確保できなかったためCPUで録る速度へ落としたジョブで、ユーザーが元々選んでいた
+   * 録画速度（Issue #289・#316、`docs/decisions/0060`・`0064`）。フォールバックは
+   * `options.recordingSpeed`そのものを書き換えることで行う——GPU要否・割り当て先・
    * ワーカーへ渡す環境変数・コスト帯はすべて`options.recordingSpeed`から導かれるため、
-   * 書き換えた瞬間に以降の`AcquireGpuSlot`/`Launch`が等倍のジョブとして扱う。
+   * 書き換えた瞬間に以降の`AcquireGpuSlot`/`Launch`がCPUのジョブとして扱う。
    * このフィールドは表示（ジョブページの注意書き）と運用調査のための記録で、
    * フォールバックしていないジョブには属性自体が無い。
    */

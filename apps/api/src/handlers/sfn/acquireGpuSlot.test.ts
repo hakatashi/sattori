@@ -356,7 +356,7 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       expect(result).toEqual({ jobId: "job-1", attempt: 1, acquired: true, timedOut: false, waitSeconds: 0 });
       expect(fallbackUpdates()).toHaveLength(1);
       expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
-        ":native": 1,
+        ":to": 1,
         ":from": 2,
         ":reason": "gpu_queue_wait",
       });
@@ -415,9 +415,26 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       expect(fallbackUpdates()).toHaveLength(0);
     });
 
-    it("GPU必須タイトル(th15)の倍速録画はフォールバックしない(等倍でもGPUが要る)", async () => {
+    it("th15は30分以上待ったらCPU低速録画へ書き換える（Issue #316）", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: { ...gpuJob, game: "th15" } });
+      waitedFor(31);
+      ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+        Items: [waitingEntry("job-0", -60), waitingEntry("job-1", 0)],
+      });
+      ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({ Items: [] });
+
+      const { handler } = await import("./acquireGpuSlot.js");
+      const result = await handler({ jobId: "job-1", attempt: 1 });
+
+      expect(result.acquired).toBe(true);
+      expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
+        ":to": 1 / 2,
+      });
+    });
+
+    it("th06ncの倍速録画はフォールバックしない(等倍でもGPUが要る)", async () => {
       ddbMock.on(GetCommand).resolves({
-        Item: { ...gpuJob, options: { ...gpuJob.options, recordingSpeed: 2 } },
+        Item: { ...gpuJob, game: "th06nc", options: { ...gpuJob.options, recordingSpeed: 2 } },
       });
       waitedFor(31);
       ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({

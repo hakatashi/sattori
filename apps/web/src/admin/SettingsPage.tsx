@@ -28,7 +28,7 @@ export function SettingsPage() {
   const { data, loading, error, reload } = useAdminResource((t) => fetchAdminSettings(t), []);
 
   const [limitInput, setLimitInput] = useState("");
-  const [saving, setSaving] = useState<"killSwitch" | "limit" | "gpuRegion" | null>(null);
+  const [saving, setSaving] = useState<"killSwitch" | "limit" | "gpuRegion" | "gpuTiers" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // サーバー側の値が届いたら入力欄を初期化する（再取得のたびに上書きされないよう、
@@ -88,6 +88,30 @@ export function SettingsPage() {
     setSaving("limit");
     setActionError(null);
     updateAdminSettings(token, { monthlyCostLimitUsd: parsed })
+      .then(() => reload())
+      .catch((err: unknown) => {
+        if (err instanceof AdminUnauthorizedError) {
+          onUnauthorized();
+          return;
+        }
+        setActionError(err instanceof Error ? err.message : "不明なエラーが発生しました");
+      })
+      .finally(() => setSaving(null));
+  };
+
+  const handleToggleSkipFractionalGpuTiers = () => {
+    const next = !data.skipFractionalGpuTiers;
+    const confirmed = window.confirm(
+      next
+        ? "以降のGPUジョブでg6f.2xlargeを試しません。th06ncはg6.2xlargeで起動し、th15・th20はCPU低速録画へ、倍速録画は等倍へ落ちます。実機検証のための設定です。検証が終わったら必ず解除してください。よろしいですか？"
+        : "GPUジョブの起動を通常どおりに戻します。よろしいですか？",
+    );
+    if (!confirmed) {
+      return;
+    }
+    setSaving("gpuTiers");
+    setActionError(null);
+    updateAdminSettings(token, { skipFractionalGpuTiers: next })
       .then(() => reload())
       .catch((err: unknown) => {
         if (err instanceof AdminUnauthorizedError) {
@@ -221,6 +245,33 @@ export function SettingsPage() {
             : data.forceGpuFallbackRegion
               ? "通常の起動に戻す"
               : "フォールバック先を強制する"}
+        </button>
+      </div>
+
+      <div className={styles.card}>
+        <h2 className={styles.cardHeading}>GPUの最後の段の強制</h2>
+        <p className={styles.cardNote}>
+          これを有効にすると、GPUジョブはg6f.2xlargeを試しません。th06ncはg6.2xlargeで起動し、
+          th15・th20はCPU低速録画へ、倍速録画は等倍へ落ちます。フォールバック先の実機検証
+          （Issue #316）用の設定で、検証後は必ず解除してください。
+        </p>
+        <p className={styles.status}>
+          現在の状態:{" "}
+          <span className={data.skipFractionalGpuTiers ? styles.statusStopped : styles.statusOk}>
+            {data.skipFractionalGpuTiers ? "g6f.2xlargeを飛ばしている" : "通常（g6f.2xlargeから試す）"}
+          </span>
+        </p>
+        <button
+          type="button"
+          className={styles.button}
+          onClick={handleToggleSkipFractionalGpuTiers}
+          disabled={saving !== null}
+        >
+          {saving === "gpuTiers"
+            ? "更新中…"
+            : data.skipFractionalGpuTiers
+              ? "通常の起動に戻す"
+              : "g6f.2xlargeを飛ばす"}
         </button>
       </div>
 
