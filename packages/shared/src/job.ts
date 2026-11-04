@@ -218,6 +218,12 @@ export interface JobRecord {
    */
   workerRegion?: string;
   /**
+   * このジョブの中で容量不足になった起動手段の段（`gpu:eu-south-2`など、`launchTiersFor()`の
+   * `id`、Issue #315、`docs/decisions/0063`）。リトライ（Spot中断後など）では飛ばす。
+   * 記録の無いジョブには属性自体が無い。
+   */
+  capacityExhaustedTargets?: string[];
+  /**
    * ワーカーがS3からダウンロードしたタイトル資産（`titles/{game}/assets.tar.gz`）の
    * バイト数（Issue #296）。リージョン間転送料の推定（`cost.ts`）の入力。ワーカーは
    * 起動先のリージョンを知らないまま常に記録する（`worker/title_assets.py`）。

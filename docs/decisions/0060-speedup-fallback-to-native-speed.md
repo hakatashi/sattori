@@ -1,6 +1,6 @@
 # 0060. GPUを確保できない倍速録画ジョブは`options.recordingSpeed`を1へ書き換えて等倍(CPU)へ落とす
 
-- **状態**: 有効
+- **状態**: 有効（ただし「3回目以降の容量不足で等倍へ落とす」は[`0063`](0063-spot-capacity-shortage-is-permanent-within-a-job.md)で置き換え済み。Spot在庫の枯渇は`Launch`の中で待たずに落とす。クォータ超過などの3回目以降と、待ち行列の30分は引き続き有効）
 - **決定日**: 2026-10-09
 - **対象**: packages/shared / apps/api / apps/web
 - **関連**: Issue #289、#288、`docs/decisions/0056-gpu-vcpu-lease-and-queue.md`、

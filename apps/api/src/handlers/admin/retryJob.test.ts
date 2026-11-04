@@ -68,6 +68,16 @@ async function invoke(jobId?: string): Promise<APIGatewayProxyStructuredResultV2
 }
 
 describe("buildRetryJob", () => {
+  it("容量不足で使い切った段は引き継がない(Issue #315)", () => {
+    const retried = buildRetryJob(
+      { ...failedJob, capacityExhaustedTargets: ["gpu:eu-south-2"] },
+      "job-2",
+      new Date("2026-08-01T00:00:00.000Z"),
+    );
+
+    expect(retried.capacityExhaustedTargets).toBeUndefined();
+  });
+
   it("入力側のフィールドを引き継ぎ、実行結果側を初期化する", () => {
     const retried = buildRetryJob(failedJob, "job-2", new Date("2026-08-01T00:00:00.000Z"));
 
