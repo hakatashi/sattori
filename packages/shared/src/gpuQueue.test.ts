@@ -38,6 +38,7 @@ describe("vcpusForInstanceType", () => {
   it("候補タイプのvCPU数を返す", () => {
     expect(vcpusForInstanceType("g6f.xlarge")).toBe(4);
     expect(vcpusForInstanceType("g6f.2xlarge")).toBe(8);
+    expect(vcpusForInstanceType("g6.2xlarge")).toBe(8);
   });
 
   it("候補外のタイプはnull", () => {
