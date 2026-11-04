@@ -10,12 +10,16 @@ th15はwined3d(D3D9→OpenGL)で描画するタイトルであり、Xvfb+llvmpip
 描画)でもメニュー・大半のステージは60fps付近で動作するが、Extraステージの高負荷
 演出区間ではCPUコア数を増やしても解消しない処理落ちが発生する。GPU(wined3d+
 OpenGL、DXVKではない)を使うことでこれが解消することを実機検証済みのため
-(touhou-recorder reports/82)、th06ncと同じ`g6f`系GPUインスタンス(`gpu_display=True`)
-で録画する。ただし**DXVKは使わない**(`dxvk_dll_overrides`は指定しない。th15の
-Vulkan実装がDXVKの要求機能を満たさず起動できないことを実機確認済み、reports/82)。
+(touhou-recorder reports/82)、th06ncと同じ`g6f`系GPUインスタンスで録画する。ただし
+**DXVKは使わない**(`dxvk_dll_overrides`は指定しない。th15のVulkan実装がDXVKの要求機能を
+満たさず起動できないことを実機確認済み、reports/82)。
+
+GPUを確保できないときはCPUインスタンスの低速録画へ落ちる(Issue #316、reports/91)。起動側が
+`GPU_WORKER=1`を渡さないので、Xvfb+wined3d+llvmpipeで描画する。
 """
 from recording import cli
 from recording.config import GameConfig
+from recording.timing import gpu_worker
 
 
 def build_config(pulse_sink):
@@ -28,10 +32,11 @@ def build_config(pulse_sink):
         xvfb_screen="1400x1100x24",
         # th125以降の仕様。cfg/リプレイは%APPDATA%配下から読まれる。
         uses_appdata_profile=True,
-        # GPU描画(Xorg+NVIDIA GRIDドライバ)必須(reports/82、docs/titles/th15.md)。
+        # GPUワーカーではGPU描画(Xorg+NVIDIA GRIDドライバ)で録る(reports/82、docs/titles/th15.md)。
         # DXVKはVulkan機能不足で起動できないため使わず、wined3d(OpenGL)のまま
-        # GPU上で描画する(dxvk_dll_overridesは指定しない)。
-        gpu_display=True,
+        # GPU上で描画する(dxvk_dll_overridesは指定しない)。poll_side_streamを立てない
+        # 既存の挙動を保つため、`with_runtime_overrides()`には任せずここで決める。
+        gpu_display=gpu_worker(),
         # Xorg+nvidia環境ではウィンドウが期待の1280x960ではなくCRTCの既定モード
         # (1024x768)へ縮小される(th06ncと同じ既知の症状)ため、明示的に切り替える。
         crtc_mode="1280x960",

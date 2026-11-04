@@ -30,9 +30,18 @@ def test_build_config_reads_cfg_and_replay_from_the_appdata_profile():
     assert config.cfg_filename == "th15.cfg"
 
 
-def test_build_config_uses_gpu_display_without_dxvk():
-    # GPU描画必須(Issue #82)。th06ncと異なりDXVKはVulkan機能不足で起動できない
+def test_build_config_uses_xvfb_without_gpu_worker(monkeypatch):
+    # GPUを確保できないときのCPU低速録画(Issue #316)。起動側がGPU_WORKERを渡さない。
+    monkeypatch.delenv("GPU_WORKER", raising=False)
+    config = record_th15.build_config("sattori_job_test")
+
+    assert config.gpu_display is False
+
+
+def test_build_config_uses_gpu_display_without_dxvk(monkeypatch):
+    # GPUワーカー(Issue #82)。th06ncと異なりDXVKはVulkan機能不足で起動できない
     # ため使わず、wined3d(OpenGL)のままGPUを使う(touhou-recorder reports/82)。
+    monkeypatch.setenv("GPU_WORKER", "1")
     config = record_th15.build_config("sattori_job_test")
 
     assert config.gpu_display is True
