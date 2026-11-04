@@ -58,18 +58,25 @@ touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実�
   見せる時間が1秒より少し短くなる（Issue #266、[`decisions/0059`](decisions/0059-cut-range-decided-by-recorder.md)）。
   カット開始を決められなかった録画（MODログに再生確定の記録が無い等）では、映像の先頭から残るので
   マーカーが入りうる。
-- **GPU容量を確保できない場合は等倍へフォールバックする**（Issue #289・#315、
-  [`decisions/0060`](decisions/0060-speedup-fallback-to-native-speed.md)・[`0063`](decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
-  ただし**th06nc・th15・th20は等倍でもGPUが要るため対象外**で、GPU待ち行列の上限（120分）か、全段の
-  Spot在庫の枯渇で失敗する。フォールバックの閾値（待ち30分・クォータ超過などの3回目）は本番の実測に
-  基づかない初期値。
+- **GPU容量を確保できない場合は速度を落とす**（Issue #289・#315・#316、
+  [`decisions/0060`](decisions/0060-speedup-fallback-to-native-speed.md)・[`0063`](decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)・[`0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
+  通常のタイトルは等倍へ、th15・th20はCPU低速録画へ落ちる。**th06ncだけは落とす先が無く**、GPU待ち行列の
+  上限（120分）か全段のSpot在庫の枯渇で失敗する。フォールバックの閾値（待ち30分・クォータ超過などの
+  3回目）は本番の実測に基づかない初期値。
+- **CPU低速録画の品質はGPU録画より落ちる**（[`decisions/0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。ボムやスペルカード終了時に
+  一時的なコマ落ちがあり、高負荷のあとはBGMが映像より先行する（th20で約0.5秒、touhou-recorder
+  reports/91 §6）。実時間は尺の約2倍（th15 Extraは約3倍）。**ワーカー経由のAWS実機（`c7i.4xlarge`）での
+  E2Eは未実施**で、検証は`recorder/`での実機とこのリポジトリのワーカーのローカル実行に分かれている。
+  `c7i.4xlarge`の1タイプしか候補が無く、Spot中断は録画からやり直し（reports/91 §7）。
+- **`g6.2xlarge`も枯渇しうる**。実起動の成否は同じ日でも変わる（touhou-recorder reports/92 §6）。
+  倍速のth06ncは`g6f`と同じく配信版が約45fpsに落ちる（#322）。
 
 ### th06nc（東方紅魔郷: New Classic）は録画対応済み。ただしGPU専用インスタンスでのみ録画可能
 
 2026-09-10 発売の「東方紅魔郷: New Classic」は録画対応済み（Issue #241、
 [`worker/docs/titles/th06nc.md`](../worker/docs/titles/th06nc.md)）。**GPU描画
 （Xorg+NVIDIA GRIDドライバ+DXVK）が必須のタイトルで、GPU系インスタンス
-（`g6f.2xlarge`）で録画される**。Xvfb+wined3d+llvmpipe（既存9タイトルの方式）では720pで9.1fpsしか出ず
+（`g6f.2xlarge`、枯渇時は`g6.2xlarge`）で録画される**。Xvfb+wined3d+llvmpipe（既存9タイトルの方式）では720pで9.1fpsしか出ず
 60fpsに遠く届かないため（touhou-recorder reports/78 §5）。自宅ワーカー（GPU非搭載）
 には常にオファーされない
 （[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
@@ -108,7 +115,7 @@ wineserverコールドスタートによる録画失敗しやすさは`worker/do
 重複フレーム率計測不能（`None`）を異常として扱っていない問題も、th06nc対応と合わせて
 修正していない（実機観測後に必要性を判断する）。
 
-### th15（東方紺珠伝）は録画対応済み。ただしGPU専用インスタンスでのみ録画可能
+### th15（東方紺珠伝）は録画対応済み。GPUを優先し、確保できなければCPU低速で録画する
 
 th15は録画対応済み（Issue #82、[`worker/docs/titles/th15.md`](../worker/docs/titles/th15.md)）。
 th06ncとは異なり**GPU描画が原理的に必須なわけではない**——wined3d(D3D9→OpenGL)描画で
@@ -116,7 +123,8 @@ th06ncとは異なり**GPU描画が原理的に必須なわけではない**—�
 動作する。ただしExtraステージの高負荷演出区間ではCPUコア数を増やしても解消しない
 処理落ちが発生し、GPU（wined3d+OpenGLのまま、DXVKではない）に切り替えることで解消
 することを実機確認したため（touhou-recorder reports/82）、品質を優先してth06ncと
-同じ`g6f`系GPUインスタンスに固定している。自宅ワーカー（GPU非搭載）には
+同じ`g6f`系GPUインスタンスを優先する。確保できなければ`c7i.4xlarge`の低速録画へ落ちる
+（[`decisions/0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。自宅ワーカー（GPU非搭載）には
 常にオファーされない（[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
 
 **入力ポーリング方式はth11/th20のGetKeyboardStateではなく、th06/07/08/10と同じ
@@ -293,9 +301,10 @@ Spot枯渇による起動失敗）が実害化したため撤回した
 2並列とも完走することは確認済み（詳細は
 [`reports/2026-08-09-home-worker-parallel-recording.md`](reports/2026-08-09-home-worker-parallel-recording.md)）。
 
-**th06nc・th15（GPU描画必須タイトル、Issue #241・#82）は自宅ワーカーへは常にオファー
+**th06nc・th15・th20（GPU描画必須タイトル、Issue #241・#82）は自宅ワーカーへは常にオファー
 されない**（GPU非搭載が前提のため。`apps/api/src/workerRouting.ts`の
 `offerToHomeWorker: false`、[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
+th15・th20の低速録画も同様（#179が未解決で、自宅でのCPU低速も未検証、[`decisions/0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
 自宅マシンにGPUを搭載する予定がある場合でも、現状の実装は明示的な許可リストを持たない
 ため、対応させるには別途改修が要る。
 
@@ -378,8 +387,9 @@ GPU（g6f.2xlarge）は eu-south-2 で長期的に枯渇しており、容量不
   引き上げたと回答したが、適用されているのは On-Demand 枠のほうだった疑い）。訂正されるまで、
   フォールバック先で同時に動かせるのは g6f.2xlarge 1台だけ。
 - eu-north-1 にも余裕は無い（1a は取れず 1b 頼み、[`reports/2026-10-11`](reports/2026-10-11-gpu-capacity-eu-south-2-vs-eu-north-1.md)）。
-  **両リージョンとも枯渇すれば、th06nc・th15・th20は待たずに`capacity_exhausted`で失敗する**
-  （[`decisions/0063`](decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。回復までの
+  **両リージョンとも枯渇すれば、th15・th20はCPU低速へ落ち、th06ncは`g6.2xlarge`（eu-south-2）を試し、それも
+  無ければ待たずに`capacity_exhausted`で失敗する**
+  （[`decisions/0063`](decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)・[`0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。回復までの
   実績は中央値約13時間で、ユーザーが時間をあけて再投入するしかない。CPU系ジョブも全段の枯渇で
   同じように失敗するが、2026-09-20〜11-04のログでは発生していない。
 - ジョブの中で容量不足になったリージョンは、そのジョブでは回復しても使わない（Spot中断後のリトライを含む）。
@@ -415,7 +425,7 @@ IP 単位のレート制限・reCAPTCHA 等の追加 bot ゲートは、**メー
 
 - リージョンや候補インスタンスタイプを変える場合は**単価定数も併せて見直すこと**。
   GPU系（`g6f.2xlarge`、th06nc・th15と倍速録画、Issue #241・#82・#288）はCPU系とは全く異なる価格帯
-  （`gpu`、暫定値$0.08/h）を別枠で持つ（`FALLBACK_SPOT_PRICE_USD_PER_HOUR`）。
+  （`gpu`、暫定値$0.08/h。`g6.2xlarge`は`gpuFull`、$0.40/h）を別枠で持つ（`FALLBACK_SPOT_PRICE_USD_PER_HOUR`）。
 - 自宅ワーカー（Issue #49）が処理したジョブは EC2/EBS/IPv4 の課金が発生しないため 0 で
   計上する（自宅の電気代・回線費は AWS の請求に現れず按分する意味も無いので一切計上しない）。
 - リトライで試行ごとにワーカー種別が変わったジョブの推定は過少になる（Issue #94）。
