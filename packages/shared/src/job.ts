@@ -225,11 +225,30 @@ export interface JobRecord {
    */
   titleAssetsBytes?: number;
   /**
+   * `titleAssetsBytes`をダウンロードしたタイトル資産バケットのリージョン（Issue #313）。
+   * GPUの容量不足フォールバック先で動いたワーカーは、そのリージョンのレプリカから読む
+   * （`docs/decisions/0062`）。ワーカーが`titleAssetsBytes`と同じ更新で書く。
+   * リージョン間転送料の推定（`cost.ts`）にだけ使い、属性が無ければ一次リージョン扱い。
+   */
+  titleAssetsRegion?: string;
+  /**
    * 生動画チェックポイント（変換フェーズ再開用、`worker/entrypoint.py`）として
    * S3へアップロードしたバイト数（Issue #296）。`titleAssetsBytes`と同じく
    * リージョン間転送料の推定にだけ使う。チェックポイント未到達・旧ジョブでは属性自体が無い。
    */
   rawCheckpointBytes?: number;
+  /**
+   * `outputPath`・`outputPath720p`・`posterImagePath`・`previewImagePath`が指すオブジェクトを
+   * 置いた出力バケットのリージョン（Issue #313、`docs/decisions/0062`）。ワーカーは自分が
+   * 動くリージョンの出力バケットへ書くため、GPUの容量不足フォールバック（eu-north-1）で
+   * 動いたジョブの出力はeu-north-1のバケットにある。ワーカーがパスを書く更新と**同じ
+   * UpdateItem**で書く（`worker/status.py`）ので、パスとリージョンが食い違う瞬間は無い。
+   *
+   * 配信URL（`apps/api/src/downloads.ts`がCloudFrontのパスへ`/<region>/`を前置する）と、
+   * リトライ時のチェックポイントの在りか（`workerEnv.ts`の`CHECKPOINT_BUCKET`）の判断に使う。
+   * 属性が無い（旧ジョブ・まだパスを書いていないジョブ）なら一次リージョン扱い。
+   */
+  outputRegion?: string;
   /**
    * リプレイの推定再生時間（秒）。`ReplayInfo.estimatedDurationSeconds` の値を
    * ジョブ作成時に転記したもの。ワーカーが録画フェーズの進捗率算出に使う

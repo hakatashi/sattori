@@ -108,6 +108,72 @@ def test_update_status_includes_poster_image_path(monkeypatch):
     assert "posterImagePath = :pp" in kwargs["UpdateExpression"]
 
 
+def test_update_status_records_the_output_region_with_the_paths(monkeypatch):
+    # パスとリージョンを同じ更新で書く(Issue #313)。
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    monkeypatch.setenv("OUTPUT_BUCKET_REGION", "eu-north-1")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "done", output_path="videos/job-1_720p.mp4")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "outputRegion = :or" in kwargs["UpdateExpression"]
+    assert kwargs["ExpressionAttributeValues"][":or"] == "eu-north-1"
+
+
+def test_update_status_does_not_touch_the_output_region_without_paths(monkeypatch):
+    # パスを書かない更新(statusだけの遷移)でリージョンだけ書き換えると、前の試行が別リージョンに
+    # 書いたパスと食い違う。
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    monkeypatch.setenv("OUTPUT_BUCKET_REGION", "eu-north-1")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "uploading", upload_total_bytes=10)
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "outputRegion" not in kwargs["UpdateExpression"]
+
+
+def test_update_status_omits_the_output_region_when_the_launcher_did_not_pass_it(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    monkeypatch.delenv("OUTPUT_BUCKET_REGION", raising=False)
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "done", output_path="videos/job-1_720p.mp4")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "outputRegion" not in kwargs["UpdateExpression"]
+
+
+def test_update_status_records_the_title_assets_region(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    monkeypatch.setenv("TITLE_ASSETS_BUCKET_REGION", "eu-north-1")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_status("job-1", "recording", title_assets_bytes=123)
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "titleAssetsRegion = :tar" in kwargs["UpdateExpression"]
+    assert kwargs["ExpressionAttributeValues"][":tar"] == "eu-north-1"
+
+
+def test_update_progress_records_the_output_region_with_the_preview(monkeypatch):
+    monkeypatch.setenv("JOBS_TABLE", "jobs-table")
+    monkeypatch.setenv("OUTPUT_BUCKET_REGION", "eu-north-1")
+    mock_resource = mock_dynamodb_resource(monkeypatch)
+    mock_table = mock_resource.Table.return_value
+
+    status.update_progress("job-1", 10, preview_image_path="progress/job-1/1.jpg")
+
+    _, kwargs = mock_table.update_item.call_args
+    assert "outputRegion = :or" in kwargs["UpdateExpression"]
+    assert kwargs["ExpressionAttributeValues"][":or"] == "eu-north-1"
+
+
 def test_update_status_omits_poster_image_path_when_not_extracted(monkeypatch):
     # poster抽出に失敗した場合、呼び出し側はこの引数自体を渡さない
     # (他のNone許容引数と同じく「このフィールドには触れない」)。

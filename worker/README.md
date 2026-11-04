@@ -84,8 +84,9 @@
 | `JOB_ID` | ジョブ ID(DynamoDB キー・出力キーに使用) |
 | `GAME` | タイトル(`th06` / `th06c` / `th06nc` / `th07` / `th08` / `th09` / `th10` / `th11` / `th12` / `th15` / `th20` / `th128`) |
 | `REPLAY_BUCKET` / `REPLAY_KEY` | アップロード済みリプレイの S3 位置 |
-| `OUTPUT_BUCKET` | 録画動画の出力先バケット(CloudFront オリジン) |
-| `TITLE_ASSETS_BUCKET` | タイトル固有アセットのバケット(§8) |
+| `OUTPUT_BUCKET` / `OUTPUT_BUCKET_REGION` | 録画動画・プレビュー画像の出力先バケット(CloudFront オリジン)とそのリージョン。GPUのフォールバック先で動くときはそのリージョンのバケット(Issue #313)。パスを書くときに`outputRegion`としてDynamoDBへ記録する(`status.py`)。リージョン省略時は`AWS_REGION` |
+| `CHECKPOINT_BUCKET` / `CHECKPOINT_BUCKET_REGION` | 変換から再開するときに読む生データのチェックポイントの置き場。前回の試行が別リージョンで動いていればそちらのバケット。省略時は`OUTPUT_BUCKET` |
+| `TITLE_ASSETS_BUCKET` / `TITLE_ASSETS_BUCKET_REGION` | タイトル固有アセットのバケット(§8)とそのリージョン。フォールバック先ではレプリカ |
 | `JOBS_TABLE` | ジョブ状態の DynamoDB テーブル名 |
 | `WATERMARK` | `1` でウォーターマーク合成、`0` で無効 |
 | `TASK_TOKEN` | Step Functions の `waitForTaskToken` トークン(省略時は通知をスキップ、ローカル検証用) |

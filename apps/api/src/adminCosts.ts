@@ -33,7 +33,7 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 /** Scanで取得するのはコスト推定に必要なフィールドだけに絞る（通信量・メモリ削減）。 */
 const COST_PROJECTION =
-  "#status, game, workerKind, createdAt, updatedAt, launchedAt, doneAt, instanceId, instanceType, spotPricePerHour, outputPath, outputPath720p, outputBytes, outputBytes720p, workerRegion, titleAssetsBytes, rawCheckpointBytes, #options.recordingSpeed";
+  "#status, game, workerKind, createdAt, updatedAt, launchedAt, doneAt, instanceId, instanceType, spotPricePerHour, outputPath, outputPath720p, outputBytes, outputBytes720p, workerRegion, titleAssetsBytes, rawCheckpointBytes, titleAssetsRegion, outputRegion, #options.recordingSpeed";
 // "status"・"options"はDynamoDBの予約語（`options`は録画速度だけを読む、Issue #288）。
 const COST_EXPRESSION_ATTRIBUTE_NAMES = { "#status": "status", "#options": "options" };
 
@@ -162,6 +162,9 @@ function normalizeJob(item: JobCostInput): JobCostInput {
     workerRegion: item.workerRegion,
     titleAssetsBytes: item.titleAssetsBytes,
     rawCheckpointBytes: item.rawCheckpointBytes,
+    // どのリージョンのバケットを使ったか（Issue #313）。欠損は一次リージョン扱い。
+    titleAssetsRegion: item.titleAssetsRegion,
+    outputRegion: item.outputRegion,
   };
 }
 

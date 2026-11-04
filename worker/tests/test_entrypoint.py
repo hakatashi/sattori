@@ -334,6 +334,25 @@ def test_does_not_cut_when_the_cut_result_is_missing_or_broken(entrypoint):
 # --- 変換から再開するかの判定 ---------------------------------------------
 
 
+def test_checkpoint_bucket_defaults_to_the_output_bucket(entrypoint):
+    """CHECKPOINT_BUCKET を渡さない旧Launch Lambdaとの組み合わせでも従来どおり動く。"""
+    assert entrypoint.CHECKPOINT_BUCKET == "output-bucket"
+
+
+def test_deletes_the_raw_checkpoint_from_the_checkpoint_bucket(entrypoint, monkeypatch):
+    """別リージョンから再開した場合、チェックポイントは元のバケットから消す(Issue #313)。"""
+    monkeypatch.setattr(entrypoint, "CHECKPOINT_BUCKET", "output-bucket-eun1")
+    deleted = []
+
+    class RecordingS3(FakeS3):
+        def delete_object(self, Bucket, Key):  # noqa: N803 - boto3のAPI名
+            deleted.append((Bucket, Key))
+
+    entrypoint.delete_raw_checkpoint(RecordingS3())
+
+    assert deleted == [("output-bucket-eun1", "videos/job-1.mp4")]
+
+
 def test_resumes_when_the_raw_checkpoint_is_actually_in_s3(entrypoint):
     assert entrypoint.raw_checkpoint_exists(FakeS3()) is True
 
@@ -368,19 +387,31 @@ def main_calls(entrypoint, monkeypatch, tmp_path):
     """`main()` を実S3・実スレッド無しで走らせ、どの経路を通ったかを記録する。"""
     calls = []
     monkeypatch.setattr(entrypoint, "WORK_DIR", str(tmp_path / "work"))
-    monkeypatch.setattr(entrypoint, "boto3", type("B", (), {"client": staticmethod(lambda name: FakeS3())}))
+    clients = []
+
+    def fake_client(name, **kwargs):
+        client = FakeS3()
+        client.region = kwargs.get("region_name")
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(entrypoint, "boto3", type("B", (), {"client": staticmethod(fake_client)}))
     monkeypatch.setattr(entrypoint, "InterruptionWatcher", FakeThread)
     monkeypatch.setattr(entrypoint, "TaskHeartbeat", FakeThread)
     monkeypatch.setattr(entrypoint, "notify_task_result", lambda ok, **k: calls.append(f"notify:{ok}"))
-    def fake_record(s3):
-        calls.append("record")
+    def fake_record(s3, *, title_assets_s3=None, replay_s3=None):
+        calls.append(f"record:{s3.region}:{title_assets_s3.region}:{replay_s3.region}")
         return 1.0, {"startSec": 3.0, "endSec": None}
 
     monkeypatch.setattr(entrypoint, "record", fake_record)
-    monkeypatch.setattr(entrypoint, "download_checkpoint_video", lambda s3: calls.append("download"))
+    monkeypatch.setattr(
+        entrypoint, "download_checkpoint_video", lambda s3: calls.append(f"download:{s3.region}"),
+    )
     monkeypatch.setattr(
         entrypoint, "convert_and_upload",
-        lambda s3, scale, cut: calls.append(f"convert:{scale}:{cut['startSec']}"),
+        lambda s3, scale, cut, *, checkpoint_s3: calls.append(
+            f"convert:{scale}:{cut['startSec']}:{s3.region}:{checkpoint_s3.region}",
+        ),
     )
     return calls
 
@@ -406,7 +437,7 @@ def test_main_records_from_scratch_when_the_checkpoint_is_gone(entrypoint, monke
 
     entrypoint.main()
 
-    assert main_calls == ["record", "convert:1.0:3.0", "notify:True"]
+    assert main_calls == ["record:None:None:None", "convert:1.0:3.0:None:None", "notify:True"]
 
 
 def test_main_resumes_from_the_checkpoint_with_its_recorded_time_scale(
@@ -420,7 +451,42 @@ def test_main_resumes_from_the_checkpoint_with_its_recorded_time_scale(
 
     entrypoint.main()
 
-    assert main_calls == ["download", "convert:2.0:1.5", "notify:True"]
+    assert main_calls == ["download:None", "convert:2.0:1.5:None:None", "notify:True"]
+
+
+def test_main_uses_the_bucket_regions_given_by_the_launcher(entrypoint, monkeypatch, main_calls):
+    """フォールバック先(Issue #313)で動くとき、出力とタイトル資産はそのリージョンのクライアントで、
+    リプレイは一次リージョン(AWS_REGION)のクライアントで扱う。"""
+    monkeypatch.setattr(entrypoint, "OUTPUT_BUCKET_REGION", "eu-north-1")
+    monkeypatch.setattr(entrypoint, "TITLE_ASSETS_BUCKET_REGION", "eu-north-1")
+    monkeypatch.setattr(entrypoint, "CHECKPOINT_BUCKET_REGION", "eu-south-2")
+    monkeypatch.setattr(entrypoint, "get_job", lambda job_id: {"status": "converting"})
+    monkeypatch.setattr(entrypoint, "raw_checkpoint_exists", lambda s3: False)
+
+    entrypoint.main()
+
+    assert main_calls == [
+        "record:eu-north-1:eu-north-1:None",
+        "convert:1.0:3.0:eu-north-1:eu-south-2",
+        "notify:True",
+    ]
+
+
+def test_main_resumes_from_a_checkpoint_in_another_region(entrypoint, monkeypatch, main_calls):
+    """前回の試行が別リージョンに置いたチェックポイントは、そのリージョンのクライアントで読む。"""
+    monkeypatch.setattr(entrypoint, "OUTPUT_BUCKET_REGION", "eu-south-2")
+    monkeypatch.setattr(entrypoint, "CHECKPOINT_BUCKET_REGION", "eu-north-1")
+    monkeypatch.setattr(entrypoint, "get_job", lambda job_id: {"status": "converting"})
+    seen = []
+    monkeypatch.setattr(
+        entrypoint, "raw_checkpoint_exists", lambda s3: seen.append(s3.region) or True,
+    )
+    monkeypatch.setattr(entrypoint, "read_checkpoint_metadata", lambda s3: (1.0, {"startSec": None, "endSec": None}))
+
+    entrypoint.main()
+
+    assert seen == ["eu-north-1"]
+    assert main_calls == ["download:eu-north-1", "convert:1.0:None:eu-south-2:eu-north-1", "notify:True"]
 
 
 def test_upload_video_attaches_metadata_when_given(entrypoint):

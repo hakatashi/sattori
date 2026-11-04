@@ -1,6 +1,6 @@
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import type { AdminJobDetailResponse, AdminJobDownloads } from "@sattori/shared";
-import { loadConfig } from "../../config.js";
+import { dataBucketsFor, loadConfig, mediaCdnOf } from "../../config.js";
 import {
   buildCdnUrl,
   buildFfmpegUpscaleLogKey,
@@ -31,24 +31,27 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   if (!job) {
     return error(404, "not_found", "ジョブが見つかりません");
   }
+  const cdn = mediaCdnOf(config);
 
   const replayUrl = (await objectExists(config.uploadBucket, job.replayKey))
     ? await createPresignedReplayDownloadUrl(config.uploadBucket, job.replayKey, `${job.jobId}.rpy`)
     : null;
 
   const videoUrl = job.outputPath
-    ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath, job, job.outputPath720p === null ? "delivery" : "raw")
+    ? buildVideoDownloadUrl(cdn, job.outputPath, job, job.outputPath720p === null ? "delivery" : "raw")
     : null;
   const video720pUrl = job.outputPath720p
-    ? buildVideoDownloadUrl(config.cdnDomain, job.outputPath720p, job, "delivery")
+    ? buildVideoDownloadUrl(cdn, job.outputPath720p, job, "delivery")
     : null;
   const previewImageUrl = job.previewImagePath
-    ? buildCdnUrl(config.cdnDomain, job.previewImagePath)
+    ? buildCdnUrl(cdn, job.outputRegion, job.previewImagePath)
     : null;
 
+  // ffmpegログは変換したワーカーのリージョンの出力バケットにある（Issue #313）。
   const ffmpegLogKey = buildFfmpegUpscaleLogKey(job.jobId);
-  const ffmpegLogUrl = (await objectExists(config.outputBucket, ffmpegLogKey))
-    ? await createPresignedFfmpegLogDownloadUrl(config.outputBucket, ffmpegLogKey)
+  const outputData = dataBucketsFor(config, job.outputRegion);
+  const ffmpegLogUrl = (await objectExists(outputData.outputBucket, ffmpegLogKey, outputData.region))
+    ? await createPresignedFfmpegLogDownloadUrl(outputData.outputBucket, ffmpegLogKey, outputData.region)
     : null;
 
   const downloads: AdminJobDownloads = {

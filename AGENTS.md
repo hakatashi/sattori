@@ -22,8 +22,8 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
 残している**（eu-south-2にSESが無いため。`SES_REGION`、`apps/api/src/ses.ts`。両者は
 `SattoriEdgeStack`にまとめてある、`infra/README.md`）。移設の経緯と受け入れた
 トレードオフは[`0001`](docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)。**GPUワーカーだけは
-eu-south-2のSpot枯渇時に`eu-north-1`で起動する**（データ面は移さずワーカーの`AWS_REGION`も
-eu-south-2のまま。EC2のAPIはリージョンを明示して呼ぶこと、[`0061`](docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)）。
+eu-south-2のSpot枯渇時に`eu-north-1`で起動する**（移すのは出力バケットとタイトル資産のレプリカだけで、`AWS_REGION`はeu-south-2のまま。
+EC2のAPIはリージョンを明示して呼ぶこと。配信URLは`outputRegion`を見て組む、[`0061`](docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)・[`0062`](docs/decisions/0062-gpu-fallback-region-local-output-and-title-assets.md)）。
 
 ```
 [ブラウザ: React/Vite SPA]

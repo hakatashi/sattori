@@ -60,3 +60,21 @@ export function gpuWorkerAmiIdFor(
   }
   return amiId;
 }
+
+/**
+ * フォールバック先リージョンの出力バケット名（Issue #313、`docs/decisions/0062`）。
+ * そこで動くワーカーは一次リージョンではなくこのバケットへ書き、本体の MediaCdn が
+ * `/<region>/*` のbehaviorから配信する。本体はCloudFrontのオリジン・IAM・Lambdaの環境変数を
+ * この名前から組み立てる（スタック間参照を張らないため、名前は決定的に導出する）。
+ */
+export function gpuFallbackOutputBucketName(account: string): string {
+  return `sattori-output-${account}-${GPU_FALLBACK_REGION}`;
+}
+
+/**
+ * フォールバック先リージョンのタイトル資産レプリカのバケット名（Issue #313）。本体の
+ * TitleAssetsBucket から S3 レプリケーションで自動複製する。
+ */
+export function gpuFallbackTitleAssetsBucketName(account: string): string {
+  return `sattori-title-assets-${account}-${GPU_FALLBACK_REGION}`;
+}
