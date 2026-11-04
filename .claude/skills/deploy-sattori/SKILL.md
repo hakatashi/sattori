@@ -184,6 +184,44 @@ aws ssm get-parameter --region "$SATTORI_REGION" --name /sattori/admin/token \
 eu-north-1のG系Spotクォータ（L-3819A6DF）も確認しておく。2026-10-11時点では8 vCPU
 （g6f.2xlarge 1台分）のままだった（`docs/known-limitations.md` §5）。
 
+### 4.1 フォールバック先の出力バケット・タイトル資産レプリカの初回セットアップ（Issue #313）
+
+フォールバック先へ出力バケットとタイトル資産レプリカを初めて足すデプロイで、1回だけ行う
+（[`decisions/0062`](../../../docs/decisions/0062-gpu-fallback-region-local-output-and-title-assets.md)）。
+§4をすでに済ませた環境が前提。
+
+1. 新しい環境変数（`OUTPUT_BUCKET_REGION`等）を読むワーカーイメージを、CPU系・GPU系ともに
+   §2のとおりpushする。GPU系はレプリカへの到着も確かめる。新しいイメージは、これらの
+   環境変数が無くても従来どおり動くので、先に出してよい。
+2. フォールバックスタックを先にデプロイする（バケットを作る）:
+   `pnpm --filter @sattori/infra exec cdk deploy SattoriGpuFallbackStack --require-approval never`
+3. `pnpm run deploy`で本体をデプロイする。本体には、S3レプリケーション設定・MediaCdnの
+   `/eu-north-1/*`・IAM・Lambdaの環境変数が入る。
+4. **既存のタイトル資産を一括コピーする**。S3レプリケーションは、設定より後に書かれたオブジェクトしか
+   複製しない:
+
+   ```bash
+   REPLICA="sattori-title-assets-${SATTORI_AWS_ACCOUNT_ID}-eu-north-1"
+   aws s3 sync "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/" "s3://${REPLICA}/titles/" \
+     --source-region eu-south-2 --region eu-north-1
+   # 件数とETagを突き合わせる（12タイトルぶん一致すること）
+   for r in "eu-south-2 ${SATTORI_TITLE_ASSETS_BUCKET}" "eu-north-1 ${REPLICA}"; do
+     set -- $r
+     aws s3api list-objects-v2 --region "$1" --bucket "$2" --prefix titles/ \
+       --query 'Contents[].[Key,ETag]' --output text | sort > "/tmp/assets-$1.txt"
+   done
+   diff /tmp/assets-eu-south-2.txt /tmp/assets-eu-north-1.txt && echo 一致
+   ```
+
+   マルチパートでアップロードされたオブジェクトは、`sync`のコピーでETagが変わることがある。
+   その場合はサイズで突き合わせる。ワーカーのキャッシュ（自宅ワーカーのみ）はETagを使うが、
+   自宅ワーカーは一次リージョンのバケットしか読まないので影響しない。
+5. §4の7と同じく、`forceGpuFallbackRegion`でGPUジョブを1本流す。次の4点を確かめる:
+   - ワーカーログに`s3://sattori-title-assets-…-eu-north-1`からのダウンロードが出ている
+   - 出力がeu-north-1の出力バケットにある
+   - `GET /jobs/{jobId}`の`downloadUrl`に`/eu-north-1/`が付いていて、200で落とせる
+   - 管理画面のコスト推定で、転送料が0になっている
+
 ## 関連
 
 - タイトル資産（ゲームデータ）の S3 アップロード → `upload-title-assets` skill

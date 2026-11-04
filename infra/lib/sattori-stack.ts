@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
+  Annotations,
   CfnOutput,
   Duration,
   Fn,
@@ -48,6 +49,8 @@ import {
   GPU_FALLBACK_SUBNET_TAG_KEY,
   GPU_WORKER_REMOTE_INSTANCE_PROFILE_NAME,
   GPU_WORKER_REPOSITORY_NAME,
+  gpuFallbackOutputBucketName,
+  gpuFallbackTitleAssetsBucketName,
   gpuWorkerAmiIdFor,
 } from "./gpu-fallback.ts";
 
@@ -160,15 +163,73 @@ export class SattoriStack extends Stack {
       comment: "Sattori 録画動画配信(response-content-dispositionをキャッシュキーに含める)",
     });
 
+    // GPUの容量不足フォールバック先（eu-north-1）に置いた出力バケット・タイトル資産レプリカ
+    // （Issue #313、`docs/decisions/0062`）。`SattoriGpuFallbackStack`が固定名で作る
+    // （スタック間参照は張らない、`gpu-fallback.ts`）。そこで動くワーカーはこちらを読み書きする。
+    const fallbackOutputBucket = s3.Bucket.fromBucketAttributes(this, "GpuFallbackOutputBucket", {
+      bucketName: gpuFallbackOutputBucketName(this.account),
+      region: GPU_FALLBACK_REGION,
+    });
+    const fallbackTitleAssetsBucket = s3.Bucket.fromBucketAttributes(
+      this,
+      "GpuFallbackTitleAssetsBucket",
+      { bucketName: gpuFallbackTitleAssetsBucketName(this.account), region: GPU_FALLBACK_REGION },
+    );
+
+    // `/eu-north-1/*`へのリクエストから先頭のリージョンを外してオリジンへ渡す（Issue #313）。
+    // フォールバック先のワーカーはS3のキー構成を変えずに書く（`videos/{jobId}_720p.mp4`等）ので、
+    // 配信パスだけにリージョンを付けて振り分ける。URLにリージョンを付けるのはAPIだけ
+    // （`apps/api/src/downloads.ts`の`cdnPathFor()`）。キャッシュキーは書き換え後のURIになるが、
+    // jobIdはリージョンを跨いで一意なので衝突しない。
+    const stripRegionPrefixFn = new cloudfront.Function(this, "MediaStripRegionPrefixFn", {
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+      comment: "Sattori: strip /<region>/ prefix for the fallback-region output bucket",
+      code: cloudfront.FunctionCode.fromInline(
+        [
+          "function handler(event) {",
+          "  var request = event.request;",
+          `  if (request.uri.indexOf('/${GPU_FALLBACK_REGION}/') === 0) {`,
+          `    request.uri = request.uri.substring(${GPU_FALLBACK_REGION.length + 1});`,
+          "  }",
+          "  return request;",
+          "}",
+        ].join("\n"),
+      ),
+    });
+
     // 動画配信用 CloudFront(OAC 経由の非公開配信, 無料枠でegress実質ゼロ)。
+    // 一次リージョンの出力バケットを既定のオリジンにし、フォールバック先の出力バケットは
+    // `/<region>/*`から配信する（Issue #313）。S3→CloudFrontのオリジン取得はリージョンを問わず
+    // 無料なので、どちらのバケットから配信しても費用は変わらない。フォールバック先のバケット
+    // ポリシー（OACの許可）は`SattoriGpuFallbackStack`側で付ける（インポートしたバケットには
+    // CDKがポリシーを書けないため）。
     const mediaDistribution = new cloudfront.Distribution(this, "MediaCdn", {
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(outputBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: mediaCachePolicy,
       },
+      additionalBehaviors: {
+        [`${GPU_FALLBACK_REGION}/*`]: {
+          origin: origins.S3BucketOrigin.withOriginAccessControl(fallbackOutputBucket),
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: mediaCachePolicy,
+          functionAssociations: [
+            {
+              function: stripRegionPrefixFn,
+              eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+            },
+          ],
+        },
+      },
       comment: "Sattori 録画動画配信",
     });
+    // インポートしたバケット（フォールバック先の出力バケット）にはOACのバケットポリシーを
+    // 書けないという警告。ポリシーは`SattoriGpuFallbackStack`側で付けてある。
+    Annotations.of(mediaDistribution).acknowledgeWarning(
+      "@aws-cdk/aws-cloudfront-origins:updateImportedBucketPolicyOac",
+      "OACの許可はSattoriGpuFallbackStackの出力バケットのポリシーで付けている（Issue #313）",
+    );
 
     // --- ジョブ状態(DynamoDB) ----------------------------------------------
 
@@ -378,6 +439,53 @@ export class SattoriStack extends Stack {
       ],
     });
 
+    // タイトル資産をGPUの容量不足フォールバック先（eu-north-1）のレプリカへ自動複製する
+    // （Issue #313、`docs/decisions/0062`）。そこで動くワーカーがeu-south-2から資産を読むと、
+    // 1件あたり最大1.3GBのリージョン間転送料がかかるため。複製は資産を差し替えたときの1回だけで、
+    // 既存のオブジェクトは複製しない（初回だけ手で一括コピーする、`deploy-sattori` skill）。
+    // 宛先バケットは`SattoriGpuFallbackStack`が固定名で先に作る。
+    const titleAssetsReplicationRole = new iam.Role(this, "TitleAssetsReplicationRole", {
+      assumedBy: new iam.ServicePrincipal("s3.amazonaws.com"),
+      description: "Sattori title assets replication to the GPU fallback region (Issue #313)",
+    });
+    titleAssetsReplicationRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["s3:GetReplicationConfiguration", "s3:ListBucket"],
+        resources: [titleAssetsBucket.bucketArn],
+      }),
+    );
+    titleAssetsReplicationRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "s3:GetObjectVersionForReplication",
+          "s3:GetObjectVersionAcl",
+          "s3:GetObjectVersionTagging",
+        ],
+        resources: [titleAssetsBucket.arnForObjects("*")],
+      }),
+    );
+    titleAssetsReplicationRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["s3:ReplicateObject", "s3:ReplicateDelete", "s3:ReplicateTags"],
+        resources: [fallbackTitleAssetsBucket.arnForObjects("*")],
+      }),
+    );
+    const cfnTitleAssetsBucket = titleAssetsBucket.node.defaultChild as s3.CfnBucket;
+    cfnTitleAssetsBucket.replicationConfiguration = {
+      role: titleAssetsReplicationRole.roleArn,
+      rules: [
+        {
+          id: "ReplicateToGpuFallbackRegion",
+          status: "Enabled",
+          priority: 1,
+          filter: { prefix: "titles/" },
+          // タイトルを消したらレプリカからも消えるようにする（古い資産で録画しないため）。
+          deleteMarkerReplication: { status: "Enabled" },
+          destination: { bucket: fallbackTitleAssetsBucket.bucketArn },
+        },
+      ],
+    };
+
     // NAT を持たない公開サブネット構成(ワーカーは外向き通信のみ必要 = 最小コスト)。
     // maxAzs は「利用可能なら使うAZ数の上限」であり、実際に作られるサブネット数は
     // リージョンの提供AZ数とのmin(6, 提供数)になる(eu-south-2は現状3AZなので3つ)。
@@ -426,6 +534,10 @@ export class SattoriStack extends Stack {
     outputBucket.grantReadWrite(workerRole);
     // タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)のダウンロード用(Issue #22)。
     titleAssetsBucket.grantRead(workerRole);
+    // GPUの容量不足フォールバック先で動くワーカーは、そのリージョンの出力バケット・
+    // タイトル資産レプリカを使う（Issue #313）。どのリージョンで動くかを問わず同じロール。
+    fallbackOutputBucket.grantReadWrite(workerRole);
+    fallbackTitleAssetsBucket.grantRead(workerRole);
     jobsTable.grantReadWriteData(workerRole);
     workerRepo.grantPull(workerRole);
     // GPU用Launch Templateも同じworkerRoleを共用する（権限セットに差が無いため、
@@ -573,6 +685,9 @@ export class SattoriStack extends Stack {
       GPU_FALLBACK_LAUNCH_TEMPLATE_NAME,
       GPU_FALLBACK_SUBNET_TAG_KEY,
       GPU_FALLBACK_WORKER_GPU_IMAGE: `${this.account}.dkr.ecr.${GPU_FALLBACK_REGION}.amazonaws.com/${GPU_WORKER_REPOSITORY_NAME}:latest`,
+      // フォールバック先で動くワーカーの出力・タイトル資産（Issue #313、`docs/decisions/0062`）。
+      GPU_FALLBACK_OUTPUT_BUCKET: fallbackOutputBucket.bucketName,
+      GPU_FALLBACK_TITLE_ASSETS_BUCKET: fallbackTitleAssetsBucket.bucketName,
     };
 
     const commonEnv: Record<string, string> = {
@@ -1116,6 +1231,8 @@ export class SattoriStack extends Stack {
     // (Issue #58フォローアップ)。動画本体のURLはbuildVideoDownloadUrlでCDN URLを組み立てる
     // だけなので不要だが、こちらはCDN配信しない診断用データのためS3署名付きURLを使う。
     outputBucket.grantRead(adminGetJobDetailFn);
+    // フォールバック先で変換したジョブのffmpegログはそちらの出力バケットにある（Issue #313）。
+    fallbackOutputBucket.grantRead(adminGetJobDetailFn);
 
     const adminGetExecutionFn = makeHandler("AdminGetExecutionFn", "admin/getExecution.ts");
     stateMachine.grantRead(adminGetExecutionFn);

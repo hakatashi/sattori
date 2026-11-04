@@ -187,6 +187,13 @@ Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決では
 `forceGpuFallbackRegion`（`settings.ts`）が立っていれば、GPUジョブは一次リージョンを
 試さずフォールバック先で起動する（本番での実機検証用）。
 
+フォールバック先で動くワーカーには、そのリージョンの出力バケットとタイトル資産レプリカを渡す
+（Issue #313、[`docs/decisions/0062`](../../docs/decisions/0062-gpu-fallback-region-local-output-and-title-assets.md)、
+`workerEnv.ts`・`config.ts`の`dataBucketsFor()`）。どこへ出力したかは、ワーカーがパスと同じ更新で
+`JobRecord.outputRegion`に書く。APIはそれを見て配信URLに`/<region>/`を付ける
+（`downloads.ts`の`cdnPathFor()`、`config.ts`の`mediaCdnOf()`）。リトライでは、前回の
+`outputRegion`のバケットを`CHECKPOINT_BUCKET`として渡し、チェックポイントをそこから読ませる。
+
 EC2のAPIは常にリージョンを明示して呼ぶ（`ec2ClientFor(region)`）。起動したリージョンは
 `JobRecord.workerRegion`に記録し、terminateはそのリージョンへ、タグでの探索
 （`findJobInstances()`・`listTaggedInstances()`）は`workerRegions()`（`config.ts`）の
@@ -268,7 +275,8 @@ UserDataスクリプトがやること:
 - ECRログイン → pull → `docker run`（`--log-opt awslogs-stream=${jobId}`）。ECRのログイン先は
   イメージのレジストリから導く（`ecrRegionOf()`）——GPUのフォールバック先（Issue #296）では
   そのリージョンのレプリカからpullするが、`AWS_DEFAULT_REGION`・awslogs・ワーカーの
-  `AWS_REGION`は一次リージョン（データ面）のままにする
+  `AWS_REGION`は一次リージョンのままにする（出力・タイトル資産のバケットだけ起動先のものを渡す、
+  Issue #313）
 - コンテナ起動前段階で失敗したら`aws stepfunctions send-task-failure`で即時通知
 
 > **この3点はいずれも事故を経て入れた対策で、消すと再発する**。理由は
@@ -357,10 +365,11 @@ Issue #163、`admin/getLogs.ts`・`sweepOrphanInstances.ts`専用の`GPU_FALLBAC
 `admin/getLogs.ts`・`RecordAnalyticsEventFn`以外の管理API用Lambdaは`commonEnv`を使う）。
 
 `GPU_FALLBACK_REGION`・`GPU_FALLBACK_LAUNCH_TEMPLATE_NAME`・`GPU_FALLBACK_SUBNET_TAG_KEY`・
-`GPU_FALLBACK_WORKER_GPU_IMAGE`はGPUの容量不足時フォールバック先（Issue #296）。
+`GPU_FALLBACK_WORKER_GPU_IMAGE`・`GPU_FALLBACK_OUTPUT_BUCKET`・`GPU_FALLBACK_TITLE_ASSETS_BUCKET`は
+GPUの容量不足時フォールバック先（Issue #296・#313）。
 `SattoriGpuFallbackStack`とはCloudFormation参照を張らず固定名で受け取る（`infra/README.md`）。
 `GPU_FALLBACK_REGION`が無ければフォールバックしない（`config.ec2.gpuFallback`が`null`）。
-設定するなら残り3つも必須。
+設定するなら残り5つも必須。
 
 `SES_CONFIGURATION_SET`は`SattoriEdgeStack`が作った`ses.ConfigurationSet`名
 （`crossRegionReferences`経由）。`ses.ts`が`SendEmailCommand`へ指定し、

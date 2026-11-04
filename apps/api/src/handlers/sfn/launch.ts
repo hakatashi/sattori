@@ -181,6 +181,7 @@ async function tryOfferToHomeWorker(
   // （有効にすると`interruption_watcher.py`が7秒周期でタイムアウトし続ける）。
   const env = buildWorkerEnv(config, job, event.taskToken, {
     spotInterruptionWatch: false,
+    dataRegion: config.ec2.region,
   });
   try {
     const offered = await offerJobToHomeWorker({

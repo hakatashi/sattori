@@ -22,6 +22,11 @@ def _table(name):
     return _dynamodb.Table(name)
 
 
+def _env_region(name):
+    """バケットのリージョンを表す環境変数(Issue #313)。未設定なら None。"""
+    return os.environ.get(name) or None
+
+
 def _now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -79,6 +84,13 @@ def update_status(
     リージョン間転送料の推定にだけ使う。ワーカーは自分がどのリージョンで動いているかを
     知らないまま常に記録し、計上するかどうかはコスト推定側(`cost.ts`)が
     `workerRegion` を見て決める(ワーカー内にリージョンの分岐を作らない、AGENTS.md §3)。
+
+    出力のパス(output_path・output_path_720p・poster_image_path)を書くときは、同じ更新で
+    `outputRegion` に `OUTPUT_BUCKET_REGION` を書く(Issue #313)。title_assets_bytes を書くときは
+    `titleAssetsRegion` に `TITLE_ASSETS_BUCKET_REGION` を書く。どちらも起動側が渡した値を
+    写すだけで、ワーカーはリージョンを判断しない。パスとリージョンを1回の更新で書くので、
+    APIが「別リージョンのバケットにあるパス」を読む瞬間は無い。環境変数が無ければ書かない
+    (API側は欠損を一次リージョンとみなす)。
 
     upload_total_bytes は配信用動画のアップロード開始時点(転送前)に分かっているアップロード
     予定バイト数(Issue #202フォローアップ)。`status="uploading"`への遷移でのみ渡される想定で、
@@ -139,6 +151,12 @@ def update_status(
     if poster_image_path is not None:
         expr += ", posterImagePath = :pp"
         values[":pp"] = poster_image_path
+    output_region = _env_region("OUTPUT_BUCKET_REGION")
+    if output_region is not None and (
+        output_path is not None or output_path_720p is not None or poster_image_path is not None
+    ):
+        expr += ", outputRegion = :or"
+        values[":or"] = output_region
     if upload_total_bytes is not None:
         expr += ", uploadTotalBytes = :utb"
         values[":utb"] = int(upload_total_bytes)
@@ -161,6 +179,10 @@ def update_status(
     if title_assets_bytes is not None:
         expr += ", titleAssetsBytes = :tab"
         values[":tab"] = int(title_assets_bytes)
+        title_assets_region = _env_region("TITLE_ASSETS_BUCKET_REGION")
+        if title_assets_region is not None:
+            expr += ", titleAssetsRegion = :tar"
+            values[":tar"] = title_assets_region
     if raw_checkpoint_bytes is not None:
         expr += ", rawCheckpointBytes = :rcb"
         values[":rcb"] = int(raw_checkpoint_bytes)
@@ -217,6 +239,11 @@ def update_progress(job_id, progress, preview_image_path=None):
     if preview_image_path is not None:
         expr += ", previewImagePath = :pi"
         values[":pi"] = preview_image_path
+        # パスと同じ更新でリージョンも書く(Issue #313、update_status()参照)。
+        output_region = _env_region("OUTPUT_BUCKET_REGION")
+        if output_region is not None:
+            expr += ", outputRegion = :or"
+            values[":or"] = output_region
 
     table.update_item(
         Key={"jobId": job_id},

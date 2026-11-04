@@ -34,7 +34,7 @@ describe("buildWorkerEnv", () => {
       options: { ...job.options, recordingSpeed: 3 },
     } as unknown as JobRecord;
     const env = buildWorkerEnv(config, speedupJob, "task-token", {
-      spotInterruptionWatch: true,
+      spotInterruptionWatch: true, dataRegion: config.ec2.region,
     });
 
     expect(env.FPS_LIMIT_TARGET_HZ).toBe("180");
@@ -45,7 +45,7 @@ describe("buildWorkerEnv", () => {
 
   it("GPU必須タイトルの等倍録画は GPU_WORKER=1 だけを付ける", () => {
     const th15 = { ...job, game: "th15", options: { ...job.options } } as unknown as JobRecord;
-    const env = buildWorkerEnv(config, th15, "task-token", { spotInterruptionWatch: true });
+    const env = buildWorkerEnv(config, th15, "task-token", { spotInterruptionWatch: true, dataRegion: config.ec2.region });
 
     expect(env.GPU_WORKER).toBe("1");
     expect(env.FPS_LIMIT_TARGET_HZ).toBeUndefined();
@@ -53,7 +53,7 @@ describe("buildWorkerEnv", () => {
 
   it("CPU系タイトルの等倍録画には GPU_WORKER を付けない", () => {
     const th07 = { ...job, game: "th07", options: { ...job.options } } as unknown as JobRecord;
-    const env = buildWorkerEnv(config, th07, "task-token", { spotInterruptionWatch: false });
+    const env = buildWorkerEnv(config, th07, "task-token", { spotInterruptionWatch: false, dataRegion: config.ec2.region });
 
     expect(env.GPU_WORKER).toBeUndefined();
     expect(env.FPS_LIMIT_TARGET_HZ).toBeUndefined();
@@ -61,7 +61,7 @@ describe("buildWorkerEnv", () => {
 
   it("spotInterruptionWatch が有効なら SPOT_INTERRUPTION_WATCH を付ける(EC2起動時)", () => {
     const env = buildWorkerEnv(config, job, "task-token", {
-      spotInterruptionWatch: true,
+      spotInterruptionWatch: true, dataRegion: config.ec2.region,
     });
 
     expect(env.SPOT_INTERRUPTION_WATCH).toBe("1");
@@ -69,7 +69,7 @@ describe("buildWorkerEnv", () => {
 
   it("spotInterruptionWatch が無効なら SPOT_INTERRUPTION_WATCH を付けない(自宅ワーカー起動時、Issue #96)", () => {
     const env = buildWorkerEnv(config, job, "task-token", {
-      spotInterruptionWatch: false,
+      spotInterruptionWatch: false, dataRegion: config.ec2.region,
     });
 
     expect(env.SPOT_INTERRUPTION_WATCH).toBeUndefined();
@@ -81,26 +81,26 @@ describe("buildWorkerEnv", () => {
       options: { ...job.options, th10BugfixMarisaB: true },
     } as unknown as JobRecord;
 
-    const env = buildWorkerEnv(config, jobWithBugfix, "task-token", { spotInterruptionWatch: false });
+    const env = buildWorkerEnv(config, jobWithBugfix, "task-token", { spotInterruptionWatch: false, dataRegion: config.ec2.region });
 
     expect(env.TH10_BUGFIX_MARISA_B).toBe("1");
   });
 
   it("th10BugfixMarisaB が無効なら TH10_BUGFIX_MARISA_B を付けない", () => {
-    const env = buildWorkerEnv(config, job, "task-token", { spotInterruptionWatch: false });
+    const env = buildWorkerEnv(config, job, "task-token", { spotInterruptionWatch: false, dataRegion: config.ec2.region });
 
     expect(env.TH10_BUGFIX_MARISA_B).toBeUndefined();
   });
 
   it("等倍録画では FPS_LIMIT_TARGET_HZ を付けない(未指定＝等倍がワーカー側の既定)", () => {
-    const env = buildWorkerEnv(config, job, "task-token", { spotInterruptionWatch: false });
+    const env = buildWorkerEnv(config, job, "task-token", { spotInterruptionWatch: false, dataRegion: config.ec2.region });
 
     expect(env.FPS_LIMIT_TARGET_HZ).toBeUndefined();
   });
 
   it("redactWorkerEnv は TASK_TOKEN だけを落とし、録画速度の指定は残す", () => {
     const speedup = { ...job, options: { ...job.options, recordingSpeed: 2 } } as unknown as JobRecord;
-    const env = buildWorkerEnv(config, speedup, "task-token", { spotInterruptionWatch: false });
+    const env = buildWorkerEnv(config, speedup, "task-token", { spotInterruptionWatch: false, dataRegion: config.ec2.region });
 
     const redacted = redactWorkerEnv(env);
 
@@ -114,7 +114,7 @@ describe("buildWorkerEnv", () => {
       replayInfo: { score: 481237400 },
     } as unknown as JobRecord;
 
-    const env = buildWorkerEnv(config, jobWithScore, "task-token", { spotInterruptionWatch: false });
+    const env = buildWorkerEnv(config, jobWithScore, "task-token", { spotInterruptionWatch: false, dataRegion: config.ec2.region });
 
     expect(env.EXPECTED_SCORE).toBe("481237400");
   });
@@ -127,7 +127,7 @@ describe("buildWorkerEnv", () => {
     } as unknown as JobRecord;
 
     const env = buildWorkerEnv(config, jobWithHighRes, "task-token", {
-      spotInterruptionWatch: false,
+      spotInterruptionWatch: false, dataRegion: config.ec2.region,
     });
 
     expect(env.TH06NC_RESOLUTION).toBe("1080p");
@@ -141,7 +141,7 @@ describe("buildWorkerEnv", () => {
     } as unknown as JobRecord;
 
     const env = buildWorkerEnv(config, jobWithoutHighRes, "task-token", {
-      spotInterruptionWatch: false,
+      spotInterruptionWatch: false, dataRegion: config.ec2.region,
     });
 
     expect(env.TH06NC_RESOLUTION).toBeUndefined();
@@ -155,14 +155,14 @@ describe("buildWorkerEnv", () => {
     } as unknown as JobRecord;
 
     const env = buildWorkerEnv(config, jobWithMismatchedOption, "task-token", {
-      spotInterruptionWatch: false,
+      spotInterruptionWatch: false, dataRegion: config.ec2.region,
     });
 
     expect(env.TH06NC_RESOLUTION).toBeUndefined();
   });
 
   it("replayInfo が無い/score が未取得なら EXPECTED_SCORE を付けない", () => {
-    const envWithoutReplayInfo = buildWorkerEnv(config, job, "task-token", { spotInterruptionWatch: false });
+    const envWithoutReplayInfo = buildWorkerEnv(config, job, "task-token", { spotInterruptionWatch: false, dataRegion: config.ec2.region });
     expect(envWithoutReplayInfo.EXPECTED_SCORE).toBeUndefined();
 
     const jobWithNullScore = {
@@ -170,8 +170,75 @@ describe("buildWorkerEnv", () => {
       replayInfo: { score: null },
     } as unknown as JobRecord;
     const envWithNullScore = buildWorkerEnv(config, jobWithNullScore, "task-token", {
-      spotInterruptionWatch: false,
+      spotInterruptionWatch: false, dataRegion: config.ec2.region,
     });
     expect(envWithNullScore.EXPECTED_SCORE).toBeUndefined();
+  });
+});
+
+describe("buildWorkerEnv のデータバケット（Issue #313）", () => {
+  const configWithFallback = {
+    ...config,
+    ec2: {
+      ...config.ec2,
+      gpuFallback: {
+        region: "eu-north-1",
+        launchTemplateName: "sattori-gpu-worker",
+        subnetTagKey: "sattori:gpuWorkerSubnet",
+        workerGpuImage: "123456789012.dkr.ecr.eu-north-1.amazonaws.com/sattori-worker-gpu:latest",
+        outputBucket: "out-eun1",
+        titleAssetsBucket: "title-assets-eun1",
+      },
+    },
+  } as unknown as ApiConfig;
+
+  it("一次リージョンで動くなら一次リージョンのバケットを渡す", () => {
+    const env = buildWorkerEnv(configWithFallback, job, "task-token", {
+      spotInterruptionWatch: true,
+      dataRegion: "eu-south-2",
+    });
+    expect(env.OUTPUT_BUCKET).toBe("out-bucket");
+    expect(env.OUTPUT_BUCKET_REGION).toBe("eu-south-2");
+    expect(env.TITLE_ASSETS_BUCKET).toBe("title-assets");
+    expect(env.TITLE_ASSETS_BUCKET_REGION).toBe("eu-south-2");
+    expect(env.CHECKPOINT_BUCKET).toBe("out-bucket");
+    expect(env.CHECKPOINT_BUCKET_REGION).toBe("eu-south-2");
+  });
+
+  it("フォールバック先で動くなら、出力とタイトル資産はそのリージョンのバケットを渡す", () => {
+    const env = buildWorkerEnv(configWithFallback, job, "task-token", {
+      spotInterruptionWatch: true,
+      dataRegion: "eu-north-1",
+    });
+    expect(env.OUTPUT_BUCKET).toBe("out-eun1");
+    expect(env.OUTPUT_BUCKET_REGION).toBe("eu-north-1");
+    expect(env.TITLE_ASSETS_BUCKET).toBe("title-assets-eun1");
+    expect(env.TITLE_ASSETS_BUCKET_REGION).toBe("eu-north-1");
+    // データ面の他の部分は一次リージョンのまま。
+    expect(env.AWS_REGION).toBe("eu-south-2");
+    expect(env.REPLAY_BUCKET).toBe("up-bucket");
+    // 前回の出力が無いので、チェックポイントは一次リージョンを見る。
+    expect(env.CHECKPOINT_BUCKET).toBe("out-bucket");
+    expect(env.CHECKPOINT_BUCKET_REGION).toBe("eu-south-2");
+  });
+
+  it("前回の試行が別リージョンへ書いたチェックポイントは、そのリージョンから読む", () => {
+    const retried = { ...job, outputRegion: "eu-north-1" } as unknown as JobRecord;
+    const env = buildWorkerEnv(configWithFallback, retried, "task-token", {
+      spotInterruptionWatch: true,
+      dataRegion: "eu-south-2",
+    });
+    expect(env.OUTPUT_BUCKET).toBe("out-bucket");
+    expect(env.CHECKPOINT_BUCKET).toBe("out-eun1");
+    expect(env.CHECKPOINT_BUCKET_REGION).toBe("eu-north-1");
+  });
+
+  it("フォールバック未設定なら、どのリージョンを渡しても一次リージョンのバケットになる", () => {
+    const env = buildWorkerEnv(config, job, "task-token", {
+      spotInterruptionWatch: true,
+      dataRegion: "eu-north-1",
+    });
+    expect(env.OUTPUT_BUCKET).toBe("out-bucket");
+    expect(env.OUTPUT_BUCKET_REGION).toBe("eu-south-2");
   });
 });

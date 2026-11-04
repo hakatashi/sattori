@@ -10,6 +10,7 @@ import type {
   RedactedWorkerEnvironment,
   WorkerEnvironment,
 } from "@sattori/shared";
+import { dataBucketsFor } from "./config.js";
 import type { ApiConfig } from "./config.js";
 
 /** `buildWorkerEnv()` の、ジョブレコードからは決まらない起動側の都合。 */
@@ -22,6 +23,12 @@ export interface WorkerEnvOptions {
    * 割り当て先に応じて決める。
    */
   spotInterruptionWatch: boolean;
+  /**
+   * ワーカーを動かすリージョン（Issue #313、`docs/decisions/0062`）。出力バケット・
+   * タイトル資産バケットをこのリージョンのものにする（`dataBucketsFor()`）。EC2なら
+   * `CreateFleet`の起動先、自宅ワーカーなら一次リージョンを渡す。
+   */
+  dataRegion: string;
 }
 
 /**
@@ -43,6 +50,18 @@ export function buildWorkerEnv(
   taskToken: string,
   options: WorkerEnvOptions,
 ): WorkerEnvironment {
+  // 出力・タイトル資産はワーカーと同じリージョンのバケットを使う（Issue #313）。
+  // GPUの容量不足フォールバック先（eu-north-1）で動くワーカーがeu-south-2のバケットを
+  // 読み書きすると、リージョン間転送料がSpot代の数倍になるため。それ以外（リプレイ・
+  // DynamoDB・Step Functions・ログ）は一次リージョンのまま（`AWS_REGION`）。
+  //
+  // チェックポイント（変換からの再開用の生動画）は**前回の試行が書いた場所**から読む。
+  // リトライではリージョンを固定しない（`docs/decisions/0061`）ため、前回と今回で
+  // リージョンが違いうる。前回の出力先は`job.outputRegion`（パスと同じ更新で
+  // ワーカーが書く）。ワーカーは読み戻したあと、最終出力を自分のリージョンへ書き、
+  // チェックポイントは元のバケットから消す（`worker/entrypoint.py`）。
+  const data = dataBucketsFor(config, options.dataRegion);
+  const checkpoint = dataBucketsFor(config, job.outputRegion);
   const env: WorkerEnvironment = {
     AWS_DEFAULT_REGION: config.ec2.region,
     AWS_REGION: config.ec2.region,
@@ -50,8 +69,12 @@ export function buildWorkerEnv(
     GAME: job.game,
     REPLAY_BUCKET: config.uploadBucket,
     REPLAY_KEY: job.replayKey,
-    OUTPUT_BUCKET: config.outputBucket,
-    TITLE_ASSETS_BUCKET: config.titleAssetsBucket,
+    OUTPUT_BUCKET: data.outputBucket,
+    OUTPUT_BUCKET_REGION: data.region,
+    CHECKPOINT_BUCKET: checkpoint.outputBucket,
+    CHECKPOINT_BUCKET_REGION: checkpoint.region,
+    TITLE_ASSETS_BUCKET: data.titleAssetsBucket,
+    TITLE_ASSETS_BUCKET_REGION: data.region,
     JOBS_TABLE: config.jobsTable,
     WATERMARK: job.options.watermark ? "1" : "0",
     TASK_TOKEN: taskToken,

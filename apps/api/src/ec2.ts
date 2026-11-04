@@ -263,7 +263,7 @@ export function buildUserData(
   config: ApiConfig,
   job: JobRecord,
   taskToken: string,
-  options: { workerImage?: string } = {},
+  options: { workerImage?: string; region?: string } = {},
 ): string {
   // GPU必須のジョブ（th06nc・th15と倍速録画、Issue #241・#288）は別ECRイメージ（`worker-gpu`）・
   // GPU用カスタムAMI（Launch Templateはこの関数の外、`launchRecordingInstance()`側で
@@ -287,7 +287,11 @@ export function buildUserData(
   // 倍速録画（Issue #288）は`buildWorkerEnv()`が`job.options`から直接読む（常にGPUで走り、
   // 割り当て先で無効化されることが無いため）。
   const envFlags = Object.entries(
-    buildWorkerEnv(config, job, taskToken, { spotInterruptionWatch: true }),
+    buildWorkerEnv(config, job, taskToken, {
+      spotInterruptionWatch: true,
+      // 出力・タイトル資産はワーカーと同じリージョンのバケットを使う（Issue #313）。
+      dataRegion: options.region ?? config.ec2.region,
+    }),
   ).map(([key, value]) =>
     key === "TASK_TOKEN" ? `-e TASK_TOKEN="$TASK_TOKEN"` : `-e ${key}=${shellEscape(value)}`,
   );
@@ -664,7 +668,10 @@ async function launchInRegion(
   target: LaunchTarget,
 ): Promise<LaunchedInstance> {
   const ec2 = ec2ClientFor(target.region);
-  const userData = buildUserData(config, job, taskToken, { workerImage: target.workerImage });
+  const userData = buildUserData(config, job, taskToken, {
+    workerImage: target.workerImage,
+    region: target.region,
+  });
   const isGpuJob = requiresGpuRecording(job);
 
   const version = await ec2.send(

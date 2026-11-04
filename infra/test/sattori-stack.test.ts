@@ -141,8 +141,7 @@ describe("SattoriStack", () => {
     const codes = Object.values(functions).map(
       (fn) => (fn.Properties as { FunctionCode: string }).FunctionCode,
     );
-    expect(codes).toHaveLength(1);
-    expect(codes[0]).toContain("/en/index.html");
+    expect(codes.filter((code) => code.includes("/en/index.html"))).toHaveLength(1);
 
     template.hasResourceProperties("AWS::CloudFront::Distribution", {
       DistributionConfig: Match.objectLike({
@@ -154,6 +153,70 @@ describe("SattoriStack", () => {
           ],
         }),
       }),
+    });
+  });
+
+  it("MediaCdnは/eu-north-1/*をフォールバック先の出力バケットから配信する(Issue #313)", () => {
+    template.hasResourceProperties("AWS::CloudFront::Distribution", {
+      DistributionConfig: Match.objectLike({
+        Comment: "Sattori 録画動画配信",
+        Origins: Match.arrayWith([
+          Match.objectLike({
+            DomainName: "sattori-output-123456789012-eu-north-1.s3.eu-north-1.amazonaws.com",
+          }),
+        ]),
+        CacheBehaviors: [
+          Match.objectLike({
+            PathPattern: "eu-north-1/*",
+            FunctionAssociations: [Match.objectLike({ EventType: "viewer-request" })],
+          }),
+        ],
+      }),
+    });
+    const codes = Object.values(template.findResources("AWS::CloudFront::Function")).map(
+      (fn) => (fn.Properties as { FunctionCode: string }).FunctionCode,
+    );
+    const strip = codes.find((code) => code.includes("/eu-north-1/"));
+    expect(strip).toBeDefined();
+    // 関数本体を実際に評価して、プレフィックスだけが外れることを確かめる。
+    const handler = new Function(`${strip}; return handler;`)() as (event: {
+      request: { uri: string };
+    }) => { uri: string };
+    expect(handler({ request: { uri: "/eu-north-1/videos/job-1_720p.mp4" } }).uri).toBe(
+      "/videos/job-1_720p.mp4",
+    );
+    expect(handler({ request: { uri: "/videos/job-1.mp4" } }).uri).toBe("/videos/job-1.mp4");
+  });
+
+  it("タイトル資産をフォールバック先のレプリカへS3レプリケーションで複製する(Issue #313)", () => {
+    template.hasResourceProperties("AWS::S3::Bucket", {
+      VersioningConfiguration: { Status: "Enabled" },
+      ReplicationConfiguration: Match.objectLike({
+        Rules: [
+          Match.objectLike({
+            Status: "Enabled",
+            Filter: { Prefix: "titles/" },
+            Destination: {
+              Bucket: Match.objectLike({
+                "Fn::Join": Match.arrayWith([
+                  Match.arrayWith([":s3:::sattori-title-assets-123456789012-eu-north-1"]),
+                ]),
+              }),
+            },
+          }),
+        ],
+      }),
+    });
+  });
+
+  it("Lambdaにフォールバック先の出力バケット・タイトル資産レプリカの名前を渡す(Issue #313)", () => {
+    template.hasResourceProperties("AWS::Lambda::Function", {
+      Environment: {
+        Variables: Match.objectLike({
+          GPU_FALLBACK_OUTPUT_BUCKET: "sattori-output-123456789012-eu-north-1",
+          GPU_FALLBACK_TITLE_ASSETS_BUCKET: "sattori-title-assets-123456789012-eu-north-1",
+        }),
+      },
     });
   });
 

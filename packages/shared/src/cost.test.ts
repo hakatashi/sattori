@@ -334,6 +334,49 @@ describe("estimateJobCost（リージョン間転送、Issue #296）", () => {
     const estimate = estimateJobCost(makeJob({ workerKind: "home", workerRegion: "eu-north-1" }), now);
     expect(estimate.breakdown.interRegionTransfer).toBe(0);
   });
+
+  it("フォールバック先のレプリカと出力バケットを使ったジョブは計上しない（Issue #313）", () => {
+    const estimate = estimateJobCost(
+      makeJob({
+        workerRegion: "eu-north-1",
+        titleAssetsBytes: 700 * MiB,
+        rawCheckpointBytes: 900 * MiB,
+        titleAssetsRegion: "eu-north-1",
+        outputRegion: "eu-north-1",
+      }),
+      now,
+    );
+    expect(estimate.interRegionTransferBytes).toBe(0);
+    expect(estimate.breakdown.interRegionTransfer).toBe(0);
+    expect(estimate.interRegionTransferEstimated).toBe(false);
+  });
+
+  it("タイトル資産だけ一次リージョンから読んだなら、資産ぶんだけ計上する", () => {
+    const estimate = estimateJobCost(
+      makeJob({
+        workerRegion: "eu-north-1",
+        titleAssetsBytes: 700 * MiB,
+        rawCheckpointBytes: 900 * MiB,
+        titleAssetsRegion: "eu-south-2",
+        outputRegion: "eu-north-1",
+      }),
+      now,
+    );
+    expect(estimate.interRegionTransferBytes).toBe(700 * MiB);
+  });
+
+  it("出力だけ一次リージョンへ書いたなら、チェックポイントと出力ぶんだけ計上する", () => {
+    const estimate = estimateJobCost(
+      makeJob({
+        workerRegion: "eu-north-1",
+        titleAssetsBytes: 700 * MiB,
+        rawCheckpointBytes: 900 * MiB,
+        titleAssetsRegion: "eu-north-1",
+      }),
+      now,
+    );
+    expect(estimate.interRegionTransferBytes).toBe((900 + 694 + 1036) * MiB);
+  });
 });
 
 describe("costBucketKey", () => {
