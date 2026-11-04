@@ -72,8 +72,10 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
         return 1;
     }
 
-    Log("Buffering 5000ms (scaled) for title screen logo animation...");
-    ScaledSleep(5000);
+    // th20と同じ10秒。短くした5秒では1/3倍速の`c7i.4xlarge`でメニュー操作を取りこぼした(Issue #316)。
+    // この区間は配信版でカットされる(`recording/cut.py`)ので、長くても動画には残らない。
+    Log("Buffering 10000ms (scaled) for title screen logo animation...");
+    ScaledSleep(10000);
 
     Log("Step 1: Down x2 (select 'Replay' on main menu, skipping grayed-out 'Extra Start')");
     for (int i = 0; i < 2; i++) {
