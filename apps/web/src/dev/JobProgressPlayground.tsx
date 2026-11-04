@@ -84,6 +84,16 @@ const SAMPLE_JOBS: { title: string; job: GetJobResponse | null; loadError?: stri
     job: buildJob({ status: "recording", game: "th07", requestedRecordingSpeed: 2, progress: 300 }),
   },
   {
+    title: "status: recording（GPU枯渇でCPU低速録画へフォールバック、Issue #316）",
+    job: buildJob({
+      status: "recording",
+      game: "th20",
+      recordingSpeed: 1 / 2,
+      requestedRecordingSpeed: 1,
+      progress: 300,
+    }),
+  },
+  {
     title: "status: recording（進捗・プレビュー画像あり）",
     job: buildJob({
       status: "recording",
