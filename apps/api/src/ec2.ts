@@ -1,6 +1,9 @@
 import {
   CreateFleetCommand,
+  type CreateFleetCommandOutput,
+  type CreateFleetError,
   CreateLaunchTemplateVersionCommand,
+  DeleteLaunchTemplateVersionsCommand,
   DescribeInstancesCommand,
   type DescribeInstancesCommandOutput,
   DescribeSpotPriceHistoryCommand,
@@ -34,30 +37,45 @@ function ec2ClientFor(region?: string): EC2Client {
 }
 
 /**
- * GPUジョブを一次リージョンからフォールバック先へ逃がす契機になる`CreateFleet`の
- * エラーコード（Issue #296）。**Spot在庫そのものの枯渇だけ**に限る。
- * `VcpuLimitExceeded`/`MaxSpotInstanceCountExceeded`（クォータ超過）は一次リージョンの
- * 台帳（`gpuSlots.ts`）とAWS側の実使用量のずれが原因で、他リージョンへ逃がしても
- * 解消しないため含めない。
+ * Spot在庫そのものの枯渇を表す`CreateFleet`のエラーコード（Issue #296）。段の容量不足の判定と、
+ * 次の段へ進むかの判定に使う。`VcpuLimitExceeded`/`MaxSpotInstanceCountExceeded`
+ * （クォータ超過）は一次リージョンの台帳（`gpuSlots.ts`）とAWS側の実使用量のずれが原因で、
+ * 他のリージョンへ逃がしても解消しないため含めない。
  */
-export const GPU_FALLBACK_TRIGGER_ERROR_CODES = [
+export const SPOT_CAPACITY_ERROR_CODES = [
   "InsufficientInstanceCapacity",
   "UnfulfillableCapacity",
 ];
 
 /**
- * `CreateFleet`が1台も確保できなかったことを表す例外。フォールバック判定のために
- * エラーコードを構造化して持つ。メッセージには`ErrorCode: ErrorMessage`をそのまま
- * 含める——`handleFailure.ts`の`CAPACITY_ERROR_CODES`は例外メッセージの部分一致で
- * 容量不足を判定している（Issue #282）ため、この形式を崩さないこと。
+ * `CreateFleet`が1台も確保できなかったことを表す例外。判定のためにエラーコードを構造化して
+ * 持つ。メッセージには`ErrorCode: ErrorMessage`をそのまま含める——`handleFailure.ts`の
+ * `CAPACITY_ERROR_CODES`は例外メッセージの部分一致で容量不足を判定している（Issue #282）ため、
+ * この形式を崩さないこと。
+ *
+ * `capacityExhausted`は、その段の全サブネット・全候補がSpot在庫の枯渇で失敗したこと
+ * （`isTierCapacityExhausted()`）を表す。true の段はジョブが終わるまで二度と試さない
+ * （Issue #315、`docs/decisions/0063`）。
  */
 export class FleetLaunchError extends Error {
   constructor(
     message: string,
     readonly errorCodes: string[],
+    readonly capacityExhausted: boolean = false,
   ) {
     super(message);
     this.name = "FleetLaunchError";
+  }
+}
+
+/**
+ * ジョブが試せる段をすべて容量不足で使い切ったことを表す例外（Issue #315）。これを受けた
+ * `Launch`は、等倍へ落とせるジョブなら落とし、落とせなければその場でジョブを失敗させる。
+ */
+export class LaunchTiersExhaustedError extends FleetLaunchError {
+  constructor(message: string, errorCodes: string[]) {
+    super(message, errorCodes, true);
+    this.name = "LaunchTiersExhaustedError";
   }
 }
 
@@ -191,6 +209,11 @@ export interface LaunchConstraints {
    * フォールバック先が未設定・非GPUジョブでは無視する。
    */
   forceFallbackRegion?: boolean;
+  /**
+   * 段を容量不足と判定するたびに、次の段を試す前に呼ぶ（Issue #315）。呼び出し側がジョブ
+   * レコードの`capacityExhaustedTargets`へ記録する。渡すのはこれまでに使い切った段すべて。
+   */
+  onTierExhausted?: (exhaustedTierIds: string[]) => Promise<void>;
 }
 
 /** module-privateではなくexportする（`ec2.test.ts`から直接検証するため）。 */
@@ -532,12 +555,12 @@ export async function fetchSpotPrice(
  * 参照先を切り替える（サブネット候補はCPU系と同じ全AZ、Issue #281で
  * `eu-south-2a`の暫定除外[`decisions/0055`]を撤回済み）。
  *
- * **GPUジョブは一次リージョンが容量不足（`GPU_FALLBACK_TRIGGER_ERROR_CODES`）のときだけ、
- * 同じ呼び出しの中でフォールバック先リージョン（`eu-north-1`）へ起動し直す**
- * （Issue #296、`docs/decisions/0061`）。価格では振り分けない——リージョン間転送料が
- * Spotの価格差を上回るため。リトライ時も毎回一次リージョンから試す（チェックポイント・
- * 出力はすべて一次リージョンのS3にあるので、そちらを優先するのが自然に安い）。
- * CPU系ジョブは一次リージョン固定（CPU系のLaunch Template・AMIを複製していない）。
+ * **起動手段は順序付きの段（`launchTiersFor()`）で表し、容量不足なら同じ呼び出しの中で
+ * 次の段へ進む**（Issue #315、`docs/decisions/0063`）。容量不足になった段は
+ * `JobRecord.capacityExhaustedTargets`へ記録し、同じジョブのリトライでは飛ばす。
+ * 全段を使い切ったら`LaunchTiersExhaustedError`を投げる。価格では振り分けない
+ * （`docs/decisions/0061`）。CPU系ジョブの段は一次リージョンの1つだけ（CPU系のLaunch
+ * Template・AMIを複製していない）。
  */
 export async function launchRecordingInstance(
   config: ApiConfig,
@@ -545,73 +568,126 @@ export async function launchRecordingInstance(
   taskToken: string,
   constraints: LaunchConstraints = {},
 ): Promise<LaunchedInstance> {
+  const exhausted = [...(job.capacityExhaustedTargets ?? [])];
+  const failures: FleetLaunchError[] = [];
+  let everyTierExhausted = true;
+
+  for (const tier of launchTiersFor(config, job, constraints)) {
+    if (exhausted.includes(tier.id)) {
+      console.log(
+        JSON.stringify({ event: "launch_tier_skipped", jobId: job.jobId, tierId: tier.id }),
+      );
+      continue;
+    }
+    try {
+      return await launchInTier(config, job, taskToken, tier);
+    } catch (err) {
+      if (
+        !(err instanceof FleetLaunchError) ||
+        !err.errorCodes.some((code) => SPOT_CAPACITY_ERROR_CODES.includes(code))
+      ) {
+        // クォータ超過・API障害など、次の段へ逃がしても解消しない失敗。前の段の失敗も
+        // メッセージへ残す（`handleFailure.ts`の容量不足判定は部分一致）。
+        throw failures.length === 0 ? err : combineLaunchFailures(failures, err);
+      }
+      failures.push(err);
+      // 一部のサブネットがクォータ超過などで落ちた段は、次の段へ進むが記録はしない。
+      if (err.capacityExhausted) {
+        exhausted.push(tier.id);
+        await constraints.onTierExhausted?.(exhausted);
+      } else {
+        everyTierExhausted = false;
+      }
+      console.warn(
+        JSON.stringify({
+          event: "launch_tier_failed",
+          jobId: job.jobId,
+          tierId: tier.id,
+          capacityExhausted: err.capacityExhausted,
+          errorCodes: err.errorCodes,
+        }),
+      );
+    }
+  }
+
+  if (!everyTierExhausted) {
+    throw combineLaunchFailures(failures);
+  }
+  // 全段が前の試行で記録済みで、今回は1回もCreateFleetしていないこともある。
+  const message =
+    failures.map((failure) => failure.message).join(" / ") ||
+    `全段が容量不足として記録済み: ${exhausted.join(", ")}`;
+  throw new LaunchTiersExhaustedError(
+    message,
+    failures.flatMap((failure) => failure.errorCodes),
+  );
+}
+
+/** 複数の段の失敗を1つの例外にまとめる。 */
+function combineLaunchFailures(failures: FleetLaunchError[], last?: unknown): FleetLaunchError {
+  const lastMessage = last === undefined ? [] : [last instanceof Error ? last.message : String(last)];
+  return new FleetLaunchError(
+    [...failures.map((failure) => failure.message), ...lastMessage].join(" / "),
+    [
+      ...failures.flatMap((failure) => failure.errorCodes),
+      ...(last instanceof FleetLaunchError ? last.errorCodes : []),
+    ],
+  );
+}
+
+/** 起動手段の1段。 */
+export interface LaunchTier {
+  /** `JobRecord.capacityExhaustedTargets`に記録する識別子（例: `gpu:eu-north-1`）。 */
+  id: string;
+  region: string;
+  launchTemplate: { LaunchTemplateId: string } | { LaunchTemplateName: string };
+  /** 前の段で確保できれば要らない問い合わせなので、試す直前に解決する。 */
+  resolveSubnetIds: () => Promise<string[]>;
+  /** 省略時は`buildUserData()`の既定（一次リージョンのECR）。 */
+  workerImage: string | undefined;
+  candidateInstanceTypes: InstanceType[];
+}
+
+/**
+ * ジョブが試す起動手段を、試す順に返す（Issue #315）。容量不足で飛ばした段を除くのは
+ * 呼び出し側の役目で、この関数はジョブの内容と制約だけで段を決める。
+ */
+export function launchTiersFor(
+  config: ApiConfig,
+  job: Pick<JobRecord, "jobId" | "game" | "options">,
+  constraints: LaunchConstraints = {},
+): LaunchTier[] {
   const candidateInstanceTypes = getCandidateInstanceTypes(job, constraints);
   const isGpuJob = requiresGpuRecording(job);
+  const primary: LaunchTier = {
+    id: `${isGpuJob ? "gpu" : "cpu"}:${config.ec2.region}`,
+    region: config.ec2.region,
+    launchTemplate: {
+      LaunchTemplateId: isGpuJob ? config.ec2.gpuLaunchTemplateId : config.ec2.launchTemplateId,
+    },
+    resolveSubnetIds: async () => config.ec2.subnetIds,
+    workerImage: undefined,
+    candidateInstanceTypes,
+  };
   const fallback = isGpuJob ? config.ec2.gpuFallback : null;
-
-  const primary = async () =>
-    launchInRegion(config, job, taskToken, candidateInstanceTypes, {
-      region: config.ec2.region,
-      launchTemplate: {
-        LaunchTemplateId: isGpuJob ? config.ec2.gpuLaunchTemplateId : config.ec2.launchTemplateId,
-      },
-      subnetIds: config.ec2.subnetIds,
-      workerImage: undefined,
-    });
-
   if (fallback === null) {
-    return primary();
+    return [primary];
   }
+  const fallbackTier: LaunchTier = {
+    id: `gpu:${fallback.region}`,
+    region: fallback.region,
+    launchTemplate: { LaunchTemplateName: fallback.launchTemplateName },
+    resolveSubnetIds: () => resolveFallbackSubnetIds(fallback),
+    workerImage: fallback.workerGpuImage,
+    candidateInstanceTypes,
+  };
   if (constraints.forceFallbackRegion) {
     console.log(
       JSON.stringify({ event: "gpu_fallback_forced", jobId: job.jobId, region: fallback.region }),
     );
-    return launchInFallbackRegion(config, job, taskToken, candidateInstanceTypes, fallback);
+    return [fallbackTier];
   }
-
-  try {
-    return await primary();
-  } catch (err) {
-    if (
-      !(err instanceof FleetLaunchError) ||
-      !err.errorCodes.some((code) => GPU_FALLBACK_TRIGGER_ERROR_CODES.includes(code))
-    ) {
-      throw err;
-    }
-    console.warn(
-      JSON.stringify({
-        event: "gpu_fallback_region_attempt",
-        jobId: job.jobId,
-        primaryRegion: config.ec2.region,
-        fallbackRegion: fallback.region,
-        primaryErrorCodes: err.errorCodes,
-      }),
-    );
-    try {
-      return await launchInFallbackRegion(config, job, taskToken, candidateInstanceTypes, fallback);
-    } catch (fallbackErr) {
-      // 両リージョンとも失敗した。両方のエラーをメッセージに残す——
-      // `handleFailure.ts`の容量不足判定（部分一致）と運用調査の両方が使う。
-      const fallbackMessage =
-        fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-      throw new FleetLaunchError(
-        `${err.message} / フォールバック先(${fallback.region}): ${fallbackMessage}`,
-        [
-          ...err.errorCodes,
-          ...(fallbackErr instanceof FleetLaunchError ? fallbackErr.errorCodes : []),
-        ],
-      );
-    }
-  }
-}
-
-/** `launchInRegion()`の起動先。 */
-interface LaunchTarget {
-  region: string;
-  launchTemplate: { LaunchTemplateId: string } | { LaunchTemplateName: string };
-  subnetIds: string[];
-  /** 省略時は`buildUserData()`の既定（一次リージョンのECR）。 */
-  workerImage: string | undefined;
+  return [primary, fallbackTier];
 }
 
 /**
@@ -644,29 +720,47 @@ async function resolveFallbackSubnetIds(fallback: GpuFallbackConfig): Promise<st
   return subnetIds;
 }
 
-async function launchInFallbackRegion(
-  config: ApiConfig,
-  job: JobRecord,
-  taskToken: string,
+/**
+ * その段の全サブネット・全候補がSpot在庫の枯渇で失敗したか（Issue #315）。1AZの失敗で段全体を
+ * 外さないよう、クォータ超過などが1件でも混ざっていれば false にする。
+ *
+ * `CreateFleet`は失敗した組み合わせごとに`Errors`を返す（2026-11-04に2タイプ×3サブネットで
+ * 実機確認）。報告の無い組み合わせがあれば、試し切っていないとみなす。
+ */
+export function isTierCapacityExhausted(
+  errors: CreateFleetError[],
+  subnetIds: string[],
   candidateInstanceTypes: InstanceType[],
-  fallback: GpuFallbackConfig,
-): Promise<LaunchedInstance> {
-  return launchInRegion(config, job, taskToken, candidateInstanceTypes, {
-    region: fallback.region,
-    launchTemplate: { LaunchTemplateName: fallback.launchTemplateName },
-    subnetIds: await resolveFallbackSubnetIds(fallback),
-    workerImage: fallback.workerGpuImage,
-  });
+): boolean {
+  if (
+    errors.length === 0 ||
+    !errors.every((e) => SPOT_CAPACITY_ERROR_CODES.includes(e.ErrorCode ?? ""))
+  ) {
+    return false;
+  }
+  const reported = new Set(
+    errors.flatMap(({ LaunchTemplateAndOverrides: { Overrides: o } = {} }) =>
+      o?.SubnetId && o.InstanceType ? [`${o.SubnetId}/${o.InstanceType}`] : [],
+    ),
+  );
+  return subnetIds.every((subnetId) =>
+    candidateInstanceTypes.every((type) => reported.has(`${subnetId}/${type}`)),
+  );
 }
 
-/** 1リージョンぶんの`CreateLaunchTemplateVersion` → `CreateFleet`。 */
-async function launchInRegion(
+/**
+ * 1段ぶんの`CreateLaunchTemplateVersion` → `CreateFleet`。作ったバージョンは結果によらず
+ * 消す。UserDataの中身は`CreateFleet`の時点でインスタンスへ渡っており、1テンプレートあたり
+ * 10,000バージョンの上限に試行回数ぶん近づいていくのを避けるため（Issue #315）。
+ */
+async function launchInTier(
   config: ApiConfig,
   job: JobRecord,
   taskToken: string,
-  candidateInstanceTypes: InstanceType[],
-  target: LaunchTarget,
+  target: LaunchTier,
 ): Promise<LaunchedInstance> {
+  const { candidateInstanceTypes } = target;
+  const subnetIds = await target.resolveSubnetIds();
   const ec2 = ec2ClientFor(target.region);
   const userData = buildUserData(config, job, taskToken, {
     workerImage: target.workerImage,
@@ -695,44 +789,49 @@ async function launchInRegion(
     throw new Error("Launch Template バージョンの作成に失敗しました（VersionNumber 不明）");
   }
 
-  const result = await ec2.send(
-    new CreateFleetCommand({
-      Type: "instant",
-      LaunchTemplateConfigs: [
-        {
-          LaunchTemplateSpecification: {
-            ...target.launchTemplate,
-            Version: String(versionNumber),
+  let result: CreateFleetCommandOutput;
+  try {
+    result = await ec2.send(
+      new CreateFleetCommand({
+        Type: "instant",
+        LaunchTemplateConfigs: [
+          {
+            LaunchTemplateSpecification: {
+              ...target.launchTemplate,
+              Version: String(versionNumber),
+            },
+            Overrides: subnetIds.flatMap((subnetId) =>
+              candidateInstanceTypes.map((instanceType) => ({
+                SubnetId: subnetId,
+                InstanceType: instanceType,
+              })),
+            ),
           },
-          Overrides: target.subnetIds.flatMap((subnetId) =>
-            candidateInstanceTypes.map((instanceType) => ({
-              SubnetId: subnetId,
-              InstanceType: instanceType,
-            })),
-          ),
+        ],
+        TargetCapacitySpecification: {
+          TotalTargetCapacity: 1,
+          DefaultTargetCapacityType: "spot",
         },
-      ],
-      TargetCapacitySpecification: {
-        TotalTargetCapacity: 1,
-        DefaultTargetCapacityType: "spot",
-      },
-      SpotOptions: {
-        AllocationStrategy: "price-capacity-optimized",
-        SingleInstanceType: false,
-        SingleAvailabilityZone: false,
-        InstanceInterruptionBehavior: "terminate",
-      },
-      TagSpecifications: [
-        {
-          ResourceType: "instance",
-          Tags: [
-            { Key: "Name", Value: "sattori-recorder" },
-            { Key: JOB_ID_TAG_KEY, Value: job.jobId },
-          ],
+        SpotOptions: {
+          AllocationStrategy: "price-capacity-optimized",
+          SingleInstanceType: false,
+          SingleAvailabilityZone: false,
+          InstanceInterruptionBehavior: "terminate",
         },
-      ],
-    }),
-  );
+        TagSpecifications: [
+          {
+            ResourceType: "instance",
+            Tags: [
+              { Key: "Name", Value: "sattori-recorder" },
+              { Key: JOB_ID_TAG_KEY, Value: job.jobId },
+            ],
+          },
+        ],
+      }),
+    );
+  } finally {
+    await deleteLaunchTemplateVersion(job, target, versionNumber);
+  }
 
   const launchedInstance = result.Instances?.[0];
   const instanceId = launchedInstance?.InstanceIds?.[0];
@@ -758,6 +857,7 @@ async function launchInRegion(
     throw new FleetLaunchError(
       `EC2 Fleet でのインスタンス起動に失敗しました（InstanceId 不明）${reason ? `: ${reason}` : ""}`,
       errorCodes,
+      isTierCapacityExhausted(result.Errors ?? [], subnetIds, candidateInstanceTypes),
     );
   }
   const instanceType = launchedInstance.InstanceType ?? null;
@@ -769,6 +869,43 @@ async function launchInRegion(
     availabilityZone,
     spotPricePerHour: await fetchSpotPrice(instanceType, availabilityZone, target.region),
   };
+}
+
+/**
+ * `launchInTier()`が作ったLaunch Templateバージョンを消す。最新のバージョンを消しても
+ * `$Latest`は残っているうち最新のものを指し、番号は再利用されない（2026-11-04に実機確認）。
+ * 消せなくても起動の成否には関係ないので、ログだけ残して続行する。
+ */
+async function deleteLaunchTemplateVersion(
+  job: JobRecord,
+  target: LaunchTier,
+  versionNumber: number,
+): Promise<void> {
+  try {
+    const result = await ec2ClientFor(target.region).send(
+      new DeleteLaunchTemplateVersionsCommand({
+        ...target.launchTemplate,
+        Versions: [String(versionNumber)],
+      }),
+    );
+    if (result?.UnsuccessfullyDeletedLaunchTemplateVersions?.length) {
+      throw new Error(
+        result.UnsuccessfullyDeletedLaunchTemplateVersions.map(
+          (failure) => failure.ResponseError?.Code,
+        ).join(", "),
+      );
+    }
+  } catch (err) {
+    console.warn(
+      JSON.stringify({
+        event: "launch_template_version_delete_failed",
+        jobId: job.jobId,
+        region: target.region,
+        versionNumber,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
 }
 
 /**

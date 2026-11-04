@@ -35,7 +35,7 @@ EC2のAPIはリージョンを明示して呼ぶこと。配信URLは`outputRegi
 [API Gateway HTTP API] → [Lambda ハンドラ群] → [DynamoDB: ジョブ状態・レート制限]
         ▼ startJob が Step Functions を StartExecution
 [Step Functions(Standard, 1ジョブ=1実行)] ワーカーを1台**割り当て**、ワーカー自身が taskToken
-   で成否を通知。失敗時は孤児をterminateしつつ最大10回リトライ(`apps/api/src/retryPolicy.ts`)
+   で成否を通知。失敗時は孤児をterminateしつつ最大10回リトライ(`apps/api/src/retryPolicy.ts`。Spot在庫の枯渇を除く、§3)
         ├─(A) 自宅サーバーが空いていればオファーを書いて数十秒待つ。常駐デーモン
         │      (`home-worker/`)がclaimすれば同じイメージをローカル実行(§3)
         ▼(B) claimされなければオファーを撤回しEC2へ
@@ -77,6 +77,7 @@ EC2のAPIはリージョンを明示して呼ぶこと。配信URLは`outputRegi
   [`0018`](docs/decisions/0018-home-worker-pull-assignment.md)）。**ワーカーの中に「自宅かEC2か」
   の分岐を作らないこと** —— 環境差分は起動側が渡す環境変数（`apps/api/src/workerEnv.ts`）で表す。
 - **録画速度は1〜4倍速から選べる（倍速録画、Issue #288）。全タイトルが対象で、GPU インスタンスでしか録画しない**（`recordingSpeed`、`requiresGpuRecording()`）。起動側が `FPS_LIMIT_TARGET_HZ=60×倍率` と `GPU_WORKER=1` を渡すだけで、**ワーカー側に倍率やタイトルの分岐を作らない**（[`decisions/0058`](docs/decisions/0058-speedup-recording-on-gpu-instances.md)・[`0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。GPUを確保できないとき（GPU必須タイトルを除く）は `options.recordingSpeed` を1へ書き換えて等倍へ落とす——**ジョブの速度は途中で変わりうる**（[`0060`](docs/decisions/0060-speedup-fallback-to-native-speed.md)）。旧「低速録画」（1/2倍速、Issue #68）は全廃した。ただし旧ジョブのチェックポイント再開用に `worker/convert.py` の scale>1 の等倍化は残してある。
+- **Spot在庫の枯渇はジョブの中で永続エラーとして扱う**。起動手段は順序付きの段（`launchTiersFor()`）で、容量不足の段は`capacityExhaustedTargets`へ記録して同じ`Launch`の中で次へ進み、リトライでも試さない。全段が尽きたら等倍へ落とすか直ちに失敗させる（[`0063`](docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
 - **録画ワーカー（`worker/`）だけ Python**。**この例外は録画パイプラインに限る** —— 自宅ワーカーの
   常駐デーモン（`home-worker/`）はコントロールプレーンしか担わないので TypeScript で書いている
   （[`decisions/0003`](docs/decisions/0003-worker-python-home-worker-typescript.md)）。

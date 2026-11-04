@@ -68,7 +68,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    [`0056`](../../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
    GPU必須タイトル以外の倍速録画ジョブは、30分以上待ったら`options.recordingSpeed`を1へ
    書き換えて（`jobs.ts`の`fallBackToNativeSpeed()`）待機列を抜け、等倍のジョブとして
-   `Launch`へ進む。`HandleFailure`も3回目以降の容量不足で同じフォールバックをする
+   `Launch`へ進む。GPUの段を使い切った`Launch`と、クォータ超過などが3回目以降まで続いた`HandleFailure`も同様
    （Issue #289、[`0060`](../../docs/decisions/0060-speedup-fallback-to-native-speed.md)）。
 3. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト150分・ハートビート
    タイムアウト15分）がワーカーを1台**割り当て**る。割り当て先は自宅ワーカー
@@ -174,16 +174,14 @@ Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決では
 32bit互換ライブラリを自動マウントしないため。[`0052`](../../docs/decisions/0052-gpu-xorg-driver-file-level-mount-not-directory.md)・
 [`0053`](../../docs/decisions/0053-mount-32bit-nvidia-client-libraries-for-wine.md)）。
 
-**GPUジョブは容量不足時だけeu-north-1へフォールバックする**（Issue #296、
-[`docs/decisions/0061`](../../docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)）。
-`launchRecordingInstance()`は常にeu-south-2を先に試し、GPUジョブでエラーコードが
-`GPU_FALLBACK_TRIGGER_ERROR_CODES`（`InsufficientInstanceCapacity`/`UnfulfillableCapacity`）
-のときだけ、同じ呼び出しの中でフォールバック先（`config.ec2.gpuFallback`）へ`CreateFleet`
-し直す。フォールバック先では固定名のLaunch Template（`LaunchTemplateName`で指定）・
-タグで引いたサブネット（`DescribeSubnets`、Lambdaのコンテナ内でキャッシュ）・ECRレプリカの
-イメージを使う。両方失敗したら`FleetLaunchError`に両方のエラーコードを入れて投げる
-（`handleFailure.ts`の容量不足判定は例外メッセージの部分一致なので、この形式を崩さないこと）。
-クォータ超過（`VcpuLimitExceeded`等）・CPU系ジョブはフォールバックしない。管理設定
+**起動手段は順序付きの段（`launchTiersFor()`）で、Spot在庫の枯渇ならその場で次へ進む**（Issue #315、
+[`docs/decisions/0063`](../../docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
+GPUジョブはeu-south-2→`config.ec2.gpuFallback`（固定名のLaunch Template・タグで引いたサブネット・
+ECRレプリカ、[`0061`](../../docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)）、CPU系はeu-south-2のみ。
+枯渇した段は`JobRecord.capacityExhaustedTargets`へ記録し、リトライでは飛ばす。全段が尽きたら
+`launch.ts`が等倍へ落とすか`capacity_exhausted`で直ちに失敗させる。クォータ超過は従来どおりリトライ。
+`FleetLaunchError`のメッセージは`handleFailure.ts`の容量不足判定（部分一致）が使うので形式を崩さないこと。
+試行ごとに作るLaunch Templateのバージョンは結果によらず消す。管理設定
 `forceGpuFallbackRegion`（`settings.ts`）が立っていれば、GPUジョブは一次リージョンを
 試さずフォールバック先で起動する（本番での実機検証用）。
 

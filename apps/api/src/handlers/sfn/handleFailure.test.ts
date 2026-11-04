@@ -7,7 +7,7 @@ import {
 } from "@aws-sdk/client-ec2";
 import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import { SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT, type JobRecord } from "@sattori/shared";
+import { SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT, type JobRecord } from "@sattori/shared";
 import { MAX_ATTEMPTS, MAX_ATTEMPTS_DETERMINISTIC } from "../../retryPolicy.js";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
@@ -475,7 +475,7 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
       Cause: JSON.stringify({
         errorType: "Error",
         errorMessage:
-          "EC2 Fleet でのインスタンス起動に失敗しました（InstanceId 不明）: InsufficientInstanceCapacity: no capacity",
+          "EC2 Fleet でのインスタンス起動に失敗しました（InstanceId 不明）: VcpuLimitExceeded: quota exceeded",
       }),
     };
 
@@ -492,7 +492,7 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
       const { handler } = await import("./handleFailure.js");
       const result = await handler({
         jobId: "job-1",
-        attempt: SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT,
+        attempt: SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT,
         error: capacityError,
       });
 
@@ -523,7 +523,7 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
       const { handler } = await import("./handleFailure.js");
       const result = await handler({
         jobId: "job-1",
-        attempt: SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT - 1,
+        attempt: SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT - 1,
         error: capacityError,
       });
 
@@ -536,7 +536,7 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
       ddbMock.on(UpdateCommand).resolves({});
 
       const { handler } = await import("./handleFailure.js");
-      await handler({ jobId: "job-1", attempt: SPEEDUP_FALLBACK_CAPACITY_FAILURE_ATTEMPT });
+      await handler({ jobId: "job-1", attempt: SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT });
 
       expect(fallbackUpdates()).toHaveLength(0);
     });
@@ -570,6 +570,41 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
         ":ec": "capacity_exhausted",
       });
     });
+  });
+
+  it("Launchが全段の容量不足で失敗させたジョブは試行回数が残っていてもリトライせず、状態も書き直さない(Issue #315)", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({
+      Item: { ...baseJob, status: "failed", errorCode: "capacity_exhausted" },
+    });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({});
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ec2Mock.on(DescribeInstancesCommand).resolves({ Reservations: [] });
+
+    const { handler } = await import("./handleFailure.js");
+    const result = await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(result).toEqual({ shouldRetry: false });
+    expect(statusUpdates(ddbMock)).toHaveLength(0);
+    // 後始末はそのまま行う。
+    expect(terminatedIds()).toEqual(["i-abc123"]);
+  });
+
+  it("ワーカーが書いたfailedはこれまでどおりリトライする(Issue #315)", async () => {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({
+      Item: { ...baseJob, status: "failed", errorCode: "recording_failed" },
+    });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({});
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ec2Mock.on(DescribeInstancesCommand).resolves({ Reservations: [] });
+
+    const { handler } = await import("./handleFailure.js");
+    const result = await handler({
+      jobId: "job-1",
+      attempt: 1,
+      error: { Error: "WorkerFailed", Cause: "SpotInterrupted: instance-action" },
+    });
+
+    expect(result).toEqual({ shouldRetry: true });
   });
 
   it("失敗時にGPU vCPU容量リースを返却する", async () => {

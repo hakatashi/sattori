@@ -36,7 +36,9 @@ export interface GameRoutingPolicy {
  * `Launch` Lambdaのタイムアウトのうち、オファー待機以外の処理に残しておく秒数。
  * 待機の前後には、ハートビートのScan・オファーの書き込み・撤回、そしてEC2 Fleetの
  * 起動一式（`CreateLaunchTemplateVersion` → `CreateFleet` →
- * `DescribeSpotPriceHistory` → ジョブレコード更新）が並ぶ。
+ * `DescribeSpotPriceHistory` → ジョブレコード更新）が並ぶ。倍速録画がGPUの段を使い切って
+ * 等倍へ落ちる経路（Issue #315）では、その手前にGPUの段の試行（1段あたり`CreateFleet`約2秒）と
+ * フォールバックの書き込みも入る。2段+CPUの起動で十数秒に収まる見込み。
  */
 export const LAUNCH_OVERHEAD_RESERVE_SECONDS = 20;
 

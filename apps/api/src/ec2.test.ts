@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CreateFleetCommand,
   CreateLaunchTemplateVersionCommand,
+  DeleteLaunchTemplateVersionsCommand,
   DescribeInstancesCommand,
   DescribeSpotPriceHistoryCommand,
   DescribeSubnetsCommand,
   EC2Client,
+  type FleetLaunchTemplateOverridesRequest,
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import { mockClient } from "aws-sdk-client-mock";
@@ -19,7 +21,9 @@ import {
   findJobInstances,
   FleetLaunchError,
   getCandidateInstanceTypes,
+  isTierCapacityExhausted,
   launchRecordingInstance,
+  LaunchTiersExhaustedError,
   listTaggedInstances,
   terminateInstance,
 } from "./ec2.js";
@@ -565,6 +569,53 @@ describe("launchRecordingInstance", () => {
   });
 });
 
+describe("isTierCapacityExhausted（Issue #315）", () => {
+  const capacityError = (SubnetId: string, InstanceType: string, ErrorCode = "UnfulfillableCapacity") => ({
+    ErrorCode,
+    LaunchTemplateAndOverrides: {
+      Overrides: { SubnetId, InstanceType: InstanceType as "g6f.2xlarge" },
+    },
+  });
+  const types = ["g6f.2xlarge"] as "g6f.2xlarge"[];
+
+  it("全サブネットが容量不足なら使い切りと判定する", () => {
+    expect(
+      isTierCapacityExhausted(
+        [capacityError("a", "g6f.2xlarge"), capacityError("b", "g6f.2xlarge")],
+        ["a", "b"],
+        types,
+      ),
+    ).toBe(true);
+  });
+
+  it("報告の無いサブネットがあれば使い切りと判定しない", () => {
+    expect(isTierCapacityExhausted([capacityError("a", "g6f.2xlarge")], ["a", "b"], types)).toBe(false);
+  });
+
+  it("報告の無い候補タイプがあれば使い切りと判定しない", () => {
+    const candidates = ["c7i.xlarge", "c7a.xlarge"] as "c7i.xlarge"[];
+    expect(isTierCapacityExhausted([capacityError("a", "c7i.xlarge")], ["a"], candidates)).toBe(false);
+  });
+
+  it("クォータ超過が1件でも混ざれば使い切りと判定しない", () => {
+    expect(
+      isTierCapacityExhausted(
+        [capacityError("a", "g6f.2xlarge"), capacityError("b", "g6f.2xlarge", "MaxSpotInstanceCountExceeded")],
+        ["a", "b"],
+        types,
+      ),
+    ).toBe(false);
+  });
+
+  it("組み合わせの書かれていないエラーだけなら使い切りと判定しない", () => {
+    expect(isTierCapacityExhausted([{ ErrorCode: "UnfulfillableCapacity" }], ["a"], types)).toBe(false);
+  });
+
+  it("エラーが無ければ使い切りと判定しない", () => {
+    expect(isTierCapacityExhausted([], ["a"], types)).toBe(false);
+  });
+});
+
 describe("launchRecordingInstance（GPUの容量不足時リージョンフォールバック、Issue #296）", () => {
   const gpuJob: JobRecord = { ...job, game: "th06nc" };
 
@@ -583,7 +634,7 @@ describe("launchRecordingInstance（GPUの容量不足時リージョンフォ�
 
   /** CreateFleetの結果を、呼び出されたクライアントのリージョンごとに返し分ける。 */
   function fleetByRegion(results: Record<string, "ok" | string>) {
-    ec2Mock.on(CreateFleetCommand).callsFake(async (_input, getClient) => {
+    ec2Mock.on(CreateFleetCommand).callsFake(async (input, getClient) => {
       const region = await getClient().config.region();
       const result = results[region];
       if (result === "ok") {
@@ -597,7 +648,17 @@ describe("launchRecordingInstance（GPUの容量不足時リージョンフォ�
           ],
         };
       }
-      return { Instances: [], Errors: [{ ErrorCode: result, ErrorMessage: "nope" }] };
+      // 実際のCreateFleetと同じく、失敗した組み合わせごとに1件返す。
+      const overrides: FleetLaunchTemplateOverridesRequest[] =
+        input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+      return {
+        Instances: [],
+        Errors: overrides.map((override) => ({
+          ErrorCode: result,
+          ErrorMessage: "nope",
+          LaunchTemplateAndOverrides: { Overrides: override },
+        })),
+      };
     });
   }
 
@@ -707,12 +768,192 @@ describe("launchRecordingInstance（GPUの容量不足時リージョンフォ�
     // handleFailure.tsの容量不足判定は例外メッセージの部分一致で行う（Issue #282）。
     expect((err as Error).message).toContain("InsufficientInstanceCapacity");
     expect((err as Error).message).toContain("UnfulfillableCapacity");
+    // 失敗した組み合わせごとに1件（この設定は各リージョン2サブネット×1タイプ）。
     expect((err as FleetLaunchError).errorCodes).toEqual([
       "InsufficientInstanceCapacity",
+      "InsufficientInstanceCapacity",
+      "UnfulfillableCapacity",
       "UnfulfillableCapacity",
     ]);
     warnSpy.mockRestore();
     errorSpy.mockRestore();
+  });
+
+  describe("段の記録とスキップ（Issue #315）", () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+    let errorSpy: ReturnType<typeof vi.spyOn>;
+    let logSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    });
+    afterEach(() => {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+      logSpy.mockRestore();
+    });
+
+    it("容量不足の段を次の段を試す前に通知する", async () => {
+      fleetByRegion({ "ap-northeast-1": "UnfulfillableCapacity", "eu-north-1": "ok" });
+      const onTierExhausted = vi.fn(async (_tierIds: string[]) => {
+        expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+      });
+
+      const instance = await launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc", {
+        onTierExhausted,
+      });
+
+      expect(instance.region).toBe("eu-north-1");
+      expect(onTierExhausted.mock.calls).toEqual([[["gpu:ap-northeast-1"]]]);
+    });
+
+    it("記録済みの段は飛ばす", async () => {
+      fleetByRegion({ "ap-northeast-1": "ok", "eu-north-1": "ok" });
+
+      const instance = await launchRecordingInstance(
+        fallbackConfig,
+        { ...gpuJob, capacityExhaustedTargets: ["gpu:ap-northeast-1"] },
+        "task-token-abc",
+      );
+
+      expect(instance.region).toBe("eu-north-1");
+      expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+    });
+
+    it("全段が記録済みなら1回もCreateFleetせずLaunchTiersExhaustedErrorを投げる", async () => {
+      fleetByRegion({ "ap-northeast-1": "ok", "eu-north-1": "ok" });
+
+      await expect(
+        launchRecordingInstance(
+          fallbackConfig,
+          { ...gpuJob, capacityExhaustedTargets: ["gpu:ap-northeast-1", "gpu:eu-north-1"] },
+          "task-token-abc",
+        ),
+      ).rejects.toBeInstanceOf(LaunchTiersExhaustedError);
+      expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(0);
+    });
+
+    it("全段が容量不足ならLaunchTiersExhaustedErrorを投げる", async () => {
+      fleetByRegion({
+        "ap-northeast-1": "UnfulfillableCapacity",
+        "eu-north-1": "InsufficientInstanceCapacity",
+      });
+      const onTierExhausted = vi.fn(async () => {});
+
+      await expect(
+        launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc", { onTierExhausted }),
+      ).rejects.toBeInstanceOf(LaunchTiersExhaustedError);
+      expect(onTierExhausted).toHaveBeenLastCalledWith(["gpu:ap-northeast-1", "gpu:eu-north-1"]);
+    });
+
+    it("CPU系ジョブの段が容量不足ならLaunchTiersExhaustedErrorを投げ、cpuの段として記録する", async () => {
+      fleetByRegion({ "ap-northeast-1": "UnfulfillableCapacity" });
+      const onTierExhausted = vi.fn(async () => {});
+
+      await expect(
+        launchRecordingInstance(fallbackConfig, job, "task-token-abc", { onTierExhausted }),
+      ).rejects.toBeInstanceOf(LaunchTiersExhaustedError);
+      expect(onTierExhausted).toHaveBeenCalledWith(["cpu:ap-northeast-1"]);
+    });
+
+    it("一部のサブネットがクォータ超過なら次の段へ進むが記録しない", async () => {
+      ec2Mock.on(CreateFleetCommand).callsFake(async (_input, getClient) => {
+        const region = await getClient().config.region();
+        return region === "ap-northeast-1"
+          ? {
+              Instances: [],
+              Errors: [
+                { ErrorCode: "UnfulfillableCapacity", ErrorMessage: "nope" },
+                { ErrorCode: "MaxSpotInstanceCountExceeded", ErrorMessage: "nope" },
+              ],
+            }
+          : {
+              Instances: [
+                { InstanceIds: ["i-north"], InstanceType: "g6f.2xlarge", AvailabilityZone: "eu-north-1b" },
+              ],
+            };
+      });
+      const onTierExhausted = vi.fn(async () => {});
+
+      const instance = await launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc", {
+        onTierExhausted,
+      });
+
+      expect(instance.region).toBe("eu-north-1");
+      expect(onTierExhausted).not.toHaveBeenCalled();
+    });
+
+    it("記録しなかった段が残っていれば全段が失敗してもLaunchTiersExhaustedErrorにしない", async () => {
+      ec2Mock.on(CreateFleetCommand).callsFake(async (_input, getClient) => {
+        const region = await getClient().config.region();
+        return {
+          Instances: [],
+          Errors:
+            region === "ap-northeast-1"
+              ? [
+                  { ErrorCode: "UnfulfillableCapacity", ErrorMessage: "nope" },
+                  { ErrorCode: "MaxSpotInstanceCountExceeded", ErrorMessage: "nope" },
+                ]
+              : [{ ErrorCode: "UnfulfillableCapacity", ErrorMessage: "nope" }],
+        };
+      });
+
+      const err = await launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc").catch(
+        (e: unknown) => e,
+      );
+
+      expect(err).toBeInstanceOf(FleetLaunchError);
+      expect(err).not.toBeInstanceOf(LaunchTiersExhaustedError);
+    });
+
+    it("次の段がクォータ超過なら再試行に回し、前の段のエラーもメッセージへ残す", async () => {
+      fleetByRegion({ "ap-northeast-1": "UnfulfillableCapacity", "eu-north-1": "VcpuLimitExceeded" });
+
+      const err = await launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc").catch(
+        (e: unknown) => e,
+      );
+
+      expect(err).not.toBeInstanceOf(LaunchTiersExhaustedError);
+      expect((err as Error).message).toContain("UnfulfillableCapacity");
+      expect((err as Error).message).toContain("VcpuLimitExceeded");
+    });
+  });
+
+  describe("Launch Templateバージョンの削除（Issue #315）", () => {
+    it("起動に成功しても失敗しても、作ったバージョンを同じ段のテンプレートから消す", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      fleetByRegion({ "ap-northeast-1": "UnfulfillableCapacity", "eu-north-1": "ok" });
+      ec2Mock.on(DeleteLaunchTemplateVersionsCommand).resolves({});
+
+      await launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc");
+
+      const inputs = ec2Mock
+        .commandCalls(DeleteLaunchTemplateVersionsCommand)
+        .map((call) => call.args[0].input);
+      expect(inputs).toEqual([
+        { LaunchTemplateId: "lt-gpu-xxxx", Versions: ["7"] },
+        { LaunchTemplateName: "sattori-gpu-worker", Versions: ["7"] },
+      ]);
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+
+    it("削除に失敗しても起動は成功させる", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      fleetByRegion({ "ap-northeast-1": "ok" });
+      ec2Mock.on(DeleteLaunchTemplateVersionsCommand).rejects(new Error("throttled"));
+
+      const instance = await launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc");
+
+      expect(instance.instanceId).toBe("i-ap-northeast-1");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("launch_template_version_delete_failed"),
+      );
+      warnSpy.mockRestore();
+    });
   });
 
   it("forceFallbackRegionなら一次リージョンを試さずフォールバック先で起動する", async () => {
