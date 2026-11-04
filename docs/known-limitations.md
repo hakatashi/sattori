@@ -67,7 +67,8 @@ touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実�
   一時的なコマ落ちがあり、高負荷のあとはBGMが映像より先行する（th20で約0.5秒、touhou-recorder
   reports/91 §6）。実時間は尺の約2倍（th15 Extraは約3倍）。**ワーカー経由のAWS実機（`c7i.4xlarge`）での
   E2Eは未実施**で、検証は`recorder/`での実機とこのリポジトリのワーカーのローカル実行に分かれている。
-  `c7i.4xlarge`の1タイプしか候補が無く、Spot中断は録画からやり直し（reports/91 §7）。
+  `c7i.4xlarge`の1タイプしか候補が無く、Spot中断は録画からやり直し（reports/91 §7）。尺60分級のリプレイは
+  ルートボリューム（30GiB）に近づく（[`reports/2026-11-05`](reports/2026-11-05-cpu-slow-motion-worker-local.md)）。
 - **`g6.2xlarge`も枯渇しうる**。実起動の成否は同じ日でも変わる（touhou-recorder reports/92 §6）。
   倍速のth06ncは`g6f`と同じく配信版が約45fpsに落ちる（#322）。
 
