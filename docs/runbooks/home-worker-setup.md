@@ -77,7 +77,7 @@ Type=simple
 User=hakatashi
 WorkingDirectory=/home/hakatashi/sattori/home-worker
 EnvironmentFile=/etc/sattori-home-worker.env
-ExecStart=/home/hakatashi/.asdf/installs/nodejs/24.9.0/bin/node dist/main.js
+ExecStart=/home/hakatashi/.asdf/installs/nodejs/24.22.1/bin/node dist/main.js
 Restart=always
 RestartSec=10
 # 実行中の録画を完走させてから終了する（SIGTERM後は新規claimを止めるだけ）。
