@@ -60,7 +60,8 @@
 - **実時間120分の頭打ち**: 1/2倍速なら従来どおりコンテンツ60分で打ち切る計算で、変換とアップロードを
   足しても150分に収まる。1/3倍速のみ、コンテンツ40分で打ち切りになる。th15 Extraの尺は十数分で届かない。
 - **実機確認**: ワーカーでの動作は [`reports/2026-11-05-cpu-slow-motion-worker-local.md`](../reports/2026-11-05-cpu-slow-motion-worker-local.md)。
-  AWS実機のE2Eは未実施（`docs/known-limitations.md` §1）。
+  本番E2Eは [`reports/2026-11-05-cpu-slow-motion-production-e2e.md`](../reports/2026-11-05-cpu-slow-motion-production-e2e.md)。
+  th15・th20は完走したが、**`g6.2xlarge`の段は在庫が無く、Lambdaからの起動を確認できていない**。
 
 ## 採らなかった選択肢
 

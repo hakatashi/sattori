@@ -1,5 +1,7 @@
 # CPU低速録画を本番ワーカーのコードでローカル実行した検証(Issue #316)
 
+この結果は [`2026-11-05-cpu-slow-motion-production-e2e`](2026-11-05-cpu-slow-motion-production-e2e.md) で更新された(ローカルで通ったth15の20Hzが`c7i.4xlarge`では失敗した)。
+
 - **検証日**: 2026-11-05
 - **対象**: `worker/`の録画パイプライン(`record_th15.py`・`record_th20.py`→`convert.py`)の低速録画。th15 1/3倍速・1/2倍速、th20 1/2倍速
 - **環境**: HakataMatrix(Ryzen 7 5700X、16スレッド)、Docker、`worker/Dockerfile`からビルドした`sattori-worker:verify-316`(ECRへはpushしていない)、S3の本番タイトル資産+今回ビルドした`th15_hook.dll`

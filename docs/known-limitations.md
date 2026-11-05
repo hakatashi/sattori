@@ -65,11 +65,14 @@ touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実�
   3回目）は本番の実測に基づかない初期値。
 - **CPU低速録画の品質はGPU録画より落ちる**（[`decisions/0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。ボムやスペルカード終了時に
   一時的なコマ落ちがあり、高負荷のあとはBGMが映像より先行する（th20で約0.5秒、touhou-recorder
-  reports/91 §6）。実時間は尺の約2倍（th15 Extraは約3倍）。**ワーカー経由のAWS実機（`c7i.4xlarge`）での
-  E2Eは未実施**で、検証は`recorder/`での実機とこのリポジトリのワーカーのローカル実行に分かれている。
+  reports/91 §6）。実時間は尺の約2倍（th15 Extraは約3倍）。本番E2Eは各条件1本で、Spotの実際の中断は未確認
+  （[`reports/2026-11-05`](reports/2026-11-05-cpu-slow-motion-production-e2e.md)）。
   `c7i.4xlarge`の1タイプしか候補が無く、Spot中断は録画からやり直し（reports/91 §7）。尺60分級のリプレイは
   ルートボリューム（30GiB）に近づく（[`reports/2026-11-05`](reports/2026-11-05-cpu-slow-motion-worker-local.md)）。
-- **`g6.2xlarge`も枯渇しうる**。実起動の成否は同じ日でも変わる（touhou-recorder reports/92 §6）。
+- **`g6.2xlarge`も枯渇しうる**。実起動の成否は同じ日でも変わる（touhou-recorder reports/92 §6）。**2026-11-05の
+  本番E2Eでは約3時間でジョブ10本すべて容量不足になり、この段でLambdaから起動できることは未確認。**
+- **リプレイが始まらなかった録画が`done`になりうる**。メニュー操作を取りこぼしても、背景の動く画面なら重複率で弾けず、
+  画面静止で終了と判定される（th15 20Hzで実例）。スコアは`desyncDetected`に出るだけで、リトライしない。
   倍速のth06ncは`g6f`と同じく配信版が約45fpsに落ちる（#322）。
 
 ### th06nc（東方紅魔郷: New Classic）は録画対応済み。ただしGPU専用インスタンスでのみ録画可能
