@@ -1,6 +1,6 @@
 # 0058. 倍速録画（2〜4倍速）を導入し、2倍速以上はGPUインスタンス（g6f.2xlargeのみ）で録画する
 
-- **状態**: 有効
+- **状態**: 「低速録画の廃止」は`0064`によって置き換え済み
 - **決定日**: 2026-09-30
 - **対象**: packages/shared / apps/api / infra / worker
 - **関連**: Issue #288、#289、`docs/decisions/0010-slow-motion-no-worker-side-branching.md`、

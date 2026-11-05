@@ -8,7 +8,8 @@ import {
   recommendedRecordingSpeed,
   recordingSpeedOf,
   recordingWallClockSeconds,
-  speedupTargetHz,
+  normalizeRequestedRecordingSpeed,
+  recordingTargetHz,
 } from "./recordingSpeed.js";
 
 describe("normalizeRecordingSpeed / recordingSpeedOf", () => {
@@ -72,10 +73,12 @@ describe("isFasterThanRecommended", () => {
   });
 });
 
-describe("speedupTargetHz", () => {
+describe("recordingTargetHz", () => {
   it("60×倍率", () => {
-    expect(speedupTargetHz(2)).toBe(120);
-    expect(speedupTargetHz(4)).toBe(240);
+    expect(recordingTargetHz(2)).toBe(120);
+    expect(recordingTargetHz(4)).toBe(240);
+    expect(recordingTargetHz(1 / 2)).toBe(30);
+    expect(recordingTargetHz(1 / 3)).toBe(20);
   });
 });
 
@@ -99,5 +102,24 @@ describe("recordingWallClockSeconds / estimateRecordingCompletionSeconds", () =>
     expect(estimateRecordingCompletionSeconds(1200, 1, false)).toBeGreaterThan(
       estimateRecordingCompletionSeconds(1200, 1, true),
     );
+  });
+});
+
+describe("低速録画（Issue #316）", () => {
+  it("ジョブレコードの低速の値を正規化で失わない", () => {
+    expect(normalizeRecordingSpeed(1 / 2)).toBe(1 / 2);
+    expect(normalizeRecordingSpeed(1 / 3)).toBe(1 / 3);
+  });
+
+  it("APIの入力では低速を受け付けない", () => {
+    expect(normalizeRequestedRecordingSpeed(1 / 2)).toBe(1);
+    expect(normalizeRequestedRecordingSpeed(1 / 3)).toBe(1);
+    expect(normalizeRequestedRecordingSpeed(3)).toBe(3);
+    expect(normalizeRequestedRecordingSpeed("2")).toBe(1);
+  });
+
+  it("実時間の見積もりが実測(reports/91)に合う", () => {
+    expect(recordingWallClockSeconds(100, 1 / 2)).toBeCloseTo(206);
+    expect(recordingWallClockSeconds(100, 1 / 3)).toBeCloseTo(309);
   });
 });

@@ -21,7 +21,7 @@
 | [0007](0007-no-ip-rate-limit-no-recaptcha.md) | 2026-07 | apps/api | IP 単位のレート制限・reCAPTCHA を見送る | 有効 |
 | [0008](0008-th20-appdata-resolved-from-unix-user.md) | 2026-08 | worker | th20 の `%APPDATA%` 配置先を実行中の UNIX ユーザーから解決する | 有効 |
 | [0009](0009-thprac-post-attach.md) | 2026-08 | worker / apps/web | th20 のデシンク対策に thprac を「後付けアタッチ」で適用する | 有効 |
-| [0010](0010-slow-motion-no-worker-side-branching.md) | 2026-08 | worker / apps/api | 低速録画をワーカー側の分岐にせず、起動側が渡す環境変数だけで表す | 倍速録画（[0058](0058-speedup-recording-on-gpu-instances.md)）で低速録画は廃止。方針自体は有効 |
+| [0010](0010-slow-motion-no-worker-side-branching.md) | 2026-08 | worker / apps/api | 低速録画をワーカー側の分岐にせず、起動側が渡す環境変数だけで表す | 有効（低速録画は[0058](0058-speedup-recording-on-gpu-instances.md)で廃止し、[0064](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)で復活） |
 | [0011](0011-replay-end-template-matching.md) | 2026-07 | worker | リプレイの終了検知を画面静止ではなくリプレイ選択画面テンプレートとの照合で行う | 有効 |
 | [0012](0012-crop-geometry-after-window-stabilizes.md) | 2026-08 | worker | x11grab のクロップ座標はウィンドウ発見時ではなく座標が安定してから確定する | 有効 |
 | [0013](0013-per-job-pulseaudio-sink.md) | 2026-08 | worker | 並列録画の音声混成をジョブ専用の PulseAudio sink で防ぐ | 有効 |
@@ -61,7 +61,7 @@
 | [0047](0047-no-gpu-titles-for-home-worker.md) | 2026-09-12 | apps/api / home-worker | GPU描画必須タイトルは自宅ワーカーへ常にオファーしない | 有効 |
 | [0048](0048-separate-ecr-repo-for-gpu-workers.md) | 2026-09-12 | infra / worker / apps/api | GPU描画必須タイトル専用の別ECRリポジトリ（worker-gpu）を新設する | 有効 |
 | [0049](0049-mod-integration-test-local-only.md) | 2026-09-14 | worker | MODの実機注入統合テストを追加するが、ゲーム資産のライセンス・実行コストのためCIには組み込まず`worker/games/`がある環境限定のローカル実行に限定する | 有効 |
-| [0050](0050-th15-gpu-instance-despite-not-strictly-required.md) | 2026-09-17 | worker / apps/api / packages/shared | th15はGPU描画が原理的に必須ではないが、Extraステージの処理落ち対策としてth06ncと同じGPU系インスタンス(g6f系)に固定する | 有効 |
+| [0050](0050-th15-gpu-instance-despite-not-strictly-required.md) | 2026-09-17 | worker / apps/api / packages/shared | th15はGPU描画が原理的に必須ではないが、Extraステージの処理落ち対策としてth06ncと同じGPU系インスタンス(g6f系)に固定する | 「固定」は[0064](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)によって置き換え済み(GPUを優先し、確保できなければCPU低速へ) |
 | [0051](0051-launch-template-source-version-latest-not-default.md) | 2026-09-17 | apps/api | EC2 Launch Templateのバージョン継承元を`$Default`ではなく`$Latest`にする(CDKデプロイの変更が反映されないバグの修正) | 有効 |
 | [0052](0052-gpu-xorg-driver-file-level-mount-not-directory.md) | 2026-09-18 | apps/api | GPU用コンテナへのXorg NVIDIAドライバ受け渡しはディレクトリ丸ごとではなくファイル単位でマウントする(`Need libwfb`起動不能バグの修正) | 有効 |
 | [0053](0053-mount-32bit-nvidia-client-libraries-for-wine.md) | 2026-09-18 | apps/api | GPU用コンテナへ32bit版NVIDIAクライアントライブラリを個別マウントする(32bitタイトルがGPUを使えずllvmpipeへ静かにフォールバックするバグの修正) | 有効 |
@@ -69,12 +69,13 @@
 | [0055](0055-exclude-eu-south-2a-from-gpu-fleet.md) | 2026-09-19 | apps/api / infra | GPUジョブのEC2 Fleet候補から`eu-south-2a`を暫定除外する(クラッシュ率が有意に高い、p=0.0021。CPU系は対象外) | [0057](0057-revert-eu-south-2a-gpu-exclusion.md)によって撤回済み |
 | [0056](0056-gpu-vcpu-lease-and-queue.md) | 2026-09-19 | apps/api / infra | GPU録画ジョブのvCPU容量をDynamoDBでリースし、`Launch`の手前で待たせる(eu-south-2のG系スポットクオータ8vCPU下でのキューイング、Issue #270) | 有効 |
 | [0057](0057-revert-eu-south-2a-gpu-exclusion.md) | 2026-09-22 | apps/api / infra | [0055](0055-exclude-eu-south-2a-from-gpu-fleet.md)の`eu-south-2a`除外を撤回する(起動失敗の増加が実害化し、除外後もクラッシュが根絶されていないため) | 有効 |
-| [0058](0058-speedup-recording-on-gpu-instances.md) | 2026-09-30 | packages/shared / apps/api / infra / worker | 倍速録画(2〜4倍速)を導入し、2倍速以上はGPUインスタンス(g6f.2xlargeのみ)で録画する。GPU要否はタイトルではなくジョブ(タイトル+録画速度)で決まる(Issue #288) | 有効 |
+| [0058](0058-speedup-recording-on-gpu-instances.md) | 2026-09-30 | packages/shared / apps/api / infra / worker | 倍速録画(2〜4倍速)を導入し、2倍速以上はGPUインスタンス(g6f.2xlargeのみ)で録画する。GPU要否はタイトルではなくジョブ(タイトル+録画速度)で決まる(Issue #288) | 「低速録画の廃止」は[0064](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)によって置き換え済み |
 | [0059](0059-cut-range-decided-by-recorder.md) | 2026-10-04 | worker | 配信版のカット範囲は録画スクリプトがMODログと終了検知の時刻から決め、元の解像度版も同じ変換で作り直す。同期マーカーは音声の録音をゲーム起動直後に始めてカット区間へ追い出す(Issue #266) | 有効 |
 | [0060](0060-speedup-fallback-to-native-speed.md) | 2026-10-09 | packages/shared / apps/api / apps/web | GPUを確保できない倍速録画ジョブ(GPU必須タイトルを除く)は、待ち行列30分超か3回目以降の容量不足で`options.recordingSpeed`を1へ書き換えて等倍(CPU)へ落とす(Issue #289) | 「3回目以降の容量不足」は[0063](0063-spot-capacity-shortage-is-permanent-within-a-job.md)によって一部置き換え済み |
 | [0061](0061-gpu-capacity-fallback-to-eu-north-1.md) | 2026-10-11 | apps/api / infra / packages/shared / worker / apps/web | GPUジョブはeu-south-2のSpot在庫枯渇時だけeu-north-1で起動する。データ面は移さず、価格では振り分けない。0001の単一リージョン原則の例外(Issue #296) | 「データ面は移さない」は[0062](0062-gpu-fallback-region-local-output-and-title-assets.md)によって一部置き換え済み。「リトライで毎回eu-south-2から試す」は[0063](0063-spot-capacity-shortage-is-permanent-within-a-job.md)によって置き換え済み |
 | [0062](0062-gpu-fallback-region-local-output-and-title-assets.md) | 2026-10-11 | apps/api / infra / packages/shared / worker | GPUフォールバック先(eu-north-1)に出力バケットとタイトル資産のレプリカを置き、リージョン間転送料を消す。出力のリージョンは`JobRecord.outputRegion`、配信は MediaCdn の`/eu-north-1/*`(Issue #313) | 有効 |
 | [0063](0063-spot-capacity-shortage-is-permanent-within-a-job.md) | 2026-11-04 | apps/api / packages/shared / infra / apps/web | Spot在庫の枯渇はジョブの中で永続エラーとして扱い、待たずに次の段へ進む。全段が尽きたら等倍へ落とすか直ちに失敗させる。ステートマシンは変えない(Issue #315) | 有効 |
+| [0064](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md) | 2026-11-05 | packages/shared / apps/api / worker / apps/web | GPUを確保できないth15・th20はCPU低速録画(`c7i.4xlarge`、1/2倍速・th15 Extraは1/3倍速)へ、th06ncは`g6.2xlarge`へ逃がす。低速録画はユーザーが選べず自宅ワーカーへも出さない(Issue #316) | 有効 |
 
 ## 書き方
 

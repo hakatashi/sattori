@@ -1,6 +1,6 @@
 import {
-  canFallBackToNativeSpeed,
   estimateGpuOccupancySeconds,
+  fallbackRecordingSpeedFor,
   estimateQueueWaitSeconds,
   GPU_QUEUE_INDEX,
   GPU_QUEUE_WAITING,
@@ -22,7 +22,7 @@ import type { QueueEntry } from "../../gpuQueue.js";
 import { acquireGpuSlot, listGpuSlots } from "../../gpuSlots.js";
 import {
   clearGpuQueueState,
-  fallBackToNativeSpeed,
+  fallBackRecordingSpeed,
   getJob,
   markGpuQueueWaiting,
   updateGpuQueueDisplay,
@@ -33,7 +33,7 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 /**
  * Step Functions の `AcquireGpuSlot` ステート（通常invoke、`Launch`の手前）から
- * 呼ばれるLambda（Issue #270）。GPU必須のジョブ（th06nc・th15と倍速録画）のvCPU容量を
+ * 呼ばれるLambda（Issue #270）。GPU必須のジョブ（th06nc・th15・th20と倍速録画）のvCPU容量を
  * `GpuSlotsTable` で会計し、投入順（FIFO、`JobsTable`のsparse GSI
  * `GpuQueueIndex`）を守りながら空きを待たせる。
  *
@@ -51,10 +51,10 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
  * 4. 先頭なら`GpuSlotsTable`の空きを見て確保を試みる。取れたら待機列から外し
  *    `acquired: true`。先頭でない・取れなかった場合は順位・推定待ち時間を
  *    `JobsTable`へ書き（表示用）、`waitSeconds`を返す。
- * 5. ただし4で待つことになった倍速録画ジョブ（GPU必須タイトルを除く）が
- *    `SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES`以上待っていたら、待たずに等倍（CPU）へ
- *    フォールバックし、待機列から外して`acquired: true`を返す（Issue #289）。
- *    `Launch`はジョブを読み直すので、等倍のジョブとしてCPU系インスタンスか
+ * 5. ただし4で待つことになったジョブが、速度を落とせて（`fallbackRecordingSpeedFor()`）
+ *    `SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES`以上待っていたら、待たずにCPUで録る速度へ
+ *    落とし、待機列から外して`acquired: true`を返す（Issue #289・#316）。
+ *    `Launch`はジョブを読み直すので、CPUのジョブとしてCPU系インスタンスか
  *    自宅ワーカーへ割り当てる。
  *
  * 詳細は `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`。
@@ -131,8 +131,8 @@ async function queryWaitingJobs(
 }
 
 /**
- * 待つことになった倍速録画ジョブを、待ち時間が長ければ等倍へフォールバックさせる
- * （Issue #289）。フォールバックしたら`AcquireGpuSlotResult`を、しなければ null を返す。
+ * 待つことになったジョブを、待ち時間が長ければCPUで録る速度へ落とす
+ * （Issue #289・#316）。落としたら`AcquireGpuSlotResult`を、しなければ null を返す。
  *
  * 判定を待機の分岐（確保できなかった後）でだけ行うのは、ちょうど枠が空いた周回で
  * フォールバックしてしまい、ユーザーの選んだ倍速を無駄に捨てないようにするため。
@@ -143,11 +143,12 @@ async function fallBackIfWaitedTooLong(
   event: AcquireGpuSlotEvent,
   elapsedSeconds: number,
 ): Promise<AcquireGpuSlotResult | null> {
-  if (!canFallBackToNativeSpeed(job) || elapsedSeconds < SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES * 60) {
+  const to = fallbackRecordingSpeedFor(job);
+  if (to === null || elapsedSeconds < SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES * 60) {
     return null;
   }
   const from = recordingSpeedOf(job.options);
-  const fellBack = await fallBackToNativeSpeed(config.jobsTable, event.jobId, from, "gpu_queue_wait");
+  const fellBack = await fallBackRecordingSpeed(config.jobsTable, event.jobId, from, to, "gpu_queue_wait");
   if (!fellBack) {
     return null;
   }
@@ -160,6 +161,7 @@ async function fallBackIfWaitedTooLong(
       attempt: event.attempt,
       reason: "gpu_queue_wait",
       from,
+      to,
       elapsedSeconds: Math.round(elapsedSeconds),
     }),
   );

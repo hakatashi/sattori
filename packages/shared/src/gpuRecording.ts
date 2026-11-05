@@ -1,8 +1,16 @@
 import type { GameId } from "./games.js";
-import { isSpeedupRecording, recordingSpeedOf } from "./recordingSpeed.js";
+import {
+  isSlowMotionRecording,
+  isSpeedupRecording,
+  NATIVE_RECORDING_SPEED,
+  recordingSpeedOf,
+} from "./recordingSpeed.js";
+import type { RecordingSpeed } from "./recordingSpeed.js";
 
 /**
- * GPU描画（Xorg+NVIDIA GRIDドライバ+DXVK）が録画に必須なタイトル一覧（Issue #241）。
+ * 等倍以上の録画にGPU描画（Xorg+NVIDIA GRIDドライバ+DXVK）が要るタイトル一覧（Issue #241）。
+ * このうちth15・th20はGPUを確保できなければCPU低速録画へ落とせる（Issue #316、
+ * `SLOW_MOTION_FALLBACK_GAME_IDS`）ので、**落とす先が無いのはth06ncだけ**である。
  *
  * ## なぜGPUが必須なのか
  *
@@ -38,9 +46,26 @@ import { isSpeedupRecording, recordingSpeedOf } from "./recordingSpeed.js";
  */
 export const GPU_RECORDING_GAME_IDS: readonly GameId[] = ["th06nc", "th15", "th20"];
 
-/** このタイトルは録画速度によらず常にGPU系インスタンスで録画するか。 */
+/** このタイトルは等倍以上なら常にGPU系インスタンスで録画するか（低速録画だけがCPU系）。 */
 export function isGpuOnlyTitle(game: GameId): boolean {
   return GPU_RECORDING_GAME_IDS.includes(game);
+}
+
+/**
+ * GPUを確保できないときにCPU低速録画へ落とせるタイトル（Issue #316）。`c7i.4xlarge`の
+ * 1/2倍速・1/3倍速で実機検証し、ユーザーが視聴して採用した（touhou-recorder reports/91）。
+ */
+export const SLOW_MOTION_FALLBACK_GAME_IDS: readonly GameId[] = ["th15", "th20"];
+
+/**
+ * th15のExtraは1/2倍速でも高負荷区間で30Hzを維持できない（最低19.8Hz、BGMが映像より先行する）
+ * ため1/3倍速で録る（reports/91）。`replayInfo`が読めないジョブは1/2倍速。
+ */
+function slowMotionSpeedFor(job: {
+  game: GameId;
+  replayInfo?: { difficulty: string | null } | null;
+}): RecordingSpeed {
+  return job.game === "th15" && job.replayInfo?.difficulty === "Extra" ? 1 / 3 : 1 / 2;
 }
 
 /**
@@ -51,17 +76,23 @@ export function isGpuOnlyTitle(game: GameId): boolean {
  * reports/89）。ここが true のジョブは自宅ワーカー（GPU非搭載）へは絶対にオファーせず、
  * GPU vCPU枠のリース（`docs/decisions/0056`）・GPU系Launch Template・`worker-gpu`イメージを使う。
  *
+ * 低速録画（Issue #316）はGPUを確保できなかったジョブなので false。
+ *
  * `options`を持たない旧レコードは等倍とみなす（`recordingSpeedOf()`）。
  */
 export function requiresGpuRecording(job: {
   game: GameId;
   options?: { recordingSpeed?: unknown };
 }): boolean {
-  return isGpuOnlyTitle(job.game) || isSpeedupRecording(recordingSpeedOf(job.options));
+  const speed = recordingSpeedOf(job.options);
+  if (isSlowMotionRecording(speed)) {
+    return false;
+  }
+  return isGpuOnlyTitle(job.game) || isSpeedupRecording(speed);
 }
 
 /**
- * GPUを確保できなかった倍速録画ジョブを等倍（CPU）へフォールバックする理由（Issue #289）。
+ * GPUを確保できなかったジョブの録画速度を落とす理由（Issue #289・#316）。
  *
  * - `gpu_queue_wait`: GPU vCPU枠の待ち行列で`SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES`以上待たされた
  *   （`handlers/sfn/acquireGpuSlot.ts`）。
@@ -74,7 +105,7 @@ export const SPEEDUP_FALLBACK_REASONS = ["gpu_queue_wait", "gpu_capacity"] as co
 export type SpeedupFallbackReason = (typeof SPEEDUP_FALLBACK_REASONS)[number];
 
 /**
- * GPU待ち行列でこの分数以上待った倍速録画ジョブは等倍へフォールバックする（Issue #289）。
+ * GPU待ち行列でこの分数以上待ったジョブは、落とせる速度があれば落とす（Issue #289・#316）。
  * 待ち行列そのもののタイムアウト（`GPU_QUEUE_MAX_WAIT_MINUTES`、120分）より十分短くする——
  * 倍速録画を選ぶ動機は「早く仕上がること」なので、30分待ってなお枠が空かないなら、
  * 等倍でもすぐ録り始めたほうが早く仕上がる見込みが高い。
@@ -83,22 +114,32 @@ export const SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES = 30;
 
 /**
  * GPU経路の起動試行がクォータ超過（`VcpuLimitExceeded`等）などで失敗したとき、それが
- * この回数目以降の試行なら等倍へフォールバックする（Issue #289）。1試行あたり
+ * この回数目以降の試行なら速度を落とす（Issue #289・#316）。1試行あたり
  * `WaitBeforeCheck`の3分を挟むため、3なら最初の起動から約6〜9分で見切ることになる。
  * Spot在庫の枯渇は待たずにフォールバックするので、この定数は使わない（Issue #315）。
  */
 export const SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT = 3;
 
 /**
- * GPUを確保できないときに等倍（CPU）へフォールバックできるジョブか（Issue #289）。
+ * GPUを確保できないジョブをCPUで録るための録画速度（Issue #289・#316）。落とせなければ null。
  *
- * 倍速録画（2倍速以上）で、かつ録画速度によらずGPUで録るタイトル（`GPU_RECORDING_GAME_IDS`）
- * でないもの。th06nc・th15・th20は等倍でもGPUが要るので、落とす先が無い。
- * 一度フォールバックしたジョブは`options.recordingSpeed`が1になるので、二度目は無い。
+ * - th15・th20（`SLOW_MOTION_FALLBACK_GAME_IDS`）: 倍速でも等倍でも低速録画へ落とす。
+ *   CPU等倍は`c7i.4xlarge`でも落ち3.4〜6.8%で実用にならない（touhou-recorder reports/91）。
+ * - それ以外の倍速録画: 等倍へ落とす。
+ * - th06nc: 落とす先が無い（代わりに`g6.2xlarge`の段がある、`apps/api/src/ec2.ts`）。
+ *
+ * 一度落としたジョブはGPUジョブではなくなるので、二度目は無い。
  */
-export function canFallBackToNativeSpeed(job: {
+export function fallbackRecordingSpeedFor(job: {
   game: GameId;
   options?: { recordingSpeed?: unknown };
-}): boolean {
-  return !isGpuOnlyTitle(job.game) && isSpeedupRecording(recordingSpeedOf(job.options));
+  replayInfo?: { difficulty: string | null } | null;
+}): RecordingSpeed | null {
+  if (!requiresGpuRecording(job)) {
+    return null;
+  }
+  if (SLOW_MOTION_FALLBACK_GAME_IDS.includes(job.game)) {
+    return slowMotionSpeedFor(job);
+  }
+  return isGpuOnlyTitle(job.game) ? null : NATIVE_RECORDING_SPEED;
 }

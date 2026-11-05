@@ -120,6 +120,10 @@ curl -s "https://sattori.hakatashi.com<パス>" | grep -c "<新GameId等の文�
 
 ## 5. 直接APIを叩いてジョブを作成する(隠したUIを経由しない)
 
+GPU枯渇時の段(CPU低速録画・`g6.2xlarge`、Issue #316)を確かめるには、管理画面の設定
+`skipFractionalGpuTiers`を有効にする(`g6f.2xlarge`の段を飛ばす)。eu-north-1は
+`forceGpuFallbackRegion`。**どちらも検証後に必ず戻すこと。**
+
 フロントエンドが機能を見せないため、`apps/web`のUIからは新タイトルのジョブを
 作成できない。**実際のユーザーフローと同じAPI呼び出しをcurlで直接行う**ことで
 検証する(`packages/shared/src/api.ts`の契約どおり)。

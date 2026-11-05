@@ -93,7 +93,7 @@
 | `EXPECTED_DURATION_SECONDS` | リプレイの推定再生時間(進捗率算出の参考値、省略可) |
 | `EXPECTED_SCORE` | リプレイファイルの記録スコア(画面表示値)。リプレイずれの事後検証(Issue #103、
   [`docs/mods.md`](docs/mods.md)の`score_monitor`)に使う。`replayInfo.score`が取得できていなければ省略される |
-| `FPS_LIMIT_TARGET_HZ` | 録画速度(§5)の目標fps。**省略時は等倍**(既定60)。倍速録画では`60×倍率`(2倍速なら`120`)。60未満(旧低速録画)は未対応で等倍扱い。MODへ渡す`SPEED_HACK_MULTIPLIER`(倍率)と`SYNC_MARKER_TRIGGER`(同期マーカー)はワーカーがここから導出するので、起動側は渡さない |
+| `FPS_LIMIT_TARGET_HZ` | 録画速度(§5)の目標fps。**省略時は等倍**(既定60)。倍速録画では`60×倍率`(2倍速なら`120`)、低速録画では`30`・`20`。MODへ渡す`SPEED_HACK_MULTIPLIER`(倍率)と`SYNC_MARKER_TRIGGER`(同期マーカー)はワーカーがここから導出するので、起動側は渡さない |
 | `GPU_WORKER` | `1`ならGPU(NVIDIA)搭載ワーカー。GPU描画が必須でないタイトルもGPU描画(Xorg+nvidia)で録画し、録画・変換とも映像をNVENCでエンコードする(§5)。GPU系インスタンスで起動する場合だけ起動側が渡す |
 | `THPRAC_ATTACH_TIMEOUT_SEC` / `_CONFIRM_SEC` / `_ATTEMPTS` | th20 の thprac アタッチの予算([`titles/th20.md`](docs/titles/th20.md)) |
 | `TH10_BUGFIX_MARISA_B` | `1` で th10 の VsyncPatch(`vpatch.ini`の`BugFixTh10Power3`)を有効にして録画する
@@ -166,11 +166,11 @@
 なので平均値で丸めずジョブ単位の実測を残す(生動画のサイズはチェックポイントから再開した
 ジョブが`record()`を通らないため`done`遷移時にも併せて書く)。
 
-## 5. 録画速度(倍速録画 Issue #288)
+## 5. 録画速度(倍速録画 Issue #288・低速録画 Issue #316)
 
-ゲームを2〜4倍速で走らせて録画し、後処理(`convert.py`)で等倍へ戻す。旧低速録画(Issue #68、
-1/2倍速)は廃止済みで、th20はGPU(g6f.2xlarge)の等倍録画になった。`convert.py`のscale>1の
-等倍化だけは、旧ジョブのチェックポイントからの再開用に残してある。有効・無効は起動側が渡す `FPS_LIMIT_TARGET_HZ` の有無だけで
+ゲームを2〜4倍速で走らせて録画し、後処理(`convert.py`)で等倍へ戻す。GPUを確保できないth15・th20は
+`c7i.4xlarge`のCPU描画で1/2倍速(th15 Extraは1/3倍速)で録り、同じ変換で等倍へ戻す
+([`decisions/0064`](../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md))。有効・無効は起動側が渡す `FPS_LIMIT_TARGET_HZ` の有無だけで
 決まる(未設定なら全タイトル従来どおり等倍)。ワーカー自身は自分が EC2 にいるのか自宅に
 いるのかを知らない。
 

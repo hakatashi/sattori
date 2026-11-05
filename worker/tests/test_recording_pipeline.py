@@ -151,6 +151,28 @@ def test_record_with_retry_discards_output_above_max_duplicate_rate(monkeypatch)
     assert success is False
 
 
+@pytest.mark.parametrize("dup_rate,success", [(80.4, True), (95.0, False)])
+def test_record_with_retry_uses_slow_motion_threshold(monkeypatch, dup_rate, success):
+    """低速録画(Issue #316)の生データは構造的に重複するので、止まった録画だけを弾く。
+    80.4%は正常な20Hzの実測(touhou-recorder reports/91 §4)。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good", "total_record_sec": 300.0, "time_scale": 3.0,
+    })
+    monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: dup_rate)
+    monkeypatch.setattr(pipeline, "check_replay_desync", lambda *a, **k: False)
+
+    assert pipeline.record_with_retry(
+        config, "/replay.rpy", "/out.mp4", max_attempts=1, max_duplicate_rate=30.0, log=lambda msg: None
+    ) is success
+
+
+def test_recording_timeout_stays_within_task_timeout():
+    """1/3倍速でも、ステートマシンのtaskTimeout(150分)の前に録画を打ち切る(Issue #316)。"""
+    assert pipeline.TIMEOUT_SEC * 2 <= pipeline.MAX_WALL_CLOCK_TIMEOUT_SEC
+    assert pipeline.MAX_WALL_CLOCK_TIMEOUT_SEC < 150 * 60
+
+
 def test_record_with_retry_discards_and_retries_on_crashed_classification(monkeypatch):
     """Wineクラッシュ(classification="crashed")はデシンクと異なり非決定的で
     リトライにより解消しうる(同一リプレイの2ジョブが別地点でクラッシュした実例、

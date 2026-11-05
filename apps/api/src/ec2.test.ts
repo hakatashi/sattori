@@ -23,6 +23,7 @@ import {
   getCandidateInstanceTypes,
   isTierCapacityExhausted,
   launchRecordingInstance,
+  launchTiersFor,
   LaunchTiersExhaustedError,
   listTaggedInstances,
   terminateInstance,
@@ -774,6 +775,8 @@ describe("launchRecordingInstance（GPUの容量不足時リージョンフォ�
       "InsufficientInstanceCapacity",
       "UnfulfillableCapacity",
       "UnfulfillableCapacity",
+      "InsufficientInstanceCapacity",
+      "InsufficientInstanceCapacity",
     ]);
     warnSpy.mockRestore();
     errorSpy.mockRestore();
@@ -828,7 +831,14 @@ describe("launchRecordingInstance（GPUの容量不足時リージョンフォ�
       await expect(
         launchRecordingInstance(
           fallbackConfig,
-          { ...gpuJob, capacityExhaustedTargets: ["gpu:ap-northeast-1", "gpu:eu-north-1"] },
+          {
+            ...gpuJob,
+            capacityExhaustedTargets: [
+              "gpu:ap-northeast-1",
+              "gpu:eu-north-1",
+              "gpu-full:ap-northeast-1",
+            ],
+          },
           "task-token-abc",
         ),
       ).rejects.toBeInstanceOf(LaunchTiersExhaustedError);
@@ -845,7 +855,75 @@ describe("launchRecordingInstance（GPUの容量不足時リージョンフォ�
       await expect(
         launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc", { onTierExhausted }),
       ).rejects.toBeInstanceOf(LaunchTiersExhaustedError);
-      expect(onTierExhausted).toHaveBeenLastCalledWith(["gpu:ap-northeast-1", "gpu:eu-north-1"]);
+      expect(onTierExhausted).toHaveBeenLastCalledWith([
+        "gpu:ap-northeast-1",
+        "gpu:eu-north-1",
+        "gpu-full:ap-northeast-1",
+      ]);
+    });
+
+    it("th06ncはg6fの段が尽きたら一次リージョンのg6.2xlargeを試す（Issue #316）", async () => {
+      ec2Mock
+        .on(CreateFleetCommand)
+        .callsFake(async (input) => {
+          const overrides = input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
+          if (overrides[0]?.InstanceType === "g6.2xlarge") {
+            return {
+              Instances: [{ InstanceIds: ["i-g6"], InstanceType: "g6.2xlarge", AvailabilityZone: "a" }],
+            };
+          }
+          return {
+            Instances: [],
+            Errors: overrides.map((override: FleetLaunchTemplateOverridesRequest) => ({
+              ErrorCode: "InsufficientInstanceCapacity",
+              ErrorMessage: "nope",
+              LaunchTemplateAndOverrides: { Overrides: override },
+            })),
+          };
+        });
+
+      const launched = await launchRecordingInstance(fallbackConfig, gpuJob, "task-token-abc");
+
+      expect(launched.instanceType).toBe("g6.2xlarge");
+      expect(launched.region).toBe("ap-northeast-1");
+      const types = ec2Mock
+        .commandCalls(CreateFleetCommand)
+        .map((call) => call.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides?.[0]?.InstanceType);
+      expect(types).toEqual(["g6f.2xlarge", "g6f.2xlarge", "g6.2xlarge"]);
+    });
+
+    it("th15・th20はg6.2xlargeの段を持たない（Issue #316）", () => {
+      for (const game of ["th15", "th20"] as const) {
+        expect(launchTiersFor(fallbackConfig, { ...gpuJob, game }).map((tier) => tier.id)).toEqual([
+          "gpu:ap-northeast-1",
+          "gpu:eu-north-1",
+        ]);
+      }
+    });
+
+    it("skipFractionalGpuTiersならth06ncはg6.2xlargeだけ、他のジョブは段なしになる（Issue #316）", () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const constraints = { skipFractionalGpuTiers: true };
+      expect(launchTiersFor(fallbackConfig, gpuJob, constraints).map((tier) => tier.id)).toEqual([
+        "gpu-full:ap-northeast-1",
+      ]);
+      expect(launchTiersFor(fallbackConfig, { ...gpuJob, game: "th20" }, constraints)).toEqual([]);
+      // CPU系のジョブには効かない。
+      expect(launchTiersFor(fallbackConfig, job, constraints).map((tier) => tier.id)).toEqual([
+        "cpu:ap-northeast-1",
+      ]);
+      logSpy.mockRestore();
+    });
+
+    it("低速録画のジョブはCPU系のc7i.4xlargeの段になる（Issue #316）", () => {
+      const slowJob: JobRecord = {
+        ...gpuJob,
+        game: "th20",
+        options: { ...gpuJob.options, recordingSpeed: 1 / 2 },
+      };
+      const tiers = launchTiersFor(fallbackConfig, slowJob);
+      expect(tiers.map((tier) => tier.id)).toEqual(["cpu:ap-northeast-1"]);
+      expect(tiers[0]?.candidateInstanceTypes).toEqual(["c7i.4xlarge"]);
     });
 
     it("CPU系ジョブの段が容量不足ならLaunchTiersExhaustedErrorを投げ、cpuの段として記録する", async () => {

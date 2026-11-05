@@ -344,6 +344,24 @@ describe("POST /magic-links", () => {
     expect(jobPut?.args[0].input.Item?.options).toMatchObject({ recordingSpeed: 3 });
   });
 
+  it("低速の recordingSpeed は受け付けず等倍に落とす(Issue #316)", async () => {
+    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        options: { watermark: true, recordingSpeed: 1 / 2 } as never,
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ recordingSpeed: 1 });
+  });
+
   it("不正な recordingSpeed は等倍に落とす", async () => {
     mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
     const { handler } = await import("./requestMagicLink.js");

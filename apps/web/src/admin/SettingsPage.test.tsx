@@ -18,6 +18,7 @@ const baseResponse: AdminSettingsResponse = {
   acceptingNewJobs: true,
   monthlyCostLimitUsd: 50,
   forceGpuFallbackRegion: false,
+  skipFractionalGpuTiers: false,
   currentMonthCostUsd: 12.5,
   costLimitReached: false,
 };
@@ -104,6 +105,20 @@ describe("SettingsPage", () => {
     await waitFor(() => {
       expect(mocked.updateAdminSettings).toHaveBeenCalledWith("token", {
         forceGpuFallbackRegion: true,
+      });
+    });
+  });
+
+  it("g6f.2xlargeの段を飛ばす設定を有効にできる（Issue #316）", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mocked.updateAdminSettings.mockResolvedValue({ ...baseResponse, skipFractionalGpuTiers: true });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "g6f.2xlargeを飛ばす" }));
+
+    await waitFor(() => {
+      expect(mocked.updateAdminSettings).toHaveBeenCalledWith("token", {
+        skipFractionalGpuTiers: true,
       });
     });
   });

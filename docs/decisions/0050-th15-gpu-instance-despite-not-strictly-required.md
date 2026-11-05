@@ -1,6 +1,6 @@
 # 0050. th15はGPU描画が原理的に必須ではないが、th06ncと同じGPU系インスタンス(g6f系)に固定する
 
-- **状態**: 有効
+- **状態**: 「固定」は`0064`によって置き換え済み（GPUを優先し、確保できなければCPU低速へ）
 - **決定日**: 2026-09-17
 - **対象**: worker / apps/api / packages/shared
 - **関連**: Issue #82、`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`、

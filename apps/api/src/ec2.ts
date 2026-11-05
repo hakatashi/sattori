@@ -13,7 +13,13 @@ import {
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import type { JobRecord } from "@sattori/shared";
-import { requiresGpuRecording, vcpusForInstanceType } from "@sattori/shared";
+import {
+  fallbackRecordingSpeedFor,
+  isSlowMotionRecording,
+  recordingSpeedOf,
+  requiresGpuRecording,
+  vcpusForInstanceType,
+} from "@sattori/shared";
 import type { ApiConfig, GpuFallbackConfig } from "./config.js";
 import { workerRegions } from "./config.js";
 import { buildWorkerEnv } from "./workerEnv.js";
@@ -192,6 +198,24 @@ const GPU_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
 ];
 
 /**
+ * 速度を落とせないGPUジョブ（th06nc）の最後の段（Issue #316）。AMIを変えずに録画でき、品質も
+ * `g6f.2xlarge`と同等だが、単価が3.5〜7倍なのでフォールバック専用にする（touhou-recorder
+ * reports/92）。eu-north-1には在庫が無かったのでeu-south-2だけで使う。
+ */
+const GPU_FULL_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
+  "g6.2xlarge", // NVIDIA L4 フル (8vCPU/32GiB)。reports/92実測
+];
+
+/**
+ * CPU低速録画（Issue #316、th15・th20）の候補。**`c7i.4xlarge` 1タイプしか挙げていないのは
+ * 意図的**で、他のタイプはこの構成で検証していない（AGENTS.md §3）。`.2xlarge`帯は落ちが約3倍に
+ * なるので使わない（touhou-recorder reports/91）。
+ */
+const SLOW_MOTION_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
+  "c7i.4xlarge", // Intel Sapphire Rapids 16vCPU/32GiB。reports/91実測で配信版の落ち0.5〜0.8%
+];
+
+/**
  * `launchRecordingInstance()` の候補タイプ絞り込みに使う制約。GPU vCPU容量リース
  * （Issue #270、`docs/decisions/0056-gpu-vcpu-lease-and-queue.md`）専用の値で、
  * CPU系タイトルの候補には一切影響しない。
@@ -210,6 +234,12 @@ export interface LaunchConstraints {
    */
   forceFallbackRegion?: boolean;
   /**
+   * GPUジョブの`g6f.2xlarge`の段を飛ばす（管理設定`skipFractionalGpuTiers`、Issue #316。
+   * 本番での実機検証用）。th06ncは`g6.2xlarge`で起動し、それ以外は全段が尽きた扱いになる。
+   * `forceFallbackRegion`より優先する。非GPUジョブでは無視する。
+   */
+  skipFractionalGpuTiers?: boolean;
+  /**
    * 段を容量不足と判定するたびに、次の段を試す前に呼ぶ（Issue #315）。呼び出し側がジョブ
    * レコードの`capacityExhaustedTargets`へ記録する。渡すのはこれまでに使い切った段すべて。
    */
@@ -226,6 +256,9 @@ export function getCandidateInstanceTypes(
     // GPU必須のジョブはタイトルによらずGPU候補を使う（倍速録画は全タイトルが対象）。
     if (isGpuJob) {
       return GPU_CANDIDATE_INSTANCE_TYPES;
+    }
+    if (isSlowMotionRecording(recordingSpeedOf(job.options))) {
+      return SLOW_MOTION_CANDIDATE_INSTANCE_TYPES;
     }
     switch (job.game) {
       case "th11":
@@ -654,11 +687,29 @@ export interface LaunchTier {
  */
 export function launchTiersFor(
   config: ApiConfig,
-  job: Pick<JobRecord, "jobId" | "game" | "options">,
+  job: Pick<JobRecord, "jobId" | "game" | "options" | "replayInfo">,
   constraints: LaunchConstraints = {},
 ): LaunchTier[] {
   const candidateInstanceTypes = getCandidateInstanceTypes(job, constraints);
   const isGpuJob = requiresGpuRecording(job);
+  // 速度を落とせないGPUジョブ（th06nc）だけが持つ最後の段（Issue #316）。
+  const gpuFullTiers: LaunchTier[] =
+    isGpuJob && fallbackRecordingSpeedFor(job) === null
+      ? [
+          {
+            id: `gpu-full:${config.ec2.region}`,
+            region: config.ec2.region,
+            launchTemplate: { LaunchTemplateId: config.ec2.gpuLaunchTemplateId },
+            resolveSubnetIds: async () => config.ec2.subnetIds,
+            workerImage: undefined,
+            candidateInstanceTypes: GPU_FULL_CANDIDATE_INSTANCE_TYPES,
+          },
+        ]
+      : [];
+  if (isGpuJob && constraints.skipFractionalGpuTiers) {
+    console.log(JSON.stringify({ event: "gpu_fractional_tiers_skipped", jobId: job.jobId }));
+    return gpuFullTiers;
+  }
   const primary: LaunchTier = {
     id: `${isGpuJob ? "gpu" : "cpu"}:${config.ec2.region}`,
     region: config.ec2.region,
@@ -671,7 +722,7 @@ export function launchTiersFor(
   };
   const fallback = isGpuJob ? config.ec2.gpuFallback : null;
   if (fallback === null) {
-    return [primary];
+    return [primary, ...gpuFullTiers];
   }
   const fallbackTier: LaunchTier = {
     id: `gpu:${fallback.region}`,
@@ -687,7 +738,7 @@ export function launchTiersFor(
     );
     return [fallbackTier];
   }
-  return [primary, fallbackTier];
+  return [primary, fallbackTier, ...gpuFullTiers];
 }
 
 /**
