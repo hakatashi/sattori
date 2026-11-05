@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS: AdminSettings = {
   acceptingNewJobs: true,
   monthlyCostLimitUsd: DEFAULT_MONTHLY_COST_LIMIT_USD,
   forceGpuFallbackRegion: false,
+  skipFractionalGpuTiers: false,
 };
 
 /** 設定を取得する。デプロイ直後などitemが存在しない場合は既定値を返す。 */
@@ -31,6 +32,8 @@ export async function getSettings(table: string): Promise<AdminSettings> {
     monthlyCostLimitUsd: result.Item.monthlyCostLimitUsd ?? DEFAULT_SETTINGS.monthlyCostLimitUsd,
     forceGpuFallbackRegion:
       result.Item.forceGpuFallbackRegion ?? DEFAULT_SETTINGS.forceGpuFallbackRegion,
+    skipFractionalGpuTiers:
+      result.Item.skipFractionalGpuTiers ?? DEFAULT_SETTINGS.skipFractionalGpuTiers,
   };
 }
 
@@ -48,6 +51,7 @@ export async function updateSettings(
     acceptingNewJobs: patch.acceptingNewJobs ?? current.acceptingNewJobs,
     monthlyCostLimitUsd: patch.monthlyCostLimitUsd ?? current.monthlyCostLimitUsd,
     forceGpuFallbackRegion: patch.forceGpuFallbackRegion ?? current.forceGpuFallbackRegion,
+    skipFractionalGpuTiers: patch.skipFractionalGpuTiers ?? current.skipFractionalGpuTiers,
   };
   await client.send(
     new PutCommand({ TableName: table, Item: { settingKey: SETTINGS_KEY, ...next } }),

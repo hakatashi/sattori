@@ -155,6 +155,27 @@ describe("estimateJobCost", () => {
     expect(estimate.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
   });
 
+  it("g6.2xlargeをCPU系の.2xlarge帯・g6fのgpu帯へ混同しない（Issue #316）", () => {
+    const estimate = estimateJobCost(
+      makeJob({ spotPricePerHour: null, instanceType: "g6.2xlarge" }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+    expect(estimate.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpuFull);
+  });
+
+  it("インスタンスタイプ未記録の低速録画は.4xlarge帯で推定する（Issue #316）", () => {
+    const estimate = estimateJobCost(
+      makeJob({
+        game: "th20",
+        spotPricePerHour: null,
+        instanceType: null,
+        options: { recordingSpeed: 1 / 2 },
+      }),
+      new Date("2026-08-02T00:00:00.000Z"),
+    );
+    expect(estimate.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
+  });
+
   it("GPU系(g6f.xlarge/g6f.2xlarge)をCPU系.xlarge/.2xlarge帯へ混同しない（Issue #241）", () => {
     const estimateXlarge = estimateJobCost(
       makeJob({ spotPricePerHour: null, instanceType: "g6f.xlarge" }),

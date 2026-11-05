@@ -194,10 +194,11 @@ claim が解除され、EC2 でリトライされる。
 
 録画速度を上げた倍速録画（2倍速以上）と GPU 必須タイトル（th06nc・th15・th20）は GPU
 インスタンス（`g6f.2xlarge`）でしか録画せず、GPU 非搭載の自宅マシンへはオファーされない
-（`apps/api/src/workerRouting.ts` の `GPU_ONLY_ROUTING_POLICY`、
+（`apps/api/src/workerRouting.ts` の `EC2_ONLY_ROUTING_POLICY`、
 [`decisions/0047`](../docs/decisions/0047-no-gpu-titles-for-home-worker.md)・
 [`0058`](../docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。
-旧「低速録画」（Issue #68）と、そのための能力宣言（capability）・th20 のオファー待ちは廃止した。
+th15・th20 の低速録画も、#179（th20 低速2並列のハング）が未解決で自宅でのCPU低速も未検証なのでオファーしない
+（[`decisions/0064`](../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
 
 > **デーモン側に録画速度の判断を持ち込まないこと。** 環境差分は起動側が渡す環境変数だけで表す。
 > 理由は [`docs/decisions/0010`](../docs/decisions/0010-slow-motion-no-worker-side-branching.md)。

@@ -1,6 +1,8 @@
 import {
   isHeartbeatFresh,
+  isSlowMotionRecording,
   LAUNCH_LAMBDA_TIMEOUT_SECONDS,
+  recordingSpeedOf,
   requiresGpuRecording,
 } from "@sattori/shared";
 import type { JobRecord, WorkerHeartbeat } from "@sattori/shared";
@@ -8,7 +10,8 @@ import type { JobRecord, WorkerHeartbeat } from "@sattori/shared";
 /**
  * 「このジョブを誰に任せるか」の方針（Issue #49）。GPUが必須のジョブ
  * （`requiresGpuRecording()`）は自宅ワーカーへオファーせず常にEC2（GPU系）へ、
- * それ以外は自宅ワーカーが空いていれば自宅、いなければEC2へ振り分ける。
+ * 低速録画（Issue #316）も常にEC2（`c7i.4xlarge`）へ、それ以外は自宅ワーカーが空いていれば
+ * 自宅、いなければEC2へ振り分ける。
  */
 export interface GameRoutingPolicy {
   /**
@@ -59,8 +62,8 @@ export const DEFAULT_ROUTING_POLICY: GameRoutingPolicy = {
   offerWindowSeconds: 20,
 };
 
-/** GPU必須のジョブ（`requiresGpuRecording()`）に適用する方針。自宅ワーカーへはオファーしない。 */
-export const GPU_ONLY_ROUTING_POLICY: GameRoutingPolicy = {
+/** GPU必須のジョブ（`requiresGpuRecording()`）と低速録画に適用する方針。自宅ワーカーへはオファーしない。 */
+export const EC2_ONLY_ROUTING_POLICY: GameRoutingPolicy = {
   offerToHomeWorker: false,
   offerWindowSeconds: 0,
 };
@@ -69,7 +72,11 @@ export const GPU_ONLY_ROUTING_POLICY: GameRoutingPolicy = {
 export function routingPolicyFor(job: Pick<JobRecord, "game" | "options">): GameRoutingPolicy {
   // GPU必須のジョブ（th06nc・th15・th20と倍速録画）。自宅ワーカーはGPUを搭載していない
   // ため、常にEC2（GPU系）へ固定する（`docs/decisions/0047-no-gpu-titles-for-home-worker.md`）。
-  return requiresGpuRecording(job) ? GPU_ONLY_ROUTING_POLICY : DEFAULT_ROUTING_POLICY;
+  // 低速録画も自宅ワーカーへは出さない。th20低速2並列のハング（#179）が未解決で、自宅の
+  // 環境でのCPU低速も検証していない（`docs/decisions/0064`）。
+  return requiresGpuRecording(job) || isSlowMotionRecording(recordingSpeedOf(job.options))
+    ? EC2_ONLY_ROUTING_POLICY
+    : DEFAULT_ROUTING_POLICY;
 }
 
 /** そのワーカーがこのジョブを引き受けられる状態か。 */

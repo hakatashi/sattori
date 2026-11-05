@@ -69,15 +69,15 @@ EC2のAPIはリージョンを明示して呼ぶこと。配信URLは`outputRegi
   （[`decisions/0006`](docs/decisions/0006-progress-polling-not-websocket.md)）。
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。永年無料枠で egress を実質ゼロにできる。
 - **録画ワーカーは EC2 Fleet と自宅サーバーの2種類あり、どちらも同じ ECR イメージ・同じ taskToken
-  契約で動く**（Issue #49、GPU必須のジョブ——th06nc・th15・th20と倍速録画——は自宅ワーカーへ常に来ないため例外
+  契約で動く**（Issue #49、GPU必須のジョブ——th06nc・th15・th20と倍速録画——と低速録画は自宅ワーカーへ常に来ないため例外
   ——別ECRイメージ・別インスタンスタイプ、[`0046`](docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)〜
   [`0048`](docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)・[`0058`](docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。自宅マシンは NAT 配下で
   到達できないため割り当ては**Pull 型**（AWS が
   オファーを書き、デーモンが条件付き更新で原子的に claim する。
   [`0018`](docs/decisions/0018-home-worker-pull-assignment.md)）。**ワーカーの中に「自宅かEC2か」
   の分岐を作らないこと** —— 環境差分は起動側が渡す環境変数（`apps/api/src/workerEnv.ts`）で表す。
-- **録画速度は1〜4倍速から選べる（倍速録画、Issue #288）。全タイトルが対象で、GPU インスタンスでしか録画しない**（`recordingSpeed`、`requiresGpuRecording()`）。起動側が `FPS_LIMIT_TARGET_HZ=60×倍率` と `GPU_WORKER=1` を渡すだけで、**ワーカー側に倍率やタイトルの分岐を作らない**（[`decisions/0058`](docs/decisions/0058-speedup-recording-on-gpu-instances.md)・[`0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。GPUを確保できないとき（GPU必須タイトルを除く）は `options.recordingSpeed` を1へ書き換えて等倍へ落とす——**ジョブの速度は途中で変わりうる**（[`0060`](docs/decisions/0060-speedup-fallback-to-native-speed.md)）。旧「低速録画」（1/2倍速、Issue #68）は全廃した。ただし旧ジョブのチェックポイント再開用に `worker/convert.py` の scale>1 の等倍化は残してある。
-- **Spot在庫の枯渇はジョブの中で永続エラーとして扱う**。起動手段は順序付きの段（`launchTiersFor()`）で、容量不足の段は`capacityExhaustedTargets`へ記録して同じ`Launch`の中で次へ進み、リトライでも試さない。全段が尽きたら等倍へ落とすか直ちに失敗させる（[`0063`](docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
+- **録画速度は1〜4倍速から選べる（倍速録画、Issue #288）。全タイトルが対象で、GPU インスタンスでしか録画しない**（`recordingSpeed`、`requiresGpuRecording()`）。起動側が `FPS_LIMIT_TARGET_HZ=60×倍率` と `GPU_WORKER=1` を渡すだけで、**ワーカー側に倍率やタイトルの分岐を作らない**（[`decisions/0058`](docs/decisions/0058-speedup-recording-on-gpu-instances.md)・[`0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。GPUを確保できないときは `options.recordingSpeed` を書き換えて落とす（通常のタイトルは等倍へ）——**ジョブの速度は途中で変わりうる**（[`0060`](docs/decisions/0060-speedup-fallback-to-native-speed.md)）。**低速録画（`FPS_LIMIT_TARGET_HZ`=30・20、`c7i.4xlarge`）はGPUを確保できないth15・th20の落とし先で、ユーザーは選べず自宅ワーカーへも出さない。th06ncの落とし先は`g6.2xlarge`の段**（[`0064`](docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
+- **Spot在庫の枯渇はジョブの中で永続エラーとして扱う**。起動手段は順序付きの段（`launchTiersFor()`）で、容量不足の段は`capacityExhaustedTargets`へ記録して同じ`Launch`の中で次へ進み、リトライでも試さない。全段が尽きたら速度を落とすか直ちに失敗させる（[`0063`](docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
 - **録画ワーカー（`worker/`）だけ Python**。**この例外は録画パイプラインに限る** —— 自宅ワーカーの
   常駐デーモン（`home-worker/`）はコントロールプレーンしか担わないので TypeScript で書いている
   （[`decisions/0003`](docs/decisions/0003-worker-python-home-worker-typescript.md)）。

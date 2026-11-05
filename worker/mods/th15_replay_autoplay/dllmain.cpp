@@ -29,6 +29,7 @@
 #include "../common/fps_monitor.h"
 #include "../common/fps_limiter_hook.h"
 #include "../common/dsound_hook.h"
+#include "../common/fps_display_hook.h"
 #include "../common/score_monitor.h"
 
 using namespace autoplay;
@@ -38,7 +39,7 @@ static const BYTE DIK_DOWN = 0xD0;
 static const BYTE DIK_RIGHT = 0xCD;
 static const BYTE DIK_RETURN = 0x1C;
 
-// 低速録画(Issue #68)でFPS_LIMIT_TARGET_HZが60未満のとき、メニュー操作の
+// 低速録画(Issue #316)でFPS_LIMIT_TARGET_HZが60未満のとき、メニュー操作の
 // Sleep()待機を同じ比率で延長する(th20のScaledSleepと同じ理由。
 // mods/th20_replay_autoplay/dllmain.cppのコメント参照)。
 static double GetMenuTimeScale() {
@@ -71,8 +72,10 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
         return 1;
     }
 
-    Log("Buffering 5000ms (scaled) for title screen logo animation...");
-    ScaledSleep(5000);
+    // th20と同じ10秒。短くした5秒では1/3倍速の`c7i.4xlarge`でメニュー操作を取りこぼした(Issue #316)。
+    // この区間は配信版でカットされる(`recording/cut.py`)ので、長くても動画には残らない。
+    Log("Buffering 10000ms (scaled) for title screen logo animation...");
+    ScaledSleep(10000);
 
     Log("Step 1: Down x2 (select 'Replay' on main menu, skipping grayed-out 'Extra Start')");
     for (int i = 0; i < 2; i++) {
@@ -109,13 +112,18 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         // 倍速録画(reports/85・89): QPCの経過時間をSPEED_HACK_MULTIPLIER倍に伸ばす。
         // 未設定(等倍)なら何もしない。
         InstallSpeedHackHook();
-        // 低速録画(Issue #68)対応。D3D9 Presentフックでフレームレートを制限する
+        // 低速録画(Issue #316)対応。D3D9 Presentフックでフレームレートを制限する
         // (th20と同じ経路、touhou-recorder reports/82で動作確認済み)。
         InstallFpsLimiterHook(60.0);
         // fps_limiter_hookによる映像・ゲームロジックのスローモーション化は
         // DirectSoundのBGM/SEストリーミングには連動しないため、SetFrequency
         // フックで音声側も同じ比率でスケールする(th20と同じ理由)。
         InstallDSoundHook(1.0);
+        // 低速録画でfps表示が低いままになる問題の補正(touhou-recorder reports/93)。FPSInfの
+        // 更新(0x335f0)が時刻取得関数(0x72c90)を呼ぶ経路だけを偽装する。0x72c90はフレーム
+        // ペーシング等と共有なのでQPCの戻り先だけでは絞り込めない。等倍・倍速録画では倍率
+        // 1.0となり無効。IATの外側に置くためInstallSpeedHackHookより後に呼ぶこと。
+        InstallFpsDisplayCorrectionHookViaCaller(0x00072ccb, 0x00033600);
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th15.cpp)のth15_patch_mainフック内の絶対アドレス書き込み
         // (0x4E740C=score/10, 0x4E7450=life, 0x4E741C=graze)から、th15.exeの

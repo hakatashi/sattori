@@ -4,9 +4,8 @@ import {
   DEFAULT_LANGUAGE,
   EMAIL_PATTERN,
   isSupportedGame,
-  isSpeedupRecording,
   isSupportedLanguage,
-  normalizeRecordingSpeed,
+  normalizeRequestedRecordingSpeed,
   parseReplayInfo,
   supportsHighResolutionRecording,
   supportsTh10BugfixMarisaB,
@@ -154,13 +153,13 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }
   const estimatedDurationSeconds = replayInfo?.estimatedDurationSeconds ?? null;
 
-  // 録画速度（Issue #288、倍速録画）。1〜4以外（未指定・不正値）は等倍に落とす。
+  // 録画速度（Issue #288、倍速録画）。1〜4以外（未指定・不正値・低速）は等倍に落とす。
   // **全タイトルで受け付ける**——UIに出すタイトルは段階的に広げる（`apps/web`側の定数）が、
   // 公開前のタイトルも本番で直接APIを叩いてE2E検証できるようにするため
   // （`verify-recording-in-production` skill）。倍速録画はGPUインスタンスで必ず実行される
-  // （`requiresGpuRecording()`）ので、低速録画のように「対応していないのに後処理だけ
+  // （`requiresGpuRecording()`）ので、「対応していないのに後処理だけ
   // 等倍化されて速度の狂った動画ができる」ことは起きない。
-  const recordingSpeed = normalizeRecordingSpeed(body.options.recordingSpeed);
+  const recordingSpeed = normalizeRequestedRecordingSpeed(body.options.recordingSpeed);
 
   const now = new Date();
   const jobId = randomUUID();

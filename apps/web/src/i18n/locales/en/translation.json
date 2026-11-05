@@ -104,7 +104,7 @@
     "thpracPurposeFreezeFix": "Applied during recording to work around a bug that freezes the game right after selecting a replay"
   },
   "uploadForm": {
-    "gpuOutageNotice": "Due to a prolonged shortage of GPU instances in the eu-south-2 region, titles that require a GPU for recording (Embodiment of Scarlet Devil: New Classic, Legacy of Lunatic Kingdom, and Fossilized Wonders) currently cannot be recorded. We are working to resolve this, so please bear with us.",
+    "gpuOutageNotice": "Due to a prolonged shortage of GPU instances, recordings of titles that use a GPU (Embodiment of Scarlet Devil: New Classic, Legacy of Lunatic Kingdom, and Fossilized Wonders) may take longer than usual or may fail to start.",
     "supportedTitlesLabel": "Currently supported titles ({{count}})",
     "step1Label": "Select a replay file",
     "step2Label": "Check the details",
@@ -221,6 +221,7 @@
     "timeoutWarningDetail": "Recording normally stops once the end of replay playback is detected, but this job reached the recording time limit before that could happen, so it was cut off partway through. Please check the recorded video to make sure the ending isn't missing. If it is, please try uploading the replay again.",
     "speedupHint": "Recording at {{speed}}x speed. The finished video plays back at normal speed.",
     "speedupFallbackHint": "The recording servers were busy, so we switched from {{speed}}x speed to normal-speed recording.",
+    "slowMotionFallbackHint": "The recording servers were busy, so we switched to a slower recording method. It will take longer than usual to finish, and brief frame drops may occur when bombs are used or spell cards end.",
     "genericError": "A problem occurred while recording. Please try again.",
     "previewVideoLabel": "Preview of the recorded video",
     "download": "Download video",

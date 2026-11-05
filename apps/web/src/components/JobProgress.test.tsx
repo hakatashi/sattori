@@ -102,6 +102,17 @@ describe("JobProgressView のダウンロード", () => {
 });
 
 describe("JobProgressView の等倍フォールバック注意書き（Issue #289）", () => {
+  it("低速録画へ切り替えたジョブは速度に触れない案内を表示する（Issue #316）", () => {
+    render(
+      <JobProgressView
+        job={buildDoneJob({ recordingSpeed: 1 / 2, requestedRecordingSpeed: 1 })}
+        loadError={null}
+      />,
+    );
+    expect(screen.getByText(/時間をかけて録画する方式に切り替えました/)).toBeTruthy();
+    expect(screen.queryByText(/通常の速度での録画に切り替えました/)).toBeNull();
+  });
+
   it("requestedRecordingSpeed があれば元の速度とともに切り替えたことを表示する", () => {
     render(<JobProgressView job={buildDoneJob({ requestedRecordingSpeed: 3 })} loadError={null} />);
 

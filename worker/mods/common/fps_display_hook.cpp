@@ -27,6 +27,8 @@ static LARGE_INTEGER g_epoch = {0};
 static const int kMaxRvas = 4;
 static ULONG_PTR g_targetRvas[kMaxRvas] = {0};
 static int g_numTargetRvas = 0;
+// 0以外なら、対象呼び出し元のさらに呼び出し元も一致するときだけ偽装する(th15、reports/93)。
+static ULONG_PTR g_callerReturnRva = 0;
 
 static bool RvaMatches(const ULONG_PTR* rvas, int n, ULONG_PTR rva) {
     for (int i = 0; i < n; i++)
@@ -72,7 +74,13 @@ static BOOL WINAPI MyQueryPerformanceCounter(LARGE_INTEGER* lpPerformanceCount) 
     HMODULE hExe = GetModuleHandle(NULL);
     ULONG_PTR rva = (ULONG_PTR)retAddr - (ULONG_PTR)hExe;
 
-    if (g_scale != 1.0 && RvaMatches(g_targetRvas, g_numTargetRvas, rva)) {
+    bool target = g_scale != 1.0 && RvaMatches(g_targetRvas, g_numTargetRvas, rva);
+    if (target && g_callerReturnRva) {
+        // 自分のフレームの保存EBP=対象呼び出し元のEBP。その+4がさらに呼び出し元への戻り先。
+        void** callerFrame = *(void***)__builtin_frame_address(0);
+        target = (ULONG_PTR)callerFrame[1] - (ULONG_PTR)hExe == g_callerReturnRva;
+    }
+    if (target) {
         if (!g_epochSet) {
             g_epoch = real;
             g_epochSet = true;
@@ -187,6 +195,11 @@ bool InstallFpsDisplayCorrectionHook(const ULONG_PTR* targetRvas, int numRvas) {
 
 bool InstallFpsDisplayCorrectionHook(ULONG_PTR targetRva) {
     return InstallFpsDisplayCorrectionHook(&targetRva, 1);
+}
+
+bool InstallFpsDisplayCorrectionHookViaCaller(ULONG_PTR qpcReturnRva, ULONG_PTR callerReturnRva) {
+    g_callerReturnRva = callerReturnRva;
+    return InstallFpsDisplayCorrectionHook(&qpcReturnRva, 1);
 }
 
 } // namespace autoplay

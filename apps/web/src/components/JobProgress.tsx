@@ -131,13 +131,16 @@ export function JobProgressView({ job, loadError }: ViewProps) {
               </span>
             )}
             {/*
-              倍速録画を等倍へフォールバックした（Issue #289）。`recordingSpeed`は既に1なので
-              上の倍速の案内は消え、代わりにこちらを出す。完了後も「なぜ倍速にならなかったか」の
-              説明として残す。
+              GPUを確保できず速度を落とした（Issue #289・#316）。`recordingSpeed`は既に書き換わって
+              いるので上の倍速の案内は消え、代わりにこちらを出す。完了後も「なぜそうなったか」の
+              説明として残す。th15・th20の低速録画（`recordingSpeed`<1）は等倍を選んだジョブでも
+              起きるので、速度に触れない文面にする。
             */}
             {job.requestedRecordingSpeed !== null && (
               <span className={styles.speedupHint}>
-                {t("jobProgress.speedupFallbackHint", { speed: job.requestedRecordingSpeed })}
+                {job.recordingSpeed < 1
+                  ? t("jobProgress.slowMotionFallbackHint")
+                  : t("jobProgress.speedupFallbackHint", { speed: job.requestedRecordingSpeed })}
               </span>
             )}
             {overall.retrySuspected && (
