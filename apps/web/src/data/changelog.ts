@@ -16,6 +16,12 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-11-07",
+    ja: "倍速録画の動画で、コマが抜けて動きが滑らかでなくなる（約45fps相当に落ちる）ことがある問題を修正",
+    en: "Fixed an issue where videos recorded at higher speeds could lose frames and look less smooth (dropping to the equivalent of about 45 fps)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/322",
+  },
+  {
     date: "2026-11-05",
     ja: "東方紺珠伝 (th15)・東方錦上京 (th20) は、GPUの録画サーバーに空きが無いときも失敗せず、時間をかけて録画する方式へ自動で切り替わるように（完成までに通常の2〜3倍の時間がかかり、ボムやスペルカードの終了時に一瞬コマ落ちすることがあります）。東方紅魔郷: New Classic (th06nc) は別の種類のGPU録画サーバーも使うようになり、混雑による失敗が起きにくくなります",
     en: "Legacy of Lunatic Kingdom (th15) and Unfinished Dream of All Living Ghost (th20) now automatically switch to a slower recording method instead of failing when no GPU recording servers are available (it takes two to three times longer to finish, and brief frame drops may occur when bombs are used or spell cards end). Embodiment of Scarlet Devil: New Classic (th06nc) now also uses another type of GPU recording server, making failures due to congestion less likely",

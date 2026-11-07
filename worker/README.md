@@ -195,7 +195,8 @@ g6f.2xlarge)専用**。CPU描画(llvmpipe)では2倍速を維持できない。�
   終了テンプレートの連続一致回数と、起動・メニュー操作を待つタイムアウトは縮めない
   (`scaled_confirmation_count()`)。
 - **変換**: 映像のPTSを倍率ぶん引き伸ばして60fpsへ揃え、音声は`asetrate`で読み替えて
-  44100Hzへ戻す。
+  44100Hzへ戻す。60fpsへ揃えるのは`fps`フィルタではなく`-r 60 -fps_mode cfr`で行う。生映像のptsが
+  等間隔とは限らず、`fps`フィルタでは約45fpsへ落ちるため([`decisions/0065`](../docs/decisions/0065-speedup-delivery-frame-rate-by-output-option.md))。
 
 倍速かどうかにかかわらず、**A/V同期は同期マーカーで補正する**(`recording/sync_marker.py`、
 reports/88)。MODが録音開始2秒後にゲーム自身の音声デバイスから約3秒・-42dBFSの疑似乱数
