@@ -16,6 +16,9 @@
  *   通常は false で、GPUジョブは一次リージョンの容量不足時にだけフォールバックする。
  *   フォールバック先での実機検証（AGENTS.md §3）を本番で確実に行うためのもので、
  *   検証が終わったら必ず false へ戻すこと（`docs/decisions/0061`）。
+ * - `skipFractionalGpuTiers`: GPUジョブの`g6f.2xlarge`の段を飛ばす検証用の上書き（Issue #316）。
+ *   th06ncは`g6.2xlarge`で起動し、それ以外は容量不足のときと同じく速度を落としてCPUで録る。
+ *   検証が終わったら必ず false へ戻すこと（`docs/decisions/0064`）。
  */
 
 /** `monthlyCostLimitUsd`の既定値（USD）。当面の目安として設定した金額。 */
@@ -26,6 +29,7 @@ export interface AdminSettings {
   acceptingNewJobs: boolean;
   monthlyCostLimitUsd: number;
   forceGpuFallbackRegion: boolean;
+  skipFractionalGpuTiers: boolean;
 }
 
 /** POST /admin/settings のリクエストボディ。指定したフィールドだけを更新する。 */
@@ -33,6 +37,7 @@ export interface UpdateAdminSettingsRequest {
   acceptingNewJobs?: boolean;
   monthlyCostLimitUsd?: number;
   forceGpuFallbackRegion?: boolean;
+  skipFractionalGpuTiers?: boolean;
 }
 
 /**

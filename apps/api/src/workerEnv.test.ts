@@ -43,6 +43,23 @@ describe("buildWorkerEnv", () => {
     expect(env.SPEED_HACK_MULTIPLIER).toBeUndefined();
   });
 
+  it.each([
+    [1 / 2, "30"],
+    [1 / 3, "20"],
+  ])("低速録画(%s倍速)は FPS_LIMIT_TARGET_HZ だけを付け GPU_WORKER を付けない(Issue #316)", (speed, hz) => {
+    const slowJob = {
+      ...job,
+      game: "th15",
+      options: { ...job.options, recordingSpeed: speed },
+    } as unknown as JobRecord;
+    const env = buildWorkerEnv(config, slowJob, "task-token", {
+      spotInterruptionWatch: true, dataRegion: config.ec2.region,
+    });
+
+    expect(env.FPS_LIMIT_TARGET_HZ).toBe(hz);
+    expect(env.GPU_WORKER).toBeUndefined();
+  });
+
   it("GPU必須タイトルの等倍録画は GPU_WORKER=1 だけを付ける", () => {
     const th15 = { ...job, game: "th15", options: { ...job.options } } as unknown as JobRecord;
     const env = buildWorkerEnv(config, th15, "task-token", { spotInterruptionWatch: true, dataRegion: config.ec2.region });

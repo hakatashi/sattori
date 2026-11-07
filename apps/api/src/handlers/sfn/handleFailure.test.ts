@@ -498,7 +498,7 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
 
       expect(result).toEqual({ shouldRetry: true });
       expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
-        ":native": 1,
+        ":to": 1,
         ":from": 2,
         ":reason": "gpu_capacity",
       });
@@ -541,8 +541,26 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
       expect(fallbackUpdates()).toHaveLength(0);
     });
 
-    it("GPU必須タイトル(th15)はフォールバックせず従来どおりcapacity_exhaustedで失敗させる", async () => {
+    it("th15はCPU低速録画へ書き換えてリトライする（Issue #316）", async () => {
       ddbMock.on(GetCommand).resolves({ Item: { ...speedupJob, game: "th15" } });
+      ddbMock.on(UpdateCommand).resolves({});
+
+      const { handler } = await import("./handleFailure.js");
+      const result = await handler({
+        jobId: "job-1",
+        attempt: SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT,
+        error: capacityError,
+      });
+
+      expect(result).toEqual({ shouldRetry: true });
+      expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
+        ":to": 1 / 2,
+        ":from": 2,
+      });
+    });
+
+    it("th06ncはフォールバックせず従来どおりcapacity_exhaustedで失敗させる", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: { ...speedupJob, game: "th06nc" } });
       ddbMock.on(UpdateCommand).resolves({});
 
       const { handler } = await import("./handleFailure.js");

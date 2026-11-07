@@ -1,5 +1,5 @@
 import {
-  canFallBackToNativeSpeed,
+  fallbackRecordingSpeedFor,
   isTerminalStatus,
   recordingSpeedOf,
   SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT,
@@ -8,7 +8,7 @@ import { loadConfig } from "../../config.js";
 import { findJobInstances, terminateInstance } from "../../ec2.js";
 import { releaseGpuSlot } from "../../gpuSlots.js";
 import { releaseHomeWorkerAssignment } from "../../homeWorker.js";
-import { fallBackToNativeSpeed, getJob, updateJobStatus } from "../../jobs.js";
+import { fallBackRecordingSpeed, getJob, updateJobStatus } from "../../jobs.js";
 import {
   CAPACITY_EXHAUSTED_MESSAGE,
   MAX_ATTEMPTS,
@@ -29,9 +29,9 @@ import {
  *   参照）。無ければジョブを `failed` に確定させる。
  * - `Launch`が全段の容量不足でジョブを`failed`に確定済みなら、後始末だけしてリトライしない
  *   （Issue #315、`docs/decisions/0063`）。Spot在庫の枯渇はここまで来ない。
- * - 倍速録画ジョブ（GPU必須タイトルを除く）のGPU起動がクォータ超過などで
- *   `SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT`回目以降も失敗したら、等倍（CPU）へ
- *   フォールバックして必ずリトライさせる（Issue #289）。
+ * - 速度を落とせるジョブ（`fallbackRecordingSpeedFor()`）のGPU起動がクォータ超過などで
+ *   `SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT`回目以降も失敗したら、速度を落として
+ *   必ずリトライさせる（Issue #289・#316）。
  *
  * `:36` で読む `job` はこの関数の入口時点のスナップショットに過ぎず、その後の
  * terminate・割り当て解除に数秒〜十数秒かかる間にワーカーが完走して `done` を
@@ -237,23 +237,30 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
   const failedByLaunch = job?.status === "failed" && job.errorCode === "capacity_exhausted";
   let shouldRetry = !failedByLaunch && event.attempt < maxAttempts;
 
-  // クォータ超過などで起動できない状態が続く倍速録画ジョブは等倍（CPU）へフォールバックする
-  // （Issue #289）。Spot在庫の枯渇は`Launch`の中でフォールバックするのでここへは来ない
+  // クォータ超過などで起動できない状態が続くジョブは、落とせる速度があれば落とす
+  // （Issue #289・#316）。Spot在庫の枯渇は`Launch`の中でフォールバックするのでここへは来ない
   // （Issue #315）。連続した回数は数えておらず、試行回数で代用している——GPU経路の試行が
   // 何回も失敗した末にさらに容量系のエラーで落ちたなら、原因が何であれGPUに拘る理由は薄い。
-  // フォールバック直後は試行回数の上限に関係なく必ず1回は等倍で試す（フォールバックは
+  // フォールバック直後は試行回数の上限に関係なく必ず1回はCPUで試す（フォールバックは
   // 1ジョブにつき1回きりなので、上限超過も高々1回）。GPUリースは上で返却済みで、
-  // 次の`AcquireGpuSlot`は等倍になったジョブを即`acquired: true`で通す。
+  // 次の`AcquireGpuSlot`は速度を落としたジョブを即`acquired: true`で通す。
   let fellBack = false;
+  const fallbackSpeed = job ? fallbackRecordingSpeedFor(job) : null;
   if (
     job &&
     !isTerminalStatus(job.status) &&
     capacityFailure &&
-    canFallBackToNativeSpeed(job) &&
+    fallbackSpeed !== null &&
     event.attempt >= SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT
   ) {
     const from = recordingSpeedOf(job.options);
-    fellBack = await fallBackToNativeSpeed(config.jobsTable, event.jobId, from, "gpu_capacity");
+    fellBack = await fallBackRecordingSpeed(
+      config.jobsTable,
+      event.jobId,
+      from,
+      fallbackSpeed,
+      "gpu_capacity",
+    );
     if (fellBack) {
       shouldRetry = true;
       console.log(
@@ -263,6 +270,7 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
           attempt: event.attempt,
           reason: "gpu_capacity",
           from,
+          to: fallbackSpeed,
         }),
       );
     }

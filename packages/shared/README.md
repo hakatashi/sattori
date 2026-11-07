@@ -96,18 +96,21 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 
 ## 倍速録画・GPU必須タイトル（`src/recordingSpeed.ts`・`src/gpuRecording.ts`、Issue #288）
 
-録画速度（`RecordingOptions.recordingSpeed`、1〜4倍速）とGPU必須タイトルの判定。
+録画速度（`RecordingOptions.recordingSpeed`、1〜4倍速と低速の1/2・1/3）とGPU必須タイトルの判定。
 フロント・API・ワーカーが同じ定数を参照するためここに一本化してある。
 
-- `GPU_RECORDING_GAME_IDS`（th06nc・th15・th20）: 常にGPUインスタンスで録画するタイトル。
-- `requiresGpuRecording(job)`: GPU必須タイトル、または倍速録画（2倍速以上）なら true。
+- `GPU_RECORDING_GAME_IDS`（th06nc・th15・th20）: 等倍以上なら常にGPUインスタンスで録画するタイトル。
+- `requiresGpuRecording(job)`: GPU必須タイトル、または倍速録画（2倍速以上）なら true。低速録画は false。
   GPU必須のジョブは自宅ワーカーへオファーしない。
+- `fallbackRecordingSpeedFor(job)`: GPUを確保できないジョブをCPUで録る速度（倍速録画は等倍、th15・th20は
+  低速）。th06ncは null。
 - 倍率は起動側が`FPS_LIMIT_TARGET_HZ`（60×倍率）と`GPU_WORKER=1`の環境変数で渡す。ワーカー
   コンテナ側は自分がどこで動いているか・倍率の由来を知らず、環境変数の有無だけを見る
   （`apps/api/src/workerEnv.ts`、
   [`docs/decisions/0058`](../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)・
   [`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
-- 旧「低速録画」（1/2倍速、Issue #68）は廃止した。
+- 低速録画（Issue #316）はユーザーが選べない。`RECORDING_SPEEDS`はユーザーが選べる値だけで、APIの入力は
+  `normalizeRequestedRecordingSpeed()`を通す（[`docs/decisions/0064`](../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
 
 契約の詳細と運用は`apps/api/README.md`「自宅ワーカーへのジョブ割り当て」・
 `home-worker/README.md`を参照。

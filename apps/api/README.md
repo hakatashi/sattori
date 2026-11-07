@@ -58,7 +58,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    条件不成立（既に起動済み）なら `JobAlreadyStartedError` を捕まえて現在の状態を
    冪等に返すだけで、Step Functionsは再起動しない。
 2. **`sfn/acquireGpuSlot.ts`**（GPU vCPU容量リース、Issue #270）が最初に呼ばれる。
-   GPU必須のジョブ（th06nc・th15と倍速録画、`requiresGpuRecording(job)`）のみ`GpuSlotsTable`でvCPU容量を会計し、
+   GPU必須のジョブ（th06nc・th15・th20と倍速録画、`requiresGpuRecording(job)`）のみ`GpuSlotsTable`でvCPU容量を会計し、
    空きが無ければ`WaitForGpuSlot`（アダプティブな間隔）を挟んで自分自身へ戻る
    ループを回す。投入順（FIFO）は`JobsTable`のsparse GSI`GpuQueueIndex`
    （PK=`gpuQueueState`, SK=`gpuQueuedAt`）で守り、列の先頭でなければ枠取りを
@@ -66,10 +66,10 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    した待機者は先頭判定から除外する（head-of-line blocking対策）。非GPUジョブは
    `GpuSlotsTable`にも`gpuQueue*`属性にも一切触れず即座に通過する。詳細・設計根拠は
    [`0056`](../../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
-   GPU必須タイトル以外の倍速録画ジョブは、30分以上待ったら`options.recordingSpeed`を1へ
-   書き換えて（`jobs.ts`の`fallBackToNativeSpeed()`）待機列を抜け、等倍のジョブとして
+   速度を落とせるジョブ（`fallbackRecordingSpeedFor()`: 倍速録画は等倍、th15・th20はCPU低速）は、30分以上待ったら
+   `options.recordingSpeed`を書き換えて（`jobs.ts`の`fallBackRecordingSpeed()`）待機列を抜け、CPUのジョブとして
    `Launch`へ進む。GPUの段を使い切った`Launch`と、クォータ超過などが3回目以降まで続いた`HandleFailure`も同様
-   （Issue #289、[`0060`](../../docs/decisions/0060-speedup-fallback-to-native-speed.md)）。
+   （[`0060`](../../docs/decisions/0060-speedup-fallback-to-native-speed.md)・[`0064`](../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
 3. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト150分・ハートビート
    タイムアウト15分）がワーカーを1台**割り当て**る。割り当て先は自宅ワーカー
    （Issue #49、§3）かEC2 Fleetのどちらかで、EC2の場合は
@@ -149,7 +149,8 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | th11 | `TH11_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th12 | `TH12_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | th128 | `TH128_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
-| th06nc・th15・th20、および全タイトルの倍速録画 | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.2xlarge`のみ（GPU必須、Issue #241・#82・#288、[`decisions/0058`](../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)。GPU要否はタイトルではなくジョブ単位で決まるので`getCandidateInstanceTypes(job, { maxVcpu })`はジョブを受け取る） |
+| th06nc・th15・th20、および全タイトルの倍速録画 | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.2xlarge`のみ（GPU必須、Issue #241・#82・#288、[`decisions/0058`](../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)。GPU要否はタイトルではなくジョブ単位で決まるので`getCandidateInstanceTypes(job, { maxVcpu })`はジョブを受け取る）。th06ncの最後の段は`GPU_FULL_CANDIDATE_INSTANCE_TYPES`（`g6.2xlarge`） |
+| th15・th20の低速録画 | `SLOW_MOTION_CANDIDATE_INSTANCE_TYPES` | `c7i.4xlarge`のみ（[`decisions/0064`](../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)） |
 
 > **候補を足す・変える前に
 > [`docs/decisions/0016`](../../docs/decisions/0016-ec2-fleet-instance-type-diversification.md)
@@ -160,7 +161,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 > 理由（CDKでLaunch Templateを変更してもジョブ起動に反映されないバグの修正）は
 > [`0051`](../../docs/decisions/0051-launch-template-source-version-latest-not-default.md)。
 
-**th06nc・th15（`requiresGpuRecording()`がtrueのタイトル）だけは別系統**——GPU用の
+**`requiresGpuRecording()`がtrueのジョブだけは別系統**——GPU用の
 Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決ではなく
 事前構築したカスタムAMIを固定参照）・別ECRイメージ（`config.workerGpuImage`）を
 使い、`buildUserData()`が`docker run`に`--gpus all`を追加する

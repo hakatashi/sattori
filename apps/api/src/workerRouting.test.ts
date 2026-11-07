@@ -7,7 +7,7 @@ import {
 } from "@sattori/shared";
 import {
   DEFAULT_ROUTING_POLICY,
-  GPU_ONLY_ROUTING_POLICY,
+  EC2_ONLY_ROUTING_POLICY,
   isWorkerEligible,
   MAX_OFFER_WINDOW_SECONDS,
   routingPolicyFor,
@@ -41,7 +41,15 @@ describe("routingPolicyFor", () => {
 
   it("GPU必須タイトル(th06nc・th15・th20)は自宅ワーカーへオファーしない", () => {
     for (const game of ["th06nc", "th15", "th20"] as const) {
-      expect(routingPolicyFor({ game, options: JOB.options })).toEqual(GPU_ONLY_ROUTING_POLICY);
+      expect(routingPolicyFor({ game, options: JOB.options })).toEqual(EC2_ONLY_ROUTING_POLICY);
+    }
+  });
+
+  it("低速録画(Issue #316)は自宅ワーカーへオファーしない(#179が未解決)", () => {
+    for (const recordingSpeed of [1 / 2, 1 / 3] as const) {
+      expect(
+        routingPolicyFor({ game: "th20", options: { ...JOB.options, recordingSpeed } }),
+      ).toEqual(EC2_ONLY_ROUTING_POLICY);
     }
   });
 
@@ -56,7 +64,7 @@ describe("routingPolicyFor", () => {
     // 待機を伸ばすときは、この上限の元である`LAUNCH_LAMBDA_TIMEOUT_SECONDS`（CDKが使う値）も
     // 併せて上げること。
     expect(MAX_OFFER_WINDOW_SECONDS).toBeLessThan(LAUNCH_LAMBDA_TIMEOUT_SECONDS);
-    for (const policy of [DEFAULT_ROUTING_POLICY, GPU_ONLY_ROUTING_POLICY]) {
+    for (const policy of [DEFAULT_ROUTING_POLICY, EC2_ONLY_ROUTING_POLICY]) {
       expect(policy.offerWindowSeconds).toBeLessThanOrEqual(MAX_OFFER_WINDOW_SECONDS);
     }
   });

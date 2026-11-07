@@ -149,17 +149,17 @@ export interface GetJobResponse {
   replayInfo: ReplayInfo | null;
   /**
    * このジョブの録画速度（Issue #288、倍速録画）。`RecordingOptions.recordingSpeed`を
-   * `recordingSpeedOf()`で正規化した値（旧ジョブは1）。GPUを確保できず等倍へ
-   * フォールバックした（Issue #289）後は1になる——つまり常に「実際に録る速度」。
+   * `recordingSpeedOf()`で正規化した値（旧ジョブは1）。GPUを確保できず速度を落とした
+   * （Issue #289・#316）後はその値になる（低速録画は1未満）——つまり常に「実際に録る速度」。
    * ジョブページの進捗バー・残り時間推定が、録画フェーズの実時間が短くなることを
    * 織り込むために使う。
    */
   recordingSpeed: RecordingSpeed;
   /**
-   * GPUを確保できず等倍へフォールバックした場合の、ユーザーが元々選んだ録画速度
-   * （Issue #289、`JobRecord.requestedRecordingSpeed`の転記）。フォールバックしていない
-   * ジョブでは null。ページBはこれが non-null のとき「GPUが混雑していたため等倍で録画
-   * しています」という注意書きを出す。
+   * GPUを確保できず速度を落とした場合の、ユーザーが元々選んだ録画速度
+   * （Issue #289・#316、`JobRecord.requestedRecordingSpeed`の転記）。落としていない
+   * ジョブでは null。ページBはこれが non-null のとき、混雑のため速度を変えたことの
+   * 注意書きを出す。
    */
   requestedRecordingSpeed: RecordingSpeed | null;
   /**
