@@ -216,15 +216,19 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
         video_filters.append(f"setpts={1.0 / time_scale}*{pts}")
     elif origin:
         video_filters.append(f"setpts={pts}")
-    # 出力のフレームレートを固定する。倍速録画は60×倍率fpsで`-vsync 0`(可変フレーム
-    # レート)のまま撮っているので、PTSを引き伸ばしたうえでここで60fps固定に揃える
-    # (touhou-recorder reports/85・89)。低速録画(scale>1)は等倍と同じ`-framerate 60`で
+    # 出力のフレームレートを固定する。低速録画(scale>1)は等倍と同じ`-framerate 60`で
     # 撮っているため、素材は各フレームが time_scale 枚ずつ並んだ状態にある。PTSを圧縮した
     # うえでここへ落とすと**重複がちょうど間引かれ**、等倍録画と同じ「60fps・全フレーム
     # ユニーク」になる。等倍録画は元から60fpsなので実質何もしない。`start_time=0`で、
     # 映像の先頭が0秒より後ろにある(mux時に映像を後ろへずらした)録画も0秒から始める
     # (最初のフレームを複製して埋める、Issue #301)。
-    video_filters.append(f"fps={NATIVE_FRAME_RATE_HZ:g}:start_time=0")
+    #
+    # 倍速録画は**このフィルタを通さず、出力オプションで固定する**(`output_args`)。60×倍率fpsの
+    # 生映像はptsが等間隔でなく(`docs/decisions/0065`)、時刻で枠へ割り当てるfpsフィルタでは
+    # 同じ枠へ複数枚が集まって約45fpsへ落ちる(Issue #322)。
+    speedup = time_scale < 1.0
+    if not speedup:
+        video_filters.append(f"fps={NATIVE_FRAME_RATE_HZ:g}:start_time=0")
     if raw_output_path:
         video_filters.append("split=2[vsrc][vraw];[vsrc]null")
     if (target_width, target_height) != (width, height):
@@ -281,6 +285,9 @@ def build_convert_cmd(input_path, output_path, *, width, height, time_scale=1.0,
     def output_args(video_label, audio_label, path):
         args = ["-map", video_label]
         args += _delivery_video_encoder_args(gpu_encode)
+        if speedup:
+            # フレームの順序を保って60fpsの枠へ詰める。先頭の埋め(Issue #301)のためcfrを明示する。
+            args += ["-r", f"{NATIVE_FRAME_RATE_HZ:g}", "-fps_mode", "cfr"]
         if has_audio:
             # カット・無音埋めのため音声も必ず再エンコードする(等倍録画も`-c:a copy`できない)。
             args += ["-map", audio_label, "-c:a", "aac", "-b:a", "192k"]
