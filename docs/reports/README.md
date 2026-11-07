@@ -12,6 +12,7 @@
 
 | 検証日 | 内容 | 結論 |
 | --- | --- | --- |
+| [2026-11-07](2026-11-07-speedup-delivery-frame-rate.md) | 倍速録画の配信版が約45fpsへ落ちる原因と`-r 60 -fps_mode cfr`への修正(Issue #322) | 原因は生映像のptsとtime_base。配信版のユニークフレームが生映像とほぼ同数に。NVENC・本番E2Eは未実施 |
 | [2026-11-05](2026-11-05-cpu-slow-motion-production-e2e.md) | GPU枯渇時のCPU低速録画・`g6.2xlarge`の本番E2E(Issue #316) | th15・th20のCPU低速は完走、再開も成功。th06ncの`g6.2xlarge`は在庫が無くLambdaから1度も起動できず未検証 |
 | [2026-11-05](2026-11-05-cpu-slow-motion-worker-local.md) | CPU低速録画を本番ワーカーのコードでローカル実行(th15 1/3倍速・th20 1/2倍速、Issue #316) | 両タイトルとも完走しスコア一致、同期マーカーはカット区間に収まる。`c7i.4xlarge`の品質はreports/91、AWS実機E2Eは未実施 |
 | [2026-11-04](2026-11-04-spot-capacity-permanent-error-production-e2e.md) | Spotの容量不足をジョブ内の永続エラーとして扱う変更の本番検証（PR #318） | 容量不足の経路はすべて設計どおり。GPU起動成功・自宅ワーカーへのオファー・Spot中断後のリトライは未通過 |

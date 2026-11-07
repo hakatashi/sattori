@@ -226,7 +226,7 @@ def test_cuts_before_undoing_the_speedup():
     )
     expr = filter_of(cmd)
 
-    assert "trim=start=2.000000:end=50.000000,setpts=2.0*(PTS-2.000000/TB),fps=60" in expr
+    assert "trim=start=2.000000:end=50.000000,setpts=2.0*(PTS-2.000000/TB),scale=" in expr
     assert ("[0:a]aresample=first_pts=0,atrim=start=2.000000:end=50.000000,"
             "asetpts=PTS-2.000000/TB,asetrate=44100,aresample=44100[a]") in expr
 
@@ -444,10 +444,37 @@ def test_stretches_video_pts_and_restores_audio_for_speedup():
     )
     expr = filter_of(cmd)
 
-    assert "setpts=2.0*PTS,fps=60:start_time=0" in expr
+    assert "[0:v]setpts=2.0*PTS,scale=" in expr
     assert "asetrate=44100,aresample=44100" in expr
     # 先頭の無音は等倍化の前に埋める(無音の長さも一緒に伸縮させるため)。
     assert "[0:a]aresample=first_pts=0,asetrate=44100" in expr
+
+
+def test_fixes_the_frame_rate_of_a_speedup_by_output_option_not_by_fps_filter():
+    """60×倍率fpsの生映像はptsが等間隔でなく、fpsフィルタでは約45fpsへ落ちる(Issue #322)。"""
+    cmd = convert.build_convert_cmd(
+        "in.mp4", "out.mp4", width=640, height=480, time_scale=1.0 / 3, audio_sample_rate=132300,
+        cut_start=2.0, cut_end=50.0,
+    )
+
+    assert "fps=" not in filter_of(cmd)
+    assert cmd[cmd.index("-r") + 1] == "60"
+    # 映像の先頭が0秒より後ろにある録画も、cfrなら0秒から埋まる(Issue #301)。
+    assert cmd[cmd.index("-fps_mode") + 1] == "cfr"
+    assert cmd.index("-r") < cmd.index("out.mp4")
+
+
+def test_keeps_the_fps_filter_unless_it_is_a_speedup():
+    """低速録画は重複の間引きを、等倍録画は先頭の埋めをfpsフィルタに任せる。"""
+    for time_scale, sample_rate in ((1.0, None), (2.0, 44100), (3.0, 44100)):
+        cmd = convert.build_convert_cmd(
+            "in.mp4", "out.mp4", width=1280, height=960, time_scale=time_scale,
+            audio_sample_rate=sample_rate,
+        )
+
+        assert "fps=60:start_time=0" in filter_of(cmd)
+        assert "-r" not in cmd
+        assert "-fps_mode" not in cmd
 
 
 def test_restores_audio_of_a_four_times_speedup_to_the_native_rate():
