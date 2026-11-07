@@ -44,6 +44,8 @@ export const GPU_VCPU_QUOTA = 32;
 export const GPU_INSTANCE_TYPE_VCPUS: Readonly<Record<string, number>> = {
   "g6f.xlarge": 4,
   "g6f.2xlarge": 8,
+  // th06ncだけの最後の段（Issue #316）。`g6f.2xlarge`と同じ8vCPUなので確保量は変わらない。
+  "g6.2xlarge": 8,
 };
 
 /**

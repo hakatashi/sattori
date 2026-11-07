@@ -1,4 +1,4 @@
-"""倍速録画(Issue #288)の実時間スケーリング。"""
+"""録画速度(倍速録画 Issue #288・低速録画 Issue #316)の実時間スケーリング。"""
 
 import pytest
 
@@ -13,9 +13,39 @@ def test_recording_time_scale_is_one_when_env_is_absent():
     assert timing.recording_time_scale({}) == 1.0
 
 
-def test_recording_time_scale_treats_below_native_rate_as_one():
-    # 旧低速録画(30Hz)は廃止済み。未対応として等倍へ丸める。
-    assert timing.recording_time_scale({"FPS_LIMIT_TARGET_HZ": "30"}) == 1.0
+@pytest.mark.parametrize("hz,scale", [("30", 2.0), ("20", 3.0)])
+def test_recording_time_scale_stretches_for_slow_motion(hz, scale):
+    # 低速録画(Issue #316)。実時間がゲーム内時間の2倍・3倍かかる。
+    assert timing.recording_time_scale({"FPS_LIMIT_TARGET_HZ": hz}) == pytest.approx(scale)
+
+
+def test_recording_time_scale_caps_slow_motion_at_one_third():
+    """検証していない遅さが来ても、監視のタイムアウトが際限なく伸びないようにする。"""
+    assert timing.recording_time_scale({"FPS_LIMIT_TARGET_HZ": "1"}) == pytest.approx(3.0)
+
+
+@pytest.mark.parametrize("scale", [2.0, 3.0])
+def test_slow_motion_keeps_native_capture_and_audio_rate(scale):
+    assert not timing.is_speedup(scale)
+    assert timing.speedup_multiplier(scale) == 1.0
+    assert timing.capture_frame_rate_hz(scale) == 60
+    assert timing.audio_capture_rate_hz(scale) is None
+
+
+@pytest.mark.parametrize("scale,expected", [(0.5, 20), (1.0, 20), (2.0, 40), (3.0, 60)])
+def test_scaled_timeout_sec_stretches_only_for_slow_motion(scale, expected):
+    assert timing.scaled_timeout_sec(20, scale) == expected
+
+
+@pytest.mark.parametrize("scale,threshold", [(0.5, 30.0), (1.0, 30.0), (2.0, 90.0), (3.0, 90.0)])
+def test_duplicate_rate_threshold_for_raw(scale, threshold):
+    assert timing.duplicate_rate_threshold_for_raw(30.0, scale) == threshold
+
+
+@pytest.mark.parametrize("measured", [58.0, 80.4])
+def test_duplicate_rate_threshold_accepts_normal_slow_motion(measured):
+    # 正常な録画の実測(30Hz・20Hz、touhou-recorder reports/91 §4)を破棄しない。
+    assert measured < timing.duplicate_rate_threshold_for_raw(30.0, 3.0)
 
 
 @pytest.mark.parametrize("hz,scale", [("120", 0.5), ("180", 1 / 3), ("240", 0.25)])

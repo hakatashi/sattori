@@ -64,6 +64,11 @@ namespace autoplay {
 // (実測通りの値を表示する)だけで実害はない安全側のフォールバック。
 bool InstallFpsDisplayCorrectionHook(ULONG_PTR targetRva);
 bool InstallFpsDisplayCorrectionHook(const ULONG_PTR* targetRvas, int numRvas);
+// th15(reports/93)向け: QueryPerformanceCounterを呼ぶ時刻取得関数を、fps計算とフレーム
+// ペーシング等の多数の箇所が共有しているタイトル用。QueryPerformanceCounterの戻り先が
+// qpcReturnRva で、かつその関数の戻り先が callerReturnRva のときだけ偽装する。
+// qpcReturnRva を含む関数はEBPフレームを持つこと(その戻り先をスタックから読むため)。
+bool InstallFpsDisplayCorrectionHookViaCaller(ULONG_PTR qpcReturnRva, ULONG_PTR callerReturnRva);
 
 // th09(フェーズ69調査)向け: fps表示計算にQueryPerformanceCounterではなく
 // WINMM.dll!timeGetTime(ミリ秒精度)を使っているタイトル向けの版。ロジックは

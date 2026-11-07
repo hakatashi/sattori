@@ -123,7 +123,7 @@ export function JobDetailPage() {
                 <dd>{data.job.options.watermark ? "true" : "false"}</dd>
                 <dt>recordingSpeed</dt>
                 <dd>
-                  {`${recordingSpeedOf(data.job.options)}x`}
+                  {`${Number(recordingSpeedOf(data.job.options).toFixed(2))}x`}
                   {/* GPUを確保できず等倍へフォールバックした（Issue #289）。 */}
                   {data.job.requestedRecordingSpeed !== undefined &&
                     ` (requested ${data.job.requestedRecordingSpeed}x, fallback: ${data.job.speedupFallbackReason ?? "-"})`}

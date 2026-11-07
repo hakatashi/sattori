@@ -148,6 +148,7 @@ docker run --rm --name sattori-repro-<game> \
 バックグラウンドで実行し、`Monitor`ツールでログを監視する(fps暴走・タイムアウト・
 処理落ち・例外等の分類キーワードでフィルタする)。**倍速録画(Issue #288)を
 検証する場合は`FPS_LIMIT_TARGET_HZ=60×倍率`と`GPU_WORKER=1`を`-e`で追加する(GPU搭載機のみ)**(`worker/README.md` §5)。
+th15・th20のCPU低速録画は`FPS_LIMIT_TARGET_HZ=30`(th15 Extraは`20`)だけを追加する(Issue #316)。
 
 `record_thNN.py`は`--output`を試行ごとに同じパスで上書きするため、**リトライで破棄
 された録画も見たい場合は、各試行が終わって次の試行が始まる前に`output/repro.mp4`を
