@@ -76,6 +76,7 @@
 | [0062](0062-gpu-fallback-region-local-output-and-title-assets.md) | 2026-10-11 | apps/api / infra / packages/shared / worker | GPUフォールバック先(eu-north-1)に出力バケットとタイトル資産のレプリカを置き、リージョン間転送料を消す。出力のリージョンは`JobRecord.outputRegion`、配信は MediaCdn の`/eu-north-1/*`(Issue #313) | 有効 |
 | [0063](0063-spot-capacity-shortage-is-permanent-within-a-job.md) | 2026-11-04 | apps/api / packages/shared / infra / apps/web | Spot在庫の枯渇はジョブの中で永続エラーとして扱い、待たずに次の段へ進む。全段が尽きたら等倍へ落とすか直ちに失敗させる。ステートマシンは変えない(Issue #315) | 有効 |
 | [0064](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md) | 2026-11-05 | packages/shared / apps/api / worker / apps/web | GPUを確保できないth15・th20はCPU低速録画(`c7i.4xlarge`、1/2倍速・th15 Extraは1/3倍速)へ、th06ncは`g6.2xlarge`へ逃がす。低速録画はユーザーが選べず自宅ワーカーへも出さない(Issue #316) | 有効 |
+| [0065](0065-speedup-delivery-frame-rate-by-output-option.md) | 2026-11-07 | worker | 倍速録画の配信版は`fps`フィルタではなく`-r 60 -fps_mode cfr`で60fpsへ揃える。生映像のptsが信用できないため(Issue #322) | 有効 |
 
 ## 書き方
 
