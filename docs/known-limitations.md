@@ -40,8 +40,9 @@ VsyncPatchで修正するかどうかは、記録リプレイと再生時で設�
 
 ### 倍速録画（2〜4倍速）の品質と未実装事項（Issue #288）
 
+録画速度はタイトルごとの録画の段が決め、ユーザーは選べない（Issue #317、[`decisions/0066`](decisions/0066-recording-fallback-plan-as-config.md)）。
 3倍速以上はキャプチャが律速して落ちフレームが増え、実時間で進む区間は等倍へ戻すと伸びる。
-GPUを確保できなければ速度を落とし（th06ncだけは落とす先が無く失敗する）、CPU低速録画の品質は
+GPUを確保できなければ次の段（等倍・CPU低速）で録り（th06ncだけはGPU以外の段が無く失敗する）、CPU低速録画の品質は
 GPU録画より落ちる。リプレイが始まらなかった録画が`done`になりうる。詳細は
 [`known-limitations-gpu-recording.md`](known-limitations-gpu-recording.md) §1。
 

@@ -20,7 +20,7 @@ describe("settings", () => {
         acceptingNewJobs: true,
         monthlyCostLimitUsd: DEFAULT_MONTHLY_COST_LIMIT_USD,
         forceGpuFallbackRegion: false,
-        skipFractionalGpuTiers: false,
+        skipGpuSteps: false,
       });
     });
 
@@ -33,7 +33,7 @@ describe("settings", () => {
         acceptingNewJobs: false,
         monthlyCostLimitUsd: 30,
         forceGpuFallbackRegion: false,
-        skipFractionalGpuTiers: false,
+        skipGpuSteps: false,
       });
     });
   });
@@ -50,7 +50,7 @@ describe("settings", () => {
         acceptingNewJobs: false,
         monthlyCostLimitUsd: 50,
         forceGpuFallbackRegion: false,
-        skipFractionalGpuTiers: false,
+        skipGpuSteps: false,
       });
 
       const putCalls = ddbMock.commandCalls(PutCommand);
@@ -60,7 +60,7 @@ describe("settings", () => {
         acceptingNewJobs: false,
         monthlyCostLimitUsd: 50,
         forceGpuFallbackRegion: false,
-        skipFractionalGpuTiers: false,
+        skipGpuSteps: false,
       });
     });
 
@@ -73,7 +73,7 @@ describe("settings", () => {
         acceptingNewJobs: true,
         monthlyCostLimitUsd: 80,
         forceGpuFallbackRegion: false,
-        skipFractionalGpuTiers: false,
+        skipGpuSteps: false,
       });
     });
   });

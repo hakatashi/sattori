@@ -94,23 +94,26 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
   DynamoDBのNULL型はGSIのキー属性として不適合で、「属性が無い」ことをそのまま
   条件式（`attribute_not_exists`）で表現したいため。
 
-## 倍速録画・GPU必須タイトル（`src/recordingSpeed.ts`・`src/gpuRecording.ts`、Issue #288）
+## 録画の段と録画速度（`src/recordingPlan.ts`・`src/recordingSpeed.ts`、Issue #288・#317）
 
-録画速度（`RecordingOptions.recordingSpeed`、1〜4倍速と低速の1/2・1/3）とGPU必須タイトルの判定。
-フロント・API・ワーカーが同じ定数を参照するためここに一本化してある。
+**どこで・どの速度で録るかは、タイトルごとの録画の段の配列（`RECORDING_PLANS`）が決める**。ユーザーは速度を
+選ばない。フロント（推定時間）・API（起動）・自宅ワーカー（対応タイトル）が同じ配列を参照する
+（[`docs/decisions/0066`](../../docs/decisions/0066-recording-fallback-plan-as-config.md)）。
 
-- `GPU_RECORDING_GAME_IDS`（th06nc・th15・th20）: 等倍以上なら常にGPUインスタンスで録画するタイトル。
-- `requiresGpuRecording(job)`: GPU必須タイトル、または倍速録画（2倍速以上）なら true。低速録画は false。
-  GPU必須のジョブは自宅ワーカーへオファーしない。
-- `fallbackRecordingSpeedFor(job)`: GPUを確保できないジョブをCPUで録る速度（倍速録画は等倍、th15・th20は
-  低速）。th06ncは null。
+- `RecordingStep`: `kind: "home"`（自宅ワーカーへのオファー）か`kind: "ec2"`（`platform`・`region`・
+  `instanceTypes`・`speed`、任意で`speedByDifficulty`）。候補インスタンスタイプの定数もここにある。
+- 配列の制約: 段の`id`は一意（既存の`capacityExhaustedTargets`と互換に保つ）、GPUの段はGPU以外の段より前、
+  リージョンは一次リージョンかGPUのフォールバック先（GPUのみ）。`recordingPlan.test.ts`が守る。
+- `currentRecordingStep(job, excluded?)`: 使い切った段（`capacityExhaustedTargets`）と除外条件の段を除いた
+  最初の段。`skippableGpuStepIds()`: GPU枠の長時間待ち・クォータ超過で飛ばすGPUの段。
+- `recordingSpeedForStep(step, job)`・`initialRecordingSpeed(job)`: 段の速度（難易度の上書きを解決）。
+- `HOME_WORKER_GAME_IDS`: 段に自宅ワーカーを持つタイトル。
 - 倍率は起動側が`FPS_LIMIT_TARGET_HZ`（60×倍率）と`GPU_WORKER=1`の環境変数で渡す。ワーカー
   コンテナ側は自分がどこで動いているか・倍率の由来を知らず、環境変数の有無だけを見る
   （`apps/api/src/workerEnv.ts`、
-  [`docs/decisions/0058`](../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)・
   [`docs/decisions/0010`](../../docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
-- 低速録画（Issue #316）はユーザーが選べない。`RECORDING_SPEEDS`はユーザーが選べる値だけで、APIの入力は
-  `normalizeRequestedRecordingSpeed()`を通す（[`docs/decisions/0064`](../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
+- `recordingSpeedOf()`など`recordingSpeed.ts`の正規化は、`options.recordingSpeed`の無い旧レコードを等倍として
+  読むために使う。
 
 契約の詳細と運用は`apps/api/README.md`「自宅ワーカーへのジョブ割り当て」・
 `home-worker/README.md`を参照。

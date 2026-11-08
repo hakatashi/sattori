@@ -11,7 +11,6 @@ import type {
   JobRecord,
   JobStatus,
   RecordingSpeed,
-  SpeedupFallbackReason,
   WorkerKind,
 } from "@sattori/shared";
 
@@ -304,8 +303,8 @@ export async function updateJobInstance(
 }
 
 /**
- * 容量不足で使い切った起動手段の段を記録する（Issue #315）。書くのはそのジョブの`Launch`
- * だけで同時に走らないので、リスト全体を上書きする。
+ * 使い切った録画の段を記録する（Issue #315・#317）。書くのは`Launch`・`AcquireGpuSlot`・
+ * `HandleFailure`で、ステートマシンの中で順に呼ばれ同時には走らないので、リスト全体を上書きする。
  */
 export async function updateCapacityExhaustedTargets(
   table: string,
@@ -497,39 +496,30 @@ export async function clearGpuQueueState(
 }
 
 /**
- * GPUを確保できなかったジョブをCPUで録る速度へ落とす（Issue #289・#316、
- * `docs/decisions/0060`・`0064`）。`options.recordingSpeed`を`to`へ書き換え、元の速度と理由を
- * `requestedRecordingSpeed`/`speedupFallbackReason`へ残す。GPU要否・割り当て先・
- * ワーカーの環境変数はすべて`options.recordingSpeed`から導かれるため、これ以上の
- * 状態遷移は要らない（次の`AcquireGpuSlot`は即`acquired: true`、`Launch`はCPU系の
- * Launch Templateか自宅ワーカーを選ぶ）。
+ * これから割り当てを試みる録画の段（`recordingPlan.ts`、Issue #317）と、その段の録画速度を書く。
+ * `Launch`がワーカーの環境変数を組み立てる前に呼ぶ（環境変数・コスト帯・表示はすべて
+ * `options.recordingSpeed`から導かれる）。
  *
- * 条件付き更新にして、速度が`from`のまま・未フォールバック・未停止・非終端のときだけ書く。
- * 書けなかったら false を返す（呼び出し側は通常のGPU経路の処理を続ける）。
+ * 条件付き更新にして、未停止・非終端のときだけ書く。書けなかったら false を返す
+ * （緊急停止などで割り当てるべきでない）。
  */
-export async function fallBackRecordingSpeed(
+export async function setRecordingStep(
   table: string,
   jobId: string,
-  from: RecordingSpeed,
-  to: RecordingSpeed,
-  reason: SpeedupFallbackReason,
+  stepId: string,
+  speed: RecordingSpeed,
 ): Promise<boolean> {
   try {
     await client.send(
       new UpdateCommand({
         TableName: table,
         Key: { jobId },
-        UpdateExpression:
-          "SET #o.recordingSpeed = :to, requestedRecordingSpeed = :from, " +
-          "speedupFallbackReason = :reason, updatedAt = :u",
-        ConditionExpression:
-          "#o.recordingSpeed = :from AND attribute_not_exists(requestedRecordingSpeed) " +
-          "AND attribute_not_exists(stopRequestedAt) AND #s <> :done",
+        UpdateExpression: "SET #o.recordingSpeed = :speed, recordingStepId = :step, updatedAt = :u",
+        ConditionExpression: "attribute_not_exists(stopRequestedAt) AND #s <> :done",
         ExpressionAttributeNames: { "#o": "options", "#s": "status" },
         ExpressionAttributeValues: {
-          ":to": to,
-          ":from": from,
-          ":reason": reason,
+          ":speed": speed,
+          ":step": stepId,
           ":u": new Date().toISOString(),
           ":done": "done",
         },

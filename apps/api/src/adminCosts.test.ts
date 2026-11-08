@@ -246,8 +246,8 @@ describe("summarizeCosts", () => {
     });
   });
 
-  it("倍速録画ジョブはインスタンスタイプ未記録でもGPU帯のSpot単価で推定する（Issue #288）", async () => {
-    // th07は通常xlarge帯($0.045/h)だが、recordingSpeed: 2ならGPU帯($0.08/h)になる。
+  it("インスタンスタイプ未記録のジョブは最後の段（recordingStepId）の帯で推定する（Issue #317）", async () => {
+    // th07は自宅/CPUならxlarge帯($0.045/h)だが、GPUの段ならGPU帯($0.08/h)になる。
     // 稼働時間1時間(3600秒)。
     ddbMock.on(ScanCommand).resolves({
       Items: [
@@ -257,7 +257,7 @@ describe("summarizeCosts", () => {
           doneAt: "2026-08-01T01:00:00.000Z",
           instanceType: null,
           spotPricePerHour: null,
-          options: { recordingSpeed: 2 },
+          recordingStepId: "gpu:eu-north-1",
         }),
       ],
     });
@@ -266,14 +266,11 @@ describe("summarizeCosts", () => {
     const bucket = result.buckets[0];
 
     expect(bucket?.breakdown.ec2Spot).toBeCloseTo(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu * 1.0, 6);
-    expect(bucket?.breakdown.ec2Spot).not.toBeCloseTo(FALLBACK_SPOT_PRICE_USD_PER_HOUR.xlarge * 1.0, 6);
     expect(result.quality.fallbackSpotPriceJobs).toBe(1);
 
     const scanCall = ddbMock.commandCalls(ScanCommand)[0];
-    expect(scanCall?.args[0].input.ProjectionExpression).toContain("#options.recordingSpeed");
-    expect(scanCall?.args[0].input.ExpressionAttributeNames).toMatchObject({
-      "#options": "options",
-    });
+    expect(scanCall?.args[0].input.ProjectionExpression).toContain("recordingStepId");
+    expect(scanCall?.args[0].input.ProjectionExpression).toContain("capacityExhaustedTargets");
   });
 
   it("CloudFrontは粒度によらず月次で集計し、無料枠超過分だけ課金する", async () => {

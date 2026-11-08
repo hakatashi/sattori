@@ -874,7 +874,8 @@ export class SattoriStack extends Stack {
     // TransactWriteItemsを発行するLambda全てで同様に行う。
     gpuSlotsTable.grantReadWriteData(launchFn);
     gpuSlotsTable.grant(launchFn, "dynamodb:TransactWriteItems");
-    // 管理設定`forceGpuFallbackRegion`(Issue #296)をGPUジョブの起動ごとに読む。
+    // 管理設定`forceGpuFallbackRegion`・`skipGpuSteps`(Issue #296・#316・#317)で試す録画の段を
+    // 絞る(`apps/api/src/recordingSteps.ts`)。`AcquireGpuSlot`・`HandleFailure`も同じ判定を使う。
     settingsTable.grantReadData(launchFn);
     // launchFn は EC2 Fleet を起動し、ワーカーロールを PassRole する。
     launchFn.addToRolePolicy(
@@ -903,6 +904,7 @@ export class SattoriStack extends Stack {
     );
 
     jobsTable.grantReadWriteData(handleFailureFn);
+    settingsTable.grantReadData(handleFailureFn);
     handleFailureFn.addToRolePolicy(
       new iam.PolicyStatement({
         // DescribeInstancesは孤児インスタンスをタグ(sattori:jobId)から探すため
@@ -922,6 +924,7 @@ export class SattoriStack extends Stack {
     // 枠の会計に`GpuSlotsTable`を使う。非GPUジョブはどちらにも触れない。
     jobsTable.grantReadWriteData(acquireGpuSlotFn);
     gpuSlotsTable.grantReadWriteData(acquireGpuSlotFn);
+    settingsTable.grantReadData(acquireGpuSlotFn);
     gpuSlotsTable.grant(acquireGpuSlotFn, "dynamodb:TransactWriteItems");
 
     // ReleaseGpuSlot: リースの返却のみ。JobsTableには一切触れない。
