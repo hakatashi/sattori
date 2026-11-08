@@ -124,10 +124,15 @@ export function JobDetailPage() {
                 <dt>recordingSpeed</dt>
                 <dd>
                   {`${Number(recordingSpeedOf(data.job.options).toFixed(2))}x`}
-                  {/* GPUを確保できず等倍へフォールバックした（Issue #289）。 */}
+                  {/* 段の導入前（Issue #317より前）に速度を落とした旧レコード（Issue #289）。 */}
                   {data.job.requestedRecordingSpeed !== undefined &&
-                    ` (requested ${data.job.requestedRecordingSpeed}x, fallback: ${data.job.speedupFallbackReason ?? "-"})`}
+                    ` (legacy: requested ${data.job.requestedRecordingSpeed}x, fallback: ${data.job.speedupFallbackReason ?? "-"})`}
                 </dd>
+                {/* 録画の段（Issue #317、`packages/shared/src/recordingPlan.ts`）。 */}
+                <dt>recordingStepId</dt>
+                <dd>{data.job.recordingStepId ?? "-"}</dd>
+                <dt>capacityExhaustedTargets</dt>
+                <dd>{data.job.capacityExhaustedTargets?.join(", ") || "-"}</dd>
                 <dt>th10BugfixMarisaB</dt>
                 <dd>{data.job.options.th10BugfixMarisaB ? "true" : "false"}</dd>
                 <dt>progress</dt>

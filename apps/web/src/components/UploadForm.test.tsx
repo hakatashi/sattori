@@ -257,7 +257,7 @@ describe("UploadForm", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 2 },
+      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
       "user@example.com",
       "ja",
     );
@@ -366,7 +366,7 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, th10BugfixMarisaB: true, th06ncHighResolution: false, recordingSpeed: 2 },
+      { watermark: true, th10BugfixMarisaB: true, th06ncHighResolution: false },
       "marisa@example.com",
       "ja",
     );
@@ -395,185 +395,70 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 2 },
+      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
       "koishi@example.com",
       "ja",
     );
   });
 });
 
-describe("UploadForm のth06nc 1080p録画オプション", () => {
-  function th06ncHighResolutionCheckbox(): HTMLInputElement {
-    const label = screen
-      .getAllByText(/1080pで録画する|Record.*1080p/)
-      .at(0)
-      ?.closest("label");
-    return label?.querySelector('input[type="checkbox"]') as HTMLInputElement;
-  }
-
-  const TH06NC_REPLAY_INFO: ReplayInfo = {
-    ...SAMPLE_REPLAY_INFO,
-    game: "th06nc",
-  };
-
-  it("th06ncのリプレイなら選択でき、既定はオフ(720p)", async () => {
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH06NC_REPLAY_INFO });
-    renderUploadForm();
-    selectFile("th6_01.rpy");
-
-    await waitFor(() => expect(th06ncHighResolutionCheckbox()?.disabled).toBe(false));
-    expect(th06ncHighResolutionCheckbox().checked).toBe(false);
-  });
-
-  it("th06nc以外はグレーアウトする", async () => {
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
-    renderUploadForm();
-    selectFile("th7_07.rpy");
-
-    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
-    expect(th06ncHighResolutionCheckbox().disabled).toBe(true);
-    expect(th06ncHighResolutionCheckbox().checked).toBe(false);
-    expect(screen.getByText(/New Classicのリプレイでのみ|New Classic replays/)).toBeTruthy();
-  });
-
-  it("チェックを入れて送信すると options.th06ncHighResolution が true で送られる", async () => {
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH06NC_REPLAY_INFO });
-    mockedClient.requestMagicLink.mockResolvedValue({});
-    renderUploadForm();
-    selectFile("th6_01.rpy");
-    await waitFor(() => expect(th06ncHighResolutionCheckbox()?.disabled).toBe(false));
-
-    fireEvent.click(th06ncHighResolutionCheckbox());
-    fillEmail("reimu@example.com");
-    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
-    await act(async () => {
-      fireEvent.click(nextStepButton());
-    });
-
-    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
-    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
-      "replays/x.rpy",
-      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: true, recordingSpeed: 1 },
-      "reimu@example.com",
-      "ja",
-    );
-  });
-
-  it("チェック済みで非対応タイトルへ差し替えると、送信される値がオフに戻る", async () => {
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH06NC_REPLAY_INFO });
-    renderUploadForm();
-    selectFile("th6_01.rpy");
-    await waitFor(() => expect(th06ncHighResolutionCheckbox()?.disabled).toBe(false));
-    fireEvent.click(th06ncHighResolutionCheckbox());
-    expect(th06ncHighResolutionCheckbox().checked).toBe(true);
-
-    // th06nc から th08（非対応タイトル）へ差し替える。
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
-    selectFile("th7_07.rpy");
-    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
-    expect(th06ncHighResolutionCheckbox().checked).toBe(false);
-
-    mockedClient.requestMagicLink.mockResolvedValue({});
-    fillEmail("koishi@example.com");
-    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
-    await act(async () => {
-      fireEvent.click(nextStepButton());
-    });
-    await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
-    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
-      expect.anything(),
-      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 2 },
-      "koishi@example.com",
-      "ja",
-    );
-  });
-});
-
-describe("UploadForm の録画速度オプション（Issue #288）", () => {
+describe("UploadForm の録画完了の目安（Issue #317）", () => {
   const TH15_REPLAY_INFO: ReplayInfo = {
     ...SAMPLE_REPLAY_INFO,
     game: "th15",
     estimatedDurationSeconds: 1200,
   };
 
-  function speedRadio(speed: number): HTMLInputElement {
-    return screen.getByRole("radio", { name: new RegExp(`^${speed}倍速`) }) as HTMLInputElement;
-  }
-
-  /** `fieldset`の`disabled`は子の`input.disabled`プロパティへは反映されないため、`:disabled`で判定する。 */
-  function isDisabled(input: HTMLInputElement): boolean {
-    return input.matches(":disabled");
-  }
-
-  it("th15ではおすすめの2倍速が既定で選ばれ、推定時間が表示される", async () => {
+  it("録画速度・1080pの選択欄は無い", async () => {
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH15_REPLAY_INFO });
     renderUploadForm();
     selectFile("th15_01.rpy");
+    await waitFor(() => expect(screen.getByText(/録画完了までの目安/)).toBeTruthy());
 
-    await waitFor(() => expect(isDisabled(speedRadio(2))).toBe(false));
-    expect(speedRadio(2).checked).toBe(true);
-    expect(speedRadio(2).closest("label")?.textContent).toContain("おすすめ");
-    // 20分のリプレイ: 1倍速より2倍速の方が短い推定時間になる。
-    const minutesOf = (speed: number) =>
-      Number(/約(\d+)分/.exec(speedRadio(speed).closest("label")?.textContent ?? "")?.[1]);
-    expect(minutesOf(2)).toBeLessThan(minutesOf(1));
-    expect(minutesOf(4)).toBeLessThan(minutesOf(2));
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.queryByText(/1080pで録画する/)).toBeNull();
   });
 
-  it("おすすめより速い速度を選ぶとタイトル名入りの警告を出す", async () => {
+  it("最初の段（th15はGPUの2倍速）で録れたときの目安を表示する", async () => {
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH15_REPLAY_INFO });
     renderUploadForm();
     selectFile("th15_01.rpy");
-    await waitFor(() => expect(isDisabled(speedRadio(3))).toBe(false));
 
-    fireEvent.click(speedRadio(3));
-
-    expect(speedRadio(3).checked).toBe(true);
-    expect(screen.getByRole("alert").textContent).toContain(
-      "東方紺珠伝で推奨される録画速度より速い録画速度が選択されました",
-    );
-    fireEvent.click(speedRadio(1));
-    expect(screen.queryByRole("alert")).toBeNull();
+    // 20分のリプレイ: 180 + 1200×1.05÷2 + 1200×0.08 = 906秒 ≒ 15分。
+    await waitFor(() => expect(screen.getByText(/録画完了までの目安: 約15分/)).toBeTruthy());
   });
 
-  it("選んだ速度で送信する", async () => {
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH15_REPLAY_INFO });
+  it("リプレイの尺が分からなければ目安を出さない", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({
+      ok: true,
+      info: { ...TH15_REPLAY_INFO, estimatedDurationSeconds: null },
+    });
     renderUploadForm();
     selectFile("th15_01.rpy");
-    await waitFor(() => expect(isDisabled(speedRadio(4))).toBe(false));
-    fireEvent.click(speedRadio(4));
+    await waitFor(() => expect(screen.getByText("th15_01.rpy", { exact: false })).toBeTruthy());
+
+    expect(screen.queryByText(/録画完了までの目安/)).toBeNull();
+  });
+
+  it("録画速度を送らず、1080pは常にオフで送信する", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({
+      ok: true,
+      info: { ...SAMPLE_REPLAY_INFO, game: "th06nc" },
+    });
+    renderUploadForm();
+    selectFile("th6_01.rpy");
     fillEmail("koishi@example.com");
     await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    mockedClient.requestMagicLink.mockResolvedValue({});
     await act(async () => {
       fireEvent.click(nextStepButton());
     });
 
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ recordingSpeed: 4 }),
+      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
       "koishi@example.com",
       "ja",
     );
-  });
-
-  it("どのタイトルでも選択肢が有効で、th08ではおすすめの2倍速が既定になる", async () => {
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
-    renderUploadForm();
-    selectFile("th7_07.rpy");
-    await waitFor(() => expect(isDisabled(speedRadio(2))).toBe(false));
-
-    expect(speedRadio(2).checked).toBe(true);
-  });
-
-  it("別のリプレイを選び直すとおすすめに戻る", async () => {
-    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH15_REPLAY_INFO });
-    renderUploadForm();
-    selectFile("th15_01.rpy");
-    await waitFor(() => expect(isDisabled(speedRadio(4))).toBe(false));
-    fireEvent.click(speedRadio(4));
-
-    selectFile("th15_02.rpy");
-    await waitFor(() => expect(speedRadio(2).checked).toBe(true));
   });
 });

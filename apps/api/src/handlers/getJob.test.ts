@@ -391,13 +391,13 @@ describe("GET /jobs/{jobId}", () => {
       (await handler(makeEvent("job-1"), {} as never, () => {})) as APIGatewayProxyStructuredResultV2,
     );
     expect(body.recordingSpeed).toBe(1);
-    expect(body.requestedRecordingSpeed).toBeNull();
+    expect(body).not.toHaveProperty("requestedRecordingSpeed");
 
     ddbMock.on(GetCommand).resolves({ Item: doneJob });
     const plain = parseBody(
       (await handler(makeEvent("job-1"), {} as never, () => {})) as APIGatewayProxyStructuredResultV2,
     );
-    expect(plain.requestedRecordingSpeed).toBeNull();
+    expect(plain).not.toHaveProperty("requestedRecordingSpeed");
   });
 
 

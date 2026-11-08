@@ -36,37 +36,22 @@ thprac では直せないずれがある」にある。
 リプレイずれへの不満の緩和）ことに加えて、②**今後保存するリプレイを汚染させない
 唯一の手段をユーザーに伝える**という、サーバー側では代替できない役割を持つ。
 
-## 2. th06ncの1080p録画オプション（Issue #241）
+## 2. th06ncの1080p録画オプション（廃止、Issue #241・#317）
 
-th06nc（東方紅魔郷: New Classic、GPU描画必須タイトル）限定で、既定の720pに代えて
-1080pで録画するオプションを選べる。**ワーカーの空き状況には依存しない**——th06ncは自宅ワーカーへ絶対にオファーされず（GPU非搭載のため）、常に
-EC2（GPU系インスタンス`g6f.xlarge`）で録画されるため、720p/1080pどちらを選んでも
-使用インスタンスは変わらない。
+th06nc限定で1080pを選べるオプションがあったが、CPUの段（1/2倍速）を足すにあたって廃止した
+（[`docs/decisions/0066`](../../../docs/decisions/0066-recording-fallback-plan-as-config.md)）。
+UIから消し、`POST /magic-links`も古いフロントエンドのキャッシュが送るtrueを無視する。
 
-- 対応タイトルは`supportsHighResolutionRecording(game)`（`@sattori/shared`、
-  現状th06ncのみ）で判定する。非対応タイトルではグレーアウトし、
-  `POST /magic-links`も同じ判定で握り潰す。
-- 既定はfalse（720p）固定。th10BugfixMarisaBと同じパターンで、`preview?.game`が
-  変わった際の自動追従（`useEffect`によるリセット）は無い——チェック状態は
-  `th06ncHighResolutionSelectable && th06ncHighResolution`という導出値で
-  「選択不可なら常にfalseとして送信される」ことが保証されるため、明示的な
-  リセット処理は不要（`th10BugfixMarisaB`と同型）。
-- **1080p録画は品質が不安定になりうる**ことをヒント文で案内する
-  （touhou-recorder reports/81 §9.9.3の実測、`docs/decisions/0046`参照。
-  g6f.xlarge=4vCPUのまま1080pを提供しているため）。
+## 3. 録画速度は選ばせない。完了の目安だけを出す（Issue #288・#317）
 
-## 3. 録画速度オプション（Issue #288）
+録画速度（倍速録画、[`0058`](../../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)）は、
+タイトルごとの録画の段（`packages/shared/src/recordingPlan.ts`）が決める。ユーザーは選ばない
+（[`0066`](../../../docs/decisions/0066-recording-fallback-plan-as-config.md)）。かつては4択のラジオボタンと
+「おすすめより速い」警告があったが、GPUが枯渇すると選んだ速度が実現しなかった（Issue #317）。
 
-ゲームを内部的にN倍速（1〜4倍速）で動かして録画し、後処理で元の速度へ戻す
-（[`docs/decisions/0058`](../../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。
-詳細設定に4択のラジオボタンとして置く。
-
-- **全タイトルで常に選べる**（タイトルごとの出し分けは無い）。
-- **既定値はタイトルごとの「おすすめ」**（`recommendedRecordingSpeed()`、th06ncは解像度で変わる）。
-  ユーザーが選ぶまではおすすめを値として保持せず都度導出する（`recordingSpeedChoice`が null）。
-  1080pに切り替えたときおすすめ（2→1倍速）へ追従させるため。別のリプレイを選び直したら
-  選択を捨てておすすめへ戻す。
-- **各選択肢に推定完了時間を添える**（`estimateRecordingCompletionSeconds()`。録画開始から完了まで、
-  待ち行列の待ち時間は含まない）。
-- **おすすめより速い速度を選ぶと警告を出すが、止めはしない**（3倍速以上はx11grabのキャプチャが
-  律速して落ちフレームが増える、`docs/known-limitations.md`）。警告文にはタイトル名を入れる。
+- 送信ボタンの直上に「録画完了までの目安: 約N分」を1行だけ出す。最初の段で録れたときの値
+  （`estimateRecordingCompletionSeconds()`。th15のExtraのような難易度ごとの速度も反映する）。待ち行列の
+  待ち時間と、混雑で後の段（等倍・低速）へ進んだときの延びは含まないので、「混雑時はさらにかかる」と添える。
+- リプレイの尺（`estimatedDurationSeconds`）が分からなければ出さない。
+- ジョブページは最終的に割り当てた段の速度だけを出し、フォールバックしたことは伝えない
+  （`JobProgress.tsx`）。

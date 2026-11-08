@@ -8,7 +8,6 @@ export * from "./th10BugfixMarisaB.js";
 export * from "./recordingPlan.js";
 export * from "./gpuRecording.js";
 export * from "./gpuQueue.js";
-export * from "./highResolutionRecording.js";
 export * from "./job.js";
 export * from "./api.js";
 export * from "./download.js";
