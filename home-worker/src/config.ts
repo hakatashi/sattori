@@ -8,7 +8,7 @@
  * **環境変数名は公開仕様**（`home-worker/README.md` §4.1 が文書化している）なので、
  * 変えるならREADMEと運用中のsystemdユニットの `EnvironmentFile` も併せて直すこと。
  */
-import { GAME_IDS, GPU_RECORDING_GAME_IDS, SUPPORTED_GAME_IDS } from "@sattori/shared";
+import { GAME_IDS, HOME_WORKER_GAME_IDS } from "@sattori/shared";
 import type { GameId } from "@sattori/shared";
 
 /** 必須の環境変数が欠けている・値が不正である。 */
@@ -181,20 +181,19 @@ export function splitShellArgs(raw: string): string[] {
  * ここで既知のタイトルかを確かめる。typoで「1件も引き受けないワーカー」が
  * 黙って出来上がるのを起動時に落とせる利点もある。
  *
- * GPU描画必須タイトル（`GPU_RECORDING_GAME_IDS`、Issue #241）は明示的に拒否する。
- * `apps/api/src/workerRouting.ts`の`GAME_ROUTING_POLICIES`が`offerToHomeWorker: false`
- * にしているため本来オファー自体が来ないが、GPU非搭載の自宅マシンへ誤って
- * `HOME_WORKER_SUPPORTED_GAMES`で明示指定してしまう事故を防ぐ多層防御として、
- * 起動時に`ConfigError`で落とす（`docs/decisions/0047-no-gpu-titles-for-home-worker.md`）。
+ * 録画の段に自宅ワーカーを持たないタイトル（`HOME_WORKER_GAME_IDS`の外、Issue #241・#317）は
+ * 明示的に拒否する。段（`recordingPlan.ts`）に無いので本来オファー自体が来ないが、GPU必須・
+ * 低速録画のタイトルを自宅マシンへ誤って`HOME_WORKER_SUPPORTED_GAMES`で明示指定してしまう事故を
+ * 防ぐ多層防御として、起動時に`ConfigError`で落とす（`docs/decisions/0047`）。
  */
 function parseGames(values: string[]): GameId[] {
   return values.map((value) => {
     if (!(GAME_IDS as readonly string[]).includes(value)) {
       throw new ConfigError(`未知のタイトルです: ${value}`);
     }
-    if ((GPU_RECORDING_GAME_IDS as readonly string[]).includes(value)) {
+    if (!(HOME_WORKER_GAME_IDS as readonly string[]).includes(value)) {
       throw new ConfigError(
-        `${value} はGPU描画必須のため自宅ワーカーでは録画できません（Issue #241）`,
+        `${value} は録画の段に自宅ワーカーが無いため自宅ワーカーでは録画できません（Issue #241・#317）`,
       );
     }
     return value as GameId;
@@ -213,15 +212,9 @@ export function loadConfig(env: Environment = process.env): Config {
     workerId: optional(env, "HOME_WORKER_ID") ?? "home-1",
     roleArn: optional(env, "HOME_WORKER_ROLE_ARN"),
     maxConcurrency: number_(env, "HOME_WORKER_MAX_CONCURRENCY", 2),
-    // 録画対応タイトル（`SUPPORTED_GAME_IDS`）を既定にする。自宅マシンの都合で
-    // 一部だけ受け持ちたい場合は `HOME_WORKER_SUPPORTED_GAMES` で上書きする。
-    // GPU描画必須タイトル（`GPU_RECORDING_GAME_IDS`、Issue #241）は自宅マシンに
-    // GPUが無い前提のため既定から除外する（`workerRouting.ts`の
-    // `offerToHomeWorker: false`と対になる多層防御）。
-    supportedGames:
-      games === null
-        ? SUPPORTED_GAME_IDS.filter((game) => !GPU_RECORDING_GAME_IDS.includes(game))
-        : parseGames(games),
+    // 録画の段に自宅ワーカーを持つタイトル（`HOME_WORKER_GAME_IDS`）を既定にする。自宅マシンの
+    // 都合で一部だけ受け持ちたい場合は `HOME_WORKER_SUPPORTED_GAMES` で上書きする。
+    supportedGames: games === null ? [...HOME_WORKER_GAME_IDS] : parseGames(games),
     pollIntervalSec: number_(env, "HOME_WORKER_POLL_INTERVAL_SEC", 3),
     loadThreshold: number_(env, "HOME_WORKER_LOAD_THRESHOLD", 0.7),
     dockerCpus: optional(env, "HOME_WORKER_DOCKER_CPUS"),

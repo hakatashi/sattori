@@ -99,11 +99,11 @@ export function SettingsPage() {
       .finally(() => setSaving(null));
   };
 
-  const handleToggleSkipFractionalGpuTiers = () => {
-    const next = !data.skipFractionalGpuTiers;
+  const handleToggleSkipGpuSteps = () => {
+    const next = !data.skipGpuSteps;
     const confirmed = window.confirm(
       next
-        ? "以降のGPUジョブでg6f.2xlargeを試しません。th06ncはg6.2xlargeで起動し、th15・th20はCPU低速録画へ、倍速録画は等倍へ落ちます。実機検証のための設定です。検証が終わったら必ず解除してください。よろしいですか？"
+        ? "以降のジョブでGPUの段を試しません（自宅ワーカー・CPUの段から試し、GPU以外の段が無いタイトルは失敗します）。実機検証のための設定です。検証が終わったら必ず解除してください。よろしいですか？"
         : "GPUジョブの起動を通常どおりに戻します。よろしいですか？",
     );
     if (!confirmed) {
@@ -111,7 +111,7 @@ export function SettingsPage() {
     }
     setSaving("gpuTiers");
     setActionError(null);
-    updateAdminSettings(token, { skipFractionalGpuTiers: next })
+    updateAdminSettings(token, { skipGpuSteps: next })
       .then(() => reload())
       .catch((err: unknown) => {
         if (err instanceof AdminUnauthorizedError) {
@@ -249,29 +249,29 @@ export function SettingsPage() {
       </div>
 
       <div className={styles.card}>
-        <h2 className={styles.cardHeading}>GPUの最後の段の強制</h2>
+        <h2 className={styles.cardHeading}>GPUの段を飛ばす</h2>
         <p className={styles.cardNote}>
-          これを有効にすると、GPUジョブはg6f.2xlargeを試しません。th06ncはg6.2xlargeで起動し、
-          th15・th20はCPU低速録画へ、倍速録画は等倍へ落ちます。フォールバック先の実機検証
-          （Issue #316）用の設定で、検証後は必ず解除してください。
+          これを有効にすると、録画の段のうちGPUの段をすべて飛ばし、自宅ワーカー・CPUの段から試します。
+          GPU以外の段を持たないタイトルは全段を使い切った扱いで失敗します。GPU以外の段の実機検証
+          （Issue #316・#317）用の設定で、検証後は必ず解除してください。
         </p>
         <p className={styles.status}>
           現在の状態:{" "}
-          <span className={data.skipFractionalGpuTiers ? styles.statusStopped : styles.statusOk}>
-            {data.skipFractionalGpuTiers ? "g6f.2xlargeを飛ばしている" : "通常（g6f.2xlargeから試す）"}
+          <span className={data.skipGpuSteps ? styles.statusStopped : styles.statusOk}>
+            {data.skipGpuSteps ? "GPUの段を飛ばしている" : "通常（最初の段から試す）"}
           </span>
         </p>
         <button
           type="button"
           className={styles.button}
-          onClick={handleToggleSkipFractionalGpuTiers}
+          onClick={handleToggleSkipGpuSteps}
           disabled={saving !== null}
         >
           {saving === "gpuTiers"
             ? "更新中…"
-            : data.skipFractionalGpuTiers
+            : data.skipGpuSteps
               ? "通常の起動に戻す"
-              : "g6f.2xlargeを飛ばす"}
+              : "GPUの段を飛ばす"}
         </button>
       </div>
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
-import { isTerminalStatus } from "@sattori/shared";
+import { initialRecordingSpeed, isTerminalStatus } from "@sattori/shared";
 import type { AdminRetryJobResponse, JobRecord } from "@sattori/shared";
 import { loadConfig, required } from "../../config.js";
 import { objectExistsStrict } from "../../downloads.js";
@@ -44,9 +44,9 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
   // `gpuQueueState`はsparse GSI `GpuQueueIndex`のキー属性で、引き継ぐと新ジョブが
   // 起動前から「待機中」としてインデックスに載り、他のGPUジョブの投入順（FIFO）を
   // 塞いでしまう（`docs/decisions/0056-gpu-vcpu-lease-and-queue.md`）。
-  // 倍速録画の等倍フォールバック（Issue #289）も「結果側」の値なので引き継がず、
-  // `options.recordingSpeed`をユーザーが元々選んだ速度へ戻す（再実行時にGPUが空いていれば
-  // 倍速で録れるように。空いていなければ再びフォールバックする）。
+  // 録画の段（Issue #317）の状態も「結果側」の値なので引き継がず、`options.recordingSpeed`を
+  // 最初の段の速度へ戻す（再実行時にGPUが空いていれば速い段で録れるように）。旧レコードの
+  // フォールバックの記録（`requestedRecordingSpeed`、Issue #289）も捨てる。
   const {
     homeWorkerOfferState: _offerState,
     homeWorkerOfferExpiresAt: _offerExpiresAt,
@@ -60,8 +60,9 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
     gpuQueueHeartbeatAt: _gpuQueueHeartbeatAt,
     gpuQueuePosition: _gpuQueuePosition,
     gpuQueueEtaSeconds: _gpuQueueEtaSeconds,
-    requestedRecordingSpeed,
+    requestedRecordingSpeed: _requestedRecordingSpeed,
     speedupFallbackReason: _speedupFallbackReason,
+    recordingStepId: _recordingStepId,
     // 試行ごとに記録される実行結果（Issue #296）。新しいジョブには引き継がない。
     workerRegion: _workerRegion,
     capacityExhaustedTargets: _capacityExhaustedTargets,
@@ -74,10 +75,7 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
   } = source;
   return {
     ...carried,
-    options:
-      requestedRecordingSpeed === undefined
-        ? carried.options
-        : { ...carried.options, recordingSpeed: requestedRecordingSpeed },
+    options: { ...carried.options, recordingSpeed: initialRecordingSpeed(carried) },
     jobId: newJobId,
     // マジックリンク（メール確認）は元ジョブで済んでいるため`pending`を経由せず、
     // `queued`で作成して直ちにStep Functionsを起動する。`pendingExpiresAt`は

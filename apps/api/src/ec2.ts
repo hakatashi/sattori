@@ -12,14 +12,8 @@ import {
   type _InstanceType as InstanceType,
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
-import type { JobRecord } from "@sattori/shared";
-import {
-  fallbackRecordingSpeedFor,
-  isSlowMotionRecording,
-  recordingSpeedOf,
-  requiresGpuRecording,
-  vcpusForInstanceType,
-} from "@sattori/shared";
+import type { Ec2RecordingStep, JobRecord } from "@sattori/shared";
+import { vcpusForInstanceType } from "@sattori/shared";
 import type { ApiConfig, GpuFallbackConfig } from "./config.js";
 import { workerRegions } from "./config.js";
 import { buildWorkerEnv } from "./workerEnv.js";
@@ -74,17 +68,6 @@ export class FleetLaunchError extends Error {
   }
 }
 
-/**
- * ジョブが試せる段をすべて容量不足で使い切ったことを表す例外（Issue #315）。これを受けた
- * `Launch`は、等倍へ落とせるジョブなら落とし、落とせなければその場でジョブを失敗させる。
- */
-export class LaunchTiersExhaustedError extends FleetLaunchError {
-  constructor(message: string, errorCodes: string[]) {
-    super(message, errorCodes, true);
-    this.name = "LaunchTiersExhaustedError";
-  }
-}
-
 /** インスタンスに付与しているジョブ識別用のタグキー（`buildCreateFleetInput`と対で使う）。 */
 export const JOB_ID_TAG_KEY = "sattori:jobId";
 
@@ -95,187 +78,30 @@ export const JOB_ID_TAG_KEY = "sattori:jobId";
 const LIVE_INSTANCE_STATES = ["pending", "running", "stopping", "stopped"];
 
 /**
- * Spot Fleet に含める候補インスタンスタイプ（th11・th12・th20以外の既定。th09・th10・th06cも
- * こちらに含まれる、touhou-recorder reports/60・68・77でc7i.xlarge実測$0.033/hour前後の
- * 品質確認済み）。
- * `c7i.xlarge` 単独だと、
- * そのハードウェアプールが時間帯によって枯渇した際に `InsufficientInstanceCapacity`
- * で録画ジョブの起動自体が失敗する（Issue #29）。インスタンスタイプごとに独立した
- * Spotキャパシティプールを持つため、AZ分散よりも大きな改善効果が見込める。
- *
- * ただしインスタンスタイプの変更は録画品質（Wine+Xvfb+ffmpegの重複フレーム率）に
- * 直結するリスクがあり、「同スペック帯・同価格帯だから安全」とは限らない
- * （`z1d.xlarge` は高クロック特化ゆえに悪化した実績がある、AGENTS.md参照）。
- * さらにリージョンが変わればハードウェア世代も変わりうるため、あるリージョンでの
- * 実機検証結果を無条件に他リージョンへ適用してはいけない。
- *
- * リージョンをeu-south-2(スペイン)へ移設(2026-08)したことに伴い、旧us-east-1で
- * 使っていた`c6a`/`c6i`/`c5a`系は削除した(eu-south-2に存在しない、
- * `describe-instance-type-offerings`で確認済み)。以下4タイプはすべてeu-south-2実機で
- * 検証済み（touhou-recorder reports/42・43）。
- */
-const DEFAULT_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "c7i.xlarge", // Intel Sapphire Rapids。reports/42実測で重複フレーム率0.1〜0.2%、第一候補
-  "c7a.xlarge", // AMD Genoa。reports/43実測で重複フレーム率1.4%（実ゲームプレイ区間）
-  "c7i-flex.xlarge", // Intel現行世代のburstableオプション。reports/43実測で重複フレーム率5.0%（同上）
-  "m7i.xlarge", // Intel Sapphire Rapids(メモリ倍増版)。reports/43実測で重複フレーム率2.7%（同上）
-];
-
-/**
- * th11専用の候補インスタンスタイプ。`.xlarge`帯(4vCPU)では本番で深刻な処理落ち
- * （ゲーム内fps表示が最悪35fps程度まで低下する、コマ落ちではなくゲームプレイ自体の
- * 実時間伸長）が発生した。touhou-recorder `reports/40` の実機検証で、原因は
- * CPU世代ではなくvCPU数の不足であることが判明し、8vCPU/16GiB以上(`.2xlarge`帯)に
- * すると重複フレーム率が明確に改善することを確認した。th06/07/08向けの
- * `DEFAULT_CANDIDATE_INSTANCE_TYPES`とはインスタンスタイプの重なりがない別リストとして
- * 管理する。
- *
- * eu-south-2には`c6i`/`c6a`系が存在しないため、旧リストの`c6i.2xlarge`/`c6a.2xlarge`は
- * 削除した。以下3タイプはすべてeu-south-2実機で検証済み（touhou-recorder
- * reports/42・43）で、いずれも想定尺どおりの自然終了・良好な重複フレーム率を確認済み。
- */
-const TH11_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "c7i.2xlarge", // Intel Sapphire Rapids。reports/42実測で重複フレーム率4.5%、第一候補
-  "c7a.2xlarge", // AMD Genoa。reports/43実測で重複フレーム率0.4%
-  "m7i.2xlarge", // Intel Sapphire Rapids(メモリ倍増版)。reports/43実測で重複フレーム率3.7%
-];
-
-/**
- * th12専用の候補インスタンスタイプ（Issue #76）。当初`.xlarge`帯（4vCPU）で実機検証した
- * ところ重複フレーム率自体は良好（0.6%）だったが、th12は背景アニメーションが常時変化する
- * ため「重複フレーム率だけでは処理落ちを過小評価する」ことが判明した
- * （`docs/known-limitations.md` §3）。リプレイの`frameCount`（60fps基準の理論尺）と実測
- * プレイ時間を比較すると、`.xlarge`帯では通常ステージで理論尺超過+2.11%という深刻な
- * 処理落ちが隠れていたが、`.2xlarge`帯（8vCPU）では+0.16%まで改善した
- * （touhou-recorder reports/67）。
- *
- * 当初は`c7i.2xlarge`のみ実機検証済みだったが、`c7a.2xlarge`・`m7i.2xlarge`も
- * AWS実機検証（`docs/reports/2026-09-01-th12-2xlarge-instance-group-verification.md`）
- * で良好（`c7a.2xlarge`は重複フレーム率0.4%、`m7i.2xlarge`は表面上12.7%だったが
- * 秒単位の生存フレーム再解析で15〜45秒の局所ノイズと判明、いずれもスコア完全一致・
- * 理論尺どおりの尺）だったため追加した。この3タイプはth11でも実機検証済み
- * （`TH11_CANDIDATE_INSTANCE_TYPES`）であり、異なる2タイトルでの実証実績に基づき
- * 「`.2xlarge`帯実機検証済みグループ」として扱う
- * （[`decisions/0042`](../../../docs/decisions/0042-2xlarge-instance-type-group-precedent.md)）。
- * 推測で足したものではない。
- */
-const TH12_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "c7i.2xlarge", // Intel Sapphire Rapids。reports/67実測で理論尺超過+0.16%、第一候補
-  "c7a.2xlarge", // AMD Genoa。2026-09-01実機検証で重複フレーム率0.4%
-  "m7i.2xlarge", // Intel Sapphire Rapids(メモリ倍増版)。2026-09-01実機検証で重複フレーム率12.7%(局所ノイズ、秒単位再解析で良好と確認)
-];
-
-/**
- * th128専用の候補インスタンスタイプ（Issue #78）。`.xlarge`帯（4vCPU）ではExtraステージの
- * 理論尺超過率が+4.16%（重複フレーム率5.5%）まで悪化した一方、`.2xlarge`帯（8vCPU、
- * `c7i.2xlarge`）では+0.71%（1.4%）まで改善することを実機確認した（touhou-recorder
- * reports/73）。th11・th12と同じくこの3タイプは異なる2タイトルでの実証実績に基づく
- * 「`.2xlarge`帯実機検証済みグループ」（[`decisions/0042`](../../../docs/decisions/0042-2xlarge-instance-type-group-precedent.md)）
- * として扱い、`c7i.2xlarge`1タイプの実機検証のみで残り2タイプも候補に追加した
- * （推測で足したものではない）。
- */
-const TH128_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "c7i.2xlarge", // Intel Sapphire Rapids。reports/73実測で理論尺超過+0.71%、第一候補
-  "c7a.2xlarge", // AMD Genoa。th11・th12での実証実績に基づき追加（decisions/0042）
-  "m7i.2xlarge", // Intel Sapphire Rapids(メモリ倍増版)。th11・th12での実証実績に基づき追加（decisions/0042）
-];
-
-/**
- * GPU必須のジョブ（`requiresGpuRecording()`: th06nc・th15と倍速録画、Issue #241・#82・#288）
- * 専用の候補インスタンスタイプ。GPU描画（Xorg+NVIDIA GRIDドライバ）を使うため、CPU系
- * とは全く別のインスタンスファミリを使う
- * （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
- *
- * **`g6f.2xlarge`（NVIDIA L4の1/4スライス、8vCPU/32GiB）のみ**。かつては`g6f.xlarge`
- * （4vCPU）を第一候補にしていたが、eu-south-2で長期間枯渇が続いており、倍速録画
- * （touhou-recorder reports/85〜90）は8vCPUでしか検証されていない（4vCPUではゲーム本体と
- * キャプチャ・エンコードがCPUを奪い合い2倍速を維持できない、reports/85）ため外した
- * （Issue #288）。eu-south-2のG系スポットクォータは32vCPU＝同時4本
- * （`packages/shared/src/gpuQueue.ts`の`GPU_VCPU_QUOTA`）。
- */
-const GPU_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "g6f.2xlarge", // NVIDIA L4 1/4スライス (8vCPU/32GiB)。reports/81・89実測
-];
-
-/**
- * 速度を落とせないGPUジョブ（th06nc）の最後の段（Issue #316）。AMIを変えずに録画でき、品質も
- * `g6f.2xlarge`と同等だが、単価が3.5〜7倍なのでフォールバック専用にする（touhou-recorder
- * reports/92）。eu-north-1には在庫が無かったのでeu-south-2だけで使う。
- */
-const GPU_FULL_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "g6.2xlarge", // NVIDIA L4 フル (8vCPU/32GiB)。reports/92実測
-];
-
-/**
- * CPU低速録画（Issue #316、th15・th20）の候補。**`c7i.4xlarge` 1タイプしか挙げていないのは
- * 意図的**で、他のタイプはこの構成で検証していない（AGENTS.md §3）。`.2xlarge`帯は落ちが約3倍に
- * なるので使わない（touhou-recorder reports/91）。
- */
-const SLOW_MOTION_CANDIDATE_INSTANCE_TYPES: InstanceType[] = [
-  "c7i.4xlarge", // Intel Sapphire Rapids 16vCPU/32GiB。reports/91実測で配信版の落ち0.5〜0.8%
-];
-
-/**
  * `launchRecordingInstance()` の候補タイプ絞り込みに使う制約。GPU vCPU容量リース
  * （Issue #270、`docs/decisions/0056-gpu-vcpu-lease-and-queue.md`）専用の値で、
- * CPU系タイトルの候補には一切影響しない。
+ * CPUの段の候補には一切影響しない。
  */
 export interface LaunchConstraints {
   /**
-   * 確保済みリースのvCPU上限。GPUジョブでのみ意味を持ち、これを超えるvCPU数の
+   * 確保済みリースのvCPU上限。GPUの段でのみ意味を持ち、これを超えるvCPU数の
    * インスタンスタイプ（`GPU_INSTANCE_TYPE_VCPUS`）を候補から除外する。
-   * `undefined` なら制約なし（従来どおり全候補。非GPU経路はこちら）。
+   * `undefined` なら制約なし（段の全候補）。
    */
   maxVcpu?: number;
-  /**
-   * GPUジョブを一次リージョンを飛ばしてフォールバック先リージョンで起動する
-   * （管理設定`forceGpuFallbackRegion`、Issue #296。本番での実機検証用）。
-   * フォールバック先が未設定・非GPUジョブでは無視する。
-   */
-  forceFallbackRegion?: boolean;
-  /**
-   * GPUジョブの`g6f.2xlarge`の段を飛ばす（管理設定`skipFractionalGpuTiers`、Issue #316。
-   * 本番での実機検証用）。th06ncは`g6.2xlarge`で起動し、それ以外は全段が尽きた扱いになる。
-   * `forceFallbackRegion`より優先する。非GPUジョブでは無視する。
-   */
-  skipFractionalGpuTiers?: boolean;
-  /**
-   * 段を容量不足と判定するたびに、次の段を試す前に呼ぶ（Issue #315）。呼び出し側がジョブ
-   * レコードの`capacityExhaustedTargets`へ記録する。渡すのはこれまでに使い切った段すべて。
-   */
-  onTierExhausted?: (exhaustedTierIds: string[]) => Promise<void>;
 }
 
-/** module-privateではなくexportする（`ec2.test.ts`から直接検証するため）。 */
+/**
+ * 段の候補インスタンスタイプ（`recordingPlan.ts`）を、GPUリースのvCPU上限で絞り込む。
+ * module-privateではなくexportする（`ec2.test.ts`から直接検証するため）。
+ */
 export function getCandidateInstanceTypes(
-  job: Pick<JobRecord, "game" | "options">,
+  step: Ec2RecordingStep,
   constraints: LaunchConstraints = {},
 ): InstanceType[] {
-  const isGpuJob = requiresGpuRecording(job);
-  const base = ((): InstanceType[] => {
-    // GPU必須のジョブはタイトルによらずGPU候補を使う（倍速録画は全タイトルが対象）。
-    if (isGpuJob) {
-      return GPU_CANDIDATE_INSTANCE_TYPES;
-    }
-    if (isSlowMotionRecording(recordingSpeedOf(job.options))) {
-      return SLOW_MOTION_CANDIDATE_INSTANCE_TYPES;
-    }
-    switch (job.game) {
-      case "th11":
-        return TH11_CANDIDATE_INSTANCE_TYPES;
-      case "th12":
-        return TH12_CANDIDATE_INSTANCE_TYPES;
-      case "th128":
-        return TH128_CANDIDATE_INSTANCE_TYPES;
-      default:
-        return DEFAULT_CANDIDATE_INSTANCE_TYPES;
-    }
-  })();
-
-  // GPUジョブでもmaxVcpu未指定なら全候補(呼び出し側の安全弁)。CPU系タイトルは
-  // requiresGpuRecording()がfalseなのでこの絞り込みを一切通らない。
-  if (constraints.maxVcpu === undefined || !isGpuJob) {
-    return base;
+  const base = step.instanceTypes as InstanceType[];
+  if (constraints.maxVcpu === undefined || step.platform !== "gpu") {
+    return [...base];
   }
   const filtered = base.filter(
     (instanceType) => (vcpusForInstanceType(instanceType) ?? Infinity) <= constraints.maxVcpu!,
@@ -319,14 +145,13 @@ export function buildUserData(
   config: ApiConfig,
   job: JobRecord,
   taskToken: string,
-  options: { workerImage?: string; region?: string } = {},
+  options: { workerImage?: string; region?: string; gpu?: boolean } = {},
 ): string {
-  // GPU必須のジョブ（th06nc・th15と倍速録画、Issue #241・#288）は別ECRイメージ（`worker-gpu`）・
-  // GPU用カスタムAMI（Launch Templateはこの関数の外、`launchRecordingInstance()`側で
-  // 分岐する）を使う。AMIにNVIDIA GRIDドライバ・nvidia-container-toolkitを事前導入
-  // 済みのため、`docker run`にGPUを渡す`--gpus all`を追加するだけでよい
-  // （`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
-  const isGpuJob = requiresGpuRecording(job);
+  // GPUの段（`recordingPlan.ts`）は別ECRイメージ（`worker-gpu`）・GPU用カスタムAMI
+  // （Launch Templateはこの関数の外、`launchTierFor()`側で分岐する）を使う。AMIにNVIDIA
+  // GRIDドライバ・nvidia-container-toolkitを事前導入済みのため、`docker run`にGPUを渡す
+  // `--gpus all`を追加するだけでよい（`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`）。
+  const isGpuJob = options.gpu ?? false;
   // フォールバック先リージョン（Issue #296）で起動する場合は、そのリージョンのECR
   // レプリカのイメージを呼び出し側が渡す。ECRのログイン先はイメージのレジストリから
   // 導く——**`AWS_DEFAULT_REGION`・awslogs・Step Functions通知は一次リージョンの
@@ -340,13 +165,13 @@ export function buildUserData(
   // SendTaskFailure 通知と共有するため）なので、二重埋め込みを避けそれを参照する。
   //
   // Spot中断監視（Issue #96）はIMDSが存在するEC2でのみ有効にする。
-  // 倍速録画（Issue #288）は`buildWorkerEnv()`が`job.options`から直接読む（常にGPUで走り、
-  // 割り当て先で無効化されることが無いため）。
+  // 録画速度は`buildWorkerEnv()`が`job.options`から読む（`Launch`が段の速度を書いてから呼ぶ）。
   const envFlags = Object.entries(
     buildWorkerEnv(config, job, taskToken, {
       spotInterruptionWatch: true,
       // 出力・タイトル資産はワーカーと同じリージョンのバケットを使う（Issue #313）。
       dataRegion: options.region ?? config.ec2.region,
+      gpuWorker: isGpuJob,
     }),
   ).map(([key, value]) =>
     key === "TASK_TOKEN" ? `-e TASK_TOKEN="$TASK_TOKEN"` : `-e ${key}=${shellEscape(value)}`,
@@ -565,114 +390,13 @@ export async function fetchSpotPrice(
   }
 }
 
-/**
- * EC2 Fleet でワーカーインスタンスを1台起動して録画ジョブを実行する。
- * 起動したインスタンスの情報（インスタンスID・実際に確保されたインスタンスタイプ・
- * アベイラビリティゾーン）を返す。
- *
- * ベースの Launch Template（AMI/IAM/SGはCDK側で設定済み）に対し、ジョブ固有の
- * UserData のみを持つ新しいバージョンを作成し、そのバージョンを参照する
- * `CreateFleet`（`Type: "instant"`）で即時に1台起動する。サブネット（=AZ）×
- * 候補インスタンスタイプ（`getCandidateInstanceTypes()`、th11のみ`.2xlarge`帯の
- * 別リストを使う。touhou-recorder `reports/40`参照）の全組み合わせを Overrides に
- * 渡し `price-capacity-optimized` 戦略（`SingleInstanceType: false`）で配置する
- * ことで、単一AZ・単一インスタンスタイプでのSpot枯渇に対する耐性を持たせる
- * （PoC reports/17、Issue #29）。実際にどの候補が確保されたかは `CreateFleet` の
- * レスポンス（`result.Instances[0]`）からそのまま読み取れ、追加の `DescribeInstances`
- * 呼び出しは不要。ただし**Spot単価だけはレスポンスに含まれない**ため、コスト推定
- * （Issue #60）用に `fetchSpotPrice()` で1回だけ別途取得する。
- *
- * GPU描画必須タイトル（`requiresGpuRecording()`、Issue #241）は`config.ec2.
- * gpuLaunchTemplateId`（GPU用カスタムAMI固定）を使う。CPU系の`launchTemplateId`とは
- * 別のLaunch Templateであり、`CreateLaunchTemplateVersion`・`CreateFleet`の両方で
- * 参照先を切り替える（サブネット候補はCPU系と同じ全AZ、Issue #281で
- * `eu-south-2a`の暫定除外[`decisions/0055`]を撤回済み）。
- *
- * **起動手段は順序付きの段（`launchTiersFor()`）で表し、容量不足なら同じ呼び出しの中で
- * 次の段へ進む**（Issue #315、`docs/decisions/0063`）。容量不足になった段は
- * `JobRecord.capacityExhaustedTargets`へ記録し、同じジョブのリトライでは飛ばす。
- * 全段を使い切ったら`LaunchTiersExhaustedError`を投げる。価格では振り分けない
- * （`docs/decisions/0061`）。CPU系ジョブの段は一次リージョンの1つだけ（CPU系のLaunch
- * Template・AMIを複製していない）。
- */
-export async function launchRecordingInstance(
-  config: ApiConfig,
-  job: JobRecord,
-  taskToken: string,
-  constraints: LaunchConstraints = {},
-): Promise<LaunchedInstance> {
-  const exhausted = [...(job.capacityExhaustedTargets ?? [])];
-  const failures: FleetLaunchError[] = [];
-  let everyTierExhausted = true;
 
-  for (const tier of launchTiersFor(config, job, constraints)) {
-    if (exhausted.includes(tier.id)) {
-      console.log(
-        JSON.stringify({ event: "launch_tier_skipped", jobId: job.jobId, tierId: tier.id }),
-      );
-      continue;
-    }
-    try {
-      return await launchInTier(config, job, taskToken, tier);
-    } catch (err) {
-      if (
-        !(err instanceof FleetLaunchError) ||
-        !err.errorCodes.some((code) => SPOT_CAPACITY_ERROR_CODES.includes(code))
-      ) {
-        // クォータ超過・API障害など、次の段へ逃がしても解消しない失敗。前の段の失敗も
-        // メッセージへ残す（`handleFailure.ts`の容量不足判定は部分一致）。
-        throw failures.length === 0 ? err : combineLaunchFailures(failures, err);
-      }
-      failures.push(err);
-      // 一部のサブネットがクォータ超過などで落ちた段は、次の段へ進むが記録はしない。
-      if (err.capacityExhausted) {
-        exhausted.push(tier.id);
-        await constraints.onTierExhausted?.(exhausted);
-      } else {
-        everyTierExhausted = false;
-      }
-      console.warn(
-        JSON.stringify({
-          event: "launch_tier_failed",
-          jobId: job.jobId,
-          tierId: tier.id,
-          capacityExhausted: err.capacityExhausted,
-          errorCodes: err.errorCodes,
-        }),
-      );
-    }
-  }
-
-  if (!everyTierExhausted) {
-    throw combineLaunchFailures(failures);
-  }
-  // 全段が前の試行で記録済みで、今回は1回もCreateFleetしていないこともある。
-  const message =
-    failures.map((failure) => failure.message).join(" / ") ||
-    `全段が容量不足として記録済み: ${exhausted.join(", ")}`;
-  throw new LaunchTiersExhaustedError(
-    message,
-    failures.flatMap((failure) => failure.errorCodes),
-  );
-}
-
-/** 複数の段の失敗を1つの例外にまとめる。 */
-function combineLaunchFailures(failures: FleetLaunchError[], last?: unknown): FleetLaunchError {
-  const lastMessage = last === undefined ? [] : [last instanceof Error ? last.message : String(last)];
-  return new FleetLaunchError(
-    [...failures.map((failure) => failure.message), ...lastMessage].join(" / "),
-    [
-      ...failures.flatMap((failure) => failure.errorCodes),
-      ...(last instanceof FleetLaunchError ? last.errorCodes : []),
-    ],
-  );
-}
-
-/** 起動手段の1段。 */
+/** 段を起動するための解決済みの情報。 */
 export interface LaunchTier {
-  /** `JobRecord.capacityExhaustedTargets`に記録する識別子（例: `gpu:eu-north-1`）。 */
+  /** 段の`id`（`JobRecord.capacityExhaustedTargets`に記録する識別子）。 */
   id: string;
   region: string;
+  gpu: boolean;
   launchTemplate: { LaunchTemplateId: string } | { LaunchTemplateName: string };
   /** 前の段で確保できれば要らない問い合わせなので、試す直前に解決する。 */
   resolveSubnetIds: () => Promise<string[]>;
@@ -682,63 +406,43 @@ export interface LaunchTier {
 }
 
 /**
- * ジョブが試す起動手段を、試す順に返す（Issue #315）。容量不足で飛ばした段を除くのは
- * 呼び出し側の役目で、この関数はジョブの内容と制約だけで段を決める。
+ * 段をLaunch Template・サブネット・ワーカーイメージへ解決する。一次リージョンならCPU/GPUの
+ * Launch Template、GPUのフォールバック先リージョンならそちらのGPU Launch Template（Issue #296）。
+ * それ以外（フォールバック先が未設定の環境を含む）は起動できないので null。
  */
-export function launchTiersFor(
+export function launchTierFor(
   config: ApiConfig,
-  job: Pick<JobRecord, "jobId" | "game" | "options" | "replayInfo">,
+  step: Ec2RecordingStep,
   constraints: LaunchConstraints = {},
-): LaunchTier[] {
-  const candidateInstanceTypes = getCandidateInstanceTypes(job, constraints);
-  const isGpuJob = requiresGpuRecording(job);
-  // 速度を落とせないGPUジョブ（th06nc）だけが持つ最後の段（Issue #316）。
-  const gpuFullTiers: LaunchTier[] =
-    isGpuJob && fallbackRecordingSpeedFor(job) === null
-      ? [
-          {
-            id: `gpu-full:${config.ec2.region}`,
-            region: config.ec2.region,
-            launchTemplate: { LaunchTemplateId: config.ec2.gpuLaunchTemplateId },
-            resolveSubnetIds: async () => config.ec2.subnetIds,
-            workerImage: undefined,
-            candidateInstanceTypes: GPU_FULL_CANDIDATE_INSTANCE_TYPES,
-          },
-        ]
-      : [];
-  if (isGpuJob && constraints.skipFractionalGpuTiers) {
-    console.log(JSON.stringify({ event: "gpu_fractional_tiers_skipped", jobId: job.jobId }));
-    return gpuFullTiers;
+): LaunchTier | null {
+  const gpu = step.platform === "gpu";
+  const candidateInstanceTypes = getCandidateInstanceTypes(step, constraints);
+  if (step.region === config.ec2.region) {
+    return {
+      id: step.id,
+      region: step.region,
+      gpu,
+      launchTemplate: {
+        LaunchTemplateId: gpu ? config.ec2.gpuLaunchTemplateId : config.ec2.launchTemplateId,
+      },
+      resolveSubnetIds: async () => config.ec2.subnetIds,
+      workerImage: undefined,
+      candidateInstanceTypes,
+    };
   }
-  const primary: LaunchTier = {
-    id: `${isGpuJob ? "gpu" : "cpu"}:${config.ec2.region}`,
-    region: config.ec2.region,
-    launchTemplate: {
-      LaunchTemplateId: isGpuJob ? config.ec2.gpuLaunchTemplateId : config.ec2.launchTemplateId,
-    },
-    resolveSubnetIds: async () => config.ec2.subnetIds,
-    workerImage: undefined,
-    candidateInstanceTypes,
-  };
-  const fallback = isGpuJob ? config.ec2.gpuFallback : null;
-  if (fallback === null) {
-    return [primary, ...gpuFullTiers];
+  const fallback = config.ec2.gpuFallback;
+  if (gpu && fallback !== null && step.region === fallback.region) {
+    return {
+      id: step.id,
+      region: step.region,
+      gpu,
+      launchTemplate: { LaunchTemplateName: fallback.launchTemplateName },
+      resolveSubnetIds: () => resolveFallbackSubnetIds(fallback),
+      workerImage: fallback.workerGpuImage,
+      candidateInstanceTypes,
+    };
   }
-  const fallbackTier: LaunchTier = {
-    id: `gpu:${fallback.region}`,
-    region: fallback.region,
-    launchTemplate: { LaunchTemplateName: fallback.launchTemplateName },
-    resolveSubnetIds: () => resolveFallbackSubnetIds(fallback),
-    workerImage: fallback.workerGpuImage,
-    candidateInstanceTypes,
-  };
-  if (constraints.forceFallbackRegion) {
-    console.log(
-      JSON.stringify({ event: "gpu_fallback_forced", jobId: job.jobId, region: fallback.region }),
-    );
-    return [fallbackTier];
-  }
-  return [primary, fallbackTier, ...gpuFullTiers];
+  return null;
 }
 
 /**
@@ -800,11 +504,30 @@ export function isTierCapacityExhausted(
 }
 
 /**
- * 1段ぶんの`CreateLaunchTemplateVersion` → `CreateFleet`。作ったバージョンは結果によらず
+ * EC2 Fleet で録画の段（`recordingPlan.ts`）のワーカーインスタンスを1台起動する。
+ * 起動したインスタンスの情報（インスタンスID・実際に確保されたインスタンスタイプ・
+ * アベイラビリティゾーン）を返す。
+ *
+ * ベースの Launch Template（AMI/IAM/SGはCDK側で設定済み）に対し、ジョブ固有の
+ * UserData のみを持つ新しいバージョンを作成し、そのバージョンを参照する
+ * `CreateFleet`（`Type: "instant"`）で即時に1台起動する。サブネット（=AZ）×
+ * 段の候補インスタンスタイプの全組み合わせを Overrides に渡し `price-capacity-optimized`
+ * 戦略（`SingleInstanceType: false`）で配置することで、単一AZ・単一インスタンスタイプでの
+ * Spot枯渇に対する耐性を持たせる（PoC reports/17、Issue #29）。実際にどの候補が確保されたかは
+ * `CreateFleet` のレスポンス（`result.Instances[0]`）からそのまま読み取れる。ただし
+ * **Spot単価だけはレスポンスに含まれない**ため、コスト推定（Issue #60）用に
+ * `fetchSpotPrice()` で1回だけ別途取得する。
+ *
+ * 1台も確保できなければ`FleetLaunchError`を投げる。段の全サブネット・全候補がSpot在庫の枯渇で
+ * 失敗したら`capacityExhausted`が立ち、呼び出し側（`handlers/sfn/launch.ts`）がその段を
+ * 使い切ったものとして次の段へ進む（Issue #315、`docs/decisions/0063`）。価格では振り分けない
+ * （`docs/decisions/0061`）。
+ *
+ * 作ったLaunch Templateバージョンは結果によらず
  * 消す。UserDataの中身は`CreateFleet`の時点でインスタンスへ渡っており、1テンプレートあたり
  * 10,000バージョンの上限に試行回数ぶん近づいていくのを避けるため（Issue #315）。
  */
-async function launchInTier(
+export async function launchRecordingInstance(
   config: ApiConfig,
   job: JobRecord,
   taskToken: string,
@@ -816,8 +539,9 @@ async function launchInTier(
   const userData = buildUserData(config, job, taskToken, {
     workerImage: target.workerImage,
     region: target.region,
+    gpu: target.gpu,
   });
-  const isGpuJob = requiresGpuRecording(job);
+  const isGpuJob = target.gpu;
 
   const version = await ec2.send(
     new CreateLaunchTemplateVersionCommand({

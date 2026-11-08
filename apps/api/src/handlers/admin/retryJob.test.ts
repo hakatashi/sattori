@@ -84,7 +84,12 @@ describe("buildRetryJob", () => {
     // 引き継ぐもの
     expect(retried.game).toBe("th11");
     expect(retried.replayKey).toBe("replays/abc.rpy");
-    expect(retried.options).toEqual({ watermark: false, th10BugfixMarisaB: false, th06ncHighResolution: false });
+    expect(retried.options).toEqual({
+      watermark: false,
+      th10BugfixMarisaB: false,
+      th06ncHighResolution: false,
+      recordingSpeed: 2,
+    });
     expect(retried.email).toBe("user@example.com");
     expect(retried.language).toBe("en");
     expect(retried.estimatedDurationSeconds).toBe(900);
@@ -130,17 +135,21 @@ describe("buildRetryJob", () => {
     expect("gpuQueueState" in retried).toBe(false);
   });
 
-  it("倍速録画を等倍へフォールバックしたジョブは元の速度へ戻して再実行する(Issue #289)", () => {
+  it("段の状態を引き継がず、速度を最初の段の速度へ戻して再実行する(Issue #317)", () => {
     const fellBackJob: JobRecord = {
       ...failedJob,
       options: { ...failedJob.options, recordingSpeed: 1 },
+      recordingStepId: "cpu:eu-south-2",
+      // 段の導入前のフォールバックの記録も捨てる。
       requestedRecordingSpeed: 3,
       speedupFallbackReason: "gpu_queue_wait",
     };
 
     const retried = buildRetryJob(fellBackJob, "job-2", new Date("2026-08-01T00:00:00.000Z"));
 
-    expect(retried.options.recordingSpeed).toBe(3);
+    // th11の最初の段はGPUの2倍速。
+    expect(retried.options.recordingSpeed).toBe(2);
+    expect("recordingStepId" in retried).toBe(false);
     expect("requestedRecordingSpeed" in retried).toBe(false);
     expect("speedupFallbackReason" in retried).toBe(false);
   });

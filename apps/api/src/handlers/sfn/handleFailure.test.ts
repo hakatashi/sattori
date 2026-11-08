@@ -7,7 +7,7 @@ import {
 } from "@aws-sdk/client-ec2";
 import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import { SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT, type JobRecord } from "@sattori/shared";
+import { GPU_QUOTA_STEP_SKIP_ATTEMPT, type JobRecord } from "@sattori/shared";
 import { MAX_ATTEMPTS, MAX_ATTEMPTS_DETERMINISTIC } from "../../retryPolicy.js";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
@@ -37,7 +37,9 @@ const REQUIRED_ENV: Record<string, string> = {
 const ec2Mock = mockClient(EC2Client);
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
+/** GPUの段を使い切ったth07（CPUの段で動いている、Issue #317）。 */
 const baseJob: JobRecord = createJobRecord({
+  capacityExhaustedTargets: ["gpu:eu-south-2", "gpu:eu-north-1"],
   status: "launching",
   createdAt: "2026-07-17T00:00:00.000Z",
   updatedAt: "2026-07-17T00:00:00.000Z",
@@ -76,6 +78,8 @@ beforeEach(() => {
   }
   ec2Mock.reset();
   ddbMock.reset();
+  // 管理設定（段の除外、Issue #317）は既定値。個々のテストの`GetCommand`より優先される。
+  ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.SETTINGS_TABLE }).resolves({});
 });
 
 afterEach(() => {
@@ -464,11 +468,13 @@ describe("sfn/handleFailure handler", () => {
 });
 
 describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #270）", () => {
-  describe("倍速録画の等倍フォールバック(Issue #289)", () => {
+  describe("クォータ超過が続くときのGPUの段の飛ばし(Issue #289・#317)", () => {
+    // 段の導入後に作られ、まだGPUの段にいるth07。
+    const { capacityExhaustedTargets: _exhausted, ...withoutExhausted } = baseJob;
     const speedupJob: JobRecord = {
-      ...baseJob,
+      ...withoutExhausted,
       game: "th07",
-      options: { ...baseJob.options, recordingSpeed: 2 },
+      options: { ...baseJob.options, recordingSpeed: 3 },
     };
     const capacityError = {
       Error: "Error",
@@ -482,26 +488,25 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
     function fallbackUpdates() {
       return ddbMock
         .commandCalls(UpdateCommand)
-        .filter((call) => String(call.args[0].input.UpdateExpression).includes("requestedRecordingSpeed"));
+        .filter((call) => String(call.args[0].input.UpdateExpression).includes("capacityExhaustedTargets"));
     }
 
-    it("容量不足が規定の試行回数目以降なら等倍へ書き換えてリトライする", async () => {
+    it("容量不足が規定の試行回数目以降ならGPUの段を使い切ったものとして記録しリトライする", async () => {
       ddbMock.on(GetCommand).resolves({ Item: speedupJob });
       ddbMock.on(UpdateCommand).resolves({});
 
       const { handler } = await import("./handleFailure.js");
       const result = await handler({
         jobId: "job-1",
-        attempt: SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT,
+        attempt: GPU_QUOTA_STEP_SKIP_ATTEMPT,
         error: capacityError,
       });
 
       expect(result).toEqual({ shouldRetry: true });
-      expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
-        ":to": 1,
-        ":from": 2,
-        ":reason": "gpu_capacity",
-      });
+      expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues?.[":targets"]).toEqual([
+        "gpu:eu-south-2",
+        "gpu:eu-north-1",
+      ]);
       expect(statusUpdates(ddbMock)).toHaveLength(0);
     });
 
@@ -523,7 +528,7 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
       const { handler } = await import("./handleFailure.js");
       const result = await handler({
         jobId: "job-1",
-        attempt: SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT - 1,
+        attempt: GPU_QUOTA_STEP_SKIP_ATTEMPT - 1,
         error: capacityError,
       });
 
@@ -536,30 +541,27 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
       ddbMock.on(UpdateCommand).resolves({});
 
       const { handler } = await import("./handleFailure.js");
-      await handler({ jobId: "job-1", attempt: SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT });
+      await handler({ jobId: "job-1", attempt: GPU_QUOTA_STEP_SKIP_ATTEMPT });
 
       expect(fallbackUpdates()).toHaveLength(0);
     });
 
-    it("th15はCPU低速録画へ書き換えてリトライする（Issue #316）", async () => {
+    it("th15もGPUの段を飛ばしてリトライする（次はCPU低速録画の段、Issue #316）", async () => {
       ddbMock.on(GetCommand).resolves({ Item: { ...speedupJob, game: "th15" } });
       ddbMock.on(UpdateCommand).resolves({});
 
       const { handler } = await import("./handleFailure.js");
       const result = await handler({
         jobId: "job-1",
-        attempt: SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT,
+        attempt: GPU_QUOTA_STEP_SKIP_ATTEMPT,
         error: capacityError,
       });
 
       expect(result).toEqual({ shouldRetry: true });
-      expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
-        ":to": 1 / 2,
-        ":from": 2,
-      });
+      expect(fallbackUpdates()).toHaveLength(1);
     });
 
-    it("th06ncはフォールバックせず従来どおりcapacity_exhaustedで失敗させる", async () => {
+    it("th06ncはGPU以外の段が無いので飛ばさず従来どおりcapacity_exhaustedで失敗させる", async () => {
       ddbMock.on(GetCommand).resolves({ Item: { ...speedupJob, game: "th06nc" } });
       ddbMock.on(UpdateCommand).resolves({});
 
@@ -568,22 +570,6 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
 
       expect(result).toEqual({ shouldRetry: false });
       expect(fallbackUpdates()).toHaveLength(0);
-      expect(statusUpdates(ddbMock)[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
-        ":ec": "capacity_exhausted",
-      });
-    });
-
-    it("フォールバックの条件付き更新が弾かれたら通常のリトライ判定に従う", async () => {
-      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
-      ddbMock.on(UpdateCommand).resolves({});
-      ddbMock
-        .on(UpdateCommand, { ExpressionAttributeValues: { ":reason": "gpu_capacity" } }, false)
-        .rejects(new ConditionalCheckFailedException({ message: "conditional", $metadata: {} }));
-
-      const { handler } = await import("./handleFailure.js");
-      const result = await handler({ jobId: "job-1", attempt: MAX_ATTEMPTS, error: capacityError });
-
-      expect(result).toEqual({ shouldRetry: false });
       expect(statusUpdates(ddbMock)[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
         ":ec": "capacity_exhausted",
       });

@@ -1,18 +1,19 @@
 import {
+  currentRecordingStep,
   estimateGpuOccupancySeconds,
-  fallbackRecordingSpeedFor,
   estimateQueueWaitSeconds,
   GPU_QUEUE_INDEX,
+  GPU_QUEUE_STEP_SKIP_MINUTES,
   GPU_QUEUE_WAITING,
   GPU_VCPU_QUOTA,
+  isGpuStep,
   isQueueWaitTimedOut,
   nextPollIntervalSeconds,
   recordingSpeedOf,
-  requiresGpuRecording,
   reservableVcpu,
-  SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES,
+  skippableGpuStepIds,
 } from "@sattori/shared";
-import type { JobRecord, RecordingSpeed } from "@sattori/shared";
+import type { JobRecord, RecordingSpeed, RecordingStepFilter } from "@sattori/shared";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { loadConfig } from "../../config.js";
@@ -22,22 +23,23 @@ import type { QueueEntry } from "../../gpuQueue.js";
 import { acquireGpuSlot, listGpuSlots } from "../../gpuSlots.js";
 import {
   clearGpuQueueState,
-  fallBackRecordingSpeed,
   getJob,
   markGpuQueueWaiting,
+  updateCapacityExhaustedTargets,
   updateGpuQueueDisplay,
   updateJobStatus,
 } from "../../jobs.js";
+import { loadRecordingStepFilter } from "../../recordingSteps.js";
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 /**
  * Step Functions の `AcquireGpuSlot` ステート（通常invoke、`Launch`の手前）から
- * 呼ばれるLambda（Issue #270）。GPU必須のジョブ（th06nc・th15・th20と倍速録画）のvCPU容量を
+ * 呼ばれるLambda（Issue #270）。次に試す録画の段（`recordingPlan.ts`）がGPUのジョブのvCPU容量を
  * `GpuSlotsTable` で会計し、投入順（FIFO、`JobsTable`のsparse GSI
  * `GpuQueueIndex`）を守りながら空きを待たせる。
  *
- * 非GPUジョブは`JobsTable`の`gpuQueue*`属性にも`GpuSlotsTable`にも一切触れず
+ * 次の段がGPUでないジョブは`JobsTable`の`gpuQueue*`属性にも`GpuSlotsTable`にも一切触れず
  * 即座に`acquired: true`を返す（ADR 0010「環境差分はワーカー側の分岐ではなく
  * 起動側で表す」と同じ精神）。
  *
@@ -51,11 +53,10 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
  * 4. 先頭なら`GpuSlotsTable`の空きを見て確保を試みる。取れたら待機列から外し
  *    `acquired: true`。先頭でない・取れなかった場合は順位・推定待ち時間を
  *    `JobsTable`へ書き（表示用）、`waitSeconds`を返す。
- * 5. ただし4で待つことになったジョブが、速度を落とせて（`fallbackRecordingSpeedFor()`）
- *    `SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES`以上待っていたら、待たずにCPUで録る速度へ
- *    落とし、待機列から外して`acquired: true`を返す（Issue #289・#316）。
- *    `Launch`はジョブを読み直すので、CPUのジョブとしてCPU系インスタンスか
- *    自宅ワーカーへ割り当てる。
+ * 5. ただし4で待つことになったジョブが、GPU以外の段を持ち（`skippableGpuStepIds()`）
+ *    `GPU_QUEUE_STEP_SKIP_MINUTES`以上待っていたら、GPUの段を使い切ったものとして記録し、
+ *    待機列から外して`acquired: true`を返す（Issue #289・#316・#317）。`Launch`はジョブを
+ *    読み直すので、GPU以外の段（自宅ワーカー・CPU）から試す。
  *
  * 詳細は `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`。
  */
@@ -131,37 +132,36 @@ async function queryWaitingJobs(
 }
 
 /**
- * 待つことになったジョブを、待ち時間が長ければCPUで録る速度へ落とす
- * （Issue #289・#316）。落としたら`AcquireGpuSlotResult`を、しなければ null を返す。
+ * 待つことになったジョブが長く待っていたら、GPUの段を飛ばす（Issue #289・#316・#317）。
+ * 飛ばしたら`AcquireGpuSlotResult`を、しなければ null を返す。
  *
  * 判定を待機の分岐（確保できなかった後）でだけ行うのは、ちょうど枠が空いた周回で
- * フォールバックしてしまい、ユーザーの選んだ倍速を無駄に捨てないようにするため。
+ * GPUの段を飛ばしてしまい、速い段を無駄に捨てないようにするため。
  */
-async function fallBackIfWaitedTooLong(
+async function skipGpuStepsIfWaitedTooLong(
   config: ApiConfig,
   job: JobRecord,
   event: AcquireGpuSlotEvent,
   elapsedSeconds: number,
+  excluded: RecordingStepFilter,
 ): Promise<AcquireGpuSlotResult | null> {
-  const to = fallbackRecordingSpeedFor(job);
-  if (to === null || elapsedSeconds < SPEEDUP_FALLBACK_QUEUE_WAIT_MINUTES * 60) {
+  const skipped = skippableGpuStepIds(job, excluded);
+  if (skipped.length === 0 || elapsedSeconds < GPU_QUEUE_STEP_SKIP_MINUTES * 60) {
     return null;
   }
-  const from = recordingSpeedOf(job.options);
-  const fellBack = await fallBackRecordingSpeed(config.jobsTable, event.jobId, from, to, "gpu_queue_wait");
-  if (!fellBack) {
-    return null;
-  }
-  // もうGPUジョブではないので、FIFOの基準（gpuQueuedAt）も含めて待機列から完全に外す。
+  await updateCapacityExhaustedTargets(config.jobsTable, event.jobId, [
+    ...(job.capacityExhaustedTargets ?? []),
+    ...skipped,
+  ]);
+  // もうGPUの段は試さないので、FIFOの基準（gpuQueuedAt）も含めて待機列から完全に外す。
   await clearGpuQueueState(config.jobsTable, event.jobId);
   console.log(
     JSON.stringify({
-      event: "speedup_fallback",
+      event: "gpu_steps_skipped",
       jobId: event.jobId,
       attempt: event.attempt,
       reason: "gpu_queue_wait",
-      from,
-      to,
+      skipped,
       elapsedSeconds: Math.round(elapsedSeconds),
     }),
   );
@@ -175,7 +175,10 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
     throw new Error(`ジョブが見つかりません: ${event.jobId}`);
   }
 
-  if (!requiresGpuRecording(job)) {
+  // 管理設定でGPUの段を飛ばしているジョブにGPU枠を確保させない（`Launch`と同じ判定）。
+  const excluded = await loadRecordingStepFilter(config, event.jobId);
+  const step = currentRecordingStep(job, excluded);
+  if (step === null || !isGpuStep(step)) {
     return { jobId: event.jobId, attempt: event.attempt, acquired: true, timedOut: false, waitSeconds: 0 };
   }
 
@@ -268,7 +271,7 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
         JSON.stringify({ event: "gpu_slot_contended", jobId: event.jobId, attempt: event.attempt }),
       );
     }
-    const fallback = await fallBackIfWaitedTooLong(config, job, event, elapsedSeconds);
+    const fallback = await skipGpuStepsIfWaitedTooLong(config, job, event, elapsedSeconds, excluded);
     if (fallback) {
       return fallback;
     }
@@ -288,7 +291,7 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
   }
 
   // 先頭でない: 順位・ETAを計算して待つ。
-  const fallback = await fallBackIfWaitedTooLong(config, job, event, elapsedSeconds);
+  const fallback = await skipGpuStepsIfWaitedTooLong(config, job, event, elapsedSeconds, excluded);
   if (fallback) {
     return fallback;
   }
