@@ -252,7 +252,7 @@ export function currentRecordingStep(
 /**
  * GPUの段を飛ばせるなら、飛ばす段の`id`を返す（GPU枠の長時間待ち・クォータ超過、Issue #289・#316）。
  * 次に試す段がGPUで、その後ろにGPU以外の段が残っているときだけ。飛ばせなければ空配列
- * （th06ncのようにGPU以外の段が無いタイトルは、待つか失敗するしかない）。
+ * （後ろのGPU以外の段を使い切ったジョブは、待つか失敗するしかない）。
  */
 export function skippableGpuStepIds(job: RecordingStepState, excluded?: RecordingStepFilter): string[] {
   const remaining = remainingRecordingSteps(job, excluded);
