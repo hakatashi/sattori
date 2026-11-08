@@ -55,7 +55,7 @@ kill_wine_and_wait` のように名前で import しているため、**monkeypa
 コード変更で挙動が本番と乖離する心配が無く、`--rm`により後始末も確実)。
 
 ゲーム資産を配置済みなら S3/DynamoDB 無しで録画本体だけを試せる(低速録画の例は
-`worker/README.md` §5)。配信用変換だけなら ffmpeg/ffprobe があれば動く。
+`worker/docs/recording-speed.md`)。配信用変換だけなら ffmpeg/ffprobe があれば動く。
 
 ```bash
 python3 record_th07.py --replay-path /path/to/any.rpy --output /tmp/out.mp4
