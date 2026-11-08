@@ -143,6 +143,10 @@ describe("currentRecordingStep / remainingRecordingSteps", () => {
     expect(currentRecordingStep({ game: "th08" }, isGpuStep)?.id).toBe("home");
   });
 
+  it("段の導入前に速度を落としたジョブ（requestedRecordingSpeed）はGPUの段へ戻らない", () => {
+    expect(currentRecordingStep({ game: "th20", requestedRecordingSpeed: 1 })?.id).toBe("cpu:eu-south-2");
+  });
+
   it("全段を使い切ったら null", () => {
     const job = {
       game: "th06nc" as const,

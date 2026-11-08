@@ -230,6 +230,11 @@ export type RecordingStepFilter = (step: RecordingStep) => boolean;
 export interface RecordingStepState {
   game: GameId;
   capacityExhaustedTargets?: string[];
+  /**
+   * 段の導入前に速度を落としたジョブの記録（`JobRecord.requestedRecordingSpeed`、0060・0064）。
+   * これがあるジョブはGPUの段を使い切ったものとして扱う（デプロイを跨いで走っているジョブがGPUへ戻らないように）。
+   */
+  requestedRecordingSpeed?: unknown;
 }
 
 /** まだ試せる段（使い切った段と`excluded`が真の段を除く）。 */
@@ -238,7 +243,10 @@ export function remainingRecordingSteps(
   excluded: RecordingStepFilter = () => false,
 ): RecordingStep[] {
   const exhausted = job.capacityExhaustedTargets ?? [];
-  return recordingPlanFor(job.game).filter((step) => !exhausted.includes(step.id) && !excluded(step));
+  const legacyFellBack = job.requestedRecordingSpeed !== undefined;
+  return recordingPlanFor(job.game).filter(
+    (step) => !exhausted.includes(step.id) && !excluded(step) && !(legacyFellBack && isGpuStep(step)),
+  );
 }
 
 /** 次に試す段。全段を使い切っていれば null。 */
