@@ -68,9 +68,10 @@ make -C worker/mods steam_api64
 ### th06nc
 
 th06ncはth06cと同じDXライブラリ系エンジンの64bitバイナリで、ビルド方法もth06cと
-ほぼ同一（`-static`必須、Steamworks APIスタブが要る）。**ただしGPU描画が必須の
-タイトルであり、CPU系タイトルとは別のEC2インスタンス（g6f.xlarge）・別ECRイメージ
-（worker-gpu）で録画する**（`worker/docs/titles/th06nc.md`、Issue #241）。
+ほぼ同一（`-static`必須、Steamworks APIスタブが要る）。通常はGPUインスタンス・別ECRイメージ
+（worker-gpu）で録画し、CPU描画は1/2倍速でだけ使う（`worker/docs/titles/th06nc.md`、Issue #241）。
+CPU描画用のBC7展開フック（`common/d3d11_bc7_hook.cpp`）を一緒にリンクするため、
+**`-ldxguid`が要る**（Makefileに記述済み。無いと`IID_ID3D11Device`等が未解決になる）。
 Steam AppIDがth06cと異なる（4763590、th06cは4771400）ため、Steamworks APIスタブは
 `th06nc_steam_stub/`として別ビルドする（インターフェースの個別対応は不要だった
 実機確認済みだが、`GetAppID()`が将来呼ばれた場合に備えAppIDだけ正しい値にしてある）。
