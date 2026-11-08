@@ -10,8 +10,7 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
 東方Projectのリプレイファイル（`.rpy`）をアップロードすると AWS 上で自動録画し、動画を
 ダウンロードできる無料サービス。動画に詳しくないファンでも迷わず使えることを最優先とし、UI は
 説明を最小限に、操作を単純にする。想定利用規模は**月間最大1000回**の録画で、コストとオペレー
-ションの最小化を最優先に設計判断を行っている。主要機能（アップロード→解析プレビュー→マジック
-リンク認証→録画→ポーリング→DL→完了メール）は実装済みで、2026-08-22に初回リリース済み。
+ションの最小化を最優先に設計判断を行っている。主要機能は実装済みで、2026-08-22に初回リリース済み。
 対応タイトルは th06・th06c・th06nc・th07・th08・th09・th10・th11・th12・th15・th20・th128 の12本。未実装・未検証の事項は
 [`docs/known-limitations.md`](docs/known-limitations.md) に一覧してある。実機検証レポート群は別
 リポジトリ `touhou-recorder`（PoC）にあり、各所の `reports/NN` はその番号。
@@ -19,11 +18,9 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
 ## 2. アーキテクチャ概観
 
 **リージョンは `eu-south-2`（スペイン）**。**SESとCloudFront用ACM証明書だけ`us-east-1`に
-残している**（eu-south-2にSESが無いため。`SES_REGION`、`apps/api/src/ses.ts`。両者は
-`SattoriEdgeStack`にまとめてある、`infra/README.md`）。移設の経緯と受け入れた
-トレードオフは[`0001`](docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)。**GPUワーカーだけは
-eu-south-2のSpot枯渇時に`eu-north-1`で起動する**（移すのは出力バケットとタイトル資産のレプリカだけで、`AWS_REGION`はeu-south-2のまま。
-EC2のAPIはリージョンを明示して呼ぶこと。配信URLは`outputRegion`を見て組む、[`0061`](docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)・[`0062`](docs/decisions/0062-gpu-fallback-region-local-output-and-title-assets.md)）。
+残している**（`SattoriEdgeStack`、[`0001`](docs/decisions/0001-region-eu-south-2-ses-us-east-1.md)）。**GPUワーカーだけは
+eu-south-2のSpot枯渇時に`eu-north-1`で起動する**（`AWS_REGION`はeu-south-2のまま。EC2のAPIは
+リージョンを明示して呼ぶこと。[`0061`](docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)・[`0062`](docs/decisions/0062-gpu-fallback-region-local-output-and-title-assets.md)）。
 
 ```
 [ブラウザ: React/Vite SPA]
@@ -40,8 +37,8 @@ EC2のAPIはリージョンを明示して呼ぶこと。配信URLは`outputRegi
         │      (`home-worker/`)がclaimすれば同じイメージをローカル実行(§3)
         ▼(B) claimされなければオファーを撤回しEC2へ
 [EC2 Fleet ワーカー(Spot, Docker: Wine+Xvfb+ffmpeg+Python)]
-   .rpy取得 → 録画 → 生動画をS3へチェックポイントUP → 配信用変換(等倍化・解像度合わせ・
-   ウォーターマークを1パス) → S3へUP → DynamoDB更新 → taskToken通知 → 停止
+   .rpy取得 → 録画 → 生動画をS3へチェックポイントUP → 配信用変換(1パス)
+   → S3へUP → DynamoDB更新 → taskToken通知 → 停止
         ▼
 [S3(出力) → CloudFront(OAC)] → ブラウザからDL
         ▼ status="done" への更新を DynamoDB Streams が拾って
@@ -49,8 +46,8 @@ EC2のAPIはリージョンを明示して呼ぶこと。配信URLは`outputRegi
 ```
 
 これとは別に、**EventBridgeの定期実行（10分間隔）で孤児EC2を掃除する Lambda**（Issue #23）が走る。
-ジョブレコードではなく**AWS上に実在するインスタンス（タグ`sattori:jobId`）を起点に走査する**
-（[`0017`](docs/decisions/0017-orphan-sweep-from-aws-instances.md)）。管理画面（`/admin`、Issue #51）も同じ資源を覗く。
+**AWS上に実在するインスタンス（タグ`sattori:jobId`）を起点に走査する**
+（[`0017`](docs/decisions/0017-orphan-sweep-from-aws-instances.md)）。
 
 ## 3. 常に踏まえておくべき設計判断
 
@@ -60,41 +57,36 @@ EC2のAPIはリージョンを明示して呼ぶこと。配信URLは`outputRegi
 
 - **ウェブ基盤は AWS フルサーバーレスに統一**。録画基盤が AWS 固定で、他クラウドを混ぜると
   クロスクラウドの IAM 連携が増えるため。唯一の例外が SES（§2）。
-- **IaC は AWS CDK（TypeScript）だが、EC2 の起動だけは実行時に AWS SDK で行う**（ベースの
-  Launch Template のみ CDK が作り、ジョブ毎の UserData は `CreateLaunchTemplateVersion` で
-  上書き）。**新しいインフラを足す際もこの分離を崩さないこと**
+- **IaC は AWS CDK（TypeScript）だが、EC2 の起動だけは実行時に AWS SDK で行う**。
+  **新しいインフラを足す際もこの分離を崩さないこと**
   （[`decisions/0002`](docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)）。
-- **録画ジョブは Step Functions（Standard）でオーケストレーションする**（1ジョブ=1実行、
-  `infra/README.md`）。**進捗はポーリング**
-  （[`decisions/0006`](docs/decisions/0006-progress-polling-not-websocket.md)）。
+- **録画ジョブは Step Functions（Standard）でオーケストレーションする**（1ジョブ=1実行）。
+  **進捗はポーリング**（[`decisions/0006`](docs/decisions/0006-progress-polling-not-websocket.md)）。
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。永年無料枠で egress を実質ゼロにできる。
 - **録画ワーカーは EC2 Fleet と自宅サーバーの2種類あり、どちらも同じ ECR イメージ・同じ taskToken
-  契約で動く**（Issue #49、GPU必須のジョブ——th06nc・th15・th20と倍速録画——と低速録画は自宅ワーカーへ常に来ないため例外
-  ——別ECRイメージ・別インスタンスタイプ、[`0046`](docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)〜
-  [`0048`](docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)・[`0058`](docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。自宅マシンは NAT 配下で
-  到達できないため割り当ては**Pull 型**（AWS が
-  オファーを書き、デーモンが条件付き更新で原子的に claim する。
-  [`0018`](docs/decisions/0018-home-worker-pull-assignment.md)）。**ワーカーの中に「自宅かEC2か」
+  契約で動く**（Issue #49。GPU必須のジョブと低速録画は自宅へ来ず、別ECRイメージ・別インスタンスタイプを使う、
+  [`0046`](docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)〜[`0048`](docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)）。自宅マシンは NAT 配下で
+  到達できないため割り当ては**Pull 型**（[`0018`](docs/decisions/0018-home-worker-pull-assignment.md)）。**ワーカーの中に「自宅かEC2か」
   の分岐を作らないこと** —— 環境差分は起動側が渡す環境変数（`apps/api/src/workerEnv.ts`）で表す。
-- **録画速度は1〜4倍速から選べる（倍速録画、Issue #288）。全タイトルが対象で、GPU インスタンスでしか録画しない**（`recordingSpeed`、`requiresGpuRecording()`）。起動側が `FPS_LIMIT_TARGET_HZ=60×倍率` と `GPU_WORKER=1` を渡すだけで、**ワーカー側に倍率やタイトルの分岐を作らない**（[`decisions/0058`](docs/decisions/0058-speedup-recording-on-gpu-instances.md)・[`0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。GPUを確保できないときは `options.recordingSpeed` を書き換えて落とす（通常のタイトルは等倍へ）——**ジョブの速度は途中で変わりうる**（[`0060`](docs/decisions/0060-speedup-fallback-to-native-speed.md)）。**低速録画（`FPS_LIMIT_TARGET_HZ`=30・20、`c7i.4xlarge`）はGPUを確保できないth15・th20の落とし先で、ユーザーは選べず自宅ワーカーへも出さない。th06ncの落とし先は`g6.2xlarge`の段**（[`0064`](docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
-- **Spot在庫の枯渇はジョブの中で永続エラーとして扱う**。起動手段は順序付きの段（`launchTiersFor()`）で、容量不足の段は`capacityExhaustedTargets`へ記録して同じ`Launch`の中で次へ進み、リトライでも試さない。全段が尽きたら速度を落とすか直ちに失敗させる（[`0063`](docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
-- **録画ワーカー（`worker/`）だけ Python**。**この例外は録画パイプラインに限る** —— 自宅ワーカーの
-  常駐デーモン（`home-worker/`）はコントロールプレーンしか担わないので TypeScript で書いている
-  （[`decisions/0003`](docs/decisions/0003-worker-python-home-worker-typescript.md)）。
-- **jobId 自体が認可の秘密値**（メールを確認しないと分からない値であることで bot/濫用対策とメール
-  認証を兼ねる。[`decisions/0004`](docs/decisions/0004-job-id-as-authorization-secret.md)）。
+- **録画速度は1〜4倍速から選べ（Issue #288）、倍速は GPU インスタンスでしか録画しない**
+  （`requiresGpuRecording()`）。起動側が `FPS_LIMIT_TARGET_HZ` と `GPU_WORKER=1` を渡すだけで、
+  **ワーカー側に倍率やタイトルの分岐を作らない**（[`0058`](docs/decisions/0058-speedup-recording-on-gpu-instances.md)・[`0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
+  GPUを確保できないときは `options.recordingSpeed` を書き換えて落とす——**ジョブの速度は途中で
+  変わりうる**（th15・th20はCPU低速録画へ。[`0060`](docs/decisions/0060-speedup-fallback-to-native-speed.md)・[`0064`](docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
+- **Spot在庫の枯渇はジョブの中で永続エラーとして扱う**。容量不足の段（`launchTiersFor()`）は同じ`Launch`の中で飛ばし、リトライでも試さない。全段が尽きたら速度を落とすか直ちに失敗させる（[`0063`](docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
+- **録画ワーカー（`worker/`）だけ Python**。**この例外は録画パイプラインに限る**（自宅ワーカーの
+  常駐デーモン`home-worker/`は TypeScript、[`decisions/0003`](docs/decisions/0003-worker-python-home-worker-typescript.md)）。
+- **jobId 自体が認可の秘密値**（メール認証と濫用対策を兼ねる。
+  [`decisions/0004`](docs/decisions/0004-job-id-as-authorization-secret.md)）。
   **管理画面（`/admin`）の認証は別系統**で、SSM の共有トークンを Lambda Authorizer が検証する
-  （[`decisions/0005`](docs/decisions/0005-admin-auth-ssm-shared-token.md)、`infra/README.md`）。
+  （[`decisions/0005`](docs/decisions/0005-admin-auth-ssm-shared-token.md)）。
 - **インスタンスタイプ・録画パイプラインの変更は必ず実機検証を経ること**。「同スペック帯・同価格帯
-  だから安全」という推測は繰り返し裏切られている。妥当性は touhou-recorder のレポートか、この
-  リポジトリでの実機検証の記録（[`docs/reports/`](docs/reports/README.md)）で必ず裏付けること。
-  唯一の例外は`c7i`/`c7a`/`m7i`の`.2xlarge`帯（異なる2タイトルでの実証実績に基づく限定的な
-  グループ化、[`decisions/0042`](docs/decisions/0042-2xlarge-instance-type-group-precedent.md)）。
-- **重複フレーム率の自動チェックは録画開始15〜45秒の30秒スポットしか見ていない**
-  （`recording.ffmpeg.measure_duplicate_rate`、Issue #93）。タイトル間・環境間で比較する際は
-  「全編の代表値ではない」ことに注意（`docs/known-limitations.md` §3）。**さらに背景が
-  常時アニメーションするタイトルでは処理落ちを過小評価しうるため、リプレイの
-  frameCountとの理論尺比較も必ず併用すること**（同 §3、th12実機検証で判明）。
+  だから安全」という推測は繰り返し裏切られている。裏付けは touhou-recorder のレポートか
+  [`docs/reports/`](docs/reports/README.md) に必ず残すこと。
+  唯一の例外は`c7i`/`c7a`/`m7i`の`.2xlarge`帯（[`decisions/0042`](docs/decisions/0042-2xlarge-instance-type-group-precedent.md)）。
+- **重複フレーム率の自動チェックは録画開始15〜45秒の30秒スポットしか見ておらず**（Issue #93）、
+  背景が常時動くタイトルでは処理落ちを過小評価しうる。**品質評価ではリプレイのframeCountとの
+  理論尺比較も必ず併用すること**（`docs/known-limitations.md` §3）。
 - **管理画面のコスト表示は推定値であって請求額ではない**（`packages/shared/src/cost.ts`）。
   リージョンや候補インスタンスタイプを変える場合は単価定数も見直すこと（同 §7）。
 
@@ -123,8 +115,7 @@ pnpm build / pnpm test / pnpm typecheck        # turbo で全パッケージ横�
 pnpm --filter @sattori/web dev                 # フロント開発サーバ(:5173, /api を :8787 へproxy)
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合成
 ```
-> 注: CDK の NodejsFunction が**リポジトリルートから `esbuild` を exec する**ため、ルートの
-> devDependencies に `esbuild` を置いてある。
+> 注: CDK の NodejsFunction が**ルートから `esbuild` を exec する**ため、ルートの devDependencies に置いてある。
 
 ## 5. ジョブ状態機械（横断的に使われる）
 
@@ -135,7 +126,7 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 ## 6. ドキュメント・手順の置き場所
 
 **ドキュメントに何かを書き足す前に
-[`docs/documentation-guidelines.md`](docs/documentation-guidelines.md) を読むこと**（Issue #112）。
+[`docs/documentation-guidelines.md`](docs/documentation-guidelines.md) を読むこと**。
 書き換えるファイルには追記せず、追記型の情報は1件1ファイルで増やす:
 
 - **現在の仕様が変わった** → 該当パッケージの `README.md` を**書き換える**（追記しない）
@@ -144,14 +135,8 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 - **既知の制約・未実装事項** → [`docs/known-limitations.md`](docs/known-limitations.md)
 - **手順が増えた** → `docs/runbooks/` か Skill
 
-移設・分割の際は必ず相互リンクを張ること。リンクが無いとエージェントは決定記録に気づけないまま
-README の仕様だけを読んで推測で変更する（§3 が最も警戒する事態）。
+移設・分割の際は必ず相互リンクを張ること（同ガイドライン §5.5）。
 
-デプロイ・運用手順は Skill にしてある: `deploy-sattori`（CDK デプロイ・ワーカーイメージの push・
-管理画面トークン）／`upload-title-assets`（タイトル資産の S3 アップロード・WINEPREFIX 作成）／
-`build-mods`（`*_hook.dll` のビルド）／`verify-recording-locally`（自宅ワーカー機での
-Docker録画検証。本番失敗の再現確認に使う）／`verify-game-update`（ゲーム側の公式アップデート
-配信時の互換性検証）。**Issue・PR を作成する前に必ず
-[`docs/runbooks/issue-workflow.md`](docs/runbooks/issue-workflow.md) を読むこと**（作成先リポジトリ・
-ラベル運用・PR の作法をまとめてある）。**Issue を解決する修正は直接 main にコミットせず必ず PR を
+デプロイ・運用手順は Skill（`.claude/skills/`）にしてある。**Issue・PR を作成する前に必ず
+[`docs/runbooks/issue-workflow.md`](docs/runbooks/issue-workflow.md) を読むこと**。**Issue を解決する修正は直接 main にコミットせず必ず PR を
 作り、本文に `Closes #xxx` を書くこと。**

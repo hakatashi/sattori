@@ -147,7 +147,7 @@ docker run --rm --name sattori-repro-<game> \
 
 バックグラウンドで実行し、`Monitor`ツールでログを監視する(fps暴走・タイムアウト・
 処理落ち・例外等の分類キーワードでフィルタする)。**倍速録画(Issue #288)を
-検証する場合は`FPS_LIMIT_TARGET_HZ=60×倍率`と`GPU_WORKER=1`を`-e`で追加する(GPU搭載機のみ)**(`worker/README.md` §5)。
+検証する場合は`FPS_LIMIT_TARGET_HZ=60×倍率`と`GPU_WORKER=1`を`-e`で追加する(GPU搭載機のみ)**(`worker/docs/recording-speed.md`)。
 th15・th20のCPU低速録画は`FPS_LIMIT_TARGET_HZ=30`(th15 Extraは`20`)だけを追加する(Issue #316)。
 
 `record_thNN.py`は`--output`を試行ごとに同じパスで上書きするため、**リトライで破棄
@@ -184,7 +184,7 @@ sudo rm -rf "$D/assets"   # 本番キャッシュではなく§4で複製した�
   [`docs/runbooks/worker-local-recording.md`](../../docs/runbooks/worker-local-recording.md) §2
 - **特定のジョブの再現ではなく、MOD変更後に決まった短いリプレイで機械的に退行が無いか
   確認したいだけなら** `worker/tests/mod_integration/run.py`
-  （`worker/README.md` §14、[`decisions/0049`](../../docs/decisions/0049-mod-integration-test-local-only.md)）
+  （`worker/docs/mod-integration-test.md`、[`decisions/0049`](../../docs/decisions/0049-mod-integration-test-local-only.md)）
   の方が速い。こちらはDockerコンテナを介さず、`worker/games/`・`worker/prefixes/`に
   ゲーム資産・WINEPREFIXを展開済みの環境でホスト直接実行する
   （`docs/runbooks/worker-local-recording.md` §2と同じ経路）。実機検証の代わりには

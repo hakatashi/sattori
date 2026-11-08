@@ -4,7 +4,8 @@ Lambda ハンドラ群（AWS API Gateway HTTP API 経由）。S3署名URL発行�
 マジックリンク送信・ジョブ起動・状態取得・完了メール送信・Step Functions連携を担う。
 API契約自体は `packages/shared/README.md` を参照。**ここには「今どうなっているか」だけを
 書く** —— なぜそうしたかの根拠は [`docs/decisions/`](../../docs/decisions/README.md)、
-管理API（`/admin/*`）の詳細は [`docs/admin-api.md`](docs/admin-api.md) にある。
+管理API（`/admin/*`）の詳細は [`docs/admin-api.md`](docs/admin-api.md)、EC2の起動・孤児掃除・
+環境変数の詳細は [`docs/`](docs/) 配下（各節からリンク）にある。
 
 ## 目次
 
@@ -139,107 +140,29 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 
 ## 4. EC2 Fleet インスタンスタイプの分散配置（`ec2.ts`, Issue #29）
 
-サブネット（=AZ）×候補インスタンスタイプの全組み合わせを `CreateFleet` の
-`Overrides` に渡し、`AllocationStrategy: "price-capacity-optimized"`
-（`SingleInstanceType: false`）で配置する。候補はタイトルごとに違う。
-
-| 対象 | 定数（`ec2.ts`） | 候補インスタンスタイプ |
-| --- | --- | --- |
-| th06/06c/07/08/09/10 | `DEFAULT_CANDIDATE_INSTANCE_TYPES` | `c7i.xlarge` / `c7a.xlarge` / `c7i-flex.xlarge` / `m7i.xlarge` |
-| th11 | `TH11_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
-| th12 | `TH12_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
-| th128 | `TH128_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
-| th06nc・th15・th20、および全タイトルの倍速録画 | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.2xlarge`のみ（GPU必須、Issue #241・#82・#288、[`decisions/0058`](../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)。GPU要否はタイトルではなくジョブ単位で決まるので`getCandidateInstanceTypes(job, { maxVcpu })`はジョブを受け取る）。th06ncの最後の段は`GPU_FULL_CANDIDATE_INSTANCE_TYPES`（`g6.2xlarge`） |
-| th15・th20の低速録画 | `SLOW_MOTION_CANDIDATE_INSTANCE_TYPES` | `c7i.4xlarge`のみ（[`decisions/0064`](../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)） |
+サブネット（=AZ）×候補インスタンスタイプの全組み合わせを`CreateFleet`へ渡し、
+`price-capacity-optimized`で配置する。候補はジョブ（タイトル・録画速度）ごとに違い、
+`requiresGpuRecording()`がtrueのジョブはGPU用のLaunch Template・別ECRイメージを使う。
+起動手段は順序付きの段（`launchTiersFor()`）で、Spot在庫の枯渇なら次の段・GPUの
+フォールバック先リージョン（eu-north-1）へ進む。**候補タイプの一覧・GPU系の別系統・
+段とリージョンのフォールバック・コスト推定用の記録は
+[`docs/ec2-launch.md`](docs/ec2-launch.md) §1**。
 
 > **候補を足す・変える前に
 > [`docs/decisions/0016`](../../docs/decisions/0016-ec2-fleet-instance-type-diversification.md)
-> を必ず読むこと**（各候補の実機検証の裏付け・GPU帯が1タイプしかない理由・
-> 「同スペック帯だから安全」が繰り返し裏切られている経緯）。インスタンスの起動を
-> CDK側へ移さない理由は [`0002`](../../docs/decisions/0002-ec2-launch-at-runtime-not-iac.md)。
-> `CreateLaunchTemplateVersion`の`SourceVersion`に`$Default`ではなく`$Latest`を使う
-> 理由（CDKでLaunch Templateを変更してもジョブ起動に反映されないバグの修正）は
-> [`0051`](../../docs/decisions/0051-launch-template-source-version-latest-not-default.md)。
-
-**`requiresGpuRecording()`がtrueのジョブだけは別系統**——GPU用の
-Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決ではなく
-事前構築したカスタムAMIを固定参照）・別ECRイメージ（`config.workerGpuImage`）を
-使い、`buildUserData()`が`docker run`に`--gpus all`を追加する
-（[`docs/decisions/0046`](../../docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)〜
-[`0048`](../../docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)）。
-ホストのNVIDIA Xorgドライバ（`nvidia_drv.so`・`libglxserver_nvidia.so*`）・32bit
-クライアントライブラリ（`libGLX_nvidia.so*`等）はファイル単位で個別マウントする必要が
-ある。ディレクトリごとマウントするとコンテナ自身の`xserver-xorg-core`由来モジュール
-（`libwfb.so`等）や32bit版Mesaを隠してしまい、前者はXorg起動不能、後者は32bitタイトル
-(th15)がGPUを使えずllvmpipeへ静かにフォールバックする（nvidia-container-toolkitは
-32bit互換ライブラリを自動マウントしないため。[`0052`](../../docs/decisions/0052-gpu-xorg-driver-file-level-mount-not-directory.md)・
-[`0053`](../../docs/decisions/0053-mount-32bit-nvidia-client-libraries-for-wine.md)）。
-
-**起動手段は順序付きの段（`launchTiersFor()`）で、Spot在庫の枯渇ならその場で次へ進む**（Issue #315、
-[`docs/decisions/0063`](../../docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
-GPUジョブはeu-south-2→`config.ec2.gpuFallback`（固定名のLaunch Template・タグで引いたサブネット・
-ECRレプリカ、[`0061`](../../docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)）、CPU系はeu-south-2のみ。
-枯渇した段は`JobRecord.capacityExhaustedTargets`へ記録し、リトライでは飛ばす。全段が尽きたら
-`launch.ts`が等倍へ落とすか`capacity_exhausted`で直ちに失敗させる。クォータ超過は従来どおりリトライ。
-`FleetLaunchError`のメッセージは`handleFailure.ts`の容量不足判定（部分一致）が使うので形式を崩さないこと。
-試行ごとに作るLaunch Templateのバージョンは結果によらず消す。管理設定
-`forceGpuFallbackRegion`（`settings.ts`）が立っていれば、GPUジョブは一次リージョンを
-試さずフォールバック先で起動する（本番での実機検証用）。
-
-フォールバック先で動くワーカーには、そのリージョンの出力バケットとタイトル資産レプリカを渡す
-（Issue #313、[`docs/decisions/0062`](../../docs/decisions/0062-gpu-fallback-region-local-output-and-title-assets.md)、
-`workerEnv.ts`・`config.ts`の`dataBucketsFor()`）。どこへ出力したかは、ワーカーがパスと同じ更新で
-`JobRecord.outputRegion`に書く。APIはそれを見て配信URLに`/<region>/`を付ける
-（`downloads.ts`の`cdnPathFor()`、`config.ts`の`mediaCdnOf()`）。リトライでは、前回の
-`outputRegion`のバケットを`CHECKPOINT_BUCKET`として渡し、チェックポイントをそこから読ませる。
-
-EC2のAPIは常にリージョンを明示して呼ぶ（`ec2ClientFor(region)`）。起動したリージョンは
-`JobRecord.workerRegion`に記録し、terminateはそのリージョンへ、タグでの探索
-（`findJobInstances()`・`listTaggedInstances()`）は`workerRegions()`（`config.ts`）の
-全リージョンを走査する。
-
-`CreateFleet`が実際に確保したインスタンスタイプ・AZは `result.Instances[0]` から
-そのまま取得でき、追加の`DescribeInstances`呼び出しは不要。`JobRecord.instanceType`/
-`.availabilityZone`として記録する（`jobs.ts`の`updateJobInstance()`）。これは録画品質の
-分析・運用調査用の内部データで、ユーザー向けAPI（`GetJobResponse`）には含めない。
-
-コスト推定（Issue #60）用に、**Spot単価だけは`CreateFleet`のレスポンスに含まれない**ため
-`fetchSpotPrice()`が`DescribeSpotPriceHistory`を1回だけ引いて
-`JobRecord.spotPricePerHour`へ記録し、`sfn/launch.ts`が`markJobLaunched()`で
-`JobRecord.launchedAt`（課金起点）を記録する。**単価の取得に失敗しても録画ジョブは
-落とさない**（nullへ縮退）、**`launchedAt`は既に値があれば書き換えない**（条件付き更新、
-理由は[`0021`](../../docs/decisions/0021-cost-estimation-side-data-never-fails-the-job.md)）。
+> を必ず読むこと**（「同スペック帯だから安全」が繰り返し裏切られている経緯）。
 
 ## 5. 孤児インスタンスの検知（`orphanInstances.ts` / `handlers/sweepOrphanInstances.ts`, Issue #23）
 
-**孤児 = ジョブのどの状態遷移とも紐づかないまま課金され続けるEC2インスタンス。**
-対策は3段構えで、後段ほど「前段のハンドラ自体が失敗した場合」を拾う。
-
-1. **窓を狭める**: `launch.ts` は `CreateFleet` の直後に `updateJobInstance()` を
-   呼ぶ（`updateJobStatus`/`updateJobWorkerKind`より先）。
-2. **後始末でタグからも引く**: `sfn/handleFailure.ts`・`admin/stopJob.ts` は
-   `JobRecord.instanceId` だけでなく `findJobInstances()`（タグ`sattori:jobId`での
-   `DescribeInstances`、GPUのフォールバック先も含む全ワーカーリージョン）の結果も
-   terminate する。
-3. **定期掃除**: `handlers/sweepOrphanInstances.ts` がEventBridgeのスケジュール
-   （`ORPHAN_SWEEP_INTERVAL_MINUTES` = 10分間隔）で走る。**走査の起点はジョブ
-   レコードではなくAWS上に実在するインスタンス**（`listTaggedInstances()`）。
-
-判定は `orphanInstances.ts` にあり、猶予15分（`ORPHAN_INSTANCE_GRACE_MINUTES`）・
-Step Functions実行の生死（`getExecutionLiveness()`）・実行中ジョブでは最新1台を保護、
-と徹底して安全側に倒してある。最悪の孤児寿命は「猶予15分 + 掃除間隔10分」＝25分。
-
-**同じLambda（`sweepOrphanInstances.ts`）にGPU vCPU容量リースのリコンサイラ
-（Issue #270）が相乗りしている。** `gpuReconcile.ts`（判定ロジック）が実在する
-GPUインスタンス（`listTaggedInstances()`の`instanceType`）とリース台帳
-（`gpuSlots.ts`の`listGpuSlots()`）を突き合わせ、①期限切れ・孤児化したリースの
-回収②`shrinkGpuLease()`失敗によるvCPUドリフトの補正③リースの無い生存インスタンスへの
-補完リース作成（安全側=クオータ超過側に倒す）を行う。詳細は
-[`0056`](../../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
+ジョブのどの状態遷移とも紐づかないまま課金され続けるEC2インスタンスを、起動直後の記録・
+後始末でのタグ検索・10分間隔の定期掃除の3段構えで拾う。定期掃除の**走査の起点はジョブ
+レコードではなくAWS上に実在するインスタンス**で、同じLambdaにGPU vCPU容量リースの
+リコンサイラが相乗りしている。判定条件と猶予は
+[`docs/orphan-sweep.md`](docs/orphan-sweep.md)。
 
 > **判定を緩める・走査の起点を変える前に
 > [`docs/decisions/0017`](../../docs/decisions/0017-orphan-sweep-from-aws-instances.md)
-> を読むこと**（各条件の根拠と、誤terminateがユーザーの録画をその場で殺す非対称性）。
+> を読むこと**（誤terminateがユーザーの録画をその場で殺す非対称性）。
 
 ## 6. ワーカーコンテナの環境変数（`workerEnv.ts`）
 
@@ -265,25 +188,11 @@ th06ncの1080p録画オプション（Issue #241、`TH06NC_RESOLUTION=1080p`）�
 
 ## 7. ワーカー起動スクリプト（UserData, `ec2.ts` の `buildUserData()`）
 
-ベースの Launch Template（AMI/IAM/SGはCDK側で固定）に対し、ジョブ固有のUserDataのみを
-持つ新しいバージョンを`CreateLaunchTemplateVersion`で作成してから`CreateFleet`する。
-UserDataスクリプトがやること:
-
-- `systemctl disable --now ecs`（ECS最適化AMIをプレーンなdockerホストとして使う）
-- `trap 'shutdown -h now' EXIT`（どこで失敗しても必ずインスタンスを終了させる）
-- ECRログイン → pull → `docker run`（`--log-opt awslogs-stream=${jobId}`）。ECRのログイン先は
-  イメージのレジストリから導く（`ecrRegionOf()`）——GPUのフォールバック先（Issue #296）では
-  そのリージョンのレプリカからpullするが、`AWS_DEFAULT_REGION`・awslogs・ワーカーの
-  `AWS_REGION`は一次リージョンのままにする（出力・タイトル資産のバケットだけ起動先のものを渡す、
-  Issue #313）
-- コンテナ起動前段階で失敗したら`aws stepfunctions send-task-failure`で即時通知
-
-> **この3点はいずれも事故を経て入れた対策で、消すと再発する**。理由は
-> [`docs/decisions/0019`](../../docs/decisions/0019-userdata-ecs-agent-off-and-bootstrap-failure-notification.md)。
-
-`-e KEY=VALUE`として埋め込む環境変数の値（`taskToken`含む）はすべて`shellEscape()`で
-単一引用符に括ってからスクリプトへ差し込む（入口検証をすり抜けた値が来ても
-コマンドインジェクションへ変換されない多層防御、Issue #127 SEC-1）。
+ジョブ固有のUserDataだけを持つLaunch Templateのバージョンを実行時に作ってから
+`CreateFleet`する。ECSエージェントの停止・`trap 'shutdown -h now' EXIT`・起動前段階の
+失敗の即時通知は**いずれも事故を経て入れた対策で、消すと再発する**
+（[`docs/decisions/0019`](../../docs/decisions/0019-userdata-ecs-agent-off-and-bootstrap-failure-notification.md)）。
+スクリプトの中身と値のエスケープは [`docs/ec2-launch.md`](docs/ec2-launch.md) §2。
 
 ## 8. マジックリンク送信・レート制限（`requestMagicLink.ts`, `rateLimit.ts`）
 
@@ -351,35 +260,10 @@ UserDataスクリプトがやること:
 
 ## 12. 環境変数（`config.ts`）
 
-すべて `infra/lib/sattori-stack.ts` の `commonEnv`（+ `startJob.ts`/
-`admin/getExecution.ts`/`admin/stopJob.ts`/`admin/retryJob.ts`/
-`sweepOrphanInstances.ts`/`sweepStalledJobs.ts`専用の`STATE_MACHINE_ARN`、
-`admin/authorizer.ts`専用の`ADMIN_TOKEN_PARAMETER_NAME`、
-`admin/getLogs.ts`専用の`WORKER_LOG_GROUP`単独指定、
-`sweepOrphanInstances.ts`/`sweepStalledJobs.ts`専用の`JOBS_TABLE`単独指定
-（前者は`GPU_SLOTS_TABLE`も、Issue #270）、
-`admin/getCosts.ts`専用のCloudFront実配信量取得用`CLOUDFRONT_DISTRIBUTION_ID`、
-Issue #163、`admin/getLogs.ts`・`sweepOrphanInstances.ts`専用の`GPU_FALLBACK_REGION`
-単独指定、Issue #296）から注入される。`loadConfig()`が必須環境変数の存在を検証する（`admin/authorizer.ts`・
-`admin/getLogs.ts`・`RecordAnalyticsEventFn`以外の管理API用Lambdaは`commonEnv`を使う）。
-
-`GPU_FALLBACK_REGION`・`GPU_FALLBACK_LAUNCH_TEMPLATE_NAME`・`GPU_FALLBACK_SUBNET_TAG_KEY`・
-`GPU_FALLBACK_WORKER_GPU_IMAGE`・`GPU_FALLBACK_OUTPUT_BUCKET`・`GPU_FALLBACK_TITLE_ASSETS_BUCKET`は
-GPUの容量不足時フォールバック先（Issue #296・#313）。
-`SattoriGpuFallbackStack`とはCloudFormation参照を張らず固定名で受け取る（`infra/README.md`）。
-`GPU_FALLBACK_REGION`が無ければフォールバックしない（`config.ec2.gpuFallback`が`null`）。
-設定するなら残り5つも必須。
-
-`SES_CONFIGURATION_SET`は`SattoriEdgeStack`が作った`ses.ConfigurationSet`名
-（`crossRegionReferences`経由）。`ses.ts`が`SendEmailCommand`へ指定し、
-バウンス・苦情・拒否イベントを運用アラート用SNSへ流す（Issue #133 OPS-1、
-[`docs/decisions/0025`](../../docs/decisions/0025-ops-alerts-per-region-sns-topics.md)）。
-
-`STATE_MACHINE_ARN`が`commonEnv`に含まれない理由: ステートマシンが`launchFn`/
-`handleFailureFn`を呼び出すため、これらのLambdaの環境変数がステートマシンARNを
-参照すると循環依存になる。`StartExecution`/`DescribeExecution`系を呼ぶ`startJob.ts`・
-`admin/getExecution.ts`・`admin/stopJob.ts`・`admin/retryJob.ts`・
-`sweepOrphanInstances.ts`・`sweepStalledJobs.ts`だけが個別に受け取る。
+すべて `infra/lib/sattori-stack.ts` の `commonEnv` から注入され、`loadConfig()`が必須
+環境変数の存在を検証する。**`STATE_MACHINE_ARN`は循環依存を避けるため`commonEnv`に含めず**、
+必要なLambdaだけが個別に受け取る。個別指定の一覧・GPUフォールバック先（`GPU_FALLBACK_*`）・
+`SES_CONFIGURATION_SET`は [`docs/environment-variables.md`](docs/environment-variables.md)。
 
 ## 13. 計測（アナリティクス、`POST /beacon`、Issue #142・#144）
 

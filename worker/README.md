@@ -5,7 +5,8 @@
 コンテナとして実行される。**ここには「今どうなっているか」だけを書く** ——
 タイトル別の背景は [`docs/titles/`](docs/titles/README.md)、録画パイプライン・MOD・タイトル資産の
 詳細は [`docs/recording-package.md`](docs/recording-package.md)・[`docs/mods.md`](docs/mods.md)・
-[`docs/title-assets.md`](docs/title-assets.md)、横断的な設計判断の根拠は
+[`docs/title-assets.md`](docs/title-assets.md)・[`docs/output-files.md`](docs/output-files.md)・[`docs/recording-speed.md`](docs/recording-speed.md)、
+横断的な設計判断の根拠は
 [`docs/decisions/`](../docs/decisions/README.md) にある。
 
 ## 目次
@@ -109,107 +110,23 @@
   th06nc以外では読まれない |
 
 ## 4. 出力ファイル
-
-録画完了後に `convert.py` で配信用に変換する(同時録画中の変換は4vCPU構成で重複フレーム率
-を悪化させるため採用しない、reports/21)。変換は1回の ffmpeg 呼び出しで、次をまとめて行う:
-
-- **リプレイ再生区間外のカット**(Issue #266): 再生を確定するキーの1秒前(ゲーム内時間)から
-  終了検知の連続一致が始まったフレームまでを残す。範囲は録画スクリプトが`--cut-result-path`の
-  JSONで渡す(`recording/cut.py`、[`decisions/0059`](../docs/decisions/0059-cut-range-decided-by-recorder.md))
-- 等倍への戻し(倍速録画、§5)
-- 解像度の引き上げ: 高さ720px未満は720pへ、720px超1080px未満は1080pへ(YouTube対策、
-  `convert.py`の docstring)。ちょうど720p・1080pの録画はそのまま
-- ウォーターマークの合成(動画の冒頭6秒)
-- 映像・音声とも0秒始まりに揃える(音声の先頭の遅れは実際の無音で埋める。MP4の空編集にすると
-  ブラウザによっては音ズレする、Issue #301)
-
-**アップロードするファイルが1本か2本かは録画の内容で決まる**(`convert.needs_separate_raw_output()`):
-
-| 録画 | 配信版 | 元の解像度版 | 理由 |
-| --- | --- | --- | --- |
-| th06/06c/07/08/09/10/11/12/128(640x480・等倍) | 960x720へ拡大 | **2本目として配信** | 解像度が変わるため |
-| th15/th20(1280x960・等倍) | 1440x1080へ拡大 | **2本目として配信** | 同上 |
-| th06nc(1280x720/1920x1080・等倍) | 元解像度のまま | 出さない | 2本目はウォーターマークの有無しか違わず、S3保管料とCloudFront転送量が倍になるだけ |
-| 倍速録画 | 倍率に関わらず等倍へ戻した1本 | 出さない | 生データが等倍の速度でなく、2本目は等倍化した上でのエンコードがもう1本要る |
-
-元の解像度版は配信版と**同じ ffmpeg 呼び出しの2つ目の出力**として作る(カット済み・
-ウォーターマーク無し)。`needs_separate_raw_output()`にタイトル固有の分岐は無い。
-
-| S3キー | 内容 |
-| --- | --- |
-| `videos/{jobId}.mp4` | 録画の生データ(カット前)。録画完了直後、変換前にチェックポイントとして
-  アップロードされる(§6)。**`done` 確定後に削除する**(配信には使わない) |
-| `videos/{jobId}_raw.mp4` | 元の解像度版(DynamoDB `outputPath`)。2本出力のジョブだけ |
-| `videos/{jobId}_720p.mp4` | 配信版(DynamoDB `outputPath720p`)。**出力が1本のジョブでは
-  このキーが `outputPath` に入り、`outputPath720p` は null になる**。`_720p` は歴史的な接尾辞で、
-  実際の解像度は録画によって変わる |
-| `progress/{jobId}/{unixMillis}.jpg` | 録画中の進捗スクリーンショット(DynamoDB
-  `previewImagePath`)。スナップショット毎にユニークなキーを使う(CloudFrontの長期キャッシュ
-  で古い画像が返り続けるのを避けるため) |
-| `worker-logs/{jobId}/ffmpeg-upscale.log` | 配信用変換のffmpeg生ログ(キー名は互換のため
-  `upscale`のまま)。`convert.py` が `-progress` の生出力をローカルファイルへ書き、
-  `entrypoint.py` が `finally` でS3へ上げる。CloudWatchには変換失敗時のみ末尾2000バイトを
-  残す(数千行を流すと管理画面のログビューアで他のログが埋もれるため。Issue #58)。
-  `OutputBucket`内で3日のライフサイクルルールがあり、DynamoDBには保存しない
-  (jobIdから決定的に導出可能、`apps/api/src/downloads.ts`の`buildFfmpegUpscaleLogKey`) |
-| `diagnostics/{jobId}/attempt{n}-{classification}.jpg` | 試行を破棄した際の最終フレーム
-  (`timeout`/`duplicate_rate`のいずれか、Issue #159)。早期に打ち切られた
-  ジョブは`progress/`にスナップショットが1枚も残らず失敗時の画面を事後確認できないため、
-  `recording.artifacts.save_diagnostics_snapshot()`が試行ごとに1枚だけ書き出し、
-  `entrypoint.py`の`upload_diagnostics_snapshots_if_present()`がまとめてアップロードする。
-  `progress/`と違い決定的なキー(ジョブID+試行番号+分類)なのでDynamoDBには保存しない。
-  専用のライフサイクルルールは無く既定の`OUTPUT_RETENTION_DAYS`に乗る |
-
-動画のアップロード時には**そのバイト数も DynamoDB へ記録する**
-(`outputBytes`/`outputBytes720p`、Issue #60)。管理画面のコスト推定の入力で、動画サイズは
-本サービスのコスト構造で最大のレバレッジ(`docs/research/aws-region-cost-analysis.md` §6)
-なので平均値で丸めずジョブ単位の実測を残す(生動画のサイズはチェックポイントから再開した
-ジョブが`record()`を通らないため`done`遷移時にも併せて書く)。
+録画完了後に `convert.py` が**1回の ffmpeg 呼び出し**で配信用に変換する(リプレイ再生区間外の
+カット・等倍への戻し・解像度の引き上げ・ウォーターマーク合成・0秒始まりへの整列)。
+アップロードする動画が1本か2本かは録画の内容で決まる(`convert.needs_separate_raw_output()`、
+タイトル固有の分岐は無い)。**変換の中身・1本/2本の対応表・S3キーごとの中身と保持は
+[`docs/output-files.md`](docs/output-files.md)。**
 
 ## 5. 録画速度(倍速録画 Issue #288・低速録画 Issue #316)
-
-ゲームを2〜4倍速で走らせて録画し、後処理(`convert.py`)で等倍へ戻す。GPUを確保できないth15・th20は
-`c7i.4xlarge`のCPU描画で1/2倍速(th15 Extraは1/3倍速)で録り、同じ変換で等倍へ戻す
-([`decisions/0064`](../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md))。有効・無効は起動側が渡す `FPS_LIMIT_TARGET_HZ` の有無だけで
-決まる(未設定なら全タイトル従来どおり等倍)。ワーカー自身は自分が EC2 にいるのか自宅に
-いるのかを知らない。
+ゲームを2〜4倍速で走らせて録画し、後処理(`convert.py`)で等倍へ戻す(GPUワーカー専用)。
+GPUを確保できないth15・th20は`c7i.4xlarge`のCPU描画で低速録画し、同じ変換で等倍へ戻す。
+有効・無効は起動側が渡す `FPS_LIMIT_TARGET_HZ` の有無だけで決まる。**倍速時に各段が変える
+こと・同期マーカーによるA/V同期補正は [`docs/recording-speed.md`](docs/recording-speed.md)。**
 
 > **ここにワーカー側の分岐を足さないこと**
 > ([`decisions/0010`](../docs/decisions/0010-slow-motion-no-worker-side-branching.md))。
 > また**倍率はフック・監視のタイムアウト・変換・品質チェックの閾値・進捗のすべてへ一貫して
 > 掛かっており**、1つでも据え置くと誤リトライ・誤終了検知・音ズレが起きる
 > ([`decisions/0014`](../docs/decisions/0014-slow-motion-scaling-across-pipeline.md))。
-
-倍速録画(touhou-recorder reports/84〜90で技術検証)は**GPUワーカー(`GPU_WORKER=1`、
-g6f.2xlarge)専用**。CPU描画(llvmpipe)では2倍速を維持できない。倍速時にパイプラインが
-変えることは次のとおり(実装は `recording/timing.py` に集約):
-
-- **ゲーム側(MOD)**: `speed_hack_hook`がQueryPerformanceCounterの経過時間を倍率ぶん伸ばし、
-  `dsound_hook`/`wasapi_hook`が再生周波数を倍率ぶん上げる(テープの早回し)。VsyncPatchを
-  注入するタイトル(th06/th07/th10/th12)は`vpatch.ini`の`GameFPS`を`60×倍率`、`CalcFPS`を0に
-  書き換える(`recording.config.with_runtime_overrides()`)。
-- **キャプチャ**: x11grabを`60×倍率`fps・`-vsync 0`で撮る。音声はジョブ専用sinkを
-  `44100×倍率`Hzで作ってPCMのまま録り、mux時に2倍速はAAC(`-cutoff`付き)、3倍速以上は
-  ALACへ変換する(AACのサンプルレート上限96kHzのため)。
-- **監視**: 終了検知の連続回数・猶予・全体のタイムアウトはゲーム内時間で一定になるよう縮めるが、
-  終了テンプレートの連続一致回数と、起動・メニュー操作を待つタイムアウトは縮めない
-  (`scaled_confirmation_count()`)。
-- **変換**: 映像のPTSを倍率ぶん引き伸ばして60fpsへ揃え、音声は`asetrate`で読み替えて
-  44100Hzへ戻す。60fpsへ揃えるのは`fps`フィルタではなく`-r 60 -fps_mode cfr`で行う。生映像のptsが
-  等間隔とは限らず、`fps`フィルタでは約45fpsへ落ちるため([`decisions/0065`](../docs/decisions/0065-speedup-delivery-frame-rate-by-output-option.md))。
-
-倍速かどうかにかかわらず、**A/V同期は同期マーカーで補正する**(`recording/sync_marker.py`、
-reports/88)。MODが録音開始2秒後にゲーム自身の音声デバイスから約3秒・-42dBFSの疑似乱数
-ノイズを鳴らし、音声からその位置を相互相関で探す。見つからなければ従来の`-copyts`の
-start_time差で補正する。**音声の録音は映像より先、ゲームの起動直後に始め**、マーカーはMODが
-ウィンドウの安定を報告しゲームの音声が流れ始めてから鳴らす。マーカーはメニュー操作より前に
-鳴り終わり、配信版ではカットされる(重なる場合はカット開始を遅らせる。§4、Issue #266)。
-
-```bash
-# 2倍速(GPU搭載マシンでのみ意味がある)
-FPS_LIMIT_TARGET_HZ=120 GPU_WORKER=1 python3 record_th10.py \
-  --replay-path games/th10/replay/th10_01.rpy --output /tmp/th10/out.mp4
-```
 
 ## 6. Spot中断時のリトライと再開(Issue #11)
 
@@ -296,7 +213,7 @@ AWS リソースには接続しない)。ルートの `pnpm test` (Turborepo) �
 
 ## 11. ローカルでの実行(ネットワーク不要)
 
-ゲーム資産を配置済みなら S3/DynamoDB 無しで録画本体だけを試せる(倍速録画の例は §5)。配信用
+ゲーム資産を配置済みなら S3/DynamoDB 無しで録画本体だけを試せる(倍速録画の例は [`docs/recording-speed.md`](docs/recording-speed.md))。配信用
 変換だけなら ffmpeg/ffprobe があれば動く。**コマンドと並列実行時の音声分離の確認方法は
 [`docs/runbooks/worker-local-recording.md`](../docs/runbooks/worker-local-recording.md) §2。**
 
@@ -364,36 +281,8 @@ GPU用カスタムAMI(`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`)�
 `retryPolicy.ts`・`handleFailure.ts` はこの性質を前提にリトライ回数を決めている)。
 
 ## 14. MOD統合テスト(`worker/games/`がある環境限定)
-
-`worker/mods/`(`*_hook.dll`)を変更した際、実機検証(`verify-recording-locally` skill・
-touhou-recorderのreports/)に進む前の速い足がかりとして、決まった短いリプレイで自動退行
-検知ができる(`tests/mod_integration/run.py`)。CIの`mods-build-smoketest`はビルドが通るか
-しか見ておらず実機注入テストの代わりにはならないため、このスクリプトはその隙間を埋める
-(**このテスト自体もCIには組み込んでおらず、pushごとには実行しない**。ゲーム資産の
-ライセンス・実行コストの都合、[`decisions/0049`](../docs/decisions/0049-mod-integration-test-local-only.md))。
-
-**`worker/games/<game>/`・`worker/prefixes/<game>-wined3d-gl/`にゲーム本体・WINEPREFIXが
-展開済みの環境専用**(§11のホスト直接実行と同じ経路。Dockerコンテナは使わず、ホストの
-Wine/Xvfb/PulseAudioをそのまま使う)。
-
-```bash
-python3 tests/mod_integration/run.py               # 対象タイトル全部(現状th06/th08)
-python3 tests/mod_integration/run.py --game th06
-```
-
-判定基準は本番と同じ自動検知ロジックをそのまま使う。`record_thNN.py`の異常終了(重複
-フレーム率超過による全試行失敗を含む)・デシンク検知(`recording.modlog.
-check_replay_desync()`)・タイムアウト打ち切りのいずれかが起きればNGとする。
-
-**このスクリプトは実機検証の代わりにはならない**。判定できるのは「今のMODが壊れていない
-か」という退行検知のみで、新規タイトル対応や未検証のインスタンスタイプでの妥当性確認は
-これまで通り実機検証が必須(AGENTS.md §3)。またDockerコンテナを介さずホストの環境を
-直接使うため、§11と同じくWineプロセス残留のリスクを伴う(`timeout --kill-after=`を
-必ず併用する設計にしてある)。
-
-同一ホストで自宅ワーカーデーモン(`sattori-home-worker`)が稼働している場合は、Xvfbの
-ディスプレイ番号・PulseAudioの競合を避けるため停止していること(稼働中なら中断する)。
-検証用リプレイは`tests/fixtures/mod-integration/`にタイトルごと1本ずつ配置している
-(短時間で自然終了するもの限定。狙いは`tests/fixtures/mod-integration/README.md`参照)。
-対象タイトルを増やす場合は同じ条件のリプレイを追加し、`run.py`の`TITLES`辞書に期待
-スコア(threpで確認できるリプレイの記録スコア)を登録すること。
+`worker/mods/`を変更した際、実機検証の前の速い足がかりとして、決まった短いリプレイで退行を
+自動検知できる(`tests/mod_integration/run.py`。CIには組み込んでいない、
+[`decisions/0049`](../docs/decisions/0049-mod-integration-test-local-only.md))。**実機検証の
+代わりにはならない**。実行方法・判定基準・前提条件は
+[`docs/mod-integration-test.md`](docs/mod-integration-test.md)。
