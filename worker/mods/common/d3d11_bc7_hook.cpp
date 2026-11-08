@@ -127,7 +127,7 @@ void STDMETHODCALLTYPE MyUpdateSubresource(ID3D11DeviceContext *self, ID3D11Reso
     if (!IsConverted(res)) { g_realUpdateSubresource(self, res, sub, box, src, rowPitch, depthPitch); return; }
     UINT w, h;
     if (box) { w = box->right - box->left; h = box->bottom - box->top; }
-    else if (!GetTextureDims(res, sub, &w, &h)) return;
+    else if (!GetTextureDims(res, sub, &w, &h)) { g_realUpdateSubresource(self, res, sub, box, src, rowPitch, depthPitch); return; }
     std::vector<uint8_t> buf(w * h * 4);
     bc7::DecodeImage((const uint8_t *)src, rowPitch, w, h, buf.data(), w * 4);
     if (InterlockedIncrement(&g_statUpdates) <= 8) Log("D3D11BC7: UpdateSubresource sub=%u %ux%u box=%d", sub, w, h, box != nullptr);
