@@ -54,6 +54,9 @@ GPUの枯渇に合わせて、別リージョン（0061）・段の永続化（0
   `HandleFailure`が同じ判定（`apps/api/src/recordingSteps.ts`）を使う。
 - **自宅ワーカー**: 段に`home`を持つタイトル（`HOME_WORKER_GAME_IDS`）だけを既定で引き受け、それ以外の明示指定を
   起動時に拒否する（0047の多層防御を段から導くようにした）。
+- **段の導入前のジョブ**: `requestedRecordingSpeed`がある（0060・0064で速度を落とした）ジョブは、GPUの段を
+  使い切ったものとして扱う（`remainingRecordingSteps()`）。デプロイを跨いで走っているジョブがGPUへ戻らないように。
+  速度を選んでいた旧ジョブ（例: th08の等倍）は、デプロイ後の試行から段の速度で録る。
 - **表示**: ジョブページはフォールバックの案内をやめ、最終的な速度だけを出す。管理画面は`recordingStepId`と
   使い切った段を出す。旧レコードの`requestedRecordingSpeed`・`speedupFallbackReason`は型に残して読まない。
 

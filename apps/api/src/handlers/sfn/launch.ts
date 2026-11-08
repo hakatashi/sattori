@@ -1,7 +1,7 @@
 import {
   isGpuStep,
-  recordingPlanFor,
   recordingSpeedForStep,
+  remainingRecordingSteps,
   vcpusForInstanceType,
 } from "@sattori/shared";
 import type { Ec2RecordingStep, JobRecord, RecordingStep, WorkerHeartbeat } from "@sattori/shared";
@@ -99,11 +99,11 @@ async function assignWorker(
   // 試した後でGPU以外の段へ進むならリースはもう要らない。
   let triedGpu = false;
 
-  for (const step of recordingPlanFor(job.game)) {
-    if (exhausted.includes(step.id) || excluded(step)) {
-      console.log(JSON.stringify({ event: "launch_step_skipped", jobId: job.jobId, stepId: step.id }));
-      continue;
-    }
+  const steps = remainingRecordingSteps(job, excluded);
+  console.log(
+    JSON.stringify({ event: "launch_steps", jobId: job.jobId, steps: steps.map((step) => step.id), exhausted }),
+  );
+  for (const step of steps) {
     if (isGpuStep(step)) {
       triedGpu = true;
     } else if (triedGpu) {
