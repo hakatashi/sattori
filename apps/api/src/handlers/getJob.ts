@@ -93,8 +93,6 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     replayInfo: job.replayInfo ?? null,
     // 録画の段（Issue #317）の速度。`Launch`が割り当てる段の速度を書くので、常に実際の速度になる。
     recordingSpeed: recordingSpeedOf(job.options),
-    // フォールバックの案内は廃止した（Issue #317）。応答の形は旧フロントエンドのため残す。
-    requestedRecordingSpeed: null,
     // `errorCode`と同じ理由（Issue #103追加より前の旧ジョブでは属性自体が無く
     // `undefined`になりうる）で`?? null`を通す。
     desyncDetected: job.desyncDetected ?? null,

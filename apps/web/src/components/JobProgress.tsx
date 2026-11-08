@@ -58,6 +58,11 @@ function formatExpiresAt(isoString: string, locale: string): string {
   );
 }
 
+/** 録画速度の表記（2倍速は「2」、1/2倍速は「1/2」）。 */
+function formatRecordingSpeed(speed: number): string {
+  return speed < 1 ? `1/${Math.round(1 / speed)}` : String(speed);
+}
+
 export function JobProgress({ jobId }: Props) {
   const { job, loadError } = useJobPolling(jobId);
   return <JobProgressView job={job} loadError={loadError} />;
@@ -125,22 +130,13 @@ export function JobProgressView({ job, loadError }: ViewProps) {
             {!showQueue && overall.remainingMinutes !== null && (
               <span>{t("jobProgress.etaMinutes", { minutes: overall.remainingMinutes })}</span>
             )}
-            {job.recordingSpeed > 1 && !done && (
-              <span className={styles.speedupHint}>
-                {t("jobProgress.speedupHint", { speed: job.recordingSpeed })}
-              </span>
-            )}
             {/*
-              GPUを確保できず速度を落とした（Issue #289・#316）。`recordingSpeed`は既に書き換わって
-              いるので上の倍速の案内は消え、代わりにこちらを出す。完了後も「なぜそうなったか」の
-              説明として残す。th15・th20の低速録画（`recordingSpeed`<1）は等倍を選んだジョブでも
-              起きるので、速度に触れない文面にする。
+              最終的に割り当てた録画の段の速度だけを出す（Issue #317）。段は途中で変わりうるが、
+              フォールバックしたことは伝えない。
             */}
-            {job.requestedRecordingSpeed !== null && (
+            {job.recordingSpeed !== 1 && !done && (
               <span className={styles.speedupHint}>
-                {job.recordingSpeed < 1
-                  ? t("jobProgress.slowMotionFallbackHint")
-                  : t("jobProgress.speedupFallbackHint", { speed: job.requestedRecordingSpeed })}
+                {t("jobProgress.recordingSpeedHint", { speed: formatRecordingSpeed(job.recordingSpeed) })}
               </span>
             )}
             {overall.retrySuspected && (

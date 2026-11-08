@@ -5,17 +5,14 @@ import {
   EMAIL_PATTERN,
   estimateRecordingCompletionSeconds,
   GAME_TITLES,
-  isFasterThanRecommended,
+  isGpuStep,
   isSupportedGame,
   parseReplayInfo,
-  RECORDING_SPEEDS,
-  recommendedRecordingSpeed,
-  requiresGpuRecording,
+  recordingPlanFor,
+  recordingSpeedForStep,
   SUPPORTED_GAME_IDS,
-  supportsHighResolutionRecording,
   supportsTh10BugfixMarisaB,
   type GameId,
-  type RecordingSpeed,
 } from "@sattori/shared";
 import { trackParseError } from "../api/analytics.ts";
 import {
@@ -52,19 +49,21 @@ function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
 }
 
 /**
- * 録画速度の選択肢に添える推定完了時間（分）。リプレイの尺が分からなければ null。
- * 待ち行列での待ち時間は含まない（`estimateRecordingCompletionSeconds()`）。
+ * 録画完了までの推定時間（分）。リプレイの尺が分からなければ null。録画の段（`recordingPlan.ts`）の
+ * 最初の段で録れたときの値で、待ち行列での待ち時間や、混雑で後の段へ進んだときの延びは含まない
+ * （`estimateRecordingCompletionSeconds()`）。
  */
 function estimatedCompletionMinutes(
   game: GameId,
+  difficulty: string | null | undefined,
   durationSeconds: number | null | undefined,
-  speed: RecordingSpeed,
 ): number | null {
-  if (durationSeconds === null || durationSeconds === undefined) {
+  const first = recordingPlanFor(game)[0];
+  if (durationSeconds === null || durationSeconds === undefined || first === undefined) {
     return null;
   }
-  const gpu = requiresGpuRecording({ game, options: { recordingSpeed: speed } });
-  const seconds = estimateRecordingCompletionSeconds(durationSeconds, speed, gpu);
+  const speed = recordingSpeedForStep(first, { replayInfo: { difficulty: difficulty ?? null } });
+  const seconds = estimateRecordingCompletionSeconds(durationSeconds, speed, isGpuStep(first));
   return Math.max(1, Math.round(seconds / 60));
 }
 
@@ -92,10 +91,6 @@ export function UploadForm() {
     setPhase,
     th10BugfixMarisaB,
     setTh10BugfixMarisaB,
-    th06ncHighResolution,
-    setTh06ncHighResolution,
-    recordingSpeedChoice,
-    setRecordingSpeedChoice,
   } = useUploadFormState();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -111,31 +106,14 @@ export function UploadForm() {
   );
   const th10BugfixMarisaBChecked = th10BugfixMarisaBSelectable && th10BugfixMarisaB;
 
-  // 1080p録画オプション(Issue #241)。th06nc(GPU描画必須)限定で選べる。既定は720p。
-  const th06ncHighResolutionSelectable = supportsHighResolutionRecording(preview?.game ?? null);
-  const th06ncHighResolutionChecked = th06ncHighResolutionSelectable && th06ncHighResolution;
-
-  // 録画速度(Issue #288、倍速録画)。全タイトルで選べる。未選択ならタイトル(とth06ncの解像度)ごとの「おすすめ」に従う——
-  // 解像度を切り替えたときにおすすめへ追従させるため、おすすめ自体は値として保持しない。
-  const recommendedSpeed: RecordingSpeed =
+  // 録画速度はユーザーが選ばない（Issue #317）。目安の時間だけを出す。
+  const estimatedMinutes =
     game !== null
-      ? recommendedRecordingSpeed(game, { th06ncHighResolution: th06ncHighResolutionChecked })
-      : 1;
-  const recordingSpeed: RecordingSpeed = recordingSpeedChoice ?? recommendedSpeed;
-  const recordingSpeedHint = preview
-    ? t("uploadForm.recordingSpeedHint")
-    : t("uploadForm.recordingSpeedSelectReplayFirst");
-  const recordingSpeedTooFast =
-    game !== null &&
-    isFasterThanRecommended(game, recordingSpeed, {
-      th06ncHighResolution: th06ncHighResolutionChecked,
-    });
+      ? estimatedCompletionMinutes(game, preview?.difficulty, preview?.estimatedDurationSeconds)
+      : null;
 
   function selectFile(selected: File | null) {
     setErrorMessage(null);
-    // 録画速度の選択はリプレイ（タイトル）ごとのおすすめに対する選択なので、選び直したら
-    // おすすめへ戻す。
-    setRecordingSpeedChoice(null);
     setReplayKey(null);
     setPreview(null);
     if (!selected) {
@@ -250,8 +228,8 @@ export function UploadForm() {
         {
           watermark,
           th10BugfixMarisaB: th10BugfixMarisaBChecked,
-          th06ncHighResolution: th06ncHighResolutionChecked,
-          recordingSpeed,
+          // th06ncの1080p録画は廃止した（Issue #317）。APIも無視する。
+          th06ncHighResolution: false,
         },
         email,
         locale,
@@ -440,60 +418,6 @@ export function UploadForm() {
           </span>
         </label>
         {/*
-          録画速度（Issue #288、倍速録画）。ゲームを内部的にN倍速で動かして録画し、後処理で
-          元の速度へ戻す。既定はタイトルごとのおすすめ。選択肢ごとに推定完了時間を添え、おすすめより速い速度を
-          選んだら品質低下の可能性を警告する（止めはしない）。
-        */}
-        <fieldset
-          className={styles.speedFieldset}
-          disabled={busy}
-        >
-          <legend className={styles.speedLegend}>{t("uploadForm.recordingSpeedOption")}</legend>
-          <div className={styles.speedOptions}>
-            {RECORDING_SPEEDS.map((speed) => {
-              const minutes =
-                game !== null
-                  ? estimatedCompletionMinutes(game, preview?.estimatedDurationSeconds, speed)
-                  : null;
-              return (
-                <label
-                  key={speed}
-                  className={clsx(styles.speedOption, speed === recordingSpeed && styles.speedOptionSelected)}
-                >
-                  <input
-                    type="radio"
-                    name="recordingSpeed"
-                    value={speed}
-                    checked={speed === recordingSpeed}
-                    onChange={() => setRecordingSpeedChoice(speed)}
-                  />
-                  <span className={styles.speedName}>
-                    {t("uploadForm.recordingSpeedValue", { speed })}
-                  </span>
-                  {game !== null && speed === recommendedSpeed && (
-                    <span className={styles.speedRecommended}>
-                      {t("uploadForm.recordingSpeedRecommended")}
-                    </span>
-                  )}
-                  {minutes !== null && (
-                    <span className={styles.speedEstimate}>
-                      {t("uploadForm.recordingSpeedEstimate", { minutes })}
-                    </span>
-                  )}
-                </label>
-              );
-            })}
-          </div>
-          <small className={styles.optionHint}>{recordingSpeedHint}</small>
-          {recordingSpeedTooFast && game !== null && (
-            <p className={styles.speedWarning} role="alert">
-              {t("uploadForm.recordingSpeedTooFastWarning", {
-                title: isEnglish ? GAME_TITLES[game].englishName : GAME_TITLES[game].japaneseName,
-              })}
-            </p>
-          )}
-        </fieldset>
-        {/*
           th10「バグマリ」修正オプション(Issue #75)。VsyncPatchの`BugFixTh10Power3`は
           記録リプレイと再生時で設定が食い違うとリプレイずれ(デシンク)を起こすが、
           リプレイファイル自体にはこの設定情報が含まれないため利用者の自己申告に頼る
@@ -520,31 +444,11 @@ export function UploadForm() {
             </small>
           </span>
         </label>
-        {/*
-          1080p録画オプション(Issue #241)。th06nc(東方紅魔郷: New Classic、GPU描画必須)
-          限定。720p/1080pどちらもインスタンスはg6f.xlargeのまま提供する
-          (docs/decisions/0046)ため、ワーカーの空き状況には依存しない。
-        */}
-        <label
-          className={clsx(styles.option, !th06ncHighResolutionSelectable && styles.optionDisabled)}
-        >
-          <input
-            type="checkbox"
-            checked={th06ncHighResolutionChecked}
-            onChange={(e) => setTh06ncHighResolution(e.target.checked)}
-            disabled={busy || !th06ncHighResolutionSelectable}
-          />
-          <span>
-            {t("uploadForm.th06ncHighResolutionOption")}
-            <small className={styles.optionHint}>
-              {th06ncHighResolutionSelectable
-                ? t("uploadForm.th06ncHighResolutionHintLine1")
-                : t("uploadForm.th06ncHighResolutionUnsupportedGame")}
-            </small>
-          </span>
-        </label>
       </details>
 
+      {estimatedMinutes !== null && (
+        <p className={styles.estimate}>{t("uploadForm.estimatedTime", { minutes: estimatedMinutes })}</p>
+      )}
       <button
         type="button"
         className={styles.submit}
