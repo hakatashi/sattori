@@ -9,6 +9,7 @@ import {
   isGpuStep,
   isQueueWaitTimedOut,
   nextPollIntervalSeconds,
+  recordingSpeedForStep,
   recordingSpeedOf,
   reservableVcpu,
   skippableGpuStepIds,
@@ -241,7 +242,7 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
     if (reserve !== null) {
       const expectedFinishAt = computeExpectedFinishAt(
         job.estimatedDurationSeconds,
-        recordingSpeedOf(job.options),
+        recordingSpeedForStep(step, job),
         now,
       );
       const result = await acquireGpuSlot(

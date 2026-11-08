@@ -36,6 +36,14 @@ describe("settings", () => {
         skipGpuSteps: false,
       });
     });
+
+    it("旧名skipFractionalGpuTiersで保存された値はskipGpuStepsとして読む", async () => {
+      ddbMock.on(GetCommand).resolves({
+        Item: { settingKey: "global", skipFractionalGpuTiers: true },
+      });
+      const settings = await getSettings("settings-table");
+      expect(settings.skipGpuSteps).toBe(true);
+    });
   });
 
   describe("updateSettings", () => {

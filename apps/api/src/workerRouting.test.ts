@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WorkerHeartbeat } from "@sattori/shared";
 import { LAUNCH_LAMBDA_TIMEOUT_SECONDS, WORKER_HEARTBEAT_FRESH_SECONDS } from "@sattori/shared";
 import {
-  HOME_WORKER_ROUTING_POLICY as DEFAULT_ROUTING_POLICY,
+  HOME_WORKER_ROUTING_POLICY,
   isWorkerEligible,
   MAX_OFFER_WINDOW_SECONDS,
   selectHomeWorker,
@@ -32,7 +32,7 @@ function heartbeat(overrides: Partial<WorkerHeartbeat> = {}): WorkerHeartbeat {
 // （`packages/shared/src/recordingPlan.test.ts`の`HOME_WORKER_GAME_IDS`）。
 describe("HOME_WORKER_ROUTING_POLICY", () => {
   it("オファー待機は自宅デーモンのポーリング間隔より十分長い", () => {
-    expect(DEFAULT_ROUTING_POLICY.offerWindowSeconds).toBeGreaterThanOrEqual(10);
+    expect(HOME_WORKER_ROUTING_POLICY.offerWindowSeconds).toBeGreaterThanOrEqual(10);
   });
 
   it("オファー待機はLaunch Lambdaのタイムアウトに収まる", () => {
@@ -42,12 +42,12 @@ describe("HOME_WORKER_ROUTING_POLICY", () => {
     // 待機を伸ばすときは、この上限の元である`LAUNCH_LAMBDA_TIMEOUT_SECONDS`（CDKが使う値）も
     // 併せて上げること。
     expect(MAX_OFFER_WINDOW_SECONDS).toBeLessThan(LAUNCH_LAMBDA_TIMEOUT_SECONDS);
-    expect(DEFAULT_ROUTING_POLICY.offerWindowSeconds).toBeLessThanOrEqual(MAX_OFFER_WINDOW_SECONDS);
+    expect(HOME_WORKER_ROUTING_POLICY.offerWindowSeconds).toBeLessThanOrEqual(MAX_OFFER_WINDOW_SECONDS);
   });
 });
 
 describe("isWorkerEligible", () => {
-  const policy = DEFAULT_ROUTING_POLICY;
+  const policy = HOME_WORKER_ROUTING_POLICY;
 
   it("空きがあり対応タイトルなら引き受けられる", () => {
     expect(isWorkerEligible(heartbeat(), JOB, policy, NOW)).toBe(true);
@@ -78,20 +78,20 @@ describe("isWorkerEligible", () => {
 
 describe("selectHomeWorker", () => {
   it("方針がオファーしない場合は常にnull", () => {
-    const policy = { ...DEFAULT_ROUTING_POLICY, offerToHomeWorker: false };
+    const policy = { ...HOME_WORKER_ROUTING_POLICY, offerToHomeWorker: false };
     expect(selectHomeWorker([heartbeat()], JOB, policy, NOW)).toBeNull();
   });
 
   it("引き受けられるワーカーが1台も無ければnull(=即EC2)", () => {
     expect(
-      selectHomeWorker([heartbeat({ accepting: false })], JOB, DEFAULT_ROUTING_POLICY, NOW),
+      selectHomeWorker([heartbeat({ accepting: false })], JOB, HOME_WORKER_ROUTING_POLICY, NOW),
     ).toBeNull();
   });
 
   it("空きスロットが最も多いワーカーを選ぶ", () => {
     const busy = heartbeat({ workerId: "home-1", activeJobs: 3 });
     const idle = heartbeat({ workerId: "home-2", activeJobs: 1 });
-    expect(selectHomeWorker([busy, idle], JOB, DEFAULT_ROUTING_POLICY, NOW)?.workerId).toBe(
+    expect(selectHomeWorker([busy, idle], JOB, HOME_WORKER_ROUTING_POLICY, NOW)?.workerId).toBe(
       "home-2",
     );
   });
@@ -99,6 +99,6 @@ describe("selectHomeWorker", () => {
   it("空きが同数ならworkerIdで安定して選ぶ", () => {
     const a = heartbeat({ workerId: "home-b" });
     const b = heartbeat({ workerId: "home-a" });
-    expect(selectHomeWorker([a, b], JOB, DEFAULT_ROUTING_POLICY, NOW)?.workerId).toBe("home-a");
+    expect(selectHomeWorker([a, b], JOB, HOME_WORKER_ROUTING_POLICY, NOW)?.workerId).toBe("home-a");
   });
 });
