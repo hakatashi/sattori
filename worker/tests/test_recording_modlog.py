@@ -135,6 +135,72 @@ def test_check_replay_desync_matches_even_if_a_later_sample_is_garbage(tmp_path)
     assert modlog.check_replay_desync(config, 303766040, log=lambda msg: None) is False
 
 
+def test_is_score_zero_returns_true_when_all_scores_are_zero_and_expected_score_positive(tmp_path):
+    config = make_config(instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write(
+            "ScoreMonitor: score=0 stage=0 lives=0 graze=0 epoch_ms=1\n"
+            "ScoreMonitor: score=0 stage=0 lives=0 graze=0 epoch_ms=2\n"
+        )
+
+    assert modlog.is_score_zero(config, 481237400) is True
+
+
+def test_is_score_zero_returns_false_when_any_score_is_positive(tmp_path):
+    config = make_config(instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write(
+            "ScoreMonitor: score=0 stage=0 lives=0 graze=0 epoch_ms=1\n"
+            "ScoreMonitor: score=50000 stage=1 lives=2 graze=100 epoch_ms=2\n"
+        )
+
+    assert modlog.is_score_zero(config, 481237400) is False
+
+
+def test_is_score_zero_returns_false_when_expected_score_is_zero(tmp_path):
+    config = make_config(instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write("ScoreMonitor: score=0 stage=0 lives=0 graze=0 epoch_ms=1\n")
+
+    assert modlog.is_score_zero(config, 0) is False
+
+
+def test_is_score_zero_returns_false_when_expected_score_is_none(tmp_path):
+    config = make_config(instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write("ScoreMonitor: score=0 stage=0 lives=0 graze=0 epoch_ms=1\n")
+
+    assert modlog.is_score_zero(config, None) is False
+
+
+def test_is_score_zero_returns_false_when_game_has_no_score_monitor(tmp_path):
+    # th09はスコア監視が無いためリトライ対象としない(Issue #324)。
+    config = make_config(instance_dir=str(tmp_path), game_id="th09")
+    with open(config.log_path, "w") as f:
+        f.write("ScoreMonitor: score=0 stage=0 lives=0 graze=0 epoch_ms=1\n")
+
+    assert modlog.is_score_zero(config, 481237400) is False
+
+
+def test_is_score_zero_returns_false_when_no_scores_recorded(tmp_path):
+    config = make_config(instance_dir=str(tmp_path))
+    assert modlog.is_score_zero(config, 481237400) is False
+
+
+def test_is_score_zero_accepts_preloaded_scores():
+    config = make_config()
+    assert modlog.is_score_zero(config, 481237400, scores=[0, 0]) is True
+    assert modlog.is_score_zero(config, 481237400, scores=[0, 1000]) is False
+    assert modlog.is_score_zero(config, 481237400, scores=[]) is False
+
+
+def test_check_replay_desync_accepts_preloaded_scores():
+    config = make_config()
+    assert modlog.check_replay_desync(config, 481237400, scores=[481237400], log=lambda msg: None) is False
+    assert modlog.check_replay_desync(config, 481237400, scores=[100], log=lambda msg: None) is True
+    assert modlog.check_replay_desync(config, 481237400, scores=[], log=lambda msg: None) is None
+
+
 # --- リプレイの再生を確定したキー入力の時刻(Issue #266) ------------------------
 
 # 2026-10-04 12:34:56.000 UTC

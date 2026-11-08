@@ -176,7 +176,35 @@ def read_verified_scores(log_path, game_id):
     return scores
 
 
-def check_replay_desync(config, expected_score, log=print):
+def is_score_zero(config, expected_score, scores=None):
+    """スコア監視のあるタイトルで、期待スコアが0より大きいのに最後まで0だったか(Issue #324)。
+
+    メニュー操作を取りこぼしてリプレイが始まらず、Practiceステージ選択画面などの静止で終了検知されて
+    リプレイが映っていない動画が完成品として配信されてしまう不具合を防ぐため、この条件に合致した
+    録画試行は破棄してリトライする。
+
+    ゲームデータのバージョン差によるスコア読み取り失敗と区別するため、MODのスコア監視ログが1件も
+    得られなかった場合(`not scores`)や、ゲーム自体にスコア監視が無いタイトル(`th09`)、期待スコアが
+    0以下の場合はリトライ対象としない。また、正常なプレイであればリプレイ記録スコアが正である限り
+    再生中に必ずスコアは正になるため、正常な録画を誤って破棄することはない。
+    """
+    if config.game_id not in GAME_SCORE_MULTIPLIERS:
+        return False
+    if expected_score is None:
+        return False
+    try:
+        if int(expected_score) <= 0:
+            return False
+    except (ValueError, TypeError):
+        return False
+    if scores is None:
+        scores = read_verified_scores(config.log_path, config.game_id)
+    if not scores:
+        return False
+    return max(scores) == 0
+
+
+def check_replay_desync(config, expected_score, log=print, scores=None):
     """録画中に記録されたゲーム内スコアの推移と、リプレイファイルに記録された
     最終スコアを突き合わせ、リプレイずれ(デシンク)が疑われるかを判定する
     (Issue #103)。
@@ -200,7 +228,8 @@ def check_replay_desync(config, expected_score, log=print):
     """
     if expected_score is None:
         return None
-    scores = read_verified_scores(config.log_path, config.game_id)
+    if scores is None:
+        scores = read_verified_scores(config.log_path, config.game_id)
     if not scores:
         log("リプレイずれ検証: MODのスコアログが取得できなかったため検証をスキップしました")
         return None
