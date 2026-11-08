@@ -137,7 +137,7 @@ export const CLOUDFRONT_USD_PER_GB = 0.085;
  * （eu-south-2a平均$0.075、2b平均$0.088。2cは$0.24前後と突出して高く
  * `price-capacity-optimized`では選ばれにくい）から$0.08を暫定値とする。
  *
- * `gpuFull`はth06ncの最後の段の`g6.2xlarge`（L4フル、Issue #316）。2026-11-04の実測で
+ * `gpuFull`はth06ncのかつての最後の段の`g6.2xlarge`（L4フル、Issue #316。0067でCPUの段に置き換えたが旧レコードの推定に使う）。2026-11-04の実測で
  * eu-south-2の各AZが$0.37〜0.45/時と`g6f`の数倍なので分ける（touhou-recorder reports/92）。
  */
 export const FALLBACK_SPOT_PRICE_USD_PER_HOUR = {
