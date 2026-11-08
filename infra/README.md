@@ -1,6 +1,7 @@
 # infra
 
 AWS CDK（TypeScript）による Sattori のインフラ定義。**3スタック構成**になっている。
+個別リソースの詳細（IAM・SES・管理画面など）は [`docs/`](docs/) 配下に分けてあり、各項からリンクする。
 
 - **`SattoriStack`**（`lib/sattori-stack.ts`、**eu-south-2**固定）: 録画基盤・API・
   DynamoDB・VPC・Web配信など、ほぼ全てのリソース。
@@ -26,26 +27,11 @@ AWS CDK（TypeScript）による Sattori のインフラ定義。**3スタック
 まとめてデプロイする。順序は`SattoriEdgeStack`・`SattoriGpuFallbackStack`→`SattoriStack`。
 単体でデプロイしたい場合は `cdk deploy SattoriStack` のようにスタックIDを指定する。
 
-**`SattoriStack`と`SattoriGpuFallbackStack`の間にはCloudFormationの参照を張っていない**。
-本体はフォールバック先のLaunch Template・サブネットを、フォールバック先は本体の
-インスタンスプロファイルを必要とし、参照を張ると循環するため。代わりに固定名
-（`lib/gpu-fallback.ts`）で受け渡す:
-
-| 固定名 | 作るスタック | 使う側 |
-| --- | --- | --- |
-| Launch Template `sattori-gpu-worker` | フォールバック | Launch Lambda（`GPU_FALLBACK_LAUNCH_TEMPLATE_NAME`） |
-| サブネットのタグ `sattori:gpuWorkerSubnet` | フォールバック | Launch Lambda（`DescribeSubnets`で実行時に引く） |
-| インスタンスプロファイル `sattori-gpu-worker-remote` | 本体（既存の`WorkerRole`に追加） | フォールバックのLaunch Template |
-| ECRリポジトリ `sattori-worker-gpu` | 両方（本体が原本、フォールバックが受け皿） | 本体のレジストリ複製設定・UserData |
-| S3バケット `sattori-output-<account>-eu-north-1` | フォールバック | 本体のMediaCdn（`/eu-north-1/*`のオリジン）・`WorkerRole`・Lambda（`GPU_FALLBACK_OUTPUT_BUCKET`） |
-| S3バケット `sattori-title-assets-<account>-eu-north-1` | フォールバック | 本体のTitleAssetsBucketのレプリケーション先・`WorkerRole`・Lambda（`GPU_FALLBACK_TITLE_ASSETS_BUCKET`） |
-
-**フォールバックを本体より先にデプロイすること**（`bin/sattori.ts`で`addDependency`済み）。
-本体のECRレジストリ複製設定が先に有効になると、次のpushでECRが受け皿のリポジトリを
-ライフサイクル無しで自動作成し、フォールバックスタックのリポジトリ作成と衝突する。
-Launch Templateは作成時にインスタンスプロファイルの存在を検証しないため、
-フォールバックが先でも作成は通る。S3レプリケーションの宛先・MediaCdnのオリジン（OAC許可は
-フォールバック側のバケットポリシー）も、フォールバック側のバケットが先に在る前提。
+**`SattoriStack`と`SattoriGpuFallbackStack`の間にはCloudFormationの参照を張っていない**
+（参照を張ると循環するため）。Launch Template・インスタンスプロファイル・ECRリポジトリ・
+S3バケットを固定名（`lib/gpu-fallback.ts`）で受け渡す。**フォールバックを本体より先に
+デプロイすること**（`bin/sattori.ts`で`addDependency`済み）。固定名の一覧と順序の理由は
+[`docs/gpu-fallback-stack.md`](docs/gpu-fallback-stack.md)。
 
 ## リソース一覧
 
@@ -114,51 +100,13 @@ Launch Templateは作成時にインスタンスプロファイルの存在を�
   `dynamodb:TransactWriteItems`を含まないため、書き込むLambdaには`grant()`で
   個別付与している）。詳細は
   [`docs/decisions/0056`](../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
-- **SES**: `EmailIdentity`（送信元ドメインのDKIM検証、マジックリンク・完了メール
-  送信用）は**`SattoriEdgeStack`（us-east-1）側**にある（eu-south-2にはSESが存在
-  しないため）。DKIM用CNAME・MAIL FROMドメイン用MX/TXT（下記、Issue #139 UX-5）は
-  `cdk deploy`後にCfnOutputの値を外部DNSへ手動追加する必要がある。また実際に
-  サンドボックス外へ送信するには別途AWSへ申請が必要（コードでは自動化できない）。
-  `SattoriStack`側のLambda（`RequestMagicLinkFn`・`SendCompletionEmailFn`）は
-  `SES_REGION`環境変数（値は`us-east-1`）で`SESv2Client`のリージョンを明示して呼ぶ
-  （`apps/api/src/ses.ts`）。IAMポリシーの`resources`も
-  `arn:aws:ses:${props.sesRegion}:...`とSESのリージョンに合わせている。
-  `SattoriEdgeStack`は加えて`ConfigurationSet`（`reputationMetrics: true`）を持ち、
-  バウンス・苦情・拒否イベントを`OpsAlertTopic`（SNS、下記）へ流す。両Lambdaは
-  送信時に`ConfigurationSetName`（`SES_CONFIGURATION_SET`環境変数、
-  `crossRegionReferences`経由で`SattoriEdgeStack`から受け取る）を指定する
-  （Issue #133 OPS-1）。
-  - **到達性（Issue #139 UX-5）**: `EmailIdentity`に`mailFromDomain`
-    （`mail.<webDomainName>`）を設定し、SPFを送信元ドメインとアラインさせている
-    （カスタムMAIL FROMのMX・TXTレコードが必要。`SesMailFromMxRecord`・
-    `SesMailFromSpfRecord`としてCfnOutputに出る）。加えてDMARCレコード
-    （`_dmarc.<webDomainName>`）はCDKでは作れないため**手動でのみ**追加する
-    （下記「デプロイ手順」4）。送信元アドレスは`Sattori <no-reply@<webDomainName>>`
-    という表示名付き形式（`infra/lib/sattori-stack.ts`の`sesFromAddress`）、
-    `Reply-To`には`opsAlertEmail`と同じ問い合わせ先アドレスを載せる
-    （`SES_REPLY_TO_ADDRESS`環境変数）。
-- **運用アラート（OPS-1/OPS-2/OPS-3、Issue #133・#134・#135）**: SNSトピック
-  `OpsAlertTopic`を**リージョンごとに1本ずつ**持つ（`SattoriEdgeStack`・
-  `SattoriStack`双方）。CloudWatch Alarmは同一リージョンのSNSトピックしか
-  `AlarmActions`に指定できないための分割で、どちらも同じメールアドレス
-  （`bin/sattori.ts`の`OPS_ALERT_EMAIL`定数）を購読する（理由の詳細は
-  [`docs/decisions/0025`](../docs/decisions/0025-ops-alerts-per-region-sns-topics.md)）。
-  - `SattoriEdgeStack`（us-east-1）: SESアカウント全体のバウンス率・苦情率
-    アラーム（`AWS/SES`名前空間の`Reputation.BounceRate`≧2%・
-    `Reputation.ComplaintRate`≧0.05%、AWSの送信停止ラインより十分手前）、
-    月次コストのAWS Budgets（`MonthlyCostBudget`、80 USD予算に対し実績
-    50%/80%/100%＋予測120%の4通知。Budgets自体はメールへ直接通知するため
-    `OpsAlertTopic`は経由しない）。
-  - `SattoriStack`（eu-south-2）: `RecordingStateMachine`の実行失敗
-    （`ExecutionsFailed`、1時間で3件以上）、Lambdaの`Errors`/`Throttles`
-    （5分で1件以上。関数ごとではなく`AWS/Lambda`のFunctionNameディメンション
-    無しアカウント全体集計に1本ずつ。CloudWatch AlarmのFree Tierに収めるため、
-    詳細は[`docs/decisions/0027`](../docs/decisions/0027-lambda-alarms-account-wide-not-per-function.md)）、
-    `SendCompletionEmailFn`のログに対するメトリクスフィルタ
-    （`send_completion_email_failed`、1件以上。同Lambdaは後続のDynamoDB
-    Streamsレコード処理を止めないよう例外を握り潰す設計のため、これが
-    唯一の気づく手段）。
-  - アラーム受信時の初動は[`docs/runbooks/ops-alerts.md`](../docs/runbooks/ops-alerts.md)。
+- **SES・運用アラート**: `EmailIdentity`・`ConfigurationSet`は**`SattoriEdgeStack`
+  （us-east-1）側**にあり、`SattoriStack`のLambdaは`SES_REGION`でリージョンを明示して呼ぶ。
+  DKIM・MAIL FROM・DMARCのDNSレコードは手動で追加する（下記「デプロイ手順」4）。
+  運用アラート用のSNSトピック`OpsAlertTopic`は**リージョンごとに1本ずつ**持つ。
+  送信元アドレス・到達性・各アラームの閾値は
+  [`docs/ses-and-ops-alerts.md`](docs/ses-and-ops-alerts.md)、受信時の初動は
+  [`docs/runbooks/ops-alerts.md`](../docs/runbooks/ops-alerts.md)。
 - **ECR**: `sattori-worker`（`maxImageCount: 2`でストレージコストを抑制。
   ワーカーイメージはタイトル数に依存しない共通部分のみで構成するため、Issue #22で
   タイトル固有アセットをS3側へ分離済み）。GPU描画必須タイトル（th06nc等、Issue #241）
@@ -192,7 +140,7 @@ Launch Templateは作成時にインスタンスプロファイルの存在を�
   プロファイル`sattori-gpu-worker-remote`を追加で持ち、`WorkerRole`にeu-north-1のECR
   レプリカのpull権限を足す。ECRはレジストリ単位の複製設定（`WorkerGpuReplication`）で
   `sattori-worker-gpu`だけをeu-north-1へ複製する。Lambdaには`GPU_FALLBACK_*`の環境変数で
-  固定名を渡す（`apps/api/README.md` §12）。
+  固定名を渡す（`apps/api/docs/environment-variables.md`）。
   `WorkerRole`はフォールバック先の出力バケット・タイトル資産レプリカも読み書きできる（Issue #313）。
   TitleAssetsBucketの`titles/`はレプリカへS3レプリケーションで複製し、MediaCdnの`eu-north-1/*`は
   `MediaStripRegionPrefixFn`でプレフィックスを外してフォールバック先の出力バケットから配信する。
@@ -224,29 +172,8 @@ Launch Templateは作成時にインスタンスプロファイルの存在を�
   （`home-worker/README.md`）。**ハートビートを送らない古いワーカー
   イメージがECRに残っていると全ジョブが15分でタイムアウトするため、
   ワーカーイメージのpushを`cdk deploy`より先に行うこと**（下記デプロイ手順）。
-- **IAM**: ワーカーロール（ECR pull / S3 / DynamoDB / ログ送出 /
-  `states:SendTask*`。`SendTask*`はリソースレベル権限に非対応のため`Resource: "*"`
-  がAWS側の制約として必要）+ インスタンスプロファイル、Launch Lambdaロール
-  （EC2 Fleet起動 + `iam:PassRole`）、HandleFailure Lambdaロール
-  （`ec2:TerminateInstances`）、StartJob Lambdaロール（`states:StartExecution`）、
-  RequestMagicLink/SendCompletionEmail Lambdaロール（`JobsTable`等の読み書き +
-  `ses:SendEmail`。SESサンドボックス中は送信先IDも権限チェック対象になるため、
-  Resourceはアカウント配下のSES identity全体`identity/*`に絞っている）、
-  SweepOrphanInstances Lambdaロール（`ec2:DescribeInstances`/`ec2:TerminateInstances`
-  ＋`states:DescribeExecution`＋`JobsTable`読み取り、Issue #23。GPU vCPU容量リースの
-  リコンサイラ（Issue #270）も同居するため`GpuSlotsTable`の読み書き＋
-  `dynamodb:TransactWriteItems`も持つ）、SweepStalledJobs
-  Lambdaロール（`states:DescribeExecution`＋`JobsTable`読み書き、Issue #132）、
-  AcquireGpuSlot/ReleaseGpuSlot Lambdaロール（`GpuSlotsTable`読み書き＋
-  `dynamodb:TransactWriteItems`。前者のみ`JobsTable`読み書きも持つ。**EC2権限は
-  一切持たない**——枠取りはDynamoDBの会計のみで完結する。Issue #270）、
-  **`HomeWorkerRole`**（自宅サーバーの常駐デーモンがassumeする最小権限ロール、
-  Issue #49。信頼ポリシーはアカウント内プリンシパル、`maxSessionDuration`は4時間
-  ＝ジョブ1本の最長所要時間より確実に長い値。実際に誰が使えるかは、手動で作る
-  IAMユーザー側の`sts:AssumeRole`ポリシーで制御する。手順は
-  `home-worker/README.md`参照）、AdminGetCosts Lambdaロール（CloudFrontの実配信量
-  を取得する`cloudwatch:GetMetricData`。GetMetricDataもリソースレベル権限に非対応の
-  ため`Resource: "*"`が必要、Issue #163）。
+- **IAM**: ワーカーロール・各Lambdaロール・自宅デーモン用の`HomeWorkerRole`。
+  ロールごとの権限と`Resource: "*"`が要る理由は [`docs/iam.md`](docs/iam.md)。
 - **EventBridge**: `OrphanInstanceSweepRule`（`ORPHAN_SWEEP_INTERVAL_MINUTES`＝10分
   間隔で`SweepOrphanInstancesFn`と`SweepStalledJobsFn`の2つを起動）。前者（Issue #23）
   は孤児化した録画EC2の定期掃除で、**ジョブレコードではなくAWS上に実在するインスタンス
@@ -280,57 +207,17 @@ Launch Templateは作成時にインスタンスプロファイルの存在を�
   使う（認可はAPI Gateway側のLambda Authorizerで完結するため環境変数を絞る動機が
   無い）。`commonEnv`を使わず用途ごとの環境変数のみを個別付与するのは
   `admin.authorizer`・`admin.getLogs`・`sweepOrphanInstances`・`sweepStalledJobs`・
-  `recordAnalyticsEvent`だけ（下記「管理画面」・`apps/api/README.md`「環境変数」
-  「計測」参照）。
+  `recordAnalyticsEvent`だけ（[`docs/admin.md`](docs/admin.md)・`apps/api/docs/environment-variables.md`・
+  `apps/api/README.md`「計測」参照）。
 - ワーカーAMIはSSMの ECS 最適化 AL2023（Docker同梱）を参照。
 
 ## 管理画面（`/admin`、Issue #51）
 
-運用調査用のジョブ一覧・詳細画面。既存のWeb配信（`WebCdn`・CloudFront Function
-`WebRouting`）は拡張子の無いパスを`/index.html`へ落とすため、`/admin`配下も
-**追加インフラ無し**でSPAとして配信できる。フロント側の構成は
-[`apps/web/docs/admin-ui.md`](../apps/web/docs/admin-ui.md)、API側は
-[`apps/api/docs/admin-api.md`](../apps/api/docs/admin-api.md)を参照。
-
-追加したインフラはAPI Gateway側のみ:
-
-- **Lambda Authorizer**（`admin/authorizer.ts`）: REQUEST型・simple response
-  （`HttpLambdaResponseType.SIMPLE`）。`identitySource`は
-  `$request.header.Authorization`のみ、`resultsCacheTtl`は5分。`corsPreflight`の
-  `allowHeaders`に`authorization`を追加している（`content-type`のみだった既存設定に
-  Bearerトークンを送るための拡張）。
-- **認可トークン**: SSM Parameter Store（`/sattori/admin/token`、SecureString）に
-  手動で置く（Cognito等を使わずこの方式にした理由は
-  [`docs/decisions/0005`](../docs/decisions/0005-admin-auth-ssm-shared-token.md)）。
-  **SecureStringはCloudFormation/CDKでは作成できない**ため、CDK側は
-  `ssm.StringParameter.fromSecureStringParameterAttributes()`で名前を参照するのみで、
-  値には一切触れない（`.stringValue`を参照するとCFnの動的参照
-  `{{resolve:ssm-secure:...}}`が生成され値がテンプレートに染み出すため、`grantRead`
-  （ARNのみ使用）と、`kms:ViaService`条件付きの`kms:Decrypt`個別権限のみを付与する）。
-  **`cdk deploy`より前に手動でパラメータを作成すること**（無くてもデプロイ自体は
-  失敗しないが、作成するまで`/admin/*`は全て403になる）:
-  ```bash
-  aws ssm put-parameter --region eu-south-2 --name /sattori/admin/token \
-    --type SecureString --value "$(openssl rand -hex 32)" --overwrite
-  ```
-  投入・ローテーション手順の詳細は`deploy-sattori` skill 参照。
-- **ルート**: `GET /admin/jobs`・`GET /admin/jobs/{jobId}`・
-  `GET /admin/jobs/{jobId}/execution`・`GET /admin/jobs/{jobId}/logs`（Issue #58）・
-  `POST /admin/jobs/{jobId}/stop`・`POST /admin/jobs/{jobId}/retry`（Issue #59）の
-  6つ、いずれも上記authorizerで保護。停止・再実行は状態を変えるため`POST`にしている
-  （`DELETE`を使うと`corsPreflight.allowMethods`（現状`GET`/`POST`のみ）の拡張も要る）。
-- **停止・再実行Lambdaの権限**（Issue #59）: `AdminStopJobFn`には
-  `stateMachine.grantExecution(fn, "states:StopExecution", "states:DescribeExecution")`
-  と`ec2:TerminateInstances`・`ec2:DescribeInstances`（前者は対象インスタンスが実行時
-  にしか決まらないため`handleFailureFn`と同じくResource:*、後者はそもそも
-  リソースレベルの権限指定に非対応）、`AdminRetryJobFn`には`grantStartExecution`と
-  `states:DescribeExecution`、`UploadBucket`の読み取り（元の`.rpy`が残っているかの
-  確認用）。どちらも`jobsTable`は読み書き、`STATE_MACHINE_ARN`は`startJobFn`と同様に
-  個別付与する。`DescribeExecution`が両方に要るのは、**ジョブの`status`が「実行が
-  終わったか」の代理条件にならない**ため（ワーカーが`SendTaskFailure`より先に
-  `failed`を書き、ステートマシンはその後もリトライを続ける。`apps/api/README.md`参照）。
-  `DescribeInstances`は、`instanceId`が未記録のまま起動した孤児インスタンスを
-  タグ`sattori:jobId`から回収するために使う。
+運用調査用のジョブ一覧・詳細画面。`/admin`配下は既存のWeb配信のまま**追加インフラ無し**で
+SPAとして配信でき、追加したのはAPI Gateway側（Lambda Authorizer・SSMの認可トークン・
+ルート・停止/再実行Lambdaの権限）のみ。詳細は [`docs/admin.md`](docs/admin.md)。
+**認可トークン（SSMのSecureString）はCDKでは作れないため、`cdk deploy`より前に手動で
+作成すること**（無いと`/admin/*`が全て403になる。投入手順は`deploy-sattori` skill）。
 
 ## デプロイ手順
 
@@ -343,7 +230,7 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra exec cdk bootstra
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run deploy                # ルートの package.json 経由で cdk deploy を実行
 ```
 
-0. （初回のみ）管理画面用トークンをSSMへ手動で作成する（上記「管理画面」参照。
+0. （初回のみ）管理画面用トークンをSSMへ手動で作成する（[`docs/admin.md`](docs/admin.md)参照。
    CDKでは作成できないSecureStringのため、忘れると`/admin/*`が403になり続ける。
    `--region eu-south-2`を指定すること）
 0.5. （初回のみ）GPU描画必須タイトル（th06nc等）用カスタムAMIを構築してeu-north-1へ
