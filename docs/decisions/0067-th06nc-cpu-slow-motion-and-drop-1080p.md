@@ -60,4 +60,4 @@ touhou-recorder reports/97（eu-south-2の`c7i`スポット、本番の変換）
 - `packages/shared/src/recordingPlan.ts`（段・候補）、`cost.ts`（`gpuFull`帯は旧レコードの推定にだけ使う）
 - `worker/record_th06nc.py`・`worker/recording/config.py`・`worker/mods/`（BC7展開）
 - `docs/known-limitations.md`（Extraの描画落ち、FpsMonitorが描画落ちを示さないこと）
-- 段を変えたら本番E2Eで確かめること（AGENTS.md §3）。
+- 段を変えたら本番E2Eで確かめること（AGENTS.md §3）。確認済み: [2026-11-09の本番E2E](../reports/2026-11-09-th06nc-c7i-slow-motion-production-e2e.md)。
