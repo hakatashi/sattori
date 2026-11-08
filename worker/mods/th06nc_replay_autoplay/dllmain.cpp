@@ -51,6 +51,7 @@
 #include "../common/dsound_hook.h"
 #include "../common/wasapi_hook.h"
 #include "../common/speed_hack_hook.h"
+#include "../common/d3d11_bc7_hook.h"
 #include "../common/score_monitor.h"
 
 using namespace autoplay;
@@ -180,6 +181,15 @@ FARPROC WINAPI MyGetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
     if (strcmp(lpProcName, "DirectSoundCreate8") == 0) {
         Log("GetProcAddress hook: DirectSoundCreate8 をフック版に差し替えました");
         return (FARPROC)WrapDirectSoundCreate8((void *)real);
+    }
+    // CPU描画(Xvfb+wined3d+llvmpipe)のときだけBC7テクスチャをRGBA8へ展開する
+    // (`D3D11_DECODE_BC7=1`、touhou-recorder reports/96)。DXライブラリはd3d11も動的に取得する。
+    // 環境変数が無ければ元の関数をそのまま返すので、GPU描画には影響しない。
+    if (strcmp(lpProcName, "D3D11CreateDevice") == 0) {
+        return (FARPROC)WrapD3D11CreateDevice((void *)real);
+    }
+    if (strcmp(lpProcName, "D3D11CreateDeviceAndSwapChain") == 0) {
+        return (FARPROC)WrapD3D11CreateDeviceAndSwapChain((void *)real);
     }
     if (strcmp(lpProcName, "timeGetTime") == 0) {
         return (FARPROC)WrapTimeGetTimeForSpeedHack((void *)real);

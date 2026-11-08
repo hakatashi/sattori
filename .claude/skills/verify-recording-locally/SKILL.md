@@ -18,15 +18,19 @@ S3/DynamoDB/Step Functions を一切介さずこのマシン上の Docker で動
 の外側タイムアウトラッパーだけでは防ぎきれないリスクがあるため、コンテナの`--rm`による
 確実な後始末を優先する)。
 
-## 0.0 対象外: GPU描画必須タイトル(th06nc等)
+## 0.0 th06ncはCPU描画(1/2倍速)でだけ検証できる
 
-**th06nc(東方紅魔郷: New Classic、Issue #241)はこの手順の対象外**。このマシンには
-GPUを使ったヘッドレス描画環境(Xorg+NVIDIA GRIDドライバ)が無く、CPU系ワーカーイメージ
-（このSkillが検証対象とするもの）にもGPU用の依存が入っていない。ローカルで
-`GAME=th06nc`のコンテナを動かしても`Xvfb+wined3d+llvmpipe`の経路に落ち、60fpsに
-遠く届かず「録画が壊れている」ように見えるが、**これはth06ncの既知の制約であり
-バグではない**（`worker/docs/titles/th06nc.md`参照）。th06ncの実機検証は必ずAWSの
-GPUインスタンス（g6f.xlarge、本番リージョンeu-south-2）で行うこと。
+このマシンにはGPUを使ったヘッドレス描画環境(Xorg+NVIDIA GRIDドライバ)が無いので、th06ncの
+**GPU描画(倍速・等倍)はこの手順では検証できない**。AWSのGPUインスタンスで行うこと。
+
+CPU描画(BC7展開、`worker/docs/titles/th06nc.md`)は検証できる。次の3点に注意する。
+
+- `FPS_LIMIT_TARGET_HZ=30`を付ける(CPU描画の等倍はキャプチャ側で落ちる)。
+- 本番の`c7i.2xlarge`に合わせて`--cpuset-cpus 0-3,8-11`(物理4コア+SMTの8スレッド)で動かす。
+  `LP_NUM_THREADS`は`record_th06nc.py`がaffinityから決める。
+- th06ncは自宅ワーカーが引き受けないのでキャッシュに無い。S3の`titles/th06nc/assets.tar.gz`を
+  展開して使い、**展開したコピーを`sudo chown -R root:root`しておく**(コンテナはrootで動くので、
+  hakatashi所有のWINEPREFIXだと`wineserver: ... is not owned by you`で起動しない)。
 
 ## 0. 前提: sattori-home-worker が停止していることを確認する
 

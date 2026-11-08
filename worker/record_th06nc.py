@@ -6,15 +6,20 @@
 パッケージ、コマンドライン引数は `recording/cli.py` にあり、このファイルには
 th06nc でしか成り立たない値だけを置く。
 
-th06cとの最大の違いは**GPU描画が必須**であること(Issue #241)。Xvfb+wined3d+
-llvmpipeでは60fpsに遠く届かないため、`gpu_display=True`でXorg+NVIDIA GRID
-ドライバのヘッドレス画面(`recording/gpu_display.py`)を使い、`dxvk_dll_overrides`
-でDXVK(D3D11→Vulkan)を有効化する。
+GPUワーカー(`GPU_WORKER=1`)では`gpu_display=True`でXorg+NVIDIA GRIDドライバのヘッドレス
+画面(`recording/gpu_display.py`)を使い、`dxvk_dll_overrides`でDXVK(D3D11→Vulkan)を有効化する
+(Issue #241)。
+
+CPUワーカーでは他タイトルと同じXvfb+wined3d+llvmpipeで描画する。そのままでは9fpsしか出ないが、
+主因はBC7圧縮テクスチャのソフトウェアデコードで、MODがロード時にRGBA8へ展開すれば
+(`D3D11_DECODE_BC7=1`)60fpsに届く(touhou-recorder reports/96)。等倍はキャプチャ側で落ちるため、
+1/2倍速の低速録画でだけ使う(reports/97)。
 """
 import os
 
 from recording import cli
 from recording.config import WORKER_ROOT, GameConfig
+from recording.timing import gpu_worker, recording_time_scale
 
 # th06.env(12バイト)のbyte[5]で解像度が決まる(touhou-recorder reports/78 §4.1)。
 # 720p/1080pそれぞれの完成済みth06.envをタイトル資産(games/th06nc/)に同梱しておき、
@@ -42,6 +47,22 @@ def _scale_rect(rects, from_wh, to_wh):
     ]
 
 
+def _cpu_rendering_env(time_scale):
+    """CPU描画(Xvfb+wined3d+llvmpipe)用にゲームへ渡す環境変数(touhou-recorder reports/96・97)。"""
+    env = [
+        # MODがBC7テクスチャをロード時にRGBA8へ展開する(mods/common/d3d11_bc7_hook.cpp)。
+        ("D3D11_DECODE_BC7", "1"),
+        # llvmpipeのラスタライズスレッドを使えるvCPU数に合わせる(reports/97の構成)。
+        # `os.cpu_count()`はCPU affinity(`docker run --cpuset-cpus`)を見ない。
+        ("LP_NUM_THREADS", str(len(os.sched_getaffinity(0)))),
+    ]
+    if time_scale > 1.0:
+        # メニュー操作のSleep()は実時間で待つので、低速録画ではゲーム内の遷移アニメーションに
+        # 合わせて同じ比率で伸ばす(MODの`GetTimeScale()`)。倍速の短縮は`MenuWaitScale()`が担う。
+        env.append(("TH06NC_TIME_SCALE", f"{time_scale:g}"))
+    return tuple(env)
+
+
 def build_config(pulse_sink):
     # for_game()内のmod_dir解決(SATTORI_MOD_DIR対応)と同じロジックをここでも踏む必要が
     # ある(th06c版のコメント参照)。
@@ -56,6 +77,8 @@ def build_config(pulse_sink):
     resolution = resolution if resolution in _RESOLUTIONS else "720p"
     spec = _RESOLUTIONS[resolution]
     window_w, window_h = spec["window"]
+    gpu = gpu_worker()
+    time_scale = recording_time_scale()
 
     return GameConfig.for_game(
         "th06nc", pulse_sink,
@@ -68,11 +91,17 @@ def build_config(pulse_sink):
         # th06nc.exeはPE32+(x86-64)のため64bit injectorを使う(th06cと同じ)。
         injector="injector64.exe",
         injector_path=f"{mod_dir}/common/build/injector64.exe",
-        # GPU描画必須(Issue #241)。DXVK(D3D11→Vulkan)がwined3dより重複フレーム率で
-        # 一貫して優位だったため既定採用する(touhou-recorder reports/79〜81)。
-        gpu_display=True,
-        dxvk_dll_overrides="d3d11,dxgi,d3d10core=n",
-        crtc_mode=spec["crtc_mode"],
+        # GPU描画ではDXVK(D3D11→Vulkan)を使う。wined3dより重複フレーム率で一貫して
+        # 優位だった(touhou-recorder reports/79〜81)。CPU描画ではwined3dのビルトインを明示する
+        # (プレフィックスのsystem32にDXVKを置いてあるため。XvfbではDXVKのdxgiがRandRの
+        # 0Hzでゼロ除算して落ちる、reports/96 §1.1)。
+        gpu_display=gpu,
+        dxvk_dll_overrides="d3d11,dxgi,d3d10core=n" if gpu else "d3d11,dxgi,d3d10core=b",
+        crtc_mode=spec["crtc_mode"] if gpu else None,
+        extra_env=() if gpu else _cpu_rendering_env(time_scale),
+        # DXライブラリは時間基準でゲームを進め、fps_limiterを持たないので、低速録画も
+        # QPC偽装で減速する(reports/97)。
+        slow_motion_speed_hack=True,
         # ウィンドウ+装飾が720p/1080pどちらでも収まる仮想画面サイズ
         # (touhou-recorder reports/81で実機使用)。
         xvfb_screen="2200x1400x24",
@@ -80,7 +109,7 @@ def build_config(pulse_sink):
         extra_instance_files=((f"{game_dir_src}/{spec['env_file']}", "th06.env"),),
         # GPU実行時、進捗スクショ用の定期ポーリングキャプチャが本番録画用x11grabと
         # 競合し周期的なコマ落ちを起こす問題への対処(touhou-recorder reports/81 §9)。
-        poll_side_stream=True,
+        poll_side_stream=gpu,
         still_detect_exclude_rect=_scale_rect(
             _STILL_DETECT_EXCLUDE_RECT_720P, (1280, 720), (window_w, window_h),
         ),

@@ -12,6 +12,7 @@
 
 | 検証日 | 内容 | 結論 |
 | --- | --- | --- |
+| [2026-11-08](2026-11-08-th06nc-cpu-bc7-local-verification.md) | th06ncのCPU描画(BC7展開)1/2倍速を本番のCPUワーカーイメージでローカル録画(Extra・Lunatic各1本、Ryzen 7 5700Xの8スレッド) | 2本とも試行1回目で完走しスコア一致。配信版の落ちはExtra 0.2%・Lunatic 2.2%。`c7i`での品質は未確認 |
 | [2026-11-08](2026-11-08-recommended-speed-fallback-order-and-cost.md) | 「おすすめ速度」選択時のフォールバック順序(リージョン・インスタンスタイプ・録画速度)と、同日のSpot価格による録画尺1時間あたりの費用 | 正常時は2倍速GPUで約$0.05〜0.08/時。GPU全滅時は等倍CPU約$0.05〜0.15、th15・th20の低速録画約$0.2〜0.4、th06ncの`g6.2xlarge`約$0.28〜0.56。価格は取得時点のスナップショット |
 | [2026-11-07](2026-11-07-speedup-delivery-frame-rate.md) | 倍速録画の配信版が約45fpsへ落ちる原因と`-r 60 -fps_mode cfr`への修正(Issue #322) | 原因は生映像のptsとtime_base。配信版のユニークフレームが生映像とほぼ同数に。NVENC・本番E2Eは未実施 |
 | [2026-11-05](2026-11-05-cpu-slow-motion-production-e2e.md) | GPU枯渇時のCPU低速録画・`g6.2xlarge`の本番E2E(Issue #316) | th15・th20のCPU低速は完走、再開も成功。th06ncの`g6.2xlarge`は在庫が無くLambdaから1度も起動できず未検証 |

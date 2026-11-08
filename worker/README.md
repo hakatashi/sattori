@@ -32,7 +32,7 @@
 | --- | --- | --- | --- | --- |
 | th06 東方紅魔郷 | `record_th06.py` | [docs/titles/th06.md](docs/titles/th06.md) | テンプレート照合 | 640x480 |
 | th06c 東方紅魔郷: Classic | `record_th06c.py` | [docs/titles/th06c.md](docs/titles/th06c.md) | テンプレート照合(絞り込み領域) | 640x480 |
-| th06nc 東方紅魔郷: New Classic | `record_th06nc.py` | [docs/titles/th06nc.md](docs/titles/th06nc.md) | 画面静止のみ | **1280x720/1920x1080選択可(GPU描画必須)** |
+| th06nc 東方紅魔郷: New Classic | `record_th06nc.py` | [docs/titles/th06nc.md](docs/titles/th06nc.md) | 画面静止のみ | **1280x720/1920x1080選択可。GPU描画、CPUは1/2倍速のみ(BC7展開)** |
 | th07 東方妖々夢 | `record_th07.py` | [docs/titles/th07.md](docs/titles/th07.md) | テンプレート照合 | 640x480 |
 | th08 東方永夜抄 | `record_th08.py` | [docs/titles/th08.md](docs/titles/th08.md) | テンプレート照合 | 640x480 |
 | th09 東方花映塚 | `record_th09.py` | [docs/titles/th09.md](docs/titles/th09.md) | テンプレート照合(絞り込み領域) | 640x480 |
@@ -230,7 +230,7 @@ AWS リソースには接続しない)。ルートの `pnpm test` (Turborepo) �
 コンテキストへ配置すること(§8)。ビルド・pushのコマンドとデプロイ手順全体は
 `deploy-sattori` skill(**push と deploy の順序を守ること**)。
 
-**GPU描画必須タイトル(th06nc)は別Dockerfile(`Dockerfile.gpu`)・別ECRリポジトリ
+**GPUワーカー(GPU系インスタンスで起動するジョブ。th06nc・th15・th20と倍速録画)は別Dockerfile(`Dockerfile.gpu`)・別ECRリポジトリ
 (`sattori-worker-gpu`)を使う**(Issue #241、
 [`decisions/0048`](../docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md))。
 `recording/`パッケージ・`entrypoint.py`・各`record_thNN.py`は`Dockerfile`と共通の
