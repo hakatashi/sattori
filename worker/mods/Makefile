@@ -17,6 +17,7 @@ SRC_FPS_DISP := $(COMMON_DIR)/fps_display_hook.cpp
 SRC_FPS_LIM  := $(COMMON_DIR)/fps_limiter_hook.cpp
 SRC_SPEED    := $(COMMON_DIR)/speed_hack_hook.cpp
 SRC_WASAPI   := $(COMMON_DIR)/wasapi_hook.cpp
+SRC_BC7      := $(COMMON_DIR)/d3d11_bc7_hook.cpp
 
 # 共通ソース組み合わせ
 # 倍速録画(Issue #288)のQPC偽装(speed_hack_hook)・音声周波数スケールとA/V同期マーカー
@@ -127,12 +128,14 @@ $(TARGET_TH06C): th06c_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE) $
 		-finput-charset=UTF-8 -fexec-charset=UTF-8 -fwide-exec-charset=UTF-16LE \
 		-o $@ $^ -lole32
 
-# 3b. th06nc hook（64bit、UTF-8/UTF-16LE、-static。GPU描画必須タイトル、Issue #241）
-$(TARGET_TH06NC): th06nc_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE) $(SRC_DSOUND) $(SRC_SPEED) $(SRC_WASAPI)
+# 3b. th06nc hook（64bit、UTF-8/UTF-16LE、-static、Issue #241）。CPU描画用のBC7展開フック
+# （`D3D11_DECODE_BC7=1`のときだけ有効、touhou-recorder reports/96）を含むため-ldxguidが要る。
+$(TARGET_TH06NC): th06nc_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE) $(SRC_DSOUND) $(SRC_SPEED) $(SRC_WASAPI) $(SRC_BC7) \
+		$(COMMON_DIR)/d3d11_bc7_hook.h $(COMMON_DIR)/bc7_decode.h
 	@mkdir -p $(@D)
 	$(CXX64) $(DLL_FLAGS) -static \
 		-finput-charset=UTF-8 -fexec-charset=UTF-8 -fwide-exec-charset=UTF-16LE \
-		-o $@ $^ -lole32
+		-o $@ $(filter %.cpp,$^) -lole32 -ldxguid
 
 # 4. th06（vpatch＋fps表示補正のtimeGetTime版、reports/90）・th07
 $(TARGET_TH06): th06_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_DISP)

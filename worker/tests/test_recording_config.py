@@ -229,6 +229,23 @@ def test_build_env_does_not_set_the_speed_hack_multiplier_below_native_rate(monk
     assert "SPEED_HACK_MULTIPLIER" not in make_config().build_env()
 
 
+def test_build_env_slows_the_qpc_for_slow_motion_when_the_title_opts_in(monkeypatch):
+    """th06ncはfps_limiterを持たず、QPC偽装で減速する(touhou-recorder reports/96・97)。"""
+    monkeypatch.setenv("FPS_LIMIT_TARGET_HZ", "30")
+    assert make_config(slow_motion_speed_hack=True).build_env()["SPEED_HACK_MULTIPLIER"] == "0.5"
+
+
+def test_build_env_leaves_native_speed_alone_even_when_the_title_opts_in(monkeypatch):
+    monkeypatch.delenv("FPS_LIMIT_TARGET_HZ", raising=False)
+    monkeypatch.delenv("SPEED_HACK_MULTIPLIER", raising=False)
+    assert "SPEED_HACK_MULTIPLIER" not in make_config(slow_motion_speed_hack=True).build_env()
+
+
+def test_build_env_passes_the_extra_env(monkeypatch):
+    env = make_config(extra_env=(("D3D11_DECODE_BC7", "1"),)).build_env()
+    assert env["D3D11_DECODE_BC7"] == "1"
+
+
 def test_build_env_sets_the_sync_marker_trigger_as_a_windows_path(monkeypatch):
     monkeypatch.delenv("FPS_LIMIT_TARGET_HZ", raising=False)
     assert make_config().build_env()["SYNC_MARKER_TRIGGER"] == "Z:\\instance\\sync_marker.trigger"

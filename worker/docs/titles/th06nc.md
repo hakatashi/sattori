@@ -49,6 +49,31 @@ amdgpu固有の可能性が高い）があり、**本番はAWSのNVIDIA GPUイ�
   食い違うとXorg/DXVKが起動しない可能性が高い。AMI更新時は必ずworker-gpuイメージの
   動作確認をセットで行うこと（`build-gpu-worker-ami` skill）。
 
+## CPU描画（BC7展開、1/2倍速の低速録画）
+
+GPUワーカー（`GPU_WORKER=1`）以外では、他タイトルと同じXvfb+wined3d+llvmpipeで描画する
+（`record_th06nc.py`の`gpu_display=gpu_worker()`）。上の9fpsの主因は描画コール数ではなく、
+**BC7圧縮テクスチャをllvmpipeがテクセルごとにソフトウェアデコードすること**だった
+（touhou-recorder reports/96 §1）。MODがd3d11のテクスチャ生成・転送をフックし、BC7をロード時に
+RGBA8へ展開すると、8スレッドで60fpsに届く。
+
+- MOD: `mods/common/d3d11_bc7_hook.cpp`（デコーダは`bc7_decode.h`）。`D3D11CreateDevice`系を
+  `MyGetProcAddress`で包み、`ID3D11Device`のvtable 5・7と`ID3D11DeviceContext`の14・15・48を
+  差し替える。**環境変数`D3D11_DECODE_BC7=1`のときだけ有効**で、GPU描画では元の関数をそのまま返す。
+- 環境変数（`record_th06nc.py`がCPUのときだけ渡す）: `D3D11_DECODE_BC7=1`、`LP_NUM_THREADS`
+  （使えるvCPU数）、`WINEDLLOVERRIDES="d3d11,dxgi,d3d10core=b"`。プレフィックスのsystem32には
+  DXVKを置いてあるので、ビルトイン（wined3d）を明示する。DXVKはXvfb上ではRandRの0Hzで
+  `dxgi.dll`がゼロ除算して落ちる（reports/96 §1.1）。
+- **等倍はキャプチャ側で落ちる**ので、1/2倍速の低速録画（`FPS_LIMIT_TARGET_HZ=30`）でだけ使う。
+  th06ncはfps_limiterを持たず、DXライブラリが時間基準でゲームを進めるので、低速録画でも
+  QPC偽装（`SPEED_HACK_MULTIPLIER=0.5`）で減速する（`GameConfig.slow_motion_speed_hack`）。
+  メニュー操作の`Sleep()`は`TH06NC_TIME_SCALE`（1/2倍速なら2）で伸ばす。
+- 品質: `c7i.2xlarge`の720p 1/2倍速で、通常ステージはGPU等倍と区別できない（Lunatic全6面で
+  落ち1.3%）。**Extraのパチュリー戦の高密度弾幕では描画が実時間約15Hzへ間引かれる**（落ち25〜36%の区間が
+  約90秒）。FpsMonitorは入力ポーリング回数を数えているので、この描画落ちを示さない
+  （reports/97 §3）。品質判定は配信版のユニークフレームで行うこと。
+- 1080pはCPU描画では使わない（GPU描画でも廃止予定）。
+
 ## 起動時ダイアログは無い（th06cとの違い）
 
 th06cは起動のたびに「解像度を選択してください」モーダルダイアログを出すが、th06ncには
@@ -119,7 +144,7 @@ touhou-recorder側の初期実装が踏んだ地雷は、sattori側の共通実�
 
 ## 自宅ワーカーはスコープ外
 
-- 自宅ワーカー（GPU非搭載）には常にオファーしない（`apps/api/src/workerRouting.ts`の
+- 自宅ワーカーには常にオファーしない。CPU描画は自宅の環境では本番相当の検証をしていない（`apps/api/src/workerRouting.ts`の
   `GAME_ROUTING_POLICIES.th06nc.offerToHomeWorker = false`、`decisions/0047`）。
 
 ## GPU実行時のx11grabキャプチャ競合（`poll_side_stream`）

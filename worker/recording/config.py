@@ -128,11 +128,20 @@ class GameConfig:
     # touhou-recorder reports/78)ため、この経路が必須。`recording.instance.
     # ensure_display()`が本フラグで初期化方法を切り替える。
     gpu_display: bool = False
-    # GPU使用時にWineへ渡すWINEDLLOVERRIDES(DXVK有効化用、例:
-    # "d3d11,dxgi,d3d10core=n")。gpu_display=Falseなら無視する。DXVK(D3D11→Vulkan)は
+    # Wineへ渡すWINEDLLOVERRIDES(DXVK有効化用、例: "d3d11,dxgi,d3d10core=n")。
+    # gpu_displayの値によらず、指定されていれば渡す。DXVK(D3D11→Vulkan)は
     # wined3d(D3D11→OpenGL)より重複フレーム率が一貫して優位だった
     # (touhou-recorder reports/79〜81)ため、GPU系タイトルはこちらを既定採用する。
+    # th06ncのCPU描画では逆にビルトイン(wined3d)を明示するのに使う(`=b`、record_th06nc.py)。
     dxvk_dll_overrides: str | None = None
+    # ゲームプロセスへ追加で渡す環境変数((名前, 値)のタプル)。th06ncのCPU描画で
+    # MODのBC7展開(`D3D11_DECODE_BC7`)やllvmpipeのスレッド数を渡すのに使う。
+    extra_env: tuple[tuple[str, str], ...] = ()
+    # 低速録画(FPS_LIMIT_TARGET_HZ<60)でもMODのQPC偽装(`SPEED_HACK_MULTIPLIER`<1)で減速するか。
+    # Present上限(fps_limiter_hook)で減速するタイトル(th15・th20)は二重に遅くなるのでFalse。
+    # th06ncはDXライブラリが時間基準でゲームを進め、fps_limiterを持たないのでTrueにする
+    # (touhou-recorder reports/96・97)。
+    slow_motion_speed_hack: bool = False
     # GPU使用時、Xorg起動後にxrandrで明示的に切り替えるCRTCモード(例: "1920x1080")。
     # Noneならxrandrでの変更は行わない(Xorg起動時の既定モードのまま)。
     # Xorg+nvidia環境では「仮想画面サイズ」と「CRTCの実モード」が別概念で、th06ncは
@@ -238,8 +247,12 @@ class GameConfig:
         time_scale = recording_time_scale(env)
         if is_speedup(time_scale):
             env["SPEED_HACK_MULTIPLIER"] = f"{speedup_multiplier(time_scale):g}"
+        elif self.slow_motion_speed_hack and time_scale > 1.0:
+            env["SPEED_HACK_MULTIPLIER"] = f"{1.0 / time_scale:g}"
         else:
             env.pop("SPEED_HACK_MULTIPLIER", None)
+        for name, value in self.extra_env:
+            env[name] = value
         # 同期マーカー(A/V同期補正、touhou-recorder reports/88)のトリガーファイル。MOD
         # (dsound_hook/wasapi_hook)はWine内から開くのでWindows形式(Z:)のパスで渡す。
         # 等倍でも常に有効にする(start_timeの差による従来の補正は等倍でも+90〜+190ms
