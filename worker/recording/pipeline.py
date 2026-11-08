@@ -31,7 +31,7 @@ from .ffmpeg import (
     mux_audio_video,
 )
 from .instance import build_injector_cmd, ensure_display, prepare_instance
-from .modlog import check_replay_desync, wait_for_log_marker
+from .modlog import check_replay_desync, is_score_zero, read_verified_scores, wait_for_log_marker
 from .process import attach_thprac, find_live_game_pid, kill_wine_and_wait
 from .timing import (
     audio_capture_rate_hz,
@@ -970,6 +970,25 @@ def _record_with_retry(config, replay_path, output_path, *,
             )
             continue
 
+        # スコア監視のあるタイトルで、期待スコアが 0 より大きいのに最後まで 0
+        # だった録画は、メニュー操作の取りこぼし等でリプレイが始まらなかったと
+        # みなして破棄しリトライする(Issue #324)。
+        scores = read_verified_scores(config.log_path, config.game_id)
+        if is_score_zero(config, expected_score, scores=scores):
+            log(
+                f"WARNING: 期待スコア({expected_score}) > 0 ですが、録画中のゲーム内スコアが"
+                "最後まで 0 のままでした(リプレイが開始されなかった可能性があります)。破棄してリトライします"
+            )
+            snapshot_sec = min(
+                15.0 + video_offset_sec,
+                max(0.0, result.get("total_record_sec", 16.0) - 1.0),
+            )
+            save_diagnostics_snapshot(
+                diagnostics_dir, grab_frame_from_video(output_path, snapshot_sec), attempt,
+                "score_zero",
+            )
+            continue
+
         timed_out = result["classification"] == "timeout"
         if timed_out:
             log(
@@ -977,7 +996,7 @@ def _record_with_retry(config, replay_path, output_path, *,
                 "リプレイ終盤が録画されていない可能性があります"
             )
         log(f"試行{attempt}で正常な録画を確認しました")
-        desync_detected = check_replay_desync(config, expected_score, log=log)
+        desync_detected = check_replay_desync(config, expected_score, log=log, scores=scores)
         write_desync_result(desync_result_path, desync_detected)
         write_timeout_result(timeout_result_path, timed_out)
         write_cut_result(cut_result_path, result.get("cut"))
