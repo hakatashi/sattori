@@ -7,7 +7,7 @@ GPU インスタンスで録画するもの（倍速録画、th06nc、th15）に
 ## 目次
 
 - [1. 倍速録画（2〜4倍速）の品質と未実装事項（Issue #288）](#1-倍速録画24倍速の品質と未実装事項issue-288)
-- [2. th06nc は GPU 専用インスタンスでのみ録画可能](#2-th06nc-は-gpu-専用インスタンスでのみ録画可能)
+- [2. th06nc は GPU 描画が基本で、GPU が無ければ CPU の 1/2 倍速](#2-th06nc-は-gpu-描画が基本でgpu-が無ければ-cpu-の-12-倍速)
 - [3. th15 は GPU を優先し、確保できなければ CPU 低速で録画する](#3-th15-は-gpu-を優先し確保できなければ-cpu-低速で録画する)
 
 ## 1. 倍速録画（2〜4倍速）の品質と未実装事項（Issue #288）
@@ -31,10 +31,9 @@ touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実�
   見せる時間が1秒より少し短くなる（Issue #266、[`decisions/0059`](decisions/0059-cut-range-decided-by-recorder.md)）。
   カット開始を決められなかった録画（MODログに再生確定の記録が無い等）では、映像の先頭から残るので
   マーカーが入りうる。
-- **GPU容量を確保できない場合は速度を落とす**（Issue #289・#315・#316、
-  [`decisions/0060`](decisions/0060-speedup-fallback-to-native-speed.md)・[`0063`](decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)・[`0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
-  通常のタイトルは等倍へ、th15・th20はCPU低速録画へ落ちる。**th06ncだけは落とす先が無く**、GPU待ち行列の
-  上限（120分）か全段のSpot在庫の枯渇で失敗する。フォールバックの閾値（待ち30分・クォータ超過などの
+- **GPU容量を確保できない場合は次の段で録る**（Issue #289・#315・#316・#317、
+  [`decisions/0063`](decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)・[`0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)・[`0066`](decisions/0066-recording-fallback-plan-as-config.md)・[`0067`](decisions/0067-th06nc-cpu-slow-motion-and-drop-1080p.md)）。
+  通常のタイトルは等倍へ、th15・th20・th06ncはCPU低速録画へ進む。段の閾値（待ち30分・クォータ超過などの
   3回目）は本番の実測に基づかない初期値。
 - **CPU低速録画の品質はGPU録画より落ちる**（[`decisions/0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。ボムやスペルカード終了時に
   一時的なコマ落ちがあり、高負荷のあとはBGMが映像より先行する（th20で約0.5秒、touhou-recorder
@@ -42,20 +41,24 @@ touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実�
   （[`reports/2026-11-05`](reports/2026-11-05-cpu-slow-motion-production-e2e.md)）。
   `c7i.4xlarge`の1タイプしか候補が無く、Spot中断は録画からやり直し（reports/91 §7）。尺60分級のリプレイは
   ルートボリューム（30GiB）に近づく（[`reports/2026-11-05`](reports/2026-11-05-cpu-slow-motion-worker-local.md)）。
-- **`g6.2xlarge`も枯渇しうる**。実起動の成否は同じ日でも変わる（touhou-recorder reports/92 §6）。**2026-11-05の
-  本番E2Eでは約3時間でジョブ10本すべて容量不足になり、この段でLambdaから起動できることは未確認。**
+- **th06ncのCPU低速録画（BC7展開、`c7i.2xlarge`）は、Extraの高密度弾幕で描画が落ちる**
+  （[`decisions/0067`](decisions/0067-th06nc-cpu-slow-motion-and-drop-1080p.md)）。touhou-recorder reports/97では、
+  パチュリー戦（配信版75〜165秒）で描画が実時間約15Hzへ間引かれ、その区間の落ちが25〜36%（Extra全体で7.6%）。
+  ゲームの進行は正しく、コマ落ちとして見える。**th06ncのFpsMonitorは入力ポーリング回数を数えているので、この
+  描画落ちを示さず、パイプラインの判定重複率でも検知できない**（reports/97 §3）。品質は配信版のユニークフレームで
+  見ること。CPU等倍・`c7i.xlarge`は不採用。
 - **リプレイが始まらなかった録画が`done`になりうる**。メニュー操作を取りこぼしても、背景の動く画面なら重複率で弾けず、
   画面静止で終了と判定される（th15 20Hzで実例）。スコアは`desyncDetected`に出るだけで、リトライしない。
 
-## 2. th06nc は GPU 専用インスタンスでのみ録画可能
+## 2. th06nc は GPU 描画が基本で、GPU が無ければ CPU の 1/2 倍速
 
 2026-09-10 発売の「東方紅魔郷: New Classic」は録画対応済み（Issue #241、
-[`worker/docs/titles/th06nc.md`](../worker/docs/titles/th06nc.md)）。**GPU描画
-（Xorg+NVIDIA GRIDドライバ+DXVK）が必須のタイトルで、GPU系インスタンス
-（`g6f.2xlarge`、枯渇時は`g6.2xlarge`）で録画される**。Xvfb+wined3d+llvmpipe（既存9タイトルの方式）では720pで9.1fpsしか出ず
-60fpsに遠く届かないため（touhou-recorder reports/78 §5）。自宅ワーカー（GPU非搭載）
-には常にオファーされない
-（[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
+[`worker/docs/titles/th06nc.md`](../worker/docs/titles/th06nc.md)）。**通常はGPU描画
+（Xorg+NVIDIA GRIDドライバ+DXVK）でGPU系インスタンス（`g6f.2xlarge`）の2倍速で録画し、GPUを確保できなければ
+CPU描画（`c7i.2xlarge`、1/2倍速）で録る**。CPU描画はMODがBC7テクスチャをロード時に展開して初めて60fpsに
+届く（展開しないと720pで9.1fps、touhou-recorder reports/78・96）。自宅ワーカーには常にオファーされない
+（[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)・[`0067`](decisions/0067-th06nc-cpu-slow-motion-and-drop-1080p.md)）。
+**1080p録画は廃止した**（0067）。
 
 GPUの起動候補は`g6f.2xlarge`（8vCPU）だけ（Issue #288、
 [`decisions/0058`](decisions/0058-speedup-recording-on-gpu-instances.md)）。以前は`g6f.xlarge`（4vCPU）も

@@ -717,16 +717,41 @@ describe("sfn/launch handler（録画の段、Issue #315・#317）", () => {
 
     expect(err).toBeInstanceOf(FleetLaunchError);
     expect((err as InstanceType<typeof FleetLaunchError>).capacityExhausted).toBe(true);
-    // th06ncは`g6f.2xlarge`→`g6.2xlarge`（Issue #316）。
+    // th06ncは`g6f.2xlarge`→CPU（BC7展開）の`c7i.2xlarge`（Issue #317、0067）。
     expect(
       ec2Mock
         .commandCalls(CreateFleetCommand)
         .map((call) => call.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides?.[0]?.InstanceType),
-    ).toEqual(["g6f.2xlarge", "g6.2xlarge"]);
+    ).toEqual(["g6f.2xlarge", "c7i.2xlarge"]);
     expect(statusValues()).toEqual([
       expect.objectContaining({ ":s": "failed", ":ec": "capacity_exhausted", ":done": "done" }),
     ]);
     expect(ddbMock.commandCalls(TransactWriteCommand).length).toBeGreaterThan(0);
+  });
+
+  it("th06ncはGPUの段を使い切ったらCPUのc7i.2xlargeで1/2倍速の低速録画を起動する（Issue #317）", async () => {
+    mockJobStore(freshJob({ game: "th06nc" }));
+    ec2Mock
+      .on(CreateFleetCommand)
+      .callsFakeOnce(capacityFailure)
+      .resolves({
+        Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.2xlarge", AvailabilityZone: "a" }],
+      });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(enteredSteps()).toEqual([
+      ["gpu:eu-south-2", 2],
+      ["cpu:eu-south-2", 1 / 2],
+    ]);
+    const config = ec2Mock.commandCalls(CreateFleetCommand)[1]?.args[0].input.LaunchTemplateConfigs?.[0];
+    expect(config?.LaunchTemplateSpecification?.LaunchTemplateId).toBe("lt-xxxx");
+    expect(new Set(config?.Overrides?.map((o) => o.InstanceType))).toEqual(new Set(["c7i.2xlarge"]));
+    expect(userDataOf(1)).toContain("-e FPS_LIMIT_TARGET_HZ='30'");
+    expect(userDataOf(1)).not.toContain("-e GPU_WORKER");
+    // 自宅ワーカーの段は無い。
+    expect(ddbMock.commandCalls(ScanCommand)).toHaveLength(0);
   });
 
   it("全段が前の試行で記録済みなら1回もCreateFleetせずに失敗させる", async () => {

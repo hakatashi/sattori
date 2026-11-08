@@ -42,13 +42,15 @@ VsyncPatchで修正するかどうかは、記録リプレイと再生時で設�
 
 録画速度はタイトルごとの録画の段が決め、ユーザーは選べない（Issue #317、[`decisions/0066`](decisions/0066-recording-fallback-plan-as-config.md)）。
 3倍速以上はキャプチャが律速して落ちフレームが増え、実時間で進む区間は等倍へ戻すと伸びる。
-GPUを確保できなければ次の段（等倍・CPU低速）で録り（th06ncだけはGPU以外の段が無く失敗する）、CPU低速録画の品質は
+GPUを確保できなければ次の段（等倍・CPU低速）で録り、CPU低速録画の品質は
 GPU録画より落ちる。リプレイが始まらなかった録画が`done`になりうる。詳細は
 [`known-limitations-gpu-recording.md`](known-limitations-gpu-recording.md) §1。
 
-### th06nc（東方紅魔郷: New Classic）は録画対応済み。ただしGPU専用インスタンスでのみ録画可能
+### th06nc（東方紅魔郷: New Classic）は録画対応済み。GPUが無ければCPUの1/2倍速で、Extraは描画が落ちうる
 
-GPU描画が必須で、自宅ワーカーへは常にオファーされない。**th06nc を th06 として受け付けては
+通常はGPU描画、GPUを確保できなければCPU描画（BC7展開）の1/2倍速で録り、自宅ワーカーへは常にオファーされない。
+CPUの段ではExtraの高密度弾幕で描画が間引かれ、FpsMonitor・判定重複率では検知できない。1080p録画は廃止した
+（[`decisions/0067`](decisions/0067-th06nc-cpu-slow-motion-and-drop-1080p.md)）。**th06nc を th06 として受け付けては
 ならない**（マジックバイトが同じ`T6RP`）。本番相当のフル尺E2E検証・RVAの一部が未了。詳細は
 [`known-limitations-gpu-recording.md`](known-limitations-gpu-recording.md) §2。
 
@@ -297,7 +299,7 @@ GPU（g6f.2xlarge）は eu-south-2 で長期的に枯渇しており、容量不
   引き上げたと回答したが、適用されているのは On-Demand 枠のほうだった疑い）。訂正されるまで、
   フォールバック先で同時に動かせるのは g6f.2xlarge 1台だけ。
 - eu-north-1 にも余裕は無い（1a は取れず 1b 頼み、[`reports/2026-10-11`](reports/2026-10-11-gpu-capacity-eu-south-2-vs-eu-north-1.md)）。
-  **両リージョンとも枯渇すれば、th15・th20はCPU低速へ落ち、th06ncは`g6.2xlarge`（eu-south-2）を試し、それも
+  **両リージョンとも枯渇すれば、th15・th20・th06ncはCPU低速へ進み、それも
   無ければ待たずに`capacity_exhausted`で失敗する**
   （[`decisions/0063`](decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)・[`0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。回復までの
   実績は中央値約13時間で、ユーザーが時間をあけて再投入するしかない。CPU系ジョブも全段の枯渇で

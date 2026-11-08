@@ -109,7 +109,8 @@ describe("RECORDING_PLANS", () => {
     ],
     [
       ["th06nc"],
-      ["gpu:eu-south-2 x2 g6f.2xlarge", "gpu:eu-north-1 x2 g6f.2xlarge", "gpu-full:eu-south-2 x2 g6.2xlarge"],
+      // Issue #317・touhou-recorder reports/97: `g6.2xlarge`の段をCPU（BC7展開）の1/2倍速に置き換えた（0067）。
+      ["gpu:eu-south-2 x2 g6f.2xlarge", "gpu:eu-north-1 x2 g6f.2xlarge", "cpu:eu-south-2 x0.5 c7i.2xlarge"],
     ],
   ])("%j の段", (games, expected) => {
     for (const game of games) {
@@ -150,7 +151,7 @@ describe("currentRecordingStep / remainingRecordingSteps", () => {
   it("全段を使い切ったら null", () => {
     const job = {
       game: "th06nc" as const,
-      capacityExhaustedTargets: ["gpu:eu-south-2", "gpu:eu-north-1", "gpu-full:eu-south-2"],
+      capacityExhaustedTargets: ["gpu:eu-south-2", "gpu:eu-north-1", "cpu:eu-south-2"],
     };
     expect(currentRecordingStep(job)).toBeNull();
   });
@@ -164,8 +165,12 @@ describe("skippableGpuStepIds", () => {
     ]);
   });
 
-  it("GPU以外の段が無いタイトル（th06nc）は飛ばせない", () => {
-    expect(skippableGpuStepIds({ game: "th06nc" })).toEqual([]);
+  it("後ろのGPU以外の段を使い切っていれば飛ばせない", () => {
+    expect(skippableGpuStepIds({ game: "th06nc", capacityExhaustedTargets: ["cpu:eu-south-2"] })).toEqual([]);
+  });
+
+  it("th06ncもCPUの段へ飛ばせる（Issue #317）", () => {
+    expect(skippableGpuStepIds({ game: "th06nc" })).toEqual(["gpu:eu-south-2", "gpu:eu-north-1"]);
   });
 
   it("既にGPU以外の段にいれば飛ばすものは無い", () => {
