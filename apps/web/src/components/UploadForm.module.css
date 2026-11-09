@@ -217,14 +217,15 @@ li.supportedTitle.supported {
   font-size: 0.9rem;
 }
 
-/* カード冒頭に出すサービス全体のお知らせ(GPUインスタンス枯渇など)。 */
+/* カード冒頭に出すサービス全体のお知らせ。復旧のお知らせなので緑色にしている。 */
 .siteNotice {
   margin: 0 0 1.25rem;
+  background: #81c784;
 }
 
 .siteNoticeText {
   margin: 0;
-  color: var(--warning-text);
+  color: #000;
 }
 
 .noticeTitle {
