@@ -1,7 +1,8 @@
 import type { GameId } from "./games.js";
 
 /**
- * 録画速度（Issue #288、倍速録画）。
+ * 録画速度（Issue #288、倍速録画）。**どの速度で録るかは録画の段（`recordingPlan.ts`）が決め、
+ * ユーザーは選ばない**（Issue #317、`docs/decisions/0066`）。
  *
  * ゲームを内部的にN倍速で動かして録画し、後処理で等倍へ戻すことで、ユーザーの待ち時間と
  * インスタンス課金時間を減らす。技術検証は touhou-recorder reports/84〜90（g6f.2xlarge、
@@ -18,20 +19,18 @@ import type { GameId } from "./games.js";
  *
  * ## GPU必須
  *
- * **2倍速以上は必ずGPUインスタンス（g6f.2xlarge）で録画する**。CPU描画（Xvfb+llvmpipe）では
- * 2倍速を維持できず、自宅ワーカーはGPUを持たない（`gpuRecording.ts`の`requiresGpuRecording()`）。
+ * **2倍速以上は必ずGPUの段で録画する**。CPU描画（Xvfb+llvmpipe）では2倍速を維持できない
+ * （touhou-recorder reports/89）。
  *
  * ## 低速録画（Issue #316）
  *
- * ユーザーは選べない。GPUを確保できないth15・th20のジョブを、起動側が`options.recordingSpeed`を
- * 書き換えてCPUインスタンスで録るときだけ使う（`gpuRecording.ts`の`fallbackRecordingSpeedFor()`、
- * `docs/decisions/0064`）。
+ * GPUを確保できないタイトル（th15・th20）のCPUの段だけが使う（`docs/decisions/0064`）。
  */
 
-/** ユーザーが選べる録画速度（倍率）。 */
+/** 等倍・倍速録画の倍率。 */
 export const RECORDING_SPEEDS = [1, 2, 3, 4] as const;
 
-/** GPUを確保できないジョブだけが使う低速録画の倍率（30Hz・20Hz）。 */
+/** CPUの段の低速録画の倍率（30Hz・20Hz）。 */
 export const SLOW_MOTION_RECORDING_SPEEDS = [1 / 2, 1 / 3] as const;
 
 export type RecordingSpeed =
@@ -57,16 +56,6 @@ export function normalizeRecordingSpeed(value: unknown): RecordingSpeed {
   return isRecordingSpeed(value) ? value : NATIVE_RECORDING_SPEED;
 }
 
-/**
- * APIの入力を録画速度へ正規化する。低速録画はユーザーが選ぶものではないので等倍へ落とす
- * （CPU低速は実時間と費用が等倍の2〜3倍かかる）。
- */
-export function normalizeRequestedRecordingSpeed(value: unknown): RecordingSpeed {
-  return (RECORDING_SPEEDS as readonly unknown[]).includes(value)
-    ? (value as RecordingSpeed)
-    : NATIVE_RECORDING_SPEED;
-}
-
 /** ジョブの録画オプションから録画速度を読む（欠損・不正値は等倍）。 */
 export function recordingSpeedOf(options: { recordingSpeed?: unknown } | undefined): RecordingSpeed {
   return normalizeRecordingSpeed(options?.recordingSpeed);
@@ -85,64 +74,6 @@ export function isSlowMotionRecording(speed: RecordingSpeed): boolean {
 /** ワーカーへ渡す `FPS_LIMIT_TARGET_HZ`（60×倍率。1/3倍速の丸め誤差を落とすため整数へ丸める）。 */
 export function recordingTargetHz(speed: RecordingSpeed): number {
   return Math.round(NATIVE_GAME_FRAME_RATE_HZ * speed);
-}
-
-/**
- * タイトルごとの「おすすめ」録画速度。事前の品質チェックで問題が無いと認められた速度で、
- * リプレイ選択後の既定値になる（ユーザーはこれより速い速度も選べるが、警告を出す）。
- *
- * th06ncは解像度で変わる（`recommendedRecordingSpeed()`）。1080pは描画・キャプチャとも
- * 720pの2.25倍の画素数で、倍速録画を検証していないため等倍を推奨する。
- * th20は2倍速ではゲーム本体の単一スレッド性能が足りず落ちフレームが等倍の16倍に増える
- * （reports/89）ため等倍を推奨する。
- */
-export const RECOMMENDED_RECORDING_SPEED: Readonly<Record<GameId, RecordingSpeed>> = {
-  th06: 2,
-  th06c: 2,
-  th06nc: 2,
-  th07: 3,
-  th08: 2,
-  th09: 2,
-  th10: 2,
-  th11: 2,
-  th12: 2,
-  th128: 2,
-  th15: 2,
-  th20: 1,
-  // 以下は録画非対応タイトル（`SUPPORTED_GAME_IDS`外）。録画ジョブは作られないが、
-  // 型の網羅性のため等倍を置く。
-  th095: 1,
-  th125: 1,
-  th13: 1,
-  th14: 1,
-  th143: 1,
-  th16: 1,
-  th165: 1,
-  th17: 1,
-  th18: 1,
-};
-
-/** 1080p録画時のth06ncのおすすめ速度。 */
-export const TH06NC_HIGH_RESOLUTION_RECOMMENDED_SPEED: RecordingSpeed = 1;
-
-/** リプレイ（タイトルと録画オプション）に対するおすすめ速度。 */
-export function recommendedRecordingSpeed(
-  game: GameId,
-  options: { th06ncHighResolution?: boolean } = {},
-): RecordingSpeed {
-  if (game === "th06nc" && options.th06ncHighResolution) {
-    return TH06NC_HIGH_RESOLUTION_RECOMMENDED_SPEED;
-  }
-  return RECOMMENDED_RECORDING_SPEED[game];
-}
-
-/** 選ばれた速度がおすすめより速いか（UIで警告を出す条件）。 */
-export function isFasterThanRecommended(
-  game: GameId,
-  speed: RecordingSpeed,
-  options: { th06ncHighResolution?: boolean } = {},
-): boolean {
-  return speed > recommendedRecordingSpeed(game, options);
 }
 
 /**

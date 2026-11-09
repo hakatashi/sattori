@@ -1,14 +1,10 @@
-import {
-  fallbackRecordingSpeedFor,
-  isTerminalStatus,
-  recordingSpeedOf,
-  SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT,
-} from "@sattori/shared";
+import { GPU_QUOTA_STEP_SKIP_ATTEMPT, isTerminalStatus, skippableGpuStepIds } from "@sattori/shared";
 import { loadConfig } from "../../config.js";
 import { findJobInstances, terminateInstance } from "../../ec2.js";
 import { releaseGpuSlot } from "../../gpuSlots.js";
 import { releaseHomeWorkerAssignment } from "../../homeWorker.js";
-import { fallBackRecordingSpeed, getJob, updateJobStatus } from "../../jobs.js";
+import { getJob, updateCapacityExhaustedTargets, updateJobStatus } from "../../jobs.js";
+import { loadRecordingStepFilter } from "../../recordingSteps.js";
 import {
   CAPACITY_EXHAUSTED_MESSAGE,
   MAX_ATTEMPTS,
@@ -29,9 +25,9 @@ import {
  *   参照）。無ければジョブを `failed` に確定させる。
  * - `Launch`が全段の容量不足でジョブを`failed`に確定済みなら、後始末だけしてリトライしない
  *   （Issue #315、`docs/decisions/0063`）。Spot在庫の枯渇はここまで来ない。
- * - 速度を落とせるジョブ（`fallbackRecordingSpeedFor()`）のGPU起動がクォータ超過などで
- *   `SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT`回目以降も失敗したら、速度を落として
- *   必ずリトライさせる（Issue #289・#316）。
+ * - GPU以外の段を持つジョブ（`skippableGpuStepIds()`）のGPU起動がクォータ超過などで
+ *   `GPU_QUOTA_STEP_SKIP_ATTEMPT`回目以降も失敗したら、GPUの段を使い切ったものとして
+ *   必ずリトライさせる（Issue #289・#316・#317）。
  *
  * `:36` で読む `job` はこの関数の入口時点のスナップショットに過ぎず、その後の
  * terminate・割り当て解除に数秒〜十数秒かかる間にワーカーが完走して `done` を
@@ -237,40 +233,30 @@ export const handler = async (event: HandleFailureEvent): Promise<HandleFailureR
   const failedByLaunch = job?.status === "failed" && job.errorCode === "capacity_exhausted";
   let shouldRetry = !failedByLaunch && event.attempt < maxAttempts;
 
-  // クォータ超過などで起動できない状態が続くジョブは、落とせる速度があれば落とす
-  // （Issue #289・#316）。Spot在庫の枯渇は`Launch`の中でフォールバックするのでここへは来ない
-  // （Issue #315）。連続した回数は数えておらず、試行回数で代用している——GPU経路の試行が
+  // クォータ超過などで起動できない状態が続くジョブは、GPU以外の段があればGPUの段を飛ばす
+  // （Issue #289・#316・#317）。Spot在庫の枯渇は`Launch`の中で段を進めるのでここへは来ない
+  // （Issue #315）。連続した回数は数えておらず、試行回数で代用している——GPUの段の試行が
   // 何回も失敗した末にさらに容量系のエラーで落ちたなら、原因が何であれGPUに拘る理由は薄い。
-  // フォールバック直後は試行回数の上限に関係なく必ず1回はCPUで試す（フォールバックは
-  // 1ジョブにつき1回きりなので、上限超過も高々1回）。GPUリースは上で返却済みで、
-  // 次の`AcquireGpuSlot`は速度を落としたジョブを即`acquired: true`で通す。
+  // 飛ばした直後は試行回数の上限に関係なく必ず1回はGPU以外の段で試す（GPUの段は二度と
+  // 試さないので、上限超過も高々1回）。GPUリースは上で返却済みで、次の`AcquireGpuSlot`は
+  // GPU以外の段のジョブを即`acquired: true`で通す。
   let fellBack = false;
-  const fallbackSpeed = job ? fallbackRecordingSpeedFor(job) : null;
-  if (
-    job &&
-    !isTerminalStatus(job.status) &&
-    capacityFailure &&
-    fallbackSpeed !== null &&
-    event.attempt >= SPEEDUP_FALLBACK_QUOTA_FAILURE_ATTEMPT
-  ) {
-    const from = recordingSpeedOf(job.options);
-    fellBack = await fallBackRecordingSpeed(
-      config.jobsTable,
-      event.jobId,
-      from,
-      fallbackSpeed,
-      "gpu_capacity",
-    );
-    if (fellBack) {
+  if (job && !isTerminalStatus(job.status) && capacityFailure && event.attempt >= GPU_QUOTA_STEP_SKIP_ATTEMPT) {
+    const skipped = skippableGpuStepIds(job, await loadRecordingStepFilter(config, event.jobId));
+    if (skipped.length > 0) {
+      await updateCapacityExhaustedTargets(config.jobsTable, event.jobId, [
+        ...(job.capacityExhaustedTargets ?? []),
+        ...skipped,
+      ]);
+      fellBack = true;
       shouldRetry = true;
       console.log(
         JSON.stringify({
-          event: "speedup_fallback",
+          event: "gpu_steps_skipped",
           jobId: event.jobId,
           attempt: event.attempt,
           reason: "gpu_capacity",
-          from,
-          to: fallbackSpeed,
+          skipped,
         }),
       );
     }

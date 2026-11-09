@@ -89,7 +89,9 @@
       },
       {
         "heading": "7. Contact",
-        "paragraphs": ["For inquiries about these Terms, please use the contact information listed on the \"About\" page."]
+        "paragraphs": [
+          "For inquiries about these Terms, please use the contact information listed on the \"About\" page."
+        ]
       }
     ]
   },
@@ -123,26 +125,17 @@
     "watermarkOption": "Add a watermark",
     "watermarkHintLine1": "The \"TouhouSattori\" logo is shown in the bottom-right corner for the first 6 seconds of the video.",
     "watermarkHintLine2": "It also overlaps the first few seconds of the replay itself.",
-    "recordingSpeedOption": "Recording speed",
-    "recordingSpeedValue": "{{speed}}x",
-    "recordingSpeedRecommended": "Recommended",
-    "recordingSpeedEstimate": "~{{minutes}} min",
-    "recordingSpeedHint": "The game runs faster internally while recording, and the video is restored to normal speed afterwards. Faster speeds finish sooner. Times are estimates from the start of recording to completion (excluding any time spent waiting in the queue).",
-    "recordingSpeedSelectReplayFirst": "Select a replay file to choose the recording speed.",
-    "recordingSpeedTooFastWarning": "You selected a recording speed faster than the one recommended for {{title}}. Recording will generally work, but the resulting video may stutter or show slowdown.",
     "th10BugfixMarisaBOption": "Record with Marisa B's shot power fix enabled (BugFixTh10Power3=1)",
     "th10BugfixMarisaBHintLine1": "Marisa B in Mountain of Faith has a known bug where her shot power spikes abnormally under certain conditions (nicknamed \"bug Marisa\"). Only enable this option if you installed VsyncPatch to fix this bug while playing.",
     "th10BugfixMarisaBHintLine2": "Choosing a setting different from how the replay was actually played will make the recording diverge from the original playthrough.",
     "th10BugfixMarisaBUnsupportedGame": "This option is only available for Marisa B replays of Mountain of Faith.",
-    "th06ncHighResolutionOption": "Record Embodiment of Scarlet Devil: New Classic in 1080p",
-    "th06ncHighResolutionHintLine1": "Records at a higher resolution than the default 720p. The resulting video may be slightly choppy.",
-    "th06ncHighResolutionUnsupportedGame": "This option is only available for Embodiment of Scarlet Devil: New Classic replays.",
     "th20NoticeTitle": "About recording replays of this title",
     "th20NoticeDesync": "Fossilized Wonders is prone to replay desync (playback diverging from the run that was recorded), so the video may not match what the replay originally showed. This comes from the replay file and the game itself, so re-recording produces the same result. Also, when a desync happens during recording on TouhouSattori, the recording takes much longer to finish (up to about two hours). Note that players have reported that saving replays while playing with the community patch <0>thprac</0> applied avoids the desync.",
     "submitStarting": "Praying⋯",
     "submit": "Next",
     "termsAgreement": "By continuing, you agree to the <0>Terms of Service</0>.",
-    "replayHelpLink": "Where can I find my replay file?"
+    "replayHelpLink": "Where can I find my replay file?",
+    "estimatedTime": "Estimated time to finish: ~{{minutes}} min (may take longer when busy)"
   },
   "replayHelp": {
     "heading": "Where Touhou Project games save replay files",
@@ -205,7 +198,14 @@
       "done": "Recording complete",
       "failed": "Recording failed"
     },
-    "steps": ["Waiting", "Starting", "Recording", "Converting", "Uploading", "Done"],
+    "steps": [
+      "Waiting",
+      "Starting",
+      "Recording",
+      "Converting",
+      "Uploading",
+      "Done"
+    ],
     "progressAriaLabel": "Recording progress",
     "overallProgressAriaLabel": "Overall progress",
     "previewAlt": "Preview while recording",
@@ -219,9 +219,7 @@
     "desyncWarningDetail": "A replay desync is a phenomenon where the replay's playback diverges from what was originally recorded during gameplay. When it occurs, you may see hits in scenes that shouldn't have been hit, or the replay may end early. Please check the recorded video and make sure no desync has occurred. Note that this comes from the nature of the replay file and the game itself, so re-recording will produce the same result.",
     "timeoutWarning": "Recording was cut off after reaching the time limit without detecting the end of the replay. The final part of the replay may be missing from the video.",
     "timeoutWarningDetail": "Recording normally stops once the end of replay playback is detected, but this job reached the recording time limit before that could happen, so it was cut off partway through. Please check the recorded video to make sure the ending isn't missing. If it is, please try uploading the replay again.",
-    "speedupHint": "Recording at {{speed}}x speed. The finished video plays back at normal speed.",
-    "speedupFallbackHint": "The recording servers were busy, so we switched from {{speed}}x speed to normal-speed recording.",
-    "slowMotionFallbackHint": "The recording servers were busy, so we switched to a slower recording method. It will take longer than usual to finish, and brief frame drops may occur when bombs are used or spell cards end.",
+    "recordingSpeedHint": "Recording at {{speed}}x speed. The finished video plays back at normal speed.",
     "genericError": "A problem occurred while recording. Please try again.",
     "previewVideoLabel": "Preview of the recorded video",
     "download": "Download video",

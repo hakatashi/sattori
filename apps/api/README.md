@@ -59,7 +59,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    条件不成立（既に起動済み）なら `JobAlreadyStartedError` を捕まえて現在の状態を
    冪等に返すだけで、Step Functionsは再起動しない。
 2. **`sfn/acquireGpuSlot.ts`**（GPU vCPU容量リース、Issue #270）が最初に呼ばれる。
-   GPU必須のジョブ（th06nc・th15・th20と倍速録画、`requiresGpuRecording(job)`）のみ`GpuSlotsTable`でvCPU容量を会計し、
+   次に試す録画の段（`currentRecordingStep(job)`、§4）がGPUのジョブだけ`GpuSlotsTable`でvCPU容量を会計し、
    空きが無ければ`WaitForGpuSlot`（アダプティブな間隔）を挟んで自分自身へ戻る
    ループを回す。投入順（FIFO）は`JobsTable`のsparse GSI`GpuQueueIndex`
    （PK=`gpuQueueState`, SK=`gpuQueuedAt`）で守り、列の先頭でなければ枠取りを
@@ -67,19 +67,19 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    した待機者は先頭判定から除外する（head-of-line blocking対策）。非GPUジョブは
    `GpuSlotsTable`にも`gpuQueue*`属性にも一切触れず即座に通過する。詳細・設計根拠は
    [`0056`](../../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
-   速度を落とせるジョブ（`fallbackRecordingSpeedFor()`: 倍速録画は等倍、th15・th20はCPU低速）は、30分以上待ったら
-   `options.recordingSpeed`を書き換えて（`jobs.ts`の`fallBackRecordingSpeed()`）待機列を抜け、CPUのジョブとして
-   `Launch`へ進む。GPUの段を使い切った`Launch`と、クォータ超過などが3回目以降まで続いた`HandleFailure`も同様
-   （[`0060`](../../docs/decisions/0060-speedup-fallback-to-native-speed.md)・[`0064`](../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
+   GPU以外の段を持つジョブ（`skippableGpuStepIds()`）は、30分以上待ったらGPUの段を使い切ったものとして
+   `capacityExhaustedTargets`へ記録して待機列を抜け、`Launch`へ進む。クォータ超過などが3回目以降まで続いた
+   `HandleFailure`も同様（[`0066`](../../docs/decisions/0066-recording-fallback-plan-as-config.md)）。
 3. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト150分・ハートビート
-   タイムアウト15分）がワーカーを1台**割り当て**る。割り当て先は自宅ワーカー
-   （Issue #49、§3）かEC2 Fleetのどちらかで、EC2の場合は
+   タイムアウト15分）がワーカーを1台**割り当て**る。割り当て先はタイトルごとの録画の段（§4）を
+   先頭から試して決め、段ごとにその段の速度を`options.recordingSpeed`へ書いてから（`setRecordingStep()`）
+   ワーカーの環境変数を作る。自宅ワーカーの段（§3）ならオファー、EC2の段なら
    `launchRecordingInstance()`（`ec2.ts`）でSpotインスタンスを1台起動し、ジョブを
    `launching` に更新する（自宅ワーカーの場合は**claimと同じ条件付き更新の中で
    デーモンが**`launching`にする。理由は
    [`0034`](../../docs/decisions/0034-launch-handlefailure-timing.md)）。GPUジョブは
    直前に確保したリースのvCPU量で候補インスタンスタイプを絞り
-   （`getCandidateInstanceTypes(job, { maxVcpu })`）、実際に確保できたタイプに
+   （`getCandidateInstanceTypes(step, { maxVcpu })`）、実際に確保できたタイプに
    合わせてリースを縮小する。**このハンドラの戻り値はStep Functionsの実行結果に
    影響しない** — 成功/失敗の確定はワーカー自身が`taskToken`経由で
    `SendTaskSuccess`/`SendTaskFailure`を呼ぶことで行う。成功時は
@@ -116,11 +116,11 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 
 `Launch` が行うこと:
 
-1. `routingPolicyFor(job)`（`workerRouting.ts`）でこのジョブの方針を決める。
-   タイトルごとに「オファーするか」「要求する追加能力」「待機秒数」を変えられる
-   （方針の中身と理由は`0018`）。
+1. オファーするのは、タイトルの録画の段（§4）に自宅ワーカーの段（`kind: "home"`）があり、
+   そこまで段が進んだときだけ。待機秒数などの方針は`HOME_WORKER_ROUTING_POLICY`（`workerRouting.ts`、
+   方針の中身と理由は`0018`）。
 2. `WorkersTable` のハートビート（`selectHomeWorker()`）を見て、引き受けられる
-   ワーカーがいるか判定する。**いなければ何もせず即EC2を起動する**。
+   ワーカーがいるか判定する。**いなければ何もせず（段も書かず）即次の段へ進む**。
 3. いれば `offerJobToHomeWorker()` でジョブレコードにオファーを書く。オファーには
    ワーカーコンテナへ渡す環境変数一式（`workerEnv.ts`、taskTokenを含む）を添える
    ので、デーモンはそれをそのまま`docker run`へ渡すだけでよい。オファーは
@@ -129,8 +129,8 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    `status: "launching"`も確定する）。書き込み自体が条件チェックで失敗した場合の
    扱いは `handleOfferConflict()`（判別根拠は `0018`）。
 4. `offerWindowSeconds`（既定20秒、上限`MAX_OFFER_WINDOW_SECONDS`）待って
-   claimされなければ `withdrawHomeWorkerOffer()` で**条件付きに**撤回し、EC2へ
-   フォールバックする。撤回が条件チェックで失敗した（＝待機中にclaimされた）場合は
+   claimされなければ `withdrawHomeWorkerOffer()` で**条件付きに**撤回し、次の段（EC2）へ
+   進む。撤回が条件チェックで失敗した（＝待機中にclaimされた）場合は
    EC2を起動しない。
 
 `assignedWorkerId` が「誰がこのジョブのtaskTokenを持っているか」の唯一の真実で、
@@ -138,14 +138,19 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 `sfn/handleFailure.ts` と `admin/stopJob.ts` の2箇所で、後者は取り消しが同期的でない
 ことに備えて先に`stopRequestedAt`を立てる（`markJobStopRequested()`。`0018`）。
 
-## 4. EC2 Fleet インスタンスタイプの分散配置（`ec2.ts`, Issue #29）
+## 4. 録画の段とEC2 Fleetの起動（`recordingPlan.ts` / `ec2.ts`, Issue #29・#315・#317）
 
-サブネット（=AZ）×候補インスタンスタイプの全組み合わせを`CreateFleet`へ渡し、
-`price-capacity-optimized`で配置する。候補はジョブ（タイトル・録画速度）ごとに違い、
-`requiresGpuRecording()`がtrueのジョブはGPU用のLaunch Template・別ECRイメージを使う。
-起動手段は順序付きの段（`launchTiersFor()`）で、Spot在庫の枯渇なら次の段・GPUの
-フォールバック先リージョン（eu-north-1）へ進む。**候補タイプの一覧・GPU系の別系統・
-段とリージョンのフォールバック・コスト推定用の記録は
+**どこで・どの速度で録るかは、タイトルごとの録画の段の配列（`packages/shared/src/recordingPlan.ts`の
+`RECORDING_PLANS`）が決める**。各段は自宅ワーカーか、EC2（GPU/CPU・リージョン・候補インスタンスタイプ・速度）。
+`Launch`は先頭から試し、Spot在庫の枯渇なら段を`capacityExhaustedTargets`へ記録して同じ呼び出しの中で次の段へ
+進む。全段を使い切ったら`capacity_exhausted`で失敗させる。**フォールバックを変えるときは配列だけを書き換え、
+ここに段やタイトルの分岐を書かないこと**（[`0066`](../../docs/decisions/0066-recording-fallback-plan-as-config.md)）。
+検証用の管理設定（`skipGpuSteps`・`forceGpuFallbackRegion`）は段の除外として読む（`recordingSteps.ts`）。
+
+EC2の段は`launchTierFor()`がLaunch Template・サブネット・ワーカーイメージへ解決し、サブネット（=AZ）×
+候補インスタンスタイプの全組み合わせを`CreateFleet`へ渡して`price-capacity-optimized`で配置する。GPUの段は
+GPU用のLaunch Template・別ECRイメージを使い、フォールバック先リージョン（eu-north-1）の段はそのリージョンの
+固定名テンプレートを使う。**候補タイプの一覧・GPU系の別系統・リージョンのフォールバック・コスト推定用の記録は
 [`docs/ec2-launch.md`](docs/ec2-launch.md) §1**。
 
 > **候補を足す・変える前に

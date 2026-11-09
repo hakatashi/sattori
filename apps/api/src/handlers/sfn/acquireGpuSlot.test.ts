@@ -36,7 +36,12 @@ const REQUIRED_ENV: Record<string, string> = {
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
-const cpuJob: JobRecord = createJobRecord({ game: "th07", status: "queued" });
+/** GPUの段を使い切ったth07（次は自宅ワーカー→CPUの段、Issue #317）。 */
+const cpuJob: JobRecord = createJobRecord({
+  game: "th07",
+  status: "queued",
+  capacityExhaustedTargets: ["gpu:eu-south-2", "gpu:eu-north-1"],
+});
 const gpuJob: JobRecord = createJobRecord({ game: "th15", status: "queued", jobId: "job-1" });
 
 /**
@@ -66,10 +71,12 @@ beforeEach(() => {
   ddbMock.reset();
   // markGpuQueueWaiting: 既定で成功、初回想定でgpuQueueEnteredAt=呼び出し時刻を返す。
   ddbMock.on(UpdateCommand).resolves({ Attributes: {} });
+  // 管理設定（段の除外、Issue #317）は既定値。個々のテストの`GetCommand`より優先される。
+  ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.SETTINGS_TABLE }).resolves({});
 });
 
 describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
-  it("非GPUジョブはJobsTableのgpuQueue*属性にもGpuSlotsTableにも一切触れず即座にacquired:trueを返す", async () => {
+  it("次の段がGPUでないジョブはJobsTableのgpuQueue*属性にもGpuSlotsTableにも一切触れず即座にacquired:trueを返す", async () => {
     ddbMock.on(GetCommand).resolves({ Item: cpuJob });
 
     const { handler } = await import("./acquireGpuSlot.js");
@@ -322,12 +329,27 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
     expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(0);
   });
 
-  describe("倍速録画の等倍フォールバック(Issue #289)", () => {
+  it("管理設定skipGpuStepsならGPUの段から始まるジョブも待機列に入れない（Issue #316・#317）", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: gpuJob });
+    ddbMock
+      .on(GetCommand, { TableName: REQUIRED_ENV.SETTINGS_TABLE })
+      .resolves({ Item: { settingKey: "global", skipGpuSteps: true } });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(result.acquired).toBe(true);
+    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);
+    expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(0);
+  });
+
+  describe("GPUの段の長時間待ち(Issue #289・#317)", () => {
     const speedupJob: JobRecord = createJobRecord({
       game: "th07",
       status: "queued",
       jobId: "job-1",
-      options: { ...cpuJob.options, recordingSpeed: 2 },
+      options: { ...cpuJob.options, recordingSpeed: 3 },
     });
 
     /** 待機開始から`minutes`分経過した状態にする(markGpuQueueWaitingの戻り値)。 */
@@ -339,10 +361,10 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
     function fallbackUpdates() {
       return ddbMock
         .commandCalls(UpdateCommand)
-        .filter((call) => String(call.args[0].input.UpdateExpression).includes("requestedRecordingSpeed"));
+        .filter((call) => String(call.args[0].input.UpdateExpression).includes("capacityExhaustedTargets"));
     }
 
-    it("30分以上待った倍速録画ジョブは等倍へ書き換え、待機列から外してacquired:trueを返す", async () => {
+    it("30分以上待ったらGPUの段を使い切ったものとして記録し、待機列から外してacquired:trueを返す", async () => {
       ddbMock.on(GetCommand).resolves({ Item: speedupJob });
       waitedFor(31);
       ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
@@ -355,11 +377,10 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
 
       expect(result).toEqual({ jobId: "job-1", attempt: 1, acquired: true, timedOut: false, waitSeconds: 0 });
       expect(fallbackUpdates()).toHaveLength(1);
-      expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
-        ":to": 1,
-        ":from": 2,
-        ":reason": "gpu_queue_wait",
-      });
+      expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues?.[":targets"]).toEqual([
+        "gpu:eu-south-2",
+        "gpu:eu-north-1",
+      ]);
       // FIFOの基準(gpuQueuedAt)も含めて待機列から完全に外す。
       const removeUpdate = ddbMock
         .commandCalls(UpdateCommand)
@@ -415,7 +436,7 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       expect(fallbackUpdates()).toHaveLength(0);
     });
 
-    it("th15は30分以上待ったらCPU低速録画へ書き換える（Issue #316）", async () => {
+    it("th15も30分以上待ったらGPUの段を飛ばす（次はCPU低速録画の段、Issue #316）", async () => {
       ddbMock.on(GetCommand).resolves({ Item: { ...gpuJob, game: "th15" } });
       waitedFor(31);
       ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
@@ -427,12 +448,10 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       const result = await handler({ jobId: "job-1", attempt: 1 });
 
       expect(result.acquired).toBe(true);
-      expect(fallbackUpdates()[0]?.args[0].input.ExpressionAttributeValues).toMatchObject({
-        ":to": 1 / 2,
-      });
+      expect(fallbackUpdates()).toHaveLength(1);
     });
 
-    it("th06ncの倍速録画はフォールバックしない(等倍でもGPUが要る)", async () => {
+    it("th06ncはGPU以外の段が無いので飛ばさず待つ", async () => {
       ddbMock.on(GetCommand).resolves({
         Item: { ...gpuJob, game: "th06nc", options: { ...gpuJob.options, recordingSpeed: 2 } },
       });
@@ -447,25 +466,6 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
 
       expect(result.acquired).toBe(false);
       expect(fallbackUpdates()).toHaveLength(0);
-    });
-
-    it("フォールバックの条件付き更新が弾かれたら(停止済み等)通常どおり待機する", async () => {
-      ddbMock.on(GetCommand).resolves({ Item: speedupJob });
-      const enteredAt = new Date(Date.now() - 31 * 60 * 1000).toISOString();
-      ddbMock.on(UpdateCommand).resolves({ Attributes: { gpuQueueEnteredAt: enteredAt } });
-      ddbMock
-        .on(UpdateCommand, { ExpressionAttributeValues: { ":reason": "gpu_queue_wait" } }, false)
-        .rejects(new ConditionalCheckFailedException({ message: "conditional", $metadata: {} }));
-      ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
-        Items: [waitingEntry("job-0", -60), waitingEntry("job-1", 0)],
-      });
-      ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({ Items: [] });
-
-      const { handler } = await import("./acquireGpuSlot.js");
-      const result = await handler({ jobId: "job-1", attempt: 1 });
-
-      expect(result.acquired).toBe(false);
-      expect(result.timedOut).toBe(false);
     });
   });
 

@@ -11,14 +11,16 @@
  *   が閾値に達したら新規受付を止める。今後、自宅サーバーを追加録画ワーカーとして
  *   導入する構想（Issue #49）でジョブ単価が一様でなくなる見込みのため、回数ではなく
  *   金額で制御する。
- * - `forceGpuFallbackRegion`: GPUジョブを一次リージョン（eu-south-2）を飛ばして
- *   フォールバックリージョン（eu-north-1）で起動させる検証用の上書き（Issue #296）。
- *   通常は false で、GPUジョブは一次リージョンの容量不足時にだけフォールバックする。
+ * - `forceGpuFallbackRegion`: 一次リージョン（eu-south-2）のGPUの段を飛ばし、フォールバック
+ *   リージョン（eu-north-1）のGPUの段から試させる検証用の上書き（Issue #296）。
+ *   通常は false で、GPUの段は一次リージョンの容量不足時にだけフォールバックする。
  *   フォールバック先での実機検証（AGENTS.md §3）を本番で確実に行うためのもので、
  *   検証が終わったら必ず false へ戻すこと（`docs/decisions/0061`）。
- * - `skipFractionalGpuTiers`: GPUジョブの`g6f.2xlarge`の段を飛ばす検証用の上書き（Issue #316）。
- *   th06ncは`g6.2xlarge`で起動し、それ以外は容量不足のときと同じく速度を落としてCPUで録る。
- *   検証が終わったら必ず false へ戻すこと（`docs/decisions/0064`）。
+ * - `skipGpuSteps`: 録画の段（`recordingPlan.ts`）のうちGPUの段をすべて飛ばす検証用の上書き
+ *   （Issue #316・#317）。GPU以外の段（自宅ワーカー・CPU）を本番で確実に試すためのもので、
+ *   GPU以外の段を持たないタイトルは全段を使い切った扱いで失敗する。検証が終わったら必ず false へ
+ *   戻すこと（`docs/decisions/0066`）。旧名`skipFractionalGpuTiers`（`g6f.2xlarge`の段だけを
+ *   飛ばした）の値も読む（`apps/api/src/settings.ts`）。
  */
 
 /** `monthlyCostLimitUsd`の既定値（USD）。当面の目安として設定した金額。 */
@@ -29,7 +31,7 @@ export interface AdminSettings {
   acceptingNewJobs: boolean;
   monthlyCostLimitUsd: number;
   forceGpuFallbackRegion: boolean;
-  skipFractionalGpuTiers: boolean;
+  skipGpuSteps: boolean;
 }
 
 /** POST /admin/settings のリクエストボディ。指定したフィールドだけを更新する。 */
@@ -37,7 +39,7 @@ export interface UpdateAdminSettingsRequest {
   acceptingNewJobs?: boolean;
   monthlyCostLimitUsd?: number;
   forceGpuFallbackRegion?: boolean;
-  skipFractionalGpuTiers?: boolean;
+  skipGpuSteps?: boolean;
 }
 
 /**

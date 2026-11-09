@@ -326,59 +326,31 @@ describe("POST /magic-links", () => {
     expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
   });
 
-  it("recordingSpeed を1〜4に正規化して保存する(Issue #288)", async () => {
-    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
-    const { handler } = await import("./requestMagicLink.js");
-    await handler(
-      makeEvent({
-        replayKey: VALID_REPLAY_KEY,
-        options: { watermark: true, recordingSpeed: 3 },
-        email: "user@example.com",
-      }),
-      {} as never,
-      () => {},
-    );
-    const jobPut = ddbMock
-      .commandCalls(PutCommand)
-      .find((call) => call.args[0].input.Item?.status === "pending");
-    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ recordingSpeed: 3 });
-  });
-
-  it("低速の recordingSpeed は受け付けず等倍に落とす(Issue #316)", async () => {
-    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
-    const { handler } = await import("./requestMagicLink.js");
-    await handler(
-      makeEvent({
-        replayKey: VALID_REPLAY_KEY,
-        options: { watermark: true, recordingSpeed: 1 / 2 } as never,
-        email: "user@example.com",
-      }),
-      {} as never,
-      () => {},
-    );
-    const jobPut = ddbMock
-      .commandCalls(PutCommand)
-      .find((call) => call.args[0].input.Item?.status === "pending");
-    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ recordingSpeed: 1 });
-  });
-
-  it("不正な recordingSpeed は等倍に落とす", async () => {
-    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
-    const { handler } = await import("./requestMagicLink.js");
-    await handler(
-      makeEvent({
-        replayKey: VALID_REPLAY_KEY,
-        options: { watermark: true, recordingSpeed: 8 } as never,
-        email: "user@example.com",
-      }),
-      {} as never,
-      () => {},
-    );
-    const jobPut = ddbMock
-      .commandCalls(PutCommand)
-      .find((call) => call.args[0].input.Item?.status === "pending");
-    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ recordingSpeed: 1 });
-  });
+  it.each([1, 4, 1 / 2, 8])(
+    "送られてきた recordingSpeed(%s) は無視し、最初の段の速度を入れる(Issue #317)",
+    async (requested) => {
+      mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
+      const { handler } = await import("./requestMagicLink.js");
+      await handler(
+        makeEvent({
+          replayKey: VALID_REPLAY_KEY,
+          options: { watermark: true, recordingSpeed: requested, th06ncHighResolution: true } as never,
+          email: "user@example.com",
+        }),
+        {} as never,
+        () => {},
+      );
+      const jobPut = ddbMock
+        .commandCalls(PutCommand)
+        .find((call) => call.args[0].input.Item?.status === "pending");
+      // th07の最初の段はGPUの3倍速（`recordingPlan.ts`）。古いフロントエンドのキャッシュが送る
+      // 1080pの指定も無視する。
+      expect(jobPut?.args[0].input.Item?.options).toMatchObject({
+        recordingSpeed: 3,
+        th06ncHighResolution: false,
+      });
+    },
+  );
 
   it("th10かつ魔理沙Bの.rpyなら options.th10BugfixMarisaB をそのまま保存する(Issue #75)", async () => {
     mockUploadedReplay(new Uint8Array(await readFile(TH10_MARISA_B_FIXTURE)));

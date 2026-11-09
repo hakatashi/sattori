@@ -377,7 +377,7 @@ describe("GET /jobs/{jobId}", () => {
     expect(parseBody(legacy as APIGatewayProxyStructuredResultV2).recordingSpeed).toBe(1);
   });
 
-  it("等倍へフォールバックしたジョブは元の速度を requestedRecordingSpeed で返す(Issue #289)", async () => {
+  it("旧レコードのフォールバックの記録は返さず、実際の速度だけを返す(Issue #317)", async () => {
     ddbMock.on(GetCommand).resolves({
       Item: {
         ...doneJob,
@@ -391,13 +391,13 @@ describe("GET /jobs/{jobId}", () => {
       (await handler(makeEvent("job-1"), {} as never, () => {})) as APIGatewayProxyStructuredResultV2,
     );
     expect(body.recordingSpeed).toBe(1);
-    expect(body.requestedRecordingSpeed).toBe(2);
+    expect(body).not.toHaveProperty("requestedRecordingSpeed");
 
     ddbMock.on(GetCommand).resolves({ Item: doneJob });
     const plain = parseBody(
       (await handler(makeEvent("job-1"), {} as never, () => {})) as APIGatewayProxyStructuredResultV2,
     );
-    expect(plain.requestedRecordingSpeed).toBeNull();
+    expect(plain).not.toHaveProperty("requestedRecordingSpeed");
   });
 
 

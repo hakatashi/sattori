@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { WorkerHeartbeat } from "@sattori/shared";
+import { LAUNCH_LAMBDA_TIMEOUT_SECONDS, WORKER_HEARTBEAT_FRESH_SECONDS } from "@sattori/shared";
 import {
-  DEFAULT_RECORDING_OPTIONS,
-  LAUNCH_LAMBDA_TIMEOUT_SECONDS,
-  WORKER_HEARTBEAT_FRESH_SECONDS,
-} from "@sattori/shared";
-import {
-  DEFAULT_ROUTING_POLICY,
-  EC2_ONLY_ROUTING_POLICY,
+  HOME_WORKER_ROUTING_POLICY,
   isWorkerEligible,
   MAX_OFFER_WINDOW_SECONDS,
-  routingPolicyFor,
   selectHomeWorker,
 } from "./workerRouting.js";
 
@@ -34,27 +28,11 @@ function heartbeat(overrides: Partial<WorkerHeartbeat> = {}): WorkerHeartbeat {
   };
 }
 
-describe("routingPolicyFor", () => {
-  it("タイトル固有の指定が無ければ既定の方針を返す", () => {
-    expect(routingPolicyFor(JOB)).toEqual(DEFAULT_ROUTING_POLICY);
-  });
-
-  it("GPU必須タイトル(th06nc・th15・th20)は自宅ワーカーへオファーしない", () => {
-    for (const game of ["th06nc", "th15", "th20"] as const) {
-      expect(routingPolicyFor({ game, options: JOB.options })).toEqual(EC2_ONLY_ROUTING_POLICY);
-    }
-  });
-
-  it("低速録画(Issue #316)は自宅ワーカーへオファーしない(#179が未解決)", () => {
-    for (const recordingSpeed of [1 / 2, 1 / 3] as const) {
-      expect(
-        routingPolicyFor({ game: "th20", options: { ...JOB.options, recordingSpeed } }),
-      ).toEqual(EC2_ONLY_ROUTING_POLICY);
-    }
-  });
-
+// どのジョブを自宅ワーカーへオファーするかは録画の段（`recordingPlan.ts`、Issue #317）が決める
+// （`packages/shared/src/recordingPlan.test.ts`の`HOME_WORKER_GAME_IDS`）。
+describe("HOME_WORKER_ROUTING_POLICY", () => {
   it("オファー待機は自宅デーモンのポーリング間隔より十分長い", () => {
-    expect(DEFAULT_ROUTING_POLICY.offerWindowSeconds).toBeGreaterThanOrEqual(10);
+    expect(HOME_WORKER_ROUTING_POLICY.offerWindowSeconds).toBeGreaterThanOrEqual(10);
   });
 
   it("オファー待機はLaunch Lambdaのタイムアウトに収まる", () => {
@@ -64,14 +42,12 @@ describe("routingPolicyFor", () => {
     // 待機を伸ばすときは、この上限の元である`LAUNCH_LAMBDA_TIMEOUT_SECONDS`（CDKが使う値）も
     // 併せて上げること。
     expect(MAX_OFFER_WINDOW_SECONDS).toBeLessThan(LAUNCH_LAMBDA_TIMEOUT_SECONDS);
-    for (const policy of [DEFAULT_ROUTING_POLICY, EC2_ONLY_ROUTING_POLICY]) {
-      expect(policy.offerWindowSeconds).toBeLessThanOrEqual(MAX_OFFER_WINDOW_SECONDS);
-    }
+    expect(HOME_WORKER_ROUTING_POLICY.offerWindowSeconds).toBeLessThanOrEqual(MAX_OFFER_WINDOW_SECONDS);
   });
 });
 
 describe("isWorkerEligible", () => {
-  const policy = DEFAULT_ROUTING_POLICY;
+  const policy = HOME_WORKER_ROUTING_POLICY;
 
   it("空きがあり対応タイトルなら引き受けられる", () => {
     expect(isWorkerEligible(heartbeat(), JOB, policy, NOW)).toBe(true);
@@ -102,20 +78,20 @@ describe("isWorkerEligible", () => {
 
 describe("selectHomeWorker", () => {
   it("方針がオファーしない場合は常にnull", () => {
-    const policy = { ...DEFAULT_ROUTING_POLICY, offerToHomeWorker: false };
+    const policy = { ...HOME_WORKER_ROUTING_POLICY, offerToHomeWorker: false };
     expect(selectHomeWorker([heartbeat()], JOB, policy, NOW)).toBeNull();
   });
 
   it("引き受けられるワーカーが1台も無ければnull(=即EC2)", () => {
     expect(
-      selectHomeWorker([heartbeat({ accepting: false })], JOB, DEFAULT_ROUTING_POLICY, NOW),
+      selectHomeWorker([heartbeat({ accepting: false })], JOB, HOME_WORKER_ROUTING_POLICY, NOW),
     ).toBeNull();
   });
 
   it("空きスロットが最も多いワーカーを選ぶ", () => {
     const busy = heartbeat({ workerId: "home-1", activeJobs: 3 });
     const idle = heartbeat({ workerId: "home-2", activeJobs: 1 });
-    expect(selectHomeWorker([busy, idle], JOB, DEFAULT_ROUTING_POLICY, NOW)?.workerId).toBe(
+    expect(selectHomeWorker([busy, idle], JOB, HOME_WORKER_ROUTING_POLICY, NOW)?.workerId).toBe(
       "home-2",
     );
   });
@@ -123,40 +99,6 @@ describe("selectHomeWorker", () => {
   it("空きが同数ならworkerIdで安定して選ぶ", () => {
     const a = heartbeat({ workerId: "home-b" });
     const b = heartbeat({ workerId: "home-a" });
-    expect(selectHomeWorker([a, b], JOB, DEFAULT_ROUTING_POLICY, NOW)?.workerId).toBe("home-a");
-  });
-
-  it("th06nc(GPU専用タイトル)は自宅ワーカーの空き・宣言に関わらず常にnull（Issue #241）", () => {
-    const job = { game: "th06nc" as const, options: JOB.options };
-    const policy = routingPolicyFor(job);
-    expect(policy.offerToHomeWorker).toBe(false);
-    // supportedGamesにth06ncを明示的に持つ(≒GPUを積んだ自宅マシンを自称する)
-    // ワーカーがいても、方針自体がオファーしないため常にnull。
-    const worker = heartbeat({ supportedGames: ["th06nc"] });
-    expect(selectHomeWorker([worker], job, policy, NOW)).toBeNull();
-  });
-
-  it("倍速録画のジョブは自宅ワーカーが対応するタイトルでもオファーしない（Issue #288）", () => {
-    const job = { game: "th10" as const, options: { ...DEFAULT_RECORDING_OPTIONS, recordingSpeed: 2 as const } };
-    const policy = routingPolicyFor(job);
-    expect(policy.offerToHomeWorker).toBe(false);
-    const worker = heartbeat({ supportedGames: ["th10"] });
-    expect(selectHomeWorker([worker], job, policy, NOW)).toBeNull();
-  });
-
-  it("等倍録画は従来どおり自宅ワーカーへオファーしうる", () => {
-    const job = { game: "th10" as const, options: { ...DEFAULT_RECORDING_OPTIONS, recordingSpeed: 1 as const } };
-    const policy = routingPolicyFor(job);
-    expect(policy.offerToHomeWorker).toBe(true);
-    const worker = heartbeat({ supportedGames: ["th10"] });
-    expect(selectHomeWorker([worker], job, policy, NOW)).not.toBeNull();
-  });
-
-  it("th15・th20(GPU専用タイトル)も自宅ワーカーの空き・宣言に関わらず常にnull（Issue #82・#288）", () => {
-    for (const game of ["th15", "th20"] as const) {
-      const job = { game, options: JOB.options };
-      const worker = heartbeat({ supportedGames: [game] });
-      expect(selectHomeWorker([worker], job, routingPolicyFor(job), NOW)).toBeNull();
-    }
+    expect(selectHomeWorker([a, b], JOB, HOME_WORKER_ROUTING_POLICY, NOW)?.workerId).toBe("home-a");
   });
 });

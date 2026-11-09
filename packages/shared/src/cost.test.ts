@@ -163,14 +163,9 @@ describe("estimateJobCost", () => {
     expect(estimate.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpuFull);
   });
 
-  it("インスタンスタイプ未記録の低速録画は.4xlarge帯で推定する（Issue #316）", () => {
+  it("インスタンスタイプ未記録なら最後の段（recordingStepId）の帯で推定する（Issue #316・#317）", () => {
     const estimate = estimateJobCost(
-      makeJob({
-        game: "th20",
-        spotPricePerHour: null,
-        instanceType: null,
-        options: { recordingSpeed: 1 / 2 },
-      }),
+      makeJob({ game: "th20", spotPricePerHour: null, instanceType: null, recordingStepId: "cpu:eu-south-2" }),
       new Date("2026-08-02T00:00:00.000Z"),
     );
     expect(estimate.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
@@ -194,63 +189,31 @@ describe("estimateJobCost", () => {
     expect(estimate2xlarge.spotPricePerHour).not.toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
   });
 
-  it("インスタンスタイプが不明な倍速録画ジョブはタイトルによらずGPU帯（Issue #288）", () => {
-    const th07Speedup = estimateJobCost(
-      makeJob({
-        spotPricePerHour: null,
-        instanceType: null,
-        game: "th07",
-        options: { recordingSpeed: 3 },
-      }),
-      new Date("2026-08-02T00:00:00.000Z"),
-    );
-    const th20Native = estimateJobCost(
-      makeJob({ spotPricePerHour: null, instanceType: null, game: "th20", options: { recordingSpeed: 1 } }),
-      new Date("2026-08-02T00:00:00.000Z"),
-    );
+  it("インスタンスタイプも段の記録も無ければ、次に試す段の帯で推定する（Issue #317）", () => {
+    const at = new Date("2026-08-02T00:00:00.000Z");
+    const gpuExhausted = ["gpu:eu-south-2", "gpu:eu-north-1"];
+    const estimate = (overrides: Partial<JobCostInput>) =>
+      estimateJobCost(makeJob({ spotPricePerHour: null, instanceType: null, ...overrides }), at);
 
-    expect(th07Speedup.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
-    expect(th20Native.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
-  });
-
-  it("インスタンスタイプも不明ならゲームからサイズ帯を推定する（th11・th12は.2xlarge帯）", () => {
-    const th11 = estimateJobCost(
-      makeJob({ spotPricePerHour: null, instanceType: null, game: "th11" }),
-      new Date("2026-08-02T00:00:00.000Z"),
-    );
-    const th12 = estimateJobCost(
-      makeJob({ spotPricePerHour: null, instanceType: null, game: "th12" }),
-      new Date("2026-08-02T00:00:00.000Z"),
-    );
-    const th07 = estimateJobCost(
-      makeJob({ spotPricePerHour: null, instanceType: null, game: "th07" }),
-      new Date("2026-08-02T00:00:00.000Z"),
-    );
-
-    const th20 = estimateJobCost(
-      makeJob({ spotPricePerHour: null, instanceType: null, game: "th20" }),
-      new Date("2026-08-02T00:00:00.000Z"),
-    );
-    const th06nc = estimateJobCost(
-      makeJob({ spotPricePerHour: null, instanceType: null, game: "th06nc" }),
-      new Date("2026-08-02T00:00:00.000Z"),
-    );
-    const th15 = estimateJobCost(
-      makeJob({ spotPricePerHour: null, instanceType: null, game: "th15" }),
-      new Date("2026-08-02T00:00:00.000Z"),
-    );
-
-    expect(th11.spotPriceSource).toBe("fallback-game");
-    expect(th11.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
-    expect(th12.spotPriceSource).toBe("fallback-game");
-    expect(th12.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
-    expect(th07.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.xlarge);
     // `launching`（インスタンスタイプ記録前）や管理画面からの再実行で通る経路。
-    expect(th20.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
-    expect(th06nc.spotPriceSource).toBe("fallback-game");
-    expect(th06nc.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
-    expect(th15.spotPriceSource).toBe("fallback-game");
-    expect(th15.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
+    // 最初の段はどのタイトルもGPU。
+    for (const game of ["th07", "th11", "th20", "th06nc", "th15"] as const) {
+      expect(estimate({ game }).spotPriceSource, game).toBe("fallback-game");
+      expect(estimate({ game }).spotPricePerHour, game).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
+    }
+    // GPUの段を使い切った後。自宅ワーカーの段の次のCPUの段で見積もる。
+    expect(estimate({ game: "th07", capacityExhaustedTargets: gpuExhausted }).spotPricePerHour).toBe(
+      FALLBACK_SPOT_PRICE_USD_PER_HOUR.xlarge,
+    );
+    expect(estimate({ game: "th11", capacityExhaustedTargets: gpuExhausted }).spotPricePerHour).toBe(
+      FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"],
+    );
+    expect(estimate({ game: "th12", capacityExhaustedTargets: gpuExhausted }).spotPricePerHour).toBe(
+      FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"],
+    );
+    expect(estimate({ game: "th20", capacityExhaustedTargets: gpuExhausted }).spotPricePerHour).toBe(
+      FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"],
+    );
   });
 
   it("配信量は720p版1回ぶん、保管量は両方の合計とする", () => {

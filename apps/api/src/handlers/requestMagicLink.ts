@@ -5,9 +5,8 @@ import {
   EMAIL_PATTERN,
   isSupportedGame,
   isSupportedLanguage,
-  normalizeRequestedRecordingSpeed,
+  initialRecordingSpeed,
   parseReplayInfo,
-  supportsHighResolutionRecording,
   supportsTh10BugfixMarisaB,
   type GameId,
   type JobRecord,
@@ -153,13 +152,10 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   }
   const estimatedDurationSeconds = replayInfo?.estimatedDurationSeconds ?? null;
 
-  // 録画速度（Issue #288、倍速録画）。1〜4以外（未指定・不正値・低速）は等倍に落とす。
-  // **全タイトルで受け付ける**——UIに出すタイトルは段階的に広げる（`apps/web`側の定数）が、
-  // 公開前のタイトルも本番で直接APIを叩いてE2E検証できるようにするため
-  // （`verify-recording-in-production` skill）。倍速録画はGPUインスタンスで必ず実行される
-  // （`requiresGpuRecording()`）ので、「対応していないのに後処理だけ
-  // 等倍化されて速度の狂った動画ができる」ことは起きない。
-  const recordingSpeed = normalizeRequestedRecordingSpeed(body.options.recordingSpeed);
+  // 録画速度はユーザーが選ばない（Issue #317）。最初の段（`recordingPlan.ts`）の速度を入れておき、
+  // 実際に割り当てた段の速度は`Launch`が書き直す。古いフロントエンドのキャッシュが
+  // `options.recordingSpeed`を送ってきても拒否せず無視する。
+  const recordingSpeed = initialRecordingSpeed({ game, replayInfo });
 
   const now = new Date();
   const jobId = randomUUID();
@@ -178,10 +174,9 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       th10BugfixMarisaB:
         body.options.th10BugfixMarisaB === true &&
         supportsTh10BugfixMarisaB(game, replayInfo?.character ?? null),
-      // 1080p録画オプション（Issue #241）。ここも上と同じ理由でサーバー側の再パース
-      // 結果（`game`）に基づいて握り潰す——非対応タイトルでtrueを指定されても無視する。
-      th06ncHighResolution:
-        body.options.th06ncHighResolution === true && supportsHighResolutionRecording(game),
+      // th06ncの1080p録画（Issue #241）は廃止した（Issue #317、`docs/decisions/0066`）。古い
+      // フロントエンドのキャッシュがtrueを送ってきても無視する。
+      th06ncHighResolution: false,
       recordingSpeed,
     },
     outputPath: null,

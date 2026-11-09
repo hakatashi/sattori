@@ -64,16 +64,17 @@ eu-south-2のSpot枯渇時に`eu-north-1`で起動する**（`AWS_REGION`はeu-s
   **進捗はポーリング**（[`decisions/0006`](docs/decisions/0006-progress-polling-not-websocket.md)）。
 - **配信は必ず CloudFront 経由**（S3 直リンク禁止）。永年無料枠で egress を実質ゼロにできる。
 - **録画ワーカーは EC2 Fleet と自宅サーバーの2種類あり、どちらも同じ ECR イメージ・同じ taskToken
-  契約で動く**（Issue #49。GPU必須のジョブと低速録画は自宅へ来ず、別ECRイメージ・別インスタンスタイプを使う、
+  契約で動く**（Issue #49。自宅へは段に自宅ワーカーがあるときだけ来る。GPUの段は別ECRイメージを使う、
   [`0046`](docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md)〜[`0048`](docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)）。自宅マシンは NAT 配下で
   到達できないため割り当ては**Pull 型**（[`0018`](docs/decisions/0018-home-worker-pull-assignment.md)）。**ワーカーの中に「自宅かEC2か」
   の分岐を作らないこと** —— 環境差分は起動側が渡す環境変数（`apps/api/src/workerEnv.ts`）で表す。
-- **録画速度は1〜4倍速から選べ（Issue #288）、倍速は GPU インスタンスでしか録画しない**
-  （`requiresGpuRecording()`）。起動側が `FPS_LIMIT_TARGET_HZ` と `GPU_WORKER=1` を渡すだけで、
-  **ワーカー側に倍率やタイトルの分岐を作らない**（[`0058`](docs/decisions/0058-speedup-recording-on-gpu-instances.md)・[`0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)）。
-  GPUを確保できないときは `options.recordingSpeed` を書き換えて落とす——**ジョブの速度は途中で
-  変わりうる**（th15・th20はCPU低速録画へ。[`0060`](docs/decisions/0060-speedup-fallback-to-native-speed.md)・[`0064`](docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
-- **Spot在庫の枯渇はジョブの中で永続エラーとして扱う**。容量不足の段（`launchTiersFor()`）は同じ`Launch`の中で飛ばし、リトライでも試さない。全段が尽きたら速度を落とすか直ちに失敗させる（[`0063`](docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
+- **録画速度・インスタンスタイプ・リージョンは、タイトルごとの「録画の段」の配列が決める**
+  （`packages/shared/src/recordingPlan.ts`。ユーザーは速度を選ばない）。段を先頭から試し、使い切った段は
+  `capacityExhaustedTargets`へ記録して飛ばす——**ジョブの速度は途中で変わりうる**。**フォールバックを変える
+  ときは配列だけを書き換え、起動側に段やタイトルの分岐を書かないこと**（[`0066`](docs/decisions/0066-recording-fallback-plan-as-config.md)）。
+  ワーカーへは `FPS_LIMIT_TARGET_HZ` と `GPU_WORKER=1` を渡すだけで、**ワーカー側に倍率やタイトルの
+  分岐を作らない**（[`0010`](docs/decisions/0010-slow-motion-no-worker-side-branching.md)・[`0058`](docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。
+- **Spot在庫の枯渇はジョブの中で永続エラーとして扱う**。その段は同じ`Launch`の中で飛ばし、リトライでも試さない。全段が尽きたら直ちに失敗させる（[`0063`](docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
 - **録画ワーカー（`worker/`）だけ Python**。**この例外は録画パイプラインに限る**（自宅ワーカーの
   常駐デーモン`home-worker/`は TypeScript、[`decisions/0003`](docs/decisions/0003-worker-python-home-worker-typescript.md)）。
 - **jobId 自体が認可の秘密値**（メール認証と濫用対策を兼ねる。

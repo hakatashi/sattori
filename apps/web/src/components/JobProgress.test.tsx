@@ -48,7 +48,6 @@ function buildDoneJob(overrides: Partial<GetJobResponse> = {}): GetJobResponse {
     posterImageUrl: null,
     replayInfo: REPLAY_INFO,
     recordingSpeed: 1,
-    requestedRecordingSpeed: null,
     desyncDetected: null,
     timedOut: null,
     queuePosition: null,
@@ -101,28 +100,28 @@ describe("JobProgressView のダウンロード", () => {
   });
 });
 
-describe("JobProgressView の等倍フォールバック注意書き（Issue #289）", () => {
-  it("低速録画へ切り替えたジョブは速度に触れない案内を表示する（Issue #316）", () => {
-    render(
-      <JobProgressView
-        job={buildDoneJob({ recordingSpeed: 1 / 2, requestedRecordingSpeed: 1 })}
-        loadError={null}
-      />,
-    );
-    expect(screen.getByText(/時間をかけて録画する方式に切り替えました/)).toBeTruthy();
-    expect(screen.queryByText(/通常の速度での録画に切り替えました/)).toBeNull();
+describe("JobProgressView の録画速度の表示（Issue #288・#317）", () => {
+  it("録画中は最終的な録画速度だけを表示する", () => {
+    render(<JobProgressView job={buildRecordingJob({ recordingSpeed: 2 })} loadError={null} />);
+
+    expect(screen.getByText(/2倍速で録画しています/)).toBeTruthy();
   });
 
-  it("requestedRecordingSpeed があれば元の速度とともに切り替えたことを表示する", () => {
-    render(<JobProgressView job={buildDoneJob({ requestedRecordingSpeed: 3 })} loadError={null} />);
+  it("低速録画も速度として表示し、フォールバックしたことには触れない", () => {
+    render(<JobProgressView job={buildRecordingJob({ recordingSpeed: 1 / 2 })} loadError={null} />);
 
-    expect(screen.getByText(/3倍速ではなく通常の速度での録画に切り替えました/)).toBeTruthy();
+    expect(screen.getByText(/1\/2倍速で録画しています/)).toBeTruthy();
+    expect(screen.queryByText(/切り替えました/)).toBeNull();
   });
 
-  it("フォールバックしていないジョブでは表示しない", () => {
-    render(<JobProgressView job={buildDoneJob()} loadError={null} />);
+  it("等倍なら表示しない", () => {
+    render(<JobProgressView job={buildRecordingJob({ recordingSpeed: 1 })} loadError={null} />);
+    expect(screen.queryByText(/倍速で録画しています/)).toBeNull();
+  });
 
-    expect(screen.queryByText(/通常の速度での録画に切り替えました/)).toBeNull();
+  it("完了後は表示しない", () => {
+    render(<JobProgressView job={buildDoneJob({ recordingSpeed: 2 })} loadError={null} />);
+    expect(screen.queryByText(/倍速で録画しています/)).toBeNull();
   });
 });
 
@@ -378,7 +377,6 @@ function buildRecordingJob(overrides: Partial<GetJobResponse> = {}): GetJobRespo
     posterImageUrl: null,
     replayInfo: REPLAY_INFO,
     recordingSpeed: 1,
-    requestedRecordingSpeed: null,
     desyncDetected: null,
     timedOut: null,
     queuePosition: null,

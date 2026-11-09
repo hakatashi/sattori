@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-11-09",
+    ja: "録画速度を選ぶ欄をなくし、タイトルと録画サーバーの空き状況に合わせてシステムが自動で選ぶように。録画完了までの目安の時間は、リプレイを選ぶと送信ボタンの上に表示されます。あわせて、東方紅魔郷: New Classic (th06nc) の1080pでの録画オプションを廃止しました",
+    en: "Removed the recording speed selector; the system now picks the speed automatically based on the title and server availability. An estimate of how long recording will take appears above the submit button once you select a replay. The option to record Embodiment of Scarlet Devil: New Classic (th06nc) in 1080p has also been removed",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/317",
+    important: true,
+  },
+  {
     date: "2026-11-07",
     ja: "倍速録画の動画で、コマが抜けて動きが滑らかでなくなる（約45fps相当に落ちる）ことがある問題を修正",
     en: "Fixed an issue where videos recorded at higher speeds could lose frames and look less smooth (dropping to the equivalent of about 45 fps)",

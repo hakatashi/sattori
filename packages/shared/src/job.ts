@@ -56,22 +56,15 @@ export interface RecordingOptions {
    */
   th10BugfixMarisaB: boolean;
   /**
-   * th06nc（東方紅魔郷: New Classic）を1080pで録画するか（Issue #241）。詳細と定数は
-   * `highResolutionRecording.ts` 参照。既定は720p（false）。
-   *
-   * **1080p録画に対応したタイトル（`HIGH_RESOLUTION_RECORDING_SUPPORTED_GAME_IDS`）
-   * でしか選べない**。非対応タイトルではページAがグレーアウトし、`POST /magic-links`
-   * も true を握り潰す。低速録画と異なり「割り当て先次第で無効化される」性質の
-   * オプションではない（th06ncは常にGPU系EC2インスタンスで録画される）ため、
-   * `apps/api/src/workerEnv.ts`は`job.options`から直接読んで環境変数化する。
+   * th06nc（東方紅魔郷: New Classic）を1080pで録画するか（Issue #241）。**1080p録画は廃止した**
+   * （Issue #317、`docs/decisions/0066`）。`POST /magic-links`は常に false を書き、ワーカーへも渡さない。
+   * 旧レコードの値を読むためだけに残している。
    */
   th06ncHighResolution: boolean;
   /**
-   * 録画速度（Issue #288、倍速録画）。1〜4倍速と、GPUを確保できないth15・th20の低速
-   * （1/2・1/3、Issue #316）。詳細と定数は `recordingSpeed.ts` 参照。
-   *
-   * **2倍速以上はGPUインスタンス必須**で、自宅ワーカーへはオファーしない
-   * （`requiresGpuRecording()`）。
+   * 録画速度（Issue #288・#316）。**ユーザーは選ばない**（Issue #317）。録画の段
+   * （`recordingPlan.ts`）が決め、`POST /magic-links`が最初の段の速度を、`Launch`が実際に
+   * 割り当てる段の速度を書く。ジョブの途中で変わりうる。ワーカーへは`FPS_LIMIT_TARGET_HZ`として渡る。
    *
    * このフィールドの導入前に作られたジョブには無いため省略可能にしてあり、読むときは
    * 必ず`recordingSpeedOf()`を通すこと（欠損は等倍）。
@@ -219,11 +212,17 @@ export interface JobRecord {
    */
   workerRegion?: string;
   /**
-   * このジョブの中で容量不足になった起動手段の段（`gpu:eu-south-2`など、`launchTiersFor()`の
-   * `id`、Issue #315、`docs/decisions/0063`）。リトライ（Spot中断後など）では飛ばす。
+   * このジョブで使い切った録画の段（`RecordingStep.id`、`recordingPlan.ts`、Issue #315・#317、
+   * `docs/decisions/0063`・`0066`）。Spot在庫の枯渇のほか、GPU枠の長時間待ち・クォータ超過で
+   * GPUの段を飛ばしたときも書く。同じジョブのリトライ（Spot中断後など）では試さない。
    * 記録の無いジョブには属性自体が無い。
    */
   capacityExhaustedTargets?: string[];
+  /**
+   * 最後に割り当てを試みた録画の段（`RecordingStep.id`、Issue #317）。`Launch`が段ごとに
+   * `options.recordingSpeed`と同時に書く。管理画面の表示用で、段の導入前のジョブには無い。
+   */
+  recordingStepId?: string;
   /**
    * ワーカーがS3からダウンロードしたタイトル資産（`titles/{game}/assets.tar.gz`）の
    * バイト数（Issue #296）。リージョン間転送料の推定（`cost.ts`）の入力。ワーカーは
@@ -405,16 +404,12 @@ export interface JobRecord {
   gpuQueuePosition?: number;
   gpuQueueEtaSeconds?: number;
   /**
-   * GPUを確保できなかったためCPUで録る速度へ落としたジョブで、ユーザーが元々選んでいた
-   * 録画速度（Issue #289・#316、`docs/decisions/0060`・`0064`）。フォールバックは
-   * `options.recordingSpeed`そのものを書き換えることで行う——GPU要否・割り当て先・
-   * ワーカーへ渡す環境変数・コスト帯はすべて`options.recordingSpeed`から導かれるため、
-   * 書き換えた瞬間に以降の`AcquireGpuSlot`/`Launch`がCPUのジョブとして扱う。
-   * このフィールドは表示（ジョブページの注意書き）と運用調査のための記録で、
-   * フォールバックしていないジョブには属性自体が無い。
+   * 段の導入前（〜2026-11、Issue #317より前）に、GPUを確保できなかったため速度を落としたジョブで、
+   * ユーザーが元々選んでいた録画速度（`docs/decisions/0060`・`0064`）。旧レコードにだけ残っている。
+   * 新しいジョブには書かない。
    */
   requestedRecordingSpeed?: RecordingSpeed;
-  /** フォールバックの理由（`requestedRecordingSpeed`と同時に書く）。 */
+  /** 旧レコードのフォールバックの理由（`requestedRecordingSpeed`と同時に書かれた）。 */
   speedupFallbackReason?: SpeedupFallbackReason;
   /**
    * `POST /magic-links` 押下時点でユーザーが選択していた表示言語
