@@ -108,12 +108,12 @@ export const GPU_INSTANCE_TYPES = [
 ] as const;
 
 /**
- * 速度を落とせないGPUジョブ（th06nc）の最後の段（Issue #316）。AMIを変えずに録画でき、品質も
- * `g6f.2xlarge`と同等だが、単価が3.5〜7倍（touhou-recorder reports/92）。eu-north-1には
- * 在庫が無かったのでeu-south-2だけで使う。
+ * th06ncのCPU低速録画の候補（BC7展開によるCPU描画、touhou-recorder reports/96・97）。**1タイプしか挙げて
+ * いないのは意図的**で、`c7i.xlarge`は落ち11.2%でゲーム進行も遅れ、`c7i.4xlarge`はExtraでは良いが
+ * Lunaticの終盤で`.2xlarge`より悪く単価が2倍（reports/97）。th15・th20の`c7i.4xlarge`とは別の判断。
  */
-export const GPU_FULL_INSTANCE_TYPES = [
-  "g6.2xlarge", // NVIDIA L4 フル (8vCPU/32GiB)。reports/92実測
+export const TH06NC_CPU_INSTANCE_TYPES = [
+  "c7i.2xlarge", // 8vCPU。reports/97実測で720p 1/2倍速のLunatic全6面の落ち1.3%（Extraは7.6%）
 ] as const;
 
 /** 一次・フォールバック先リージョンのGPUの段（`g6f.2xlarge`）。 */
@@ -171,7 +171,9 @@ function speedupPlan(speed: RecordingSpeed, cpuTypes: readonly string[]): Record
  *   GPUが無ければCPU低速録画。Extraは1/2倍速でも30Hzを維持できないので1/3倍速（reports/91）。
  * - th20: 2倍速はゲーム本体の単一スレッド性能が足りず落ちが等倍の16倍になるので等倍
  *   （reports/89）。GPUが無ければCPU低速録画（reports/91）。
- * - th06nc: D3D11描画で、CPU描画では録れない（reports/78）。GPUが無ければ`g6.2xlarge`。
+ * - th06nc: D3D11描画。GPUが無ければ、MODでBC7テクスチャを展開したCPU描画の1/2倍速（reports/96・97、
+ *   `docs/decisions/0067`）。Extraの高密度弾幕では描画が間引かれる（`docs/known-limitations.md`）。
+ *   かつての最終段`g6.2xlarge`（`gpu-full:eu-south-2`、0064）はこの段に置き換えた。
  */
 export const RECORDING_PLANS: Readonly<Partial<Record<GameId, readonly RecordingStep[]>>> = {
   th06: speedupPlan(2, CPU_XLARGE_INSTANCE_TYPES),
@@ -185,17 +187,7 @@ export const RECORDING_PLANS: Readonly<Partial<Record<GameId, readonly Recording
   th128: speedupPlan(2, CPU_2XLARGE_INSTANCE_TYPES),
   th15: [...gpuSteps(2), cpuStep(CPU_SLOW_MOTION_INSTANCE_TYPES, 1 / 2, { Extra: 1 / 3 })],
   th20: [...gpuSteps(1), cpuStep(CPU_SLOW_MOTION_INSTANCE_TYPES, 1 / 2)],
-  th06nc: [
-    ...gpuSteps(2),
-    {
-      id: `gpu-full:${PRIMARY_RECORDING_REGION}`,
-      kind: "ec2",
-      platform: "gpu",
-      region: PRIMARY_RECORDING_REGION,
-      instanceTypes: GPU_FULL_INSTANCE_TYPES,
-      speed: 2,
-    },
-  ],
+  th06nc: [...gpuSteps(2), cpuStep(TH06NC_CPU_INSTANCE_TYPES, 1 / 2)],
 };
 
 /** タイトルの段。録画非対応タイトルは空配列（ジョブは作られない）。 */
@@ -260,7 +252,7 @@ export function currentRecordingStep(
 /**
  * GPUの段を飛ばせるなら、飛ばす段の`id`を返す（GPU枠の長時間待ち・クォータ超過、Issue #289・#316）。
  * 次に試す段がGPUで、その後ろにGPU以外の段が残っているときだけ。飛ばせなければ空配列
- * （th06ncのようにGPU以外の段が無いタイトルは、待つか失敗するしかない）。
+ * （後ろのGPU以外の段を使い切ったジョブは、待つか失敗するしかない）。
  */
 export function skippableGpuStepIds(job: RecordingStepState, excluded?: RecordingStepFilter): string[] {
   const remaining = remainingRecordingSteps(job, excluded);

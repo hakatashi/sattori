@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-09",
+    ja: "東方紅魔郷: New Classic (th06nc) は、GPUの録画サーバーに空きが無いときもGPUを使わずに録画できるように。混雑による失敗が起きにくくなります（その場合は完成までに通常より時間がかかり、Extraステージの弾幕が特に多い場面ではコマ落ちすることがあります）",
+    en: "Embodiment of Scarlet Devil: New Classic (th06nc) can now be recorded without a GPU when no GPU recording servers are available, making failures due to congestion less likely (in that case it takes longer to finish, and frames may drop in scenes with especially dense bullet patterns in the Extra stage)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/317",
+  },
+  {
+    date: "2026-11-09",
     ja: "録画速度を選ぶ欄をなくし、タイトルと録画サーバーの空き状況に合わせてシステムが自動で選ぶように。録画完了までの目安の時間は、リプレイを選ぶと送信ボタンの上に表示されます。あわせて、東方紅魔郷: New Classic (th06nc) の1080pでの録画オプションを廃止しました",
     en: "Removed the recording speed selector; the system now picks the speed automatically based on the title and server availability. An estimate of how long recording will take appears above the submit button once you select a replay. The option to record Embodiment of Scarlet Devil: New Classic (th06nc) in 1080p has also been removed",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/317",

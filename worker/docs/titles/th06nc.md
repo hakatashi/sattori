@@ -16,9 +16,9 @@ th06とはリプレイ形式のバージョンが非互換なため、**th06と�
 
 ## GPU描画が必須（既存9タイトルとの最大の違い）
 
-GPU必須の落とし先が無いタイトルなので、`g6f.2xlarge`が全リージョンで枯渇したら`g6.2xlarge`（L4フル、
-eu-south-2）で録る。AMI・イメージとも変更なしで動き、品質は同等（touhou-recorder reports/92、
-[`decisions/0064`](../../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
+`g6f.2xlarge`が全リージョンで枯渇したら、CPU描画（BC7展開、`c7i.2xlarge`）の1/2倍速で録る
+（[`decisions/0067`](../../../docs/decisions/0067-th06nc-cpu-slow-motion-and-drop-1080p.md)。下の「CPU描画」の節）。
+かつての最終段`g6.2xlarge`（touhou-recorder reports/92、`0064`）は外した。
 
 既存9タイトルはすべてXvfb+wined3d+llvmpipe（ソフトウェア描画）で60fpsを達成できるが、
 th06ncはこの経路では720pで9.1fps、1080pで5.1fpsしか出ない（touhou-recorder
