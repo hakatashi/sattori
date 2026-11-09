@@ -1,7 +1,6 @@
-import { requiresGpuRecording } from "./gpuRecording.js";
+import { currentRecordingStep, recordingPlanFor } from "./recordingPlan.js";
 import type { JobRecord } from "./job.js";
 import { OUTPUT_RETENTION_DAYS } from "./job.js";
-import { isSlowMotionRecording, recordingSpeedOf } from "./recordingSpeed.js";
 
 /**
  * 録画ジョブ1件あたりのコスト推定（Issue #60）。管理画面のジョブ詳細と
@@ -179,14 +178,15 @@ export function usdToJpy(usd: number): number {
 /**
  * コスト推定に必要な `JobRecord` のフィールドだけを抜き出した入力型。
  *
- * `options`は録画速度（Issue #288）だけを使う（インスタンスタイプ未記録のジョブのサイズ帯推定、
- * `sizeClassOfJob()`）。管理画面の全件集計は射影でこの1属性しか読まないため、型もそれに合わせて
- * 省略可能な部分型にしてある（欠損は等倍）。
+ * `capacityExhaustedTargets`・`recordingStepId`は、インスタンスタイプ未記録のジョブのサイズ帯推定
+ * （`sizeClassOfJob()`）にだけ使う。
  */
-export type JobCostInput = { options?: { recordingSpeed?: unknown } } & Pick<
+export type JobCostInput = Pick<
   JobRecord,
   | "status"
   | "game"
+  | "capacityExhaustedTargets"
+  | "recordingStepId"
   | "workerKind"
   | "createdAt"
   | "updatedAt"
@@ -343,32 +343,22 @@ function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD
 }
 
 /**
- * ジョブからサイズ帯を推定する。GPU必須のジョブ（th06nc・th15・th20と倍速録画、
- * `requiresGpuRecording()`）はGPU系`gpu`帯、CPU低速録画は`4xlarge`帯（Issue #316、
- * `SLOW_MOTION_CANDIDATE_INSTANCE_TYPES`）、それ以外はタイトルで決まる: th11・th12・th128は
- * `.2xlarge`帯（`apps/api/src/ec2.ts`の`TH11_CANDIDATE_INSTANCE_TYPES` /
- * `TH12_CANDIDATE_INSTANCE_TYPES` / `TH128_CANDIDATE_INSTANCE_TYPES` /
- * `GPU_CANDIDATE_INSTANCE_TYPES`、touhou-recorder reports/40・73・80・81・82・89）。
+ * ジョブからサイズ帯を推定する。インスタンスタイプがまだ記録されていない段階（`launching`）や、
+ * リトライでリセットされた場合（`retryJob.ts`）に使われる。
  *
- * インスタンスタイプがまだ記録されていない段階（`launching`）や、リトライで
- * リセットされた場合（`retryJob.ts`）に使われる。ここが実態とずれると、`ec2.ts`の
- * 候補を変えたときに推定コストが静かに過小になる。
+ * 最後に割り当てを試みた段（`recordingStepId`）、無ければ次に試す段（`recordingPlan.ts`）の
+ * 第一候補のインスタンスタイプから決める。自宅ワーカーの段なら、その次のEC2の段で見積もる。
  */
-function sizeClassOfJob(job: Pick<JobCostInput, "game" | "options">): keyof typeof FALLBACK_SPOT_PRICE_USD_PER_HOUR {
-  if (requiresGpuRecording(job)) {
-    return "gpu";
-  }
-  if (isSlowMotionRecording(recordingSpeedOf(job.options))) {
-    return "4xlarge";
-  }
-  switch (job.game) {
-    case "th11":
-    case "th12":
-    case "th128":
-      return "2xlarge";
-    default:
-      return "xlarge";
-  }
+function sizeClassOfJob(
+  job: Pick<JobCostInput, "game" | "capacityExhaustedTargets" | "recordingStepId">,
+): keyof typeof FALLBACK_SPOT_PRICE_USD_PER_HOUR {
+  const plan = recordingPlanFor(job.game);
+  const current =
+    plan.find((step) => step.id === job.recordingStepId) ?? currentRecordingStep(job) ?? plan[0];
+  const from = current ? plan.indexOf(current) : 0;
+  const ec2Step = plan.slice(from).find((step) => step.kind === "ec2");
+  const instanceType = ec2Step?.kind === "ec2" ? ec2Step.instanceTypes[0] : undefined;
+  return instanceType ? sizeClassOf(instanceType) : "xlarge";
 }
 
 function resolveSpotPrice(job: JobCostInput): {

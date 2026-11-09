@@ -20,7 +20,7 @@ describe("settings", () => {
         acceptingNewJobs: true,
         monthlyCostLimitUsd: DEFAULT_MONTHLY_COST_LIMIT_USD,
         forceGpuFallbackRegion: false,
-        skipFractionalGpuTiers: false,
+        skipGpuSteps: false,
       });
     });
 
@@ -33,8 +33,16 @@ describe("settings", () => {
         acceptingNewJobs: false,
         monthlyCostLimitUsd: 30,
         forceGpuFallbackRegion: false,
-        skipFractionalGpuTiers: false,
+        skipGpuSteps: false,
       });
+    });
+
+    it("旧名skipFractionalGpuTiersで保存された値はskipGpuStepsとして読む", async () => {
+      ddbMock.on(GetCommand).resolves({
+        Item: { settingKey: "global", skipFractionalGpuTiers: true },
+      });
+      const settings = await getSettings("settings-table");
+      expect(settings.skipGpuSteps).toBe(true);
     });
   });
 
@@ -50,7 +58,7 @@ describe("settings", () => {
         acceptingNewJobs: false,
         monthlyCostLimitUsd: 50,
         forceGpuFallbackRegion: false,
-        skipFractionalGpuTiers: false,
+        skipGpuSteps: false,
       });
 
       const putCalls = ddbMock.commandCalls(PutCommand);
@@ -60,7 +68,7 @@ describe("settings", () => {
         acceptingNewJobs: false,
         monthlyCostLimitUsd: 50,
         forceGpuFallbackRegion: false,
-        skipFractionalGpuTiers: false,
+        skipGpuSteps: false,
       });
     });
 
@@ -73,7 +81,7 @@ describe("settings", () => {
         acceptingNewJobs: true,
         monthlyCostLimitUsd: 80,
         forceGpuFallbackRegion: false,
-        skipFractionalGpuTiers: false,
+        skipGpuSteps: false,
       });
     });
   });

@@ -16,7 +16,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
-import type { JobRecord, RecordingSpeed, WorkerHeartbeat } from "@sattori/shared";
+import type { JobRecord, WorkerHeartbeat } from "@sattori/shared";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -45,12 +45,17 @@ const REQUIRED_ENV: Record<string, string> = {
 const ec2Mock = mockClient(EC2Client);
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
+/** th07のGPUの段（Issue #317）。CPU経路のテストではこれを使い切った状態から始める。 */
+const GPU_STEPS = ["gpu:eu-south-2", "gpu:eu-north-1"];
+
+/** GPUの段を使い切ったth07のジョブ（次は自宅ワーカー→CPUの段）。 */
 const job: JobRecord = createJobRecord({
   status: "queued",
   createdAt: "2026-07-17T00:00:00.000Z",
   updatedAt: "2026-07-17T00:00:00.000Z",
   email: null,
   pendingExpiresAt: null,
+  capacityExhaustedTargets: GPU_STEPS,
 });
 
 /** 空き十分・対応タイトルありの自宅ワーカー（Issue #49）。 */
@@ -77,6 +82,8 @@ beforeEach(() => {
   ddbMock.reset();
   // 既定では自宅ワーカーは1台も動いていない（＝従来どおりEC2 Fleetを起動する）。
   ddbMock.on(ScanCommand).resolves({ Items: [] });
+  // 管理設定（段の除外、Issue #317）は既定値。個々のテストの`GetCommand`より優先される。
+  ddbMock.on(GetCommand, { TableName: "sattori-settings" }).resolves({});
 });
 
 afterEach(() => {
@@ -108,7 +115,8 @@ describe("sfn/launch handler", () => {
 
     expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
     const updateCalls = ddbMock.commandCalls(UpdateCommand);
-    expect(updateCalls.length).toBe(4);
+    // 段（Issue #317）＋インスタンス・status・workerKind・launchedAt。
+    expect(updateCalls.length).toBe(5);
     const updatedFields = updateCalls.map((call) => call.args[0].input.ExpressionAttributeValues);
     expect(updatedFields).toEqual(
       expect.arrayContaining([
@@ -123,6 +131,7 @@ describe("sfn/launch handler", () => {
         expect.objectContaining({ ":nullType": "NULL" }),
         // 誰が実行しているか（Issue #49）。コスト推定がこの値で分岐する。
         expect.objectContaining({ ":w": "ec2" }),
+        expect.objectContaining({ ":step": "cpu:eu-south-2", ":speed": 1 }),
       ]),
     );
   });
@@ -277,8 +286,9 @@ describe("sfn/launch handler（自宅ワーカーへのオファー、Issue #49�
       .resolves({
         Item: { assignedWorkerId: "home-1", homeWorkerEnv: { TASK_TOKEN: "token-xyz" } },
       });
+    ddbMock.on(UpdateCommand).resolves({});
     ddbMock
-      .on(UpdateCommand)
+      .on(UpdateCommand, { ConditionExpression: "attribute_not_exists(assignedWorkerId)" })
       .rejects(new ConditionalCheckFailedException({ message: "claimed", $metadata: {} }));
 
     const { handler } = await import("./launch.js");
@@ -510,7 +520,7 @@ describe("sfn/launch handler（GPU vCPU容量リース、Issue #270）", () => {
   });
 });
 
-describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
+describe("sfn/launch handler（録画の段、Issue #315・#317）", () => {
   const lease = {
     slotKey: "gpu",
     itemKey: "job#job-1",
@@ -532,27 +542,35 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
     };
   }
 
-  function mockSpeedupJobStore(initial: JobRecord): void {
-    // `fallBackRecordingSpeed`の書き込みを、後続の読み直しへ反映する。
-    let current = initial;
-    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).callsFake(async () => ({ Item: current }));
+  /** 段の導入後に作られた、まだどの段も使い切っていないジョブ。 */
+  function freshJob(overrides: Partial<JobRecord> = {}): JobRecord {
+    const { capacityExhaustedTargets: _exhausted, ...rest } = job;
+    return { ...rest, ...overrides } as JobRecord;
+  }
+
+  function mockJobStore(initial: JobRecord): void {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: initial });
     ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({ Item: lease });
     ddbMock.on(TransactWriteCommand).resolves({});
-    ddbMock.on(UpdateCommand).callsFake(async (input) => {
-      if (String(input.UpdateExpression).includes("requestedRecordingSpeed")) {
-        const to = input.ExpressionAttributeValues?.[":to"] as RecordingSpeed;
-        current = { ...current, options: { ...current.options, recordingSpeed: to } };
-      }
-      return {};
-    });
+    ddbMock.on(UpdateCommand).resolves({});
     ec2Mock
       .on(CreateLaunchTemplateVersionCommand)
       .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
     ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
   }
 
-  function updateExpressions(): string[] {
-    return ddbMock.commandCalls(UpdateCommand).map((call) => String(call.args[0].input.UpdateExpression));
+  function updateCalls(expression: string) {
+    return ddbMock
+      .commandCalls(UpdateCommand)
+      .filter((call) => String(call.args[0].input.UpdateExpression).includes(expression));
+  }
+
+  /** `setRecordingStep()`で書いた段と速度（書いた順）。 */
+  function enteredSteps(): Array<[unknown, unknown]> {
+    return updateCalls("recordingStepId").map((call) => [
+      call.args[0].input.ExpressionAttributeValues?.[":step"],
+      call.args[0].input.ExpressionAttributeValues?.[":speed"],
+    ]);
   }
 
   function statusValues() {
@@ -560,6 +578,16 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
       .commandCalls(UpdateCommand)
       .map((call) => call.args[0].input.ExpressionAttributeValues)
       .filter((values) => values?.[":s"] !== undefined);
+  }
+
+  function userDataOf(index: number): string {
+    return Buffer.from(
+      String(
+        ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[index]?.args[0].input.LaunchTemplateData
+          ?.UserData,
+      ),
+      "base64",
+    ).toString();
   }
 
   let warnSpy: ReturnType<typeof vi.spyOn>;
@@ -577,8 +605,24 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
     logSpy.mockRestore();
   });
 
-  it("倍速録画はGPUの段を使い切ったら同じ呼び出しの中で等倍のCPU系へ起動し直し、リースを返却する", async () => {
-    mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
+  it("最初の段（GPU・2倍速）で起動し、段と速度を環境変数より先に書く", async () => {
+    mockJobStore(freshJob({ game: "th08" }));
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-gpu"], InstanceType: "g6f.2xlarge", AvailabilityZone: "a" }],
+    });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(enteredSteps()).toEqual([["gpu:eu-south-2", 2]]);
+    expect(userDataOf(0)).toContain("-e FPS_LIMIT_TARGET_HZ='120'");
+    expect(userDataOf(0)).toContain("-e GPU_WORKER='1'");
+    // GPUの段で起動したのでリースは返さない。
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("GPUの段を使い切ったら同じ呼び出しの中で等倍のCPUの段へ進み、リースを返却する", async () => {
+    mockJobStore(freshJob({ game: "th08" }));
     ec2Mock
       .on(CreateFleetCommand)
       .callsFakeOnce(capacityFailure)
@@ -590,38 +634,46 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
     await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
 
     const fleets = ec2Mock.commandCalls(CreateFleetCommand);
+    // フォールバック先リージョンが未設定の環境なので`gpu:eu-north-1`は解決できず飛ばす。
+    // 自宅ワーカーも動いていないので、GPU→CPUの2回。
     expect(fleets).toHaveLength(2);
     expect(fleets[1]?.args[0].input.LaunchTemplateConfigs?.[0]?.LaunchTemplateSpecification?.LaunchTemplateId).toBe(
       "lt-xxxx",
     );
-    expect(updateExpressions().some((e) => e.includes("capacityExhaustedTargets"))).toBe(true);
-    expect(updateExpressions().some((e) => e.includes("requestedRecordingSpeed"))).toBe(true);
+    expect(updateCalls("capacityExhaustedTargets")[0]?.args[0].input.ExpressionAttributeValues?.[":targets"]).toEqual([
+      "gpu:eu-south-2",
+    ]);
+    // 自宅ワーカーがいなければ自宅の段は書かない。
+    expect(enteredSteps()).toEqual([
+      ["gpu:eu-south-2", 2],
+      ["cpu:eu-south-2", 1],
+    ]);
+    expect(userDataOf(1)).not.toContain("FPS_LIMIT_TARGET_HZ");
+    expect(userDataOf(1)).not.toContain("GPU_WORKER");
     expect(ddbMock.commandCalls(TransactWriteCommand).length).toBeGreaterThan(0);
     expect(statusValues()).toEqual([expect.objectContaining({ ":s": "launching" })]);
   });
 
-  it("等倍へ落としたジョブは自宅ワーカーへオファーする", async () => {
-    mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
+  it("GPUの段を使い切ったら自宅ワーカーの段でオファーする", async () => {
+    mockJobStore(freshJob({ game: "th07" }));
     ddbMock.on(ScanCommand).resolves({ Items: [heartbeat()] });
     ec2Mock.on(CreateFleetCommand).callsFake(capacityFailure);
     // オファーの書き込みと同時にclaimされた状態を返す。
     ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).callsFake(async (input) =>
-      input.ProjectionExpression
-        ? { Item: { assignedWorkerId: "home-1" } }
-        : {
-            Item: ddbMock
-              .commandCalls(UpdateCommand)
-              .some((call) => String(call.args[0].input.UpdateExpression).includes("requestedRecordingSpeed"))
-              ? job
-              : { ...job, options: { ...job.options, recordingSpeed: 2 } },
-          },
+      input.ProjectionExpression ? { Item: { assignedWorkerId: "home-1" } } : { Item: freshJob({ game: "th07" }) },
     );
 
     const { handler } = await import("./launch.js");
     await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
 
     expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
-    expect(updateExpressions().some((e) => e.includes("SET homeWorkerOfferState"))).toBe(true);
+    expect(enteredSteps()).toEqual([
+      ["gpu:eu-south-2", 3],
+      ["home", 1],
+    ]);
+    const env = updateCalls("SET homeWorkerOfferState")[0]?.args[0].input.ExpressionAttributeValues?.[":env"];
+    expect(env).not.toHaveProperty("FPS_LIMIT_TARGET_HZ");
+    expect(env).not.toHaveProperty("GPU_WORKER");
   });
 
   it.each([
@@ -631,12 +683,8 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
   ] as const)(
     "%s(%s)はGPUの段を使い切ったら自宅へオファーせずc7i.4xlargeの低速録画で起動する（Issue #316）",
     async (game, difficulty, targetHz) => {
-      mockSpeedupJobStore({
-        ...job,
-        game,
-        replayInfo: { difficulty },
-        options: { ...job.options, recordingSpeed: 1 },
-      } as unknown as JobRecord);
+      mockJobStore(freshJob({ game, replayInfo: { difficulty } } as unknown as Partial<JobRecord>));
+      ddbMock.on(ScanCommand).resolves({ Items: [heartbeat({ supportedGames: [game] })] });
       ec2Mock
         .on(CreateFleetCommand)
         .callsFakeOnce(capacityFailure)
@@ -651,94 +699,112 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
       expect(fleets).toHaveLength(2);
       const config = fleets[1]?.args[0].input.LaunchTemplateConfigs?.[0];
       expect(config?.LaunchTemplateSpecification?.LaunchTemplateId).toBe("lt-xxxx");
-      expect(config?.Overrides?.map((o) => o.InstanceType)).toEqual(
-        config?.Overrides?.map(() => "c7i.4xlarge"),
-      );
-      const userData = Buffer.from(
-        String(
-          ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[1]?.args[0].input.LaunchTemplateData
-            ?.UserData,
-        ),
-        "base64",
-      ).toString();
-      expect(userData).toContain(`-e FPS_LIMIT_TARGET_HZ='${targetHz}'`);
-      expect(userData).not.toContain("-e GPU_WORKER");
-      // 自宅ワーカーのハートビートは読みに行かない（低速録画はオファーしない）。
+      expect(new Set(config?.Overrides?.map((o) => o.InstanceType))).toEqual(new Set(["c7i.4xlarge"]));
+      expect(userDataOf(1)).toContain(`-e FPS_LIMIT_TARGET_HZ='${targetHz}'`);
+      expect(userDataOf(1)).not.toContain("-e GPU_WORKER");
+      // 自宅ワーカーの段が無いので、ハートビートは読みに行かない。
       expect(ddbMock.commandCalls(ScanCommand)).toHaveLength(0);
     },
   );
 
-  it("GPU必須タイトルは全段が容量不足ならcapacity_exhaustedで直ちに失敗させ、リースを返却して例外を投げる", async () => {
-    mockSpeedupJobStore({ ...job, game: "th06nc" });
+  it("全段が容量不足ならcapacity_exhaustedで直ちに失敗させ、リースを返却して例外を投げる", async () => {
+    mockJobStore(freshJob({ game: "th06nc" }));
     ec2Mock.on(CreateFleetCommand).callsFake(capacityFailure);
 
     const { handler } = await import("./launch.js");
-    const { LaunchTiersExhaustedError } = await import("../../ec2.js");
-    await expect(
-      handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" }),
-    ).rejects.toBeInstanceOf(LaunchTiersExhaustedError);
+    const { FleetLaunchError } = await import("../../ec2.js");
+    const err = await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" }).catch((e: unknown) => e);
 
+    expect(err).toBeInstanceOf(FleetLaunchError);
+    expect((err as InstanceType<typeof FleetLaunchError>).capacityExhausted).toBe(true);
+    // th06ncは`g6f.2xlarge`→`g6.2xlarge`（Issue #316）。
+    expect(
+      ec2Mock
+        .commandCalls(CreateFleetCommand)
+        .map((call) => call.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides?.[0]?.InstanceType),
+    ).toEqual(["g6f.2xlarge", "g6.2xlarge"]);
     expect(statusValues()).toEqual([
       expect.objectContaining({ ":s": "failed", ":ec": "capacity_exhausted", ":done": "done" }),
     ]);
     expect(ddbMock.commandCalls(TransactWriteCommand).length).toBeGreaterThan(0);
   });
 
-  it("CPU系ジョブも全段が容量不足なら直ちに失敗させる", async () => {
-    mockSpeedupJobStore(job);
-    ec2Mock.on(CreateFleetCommand).callsFake(capacityFailure);
+  it("全段が前の試行で記録済みなら1回もCreateFleetせずに失敗させる", async () => {
+    mockJobStore(freshJob({ game: "th20", capacityExhaustedTargets: ["gpu:eu-south-2", "cpu:eu-south-2"] }));
+
+    const { handler } = await import("./launch.js");
+    await expect(handler({ jobId: "job-1", attempt: 3, taskToken: "token-xyz" })).rejects.toThrow(/使い切りました/);
+
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(0);
+    expect(statusValues()).toEqual([expect.objectContaining({ ":ec": "capacity_exhausted" })]);
+  });
+
+  it("一部のサブネットがクォータ超過なら次の段へ進むが記録しない。全段が失敗してもリトライに回す", async () => {
+    mockJobStore(freshJob({ game: "th06nc" }));
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [],
+      Errors: [
+        { ErrorCode: "UnfulfillableCapacity", ErrorMessage: "nope" },
+        { ErrorCode: "MaxSpotInstanceCountExceeded", ErrorMessage: "nope" },
+      ],
+    });
 
     const { handler } = await import("./launch.js");
     await expect(handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" })).rejects.toThrow(
       /UnfulfillableCapacity/,
     );
 
-    expect(statusValues()).toEqual([expect.objectContaining({ ":ec": "capacity_exhausted" })]);
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(2);
+    expect(updateCalls("capacityExhaustedTargets")).toHaveLength(0);
+    expect(statusValues()).toEqual([]);
   });
 
-  it("前の試行でワーカーがfailedを書いたジョブ（リトライ中）も等倍へ落とせる条件で更新する", async () => {
-    mockSpeedupJobStore({
-      ...job,
-      status: "failed",
-      errorCode: "recording_failed",
-      options: { ...job.options, recordingSpeed: 2 },
-    });
+  it("次の段がクォータ超過なら再試行に回し、前の段のエラーもメッセージへ残す", async () => {
+    mockJobStore(freshJob({ game: "th06nc" }));
     ec2Mock
       .on(CreateFleetCommand)
       .callsFakeOnce(capacityFailure)
-      .resolves({
-        Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.xlarge", AvailabilityZone: "a" }],
-      });
+      .resolves({ Instances: [], Errors: [{ ErrorCode: "VcpuLimitExceeded", ErrorMessage: "quota" }] });
+
+    const { handler } = await import("./launch.js");
+    const err = await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" }).catch((e: unknown) => e);
+
+    expect((err as Error).message).toContain("UnfulfillableCapacity");
+    expect((err as Error).message).toContain("VcpuLimitExceeded");
+    expect(statusValues()).toEqual([]);
+  });
+
+  it("前の試行でワーカーがfailedを書いたジョブ（リトライ中）も段を書ける", async () => {
+    mockJobStore(freshJob({ status: "failed", errorCode: "recording_failed" } as Partial<JobRecord>));
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-gpu"], InstanceType: "g6f.2xlarge", AvailabilityZone: "a" }],
+    });
 
     const { handler } = await import("./launch.js");
     await handler({ jobId: "job-1", attempt: 2, taskToken: "token-xyz" });
 
-    const fallback = ddbMock
-      .commandCalls(UpdateCommand)
-      .find((call) => String(call.args[0].input.UpdateExpression).includes("requestedRecordingSpeed"));
+    const step = updateCalls("recordingStepId")[0];
     // ワーカーが書く`failed`はリトライの対象なので、`failed`では弾かない。
-    expect(fallback?.args[0].input.ConditionExpression).toContain("#s <> :done");
-    expect(fallback?.args[0].input.ExpressionAttributeValues).not.toHaveProperty(":failed");
+    expect(step?.args[0].input.ConditionExpression).toContain("#s <> :done");
+    expect(step?.args[0].input.ConditionExpression).toContain("attribute_not_exists(stopRequestedAt)");
     expect(statusValues()).toEqual([expect.objectContaining({ ":s": "launching" })]);
   });
 
-  it("等倍へのフォールバックが条件付き更新で弾かれたらジョブを失敗させずHandleFailureへ委ねる", async () => {
-    mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
-    ec2Mock.on(CreateFleetCommand).callsFake(capacityFailure);
+  it("段が条件付き更新で弾かれたら（緊急停止）起動せず、ジョブを失敗させずHandleFailureへ委ねる", async () => {
+    mockJobStore(freshJob({ game: "th08" }));
     ddbMock
-      .on(UpdateCommand, { ExpressionAttributeValues: { ":reason": "gpu_capacity" } }, false)
+      .on(UpdateCommand, { ExpressionAttributeValues: { ":step": "gpu:eu-south-2" } }, false)
       .rejects(new ConditionalCheckFailedException({ message: "conditional", $metadata: {} }));
 
     const { handler } = await import("./launch.js");
-    await expect(handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" })).rejects.toThrow();
+    await expect(handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" })).rejects.toThrow(/停止済み/);
 
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(0);
     expect(statusValues()).toEqual([]);
-    // WaitBeforeCheckの3分間リースを塞がない。
-    expect(ddbMock.commandCalls(TransactWriteCommand).length).toBeGreaterThan(0);
   });
 
   it("容量不足の記録に失敗しても次の段へ進む", async () => {
-    mockSpeedupJobStore({ ...job, options: { ...job.options, recordingSpeed: 2 } });
+    mockJobStore(freshJob({ game: "th08" }));
     ec2Mock
       .on(CreateFleetCommand)
       .callsFakeOnce(capacityFailure)
@@ -753,5 +819,22 @@ describe("sfn/launch handler（全段の容量不足、Issue #315）", () => {
     await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
 
     expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(2);
+  });
+
+  it("管理設定skipGpuStepsならGPUの段を試さない（Issue #316・#317）", async () => {
+    mockJobStore(freshJob({ game: "th08" }));
+    ddbMock
+      .on(GetCommand, { TableName: REQUIRED_ENV.SETTINGS_TABLE })
+      .resolves({ Item: { settingKey: "global", skipGpuSteps: true } });
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.xlarge", AvailabilityZone: "a" }],
+    });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(enteredSteps()).toEqual([["cpu:eu-south-2", 1]]);
+    // GPUの段を試していないのでリースにも触れない。
+    expect(ddbMock.commandCalls(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE })).toHaveLength(0);
   });
 });

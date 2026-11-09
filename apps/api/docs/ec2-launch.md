@@ -8,16 +8,17 @@ UserData を変える前に読むこと。[`apps/api/README.md`](../README.md) �
 
 サブネット（=AZ）×候補インスタンスタイプの全組み合わせを `CreateFleet` の
 `Overrides` に渡し、`AllocationStrategy: "price-capacity-optimized"`
-（`SingleInstanceType: false`）で配置する。候補はタイトルごとに違う。
+（`SingleInstanceType: false`）で配置する。**候補は録画の段ごとに違い、段と候補の一覧は
+`packages/shared/src/recordingPlan.ts`の`RECORDING_PLANS`が唯一の出典**（Issue #317、
+[`decisions/0066`](../../../docs/decisions/0066-recording-fallback-plan-as-config.md)）。
 
-| 対象 | 定数（`ec2.ts`） | 候補インスタンスタイプ |
+| 段 | 定数（`recordingPlan.ts`） | 候補インスタンスタイプ |
 | --- | --- | --- |
-| th06/06c/07/08/09/10 | `DEFAULT_CANDIDATE_INSTANCE_TYPES` | `c7i.xlarge` / `c7a.xlarge` / `c7i-flex.xlarge` / `m7i.xlarge` |
-| th11 | `TH11_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
-| th12 | `TH12_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
-| th128 | `TH128_CANDIDATE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
-| th06nc・th15・th20、および全タイトルの倍速録画 | `GPU_CANDIDATE_INSTANCE_TYPES` | `g6f.2xlarge`のみ（GPU必須、Issue #241・#82・#288、[`decisions/0058`](../../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)。GPU要否はタイトルではなくジョブ単位で決まるので`getCandidateInstanceTypes(job, { maxVcpu })`はジョブを受け取る）。th06ncの最後の段は`GPU_FULL_CANDIDATE_INSTANCE_TYPES`（`g6.2xlarge`） |
-| th15・th20の低速録画 | `SLOW_MOTION_CANDIDATE_INSTANCE_TYPES` | `c7i.4xlarge`のみ（[`decisions/0064`](../../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)） |
+| th06/06c/07/08/09/10のCPU（等倍） | `CPU_XLARGE_INSTANCE_TYPES` | `c7i.xlarge` / `c7a.xlarge` / `c7i-flex.xlarge` / `m7i.xlarge` |
+| th11/12/128のCPU（等倍） | `CPU_2XLARGE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
+| 全タイトルのGPUの段（倍速・th20とth15の等倍以上） | `GPU_INSTANCE_TYPES` | `g6f.2xlarge`のみ（Issue #241・#82・#288、[`decisions/0058`](../../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。GPUリースのvCPU量で`getCandidateInstanceTypes(step, { maxVcpu })`が絞る |
+| th06ncの最後の段 | `GPU_FULL_INSTANCE_TYPES` | `g6.2xlarge`（[`decisions/0064`](../../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)） |
+| th15・th20のCPU低速録画 | `CPU_SLOW_MOTION_INSTANCE_TYPES` | `c7i.4xlarge`のみ（同上） |
 
 > **候補を足す・変える前に
 > [`docs/decisions/0016`](../../../docs/decisions/0016-ec2-fleet-instance-type-diversification.md)
@@ -28,7 +29,7 @@ UserData を変える前に読むこと。[`apps/api/README.md`](../README.md) �
 > 理由（CDKでLaunch Templateを変更してもジョブ起動に反映されないバグの修正）は
 > [`0051`](../../../docs/decisions/0051-launch-template-source-version-latest-not-default.md)。
 
-**`requiresGpuRecording()`がtrueのジョブだけは別系統**——GPU用の
+**GPUの段（`platform: "gpu"`）だけは別系統**——GPU用の
 Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決ではなく
 事前構築したカスタムAMIを固定参照）・別ECRイメージ（`config.workerGpuImage`）を
 使い、`buildUserData()`が`docker run`に`--gpus all`を追加する
@@ -42,16 +43,18 @@ Launch Template（`config.ec2.gpuLaunchTemplateId`、AMIはSSM動的解決では
 32bit互換ライブラリを自動マウントしないため。[`0052`](../../../docs/decisions/0052-gpu-xorg-driver-file-level-mount-not-directory.md)・
 [`0053`](../../../docs/decisions/0053-mount-32bit-nvidia-client-libraries-for-wine.md)）。
 
-**起動手段は順序付きの段（`launchTiersFor()`）で、Spot在庫の枯渇ならその場で次へ進む**（Issue #315、
-[`docs/decisions/0063`](../../../docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)）。
-GPUジョブはeu-south-2→`config.ec2.gpuFallback`（固定名のLaunch Template・タグで引いたサブネット・
-ECRレプリカ、[`0061`](../../../docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)）、CPU系はeu-south-2のみ。
-枯渇した段は`JobRecord.capacityExhaustedTargets`へ記録し、リトライでは飛ばす。全段が尽きたら
-`launch.ts`が等倍へ落とすか`capacity_exhausted`で直ちに失敗させる。クォータ超過は従来どおりリトライ。
-`FleetLaunchError`のメッセージは`handleFailure.ts`の容量不足判定（部分一致）が使うので形式を崩さないこと。
-試行ごとに作るLaunch Templateのバージョンは結果によらず消す。管理設定
-`forceGpuFallbackRegion`（`settings.ts`）が立っていれば、GPUジョブは一次リージョンを
-試さずフォールバック先で起動する（本番での実機検証用）。
+**起動手段は録画の段（`recordingPlan.ts`）で、Spot在庫の枯渇ならその場で次へ進む**（Issue #315・#317、
+[`docs/decisions/0063`](../../../docs/decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)・[`0066`](../../../docs/decisions/0066-recording-fallback-plan-as-config.md)）。
+段を試すループは`launch.ts`の`assignWorker()`、段をLaunch Template・サブネット・イメージへ解決するのは`ec2.ts`の
+`launchTierFor()`（一次リージョンならCPU/GPUのテンプレート、`config.ec2.gpuFallback`のリージョンなら固定名の
+GPUテンプレート・タグで引いたサブネット・ECRレプリカ、[`0061`](../../../docs/decisions/0061-gpu-capacity-fallback-to-eu-north-1.md)）、
+1段の起動は`launchRecordingInstance()`。解決できない段（フォールバック先が未設定の環境）は飛ばす。
+枯渇した段（全サブネット×全候補が枯渇、`isTierCapacityExhausted()`）は`JobRecord.capacityExhaustedTargets`へ
+記録し、リトライでは飛ばす。全段が尽きたら`launch.ts`が`capacity_exhausted`で直ちに失敗させる。クォータ超過は
+従来どおりリトライ。`FleetLaunchError`のメッセージは`handleFailure.ts`の容量不足判定（部分一致）が使うので
+形式を崩さないこと。試行ごとに作るLaunch Templateのバージョンは結果によらず消す。管理設定
+`forceGpuFallbackRegion`・`skipGpuSteps`（`settings.ts`）は段の除外として読む（`recordingSteps.ts`、本番での
+実機検証用）。
 
 フォールバック先で動くワーカーには、そのリージョンの出力バケットとタイトル資産レプリカを渡す
 （Issue #313、[`docs/decisions/0062`](../../../docs/decisions/0062-gpu-fallback-region-local-output-and-title-assets.md)、

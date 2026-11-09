@@ -1,6 +1,6 @@
 # 0064. GPUを確保できないth15・th20はCPU低速録画へ、th06ncはg6.2xlargeへ逃がす
 
-- **状態**: 有効
+- **状態**: 経路は有効。「`options.recordingSpeed`の書き換えで落とす」実装は[`0066`](0066-recording-fallback-plan-as-config.md)によって置き換え済み
 - **決定日**: 2026-11-05
 - **対象**: packages/shared / apps/api / worker / apps/web
 - **関連**: Issue #316、#315、#317、#322、#179、[`0010`](0010-slow-motion-no-worker-side-branching.md)・

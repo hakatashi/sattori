@@ -1,5 +1,5 @@
 /** 設定読み込みのテスト。環境変数は `loadConfig()` の引数として渡す。 */
-import { GPU_RECORDING_GAME_IDS, SUPPORTED_GAME_IDS } from "@sattori/shared";
+import { HOME_WORKER_GAME_IDS } from "@sattori/shared";
 import { describe, expect, it } from "vitest";
 import { ConfigError, loadConfig } from "./config.js";
 import type { Environment } from "./config.js";
@@ -17,23 +17,22 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ WORKERS_TABLE: "w", WORKER_IMAGE: "i" })).toThrow(ConfigError);
   });
 
-  it("既定値は録画対応タイトル(GPU専用タイトルを除く)と控えめな並列度、能力はすべて宣言する", () => {
+  it("既定値は録画の段に自宅ワーカーを持つタイトルと控えめな並列度、能力はすべて宣言する", () => {
     const config = loadConfig(env());
 
-    // GPU描画必須タイトル（th06nc、Issue #241）は自宅マシンにGPUが無い前提のため
-    // 既定から除外される（多層防御、`workerRouting.ts`の`offerToHomeWorker: false`と対）。
-    expect(config.supportedGames).toEqual(
-      SUPPORTED_GAME_IDS.filter((game) => !GPU_RECORDING_GAME_IDS.includes(game)),
-    );
-    for (const game of GPU_RECORDING_GAME_IDS) {
+    // GPU必須・低速録画のタイトル（th06nc・th15・th20）は段に自宅ワーカーが無いので
+    // 既定から除外される（多層防御、`recordingPlan.ts`と対、Issue #241・#317）。
+    expect(config.supportedGames).toEqual(HOME_WORKER_GAME_IDS);
+    for (const game of ["th06nc", "th15", "th20"] as const) {
       expect(config.supportedGames).not.toContain(game);
     }
+    expect(config.supportedGames).toContain("th07");
     expect(config.maxConcurrency).toBe(2);
   });
 
-  it("GPU描画必須タイトル(th06nc)をHOME_WORKER_SUPPORTED_GAMESで明示指定するとエラー", () => {
+  it("段に自宅ワーカーが無いタイトル(th06nc等)をHOME_WORKER_SUPPORTED_GAMESで明示指定するとエラー", () => {
     expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th06nc" }))).toThrow(ConfigError);
-    expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th07,th06nc" }))).toThrow(
+    expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th07,th20" }))).toThrow(
       ConfigError,
     );
   });

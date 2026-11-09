@@ -33,9 +33,9 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 /** Scanで取得するのはコスト推定に必要なフィールドだけに絞る（通信量・メモリ削減）。 */
 const COST_PROJECTION =
-  "#status, game, workerKind, createdAt, updatedAt, launchedAt, doneAt, instanceId, instanceType, spotPricePerHour, outputPath, outputPath720p, outputBytes, outputBytes720p, workerRegion, titleAssetsBytes, rawCheckpointBytes, titleAssetsRegion, outputRegion, #options.recordingSpeed";
-// "status"・"options"はDynamoDBの予約語（`options`は録画速度だけを読む、Issue #288）。
-const COST_EXPRESSION_ATTRIBUTE_NAMES = { "#status": "status", "#options": "options" };
+  "#status, game, workerKind, createdAt, updatedAt, launchedAt, doneAt, instanceId, instanceType, spotPricePerHour, outputPath, outputPath720p, outputBytes, outputBytes720p, workerRegion, titleAssetsBytes, rawCheckpointBytes, titleAssetsRegion, outputRegion, capacityExhaustedTargets, recordingStepId";
+// "status"はDynamoDBの予約語。
+const COST_EXPRESSION_ATTRIBUTE_NAMES = { "#status": "status" };
 
 /** CloudFrontの無料枠判定を返す月数の上限（新しい順）。 */
 export const CLOUDFRONT_MONTHS_LIMIT = 12;
@@ -144,7 +144,8 @@ function normalizeJob(item: JobCostInput): JobCostInput {
   return {
     status: item.status,
     game: item.game,
-    ...(item.options ? { options: { recordingSpeed: item.options.recordingSpeed } } : {}),
+    ...(item.capacityExhaustedTargets ? { capacityExhaustedTargets: item.capacityExhaustedTargets } : {}),
+    ...(item.recordingStepId ? { recordingStepId: item.recordingStepId } : {}),
     workerKind: item.workerKind ?? null,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,

@@ -148,20 +148,12 @@ export interface GetJobResponse {
    */
   replayInfo: ReplayInfo | null;
   /**
-   * このジョブの録画速度（Issue #288、倍速録画）。`RecordingOptions.recordingSpeed`を
-   * `recordingSpeedOf()`で正規化した値（旧ジョブは1）。GPUを確保できず速度を落とした
-   * （Issue #289・#316）後はその値になる（低速録画は1未満）——つまり常に「実際に録る速度」。
-   * ジョブページの進捗バー・残り時間推定が、録画フェーズの実時間が短くなることを
-   * 織り込むために使う。
+   * このジョブの録画速度（Issue #288）。`RecordingOptions.recordingSpeed`を`recordingSpeedOf()`で
+   * 正規化した値（旧ジョブは1）。`Launch`が割り当てる録画の段の速度を書く（Issue #317）ので、常に
+   * 「実際に録る速度」（低速録画は1未満）。ジョブページは速度の表示と、進捗バー・残り時間推定
+   * （録画フェーズの実時間の伸縮）に使う。段が途中で変わっても、フォールバックしたことは伝えない。
    */
   recordingSpeed: RecordingSpeed;
-  /**
-   * GPUを確保できず速度を落とした場合の、ユーザーが元々選んだ録画速度
-   * （Issue #289・#316、`JobRecord.requestedRecordingSpeed`の転記）。落としていない
-   * ジョブでは null。ページBはこれが non-null のとき、混雑のため速度を変えたことの
-   * 注意書きを出す。
-   */
-  requestedRecordingSpeed: RecordingSpeed | null;
   /**
    * リプレイずれ（デシンク）の疑い（Issue #103、`JobRecord.desyncDetected`をそのまま
    * 転記）。`true`のときページBは「録画終了時のスコアが記録されたスコアと一致

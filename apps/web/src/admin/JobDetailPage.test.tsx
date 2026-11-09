@@ -56,6 +56,8 @@ const job: AdminJobRecord = {
   language: "ja",
   desyncDetected: null,
   timedOut: null,
+  recordingStepId: "gpu:eu-north-1",
+  capacityExhaustedTargets: ["gpu:eu-south-2", "cpu:eu-south-2"],
 };
 
 const detailResponse: AdminJobDetailResponse = {
@@ -110,6 +112,14 @@ describe("JobDetailPage", () => {
     expect(screen.getByText("us-east-1a")).toBeTruthy();
     expect(screen.getByText("user@example.com")).toBeTruthy();
     expect(screen.getByText("120")).toBeTruthy();
+  });
+
+  it("recordingStepIdとcapacityExhaustedTargetsを描画する", async () => {
+    mocked.fetchAdminJobDetail.mockResolvedValue(detailResponse);
+    renderJobDetailPage();
+
+    await waitFor(() => expect(screen.getByText("gpu:eu-north-1")).toBeTruthy());
+    expect(screen.getByText("gpu:eu-south-2, cpu:eu-south-2")).toBeTruthy();
   });
 
   it("ダウンロードリンクのhrefが設定される", async () => {

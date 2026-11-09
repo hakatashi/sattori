@@ -1,9 +1,4 @@
-import {
-  NATIVE_RECORDING_SPEED,
-  recordingSpeedOf,
-  recordingTargetHz,
-  requiresGpuRecording,
-} from "@sattori/shared";
+import { NATIVE_RECORDING_SPEED, recordingSpeedOf, recordingTargetHz } from "@sattori/shared";
 import type {
   AdminJobRecord,
   JobRecord,
@@ -29,6 +24,11 @@ export interface WorkerEnvOptions {
    * `CreateFleet`の起動先、自宅ワーカーなら一次リージョンを渡す。
    */
   dataRegion: string;
+  /**
+   * GPU系インスタンスで起動するか（録画の段の`platform`、`recordingPlan.ts`）。自宅ワーカーは
+   * 常に false。
+   */
+  gpuWorker: boolean;
 }
 
 /**
@@ -96,15 +96,14 @@ export function buildWorkerEnv(
     // 録画スクリプトの実時間依存パラメータが、この1つの値（60×倍率）から同じ比率でスケールする。
     // QPC偽装の倍率（`SPEED_HACK_MULTIPLIER`）はワーカーがここから導出するので渡さない
     // （2つの値が食い違う余地を作らないため、`worker/recording/config.py`）。
-    // 倍速はGPU、低速はEC2のCPU系でしか走らないため、割り当て先で無効化されることは無い。
+    // 速度は`Launch`が割り当てる段（`recordingPlan.ts`）の速度を書いてからこの関数を呼ぶ。
     env.FPS_LIMIT_TARGET_HZ = String(recordingTargetHz(recordingSpeed));
   }
-  if (requiresGpuRecording(job)) {
-    // GPU系インスタンス（g6f.2xlarge・g6.2xlarge）で起動するジョブ。ワーカーはGPU描画必須でない
-    // タイトルもGPU描画（Xorg+nvidia）で録り、録画・変換ともNVENCでエンコードする
+  if (options.gpuWorker) {
+    // GPU系インスタンスで起動する段。ワーカーはGPU描画必須でないタイトルもGPU描画
+    // （Xorg+nvidia）で録り、録画・変換ともNVENCでエンコードする
     // （`worker/recording/timing.py`の`gpu_worker()`）。「どこで動くか」ではなく
-    // 「何が使えるか」を表す値で、GPUジョブは自宅ワーカーへは決してオファーされない
-    // （`workerRouting.ts`）ため、これが立っていればGPUは必ずある。
+    // 「何が使えるか」を表す値（`docs/decisions/0010`）。
     env.GPU_WORKER = "1";
   }
   if (options.spotInterruptionWatch) {
@@ -116,13 +115,6 @@ export function buildWorkerEnv(
     // `WorkerEnvOptions`を経由せず`job.options`から直接読む——割り当て先に応じて
     // 呼び出し側が値を変える必要が無い。
     env.TH10_BUGFIX_MARISA_B = "1";
-  }
-  if (job.game === "th06nc" && job.options.th06ncHighResolution) {
-    // 1080p録画オプション（Issue #241）。th06ncは自宅ワーカーへは絶対にオファーされない
-    // （`workerRouting.ts`の`offerToHomeWorker: false`）ため常にEC2（GPU系）で録画され、
-    // th10BugfixMarisaBと同様「割り当て先次第で無効化される」性質のオプションではない。
-    // 未指定＝720p（既定値を環境変数で表現しない）。
-    env.TH06NC_RESOLUTION = "1080p";
   }
   return env;
 }
