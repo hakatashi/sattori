@@ -451,9 +451,14 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       expect(fallbackUpdates()).toHaveLength(1);
     });
 
-    it("th06ncはGPU以外の段が無いので飛ばさず待つ", async () => {
+    it("後ろのGPU以外の段を使い切っていれば飛ばさず待つ", async () => {
       ddbMock.on(GetCommand).resolves({
-        Item: { ...gpuJob, game: "th06nc", options: { ...gpuJob.options, recordingSpeed: 2 } },
+        Item: {
+          ...gpuJob,
+          game: "th06nc",
+          options: { ...gpuJob.options, recordingSpeed: 2 },
+          capacityExhaustedTargets: ["cpu:eu-south-2"],
+        },
       });
       waitedFor(31);
       ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
