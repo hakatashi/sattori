@@ -3,5 +3,5 @@
 # boto3 系のみ requirements-docker.txt から pip で導入する（Dockerfile 参照）。
 # ローカルで直接実行する場合はこのファイルで仮想環境を作る。
 -r requirements-docker.txt
-numpy==2.2.6
+numpy==2.5.4
 pillow==13.0.0
