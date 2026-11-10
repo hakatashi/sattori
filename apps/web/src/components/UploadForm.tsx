@@ -286,7 +286,7 @@ export function UploadForm() {
 
   return (
     <section className={styles.card}>
-      {/* eu-south-2でのGPUインスタンス枯渇に伴う一時的なお知らせ。状況が改善したら削除する。 */}
+      {/* サービス全体の一時的なお知らせ(現在はGPUインスタンス枯渇からの復旧)。不要になったら削除する。 */}
       <div className={clsx(styles.notice, styles.siteNotice)} role="note">
         <p className={styles.siteNoticeText}>
           {t("uploadForm.gpuOutageNotice")}

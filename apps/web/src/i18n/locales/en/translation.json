@@ -106,7 +106,7 @@
     "thpracPurposeFreezeFix": "Applied during recording to work around a bug that freezes the game right after selecting a replay"
   },
   "uploadForm": {
-    "gpuOutageNotice": "Due to a prolonged shortage of GPU instances, recordings of titles that use a GPU (Embodiment of Scarlet Devil: New Classic, Legacy of Lunatic Kingdom, and Fossilized Wonders) may take longer than usual or may fail to start.",
+    "gpuOutageNotice": "Recording of some resource-intensive titles (Embodiment of Scarlet Devil: New Classic, Legacy of Lunatic Kingdom, and Fossilized Wonders) was unavailable for a long time, but it has now been restored. Please note that recordings may still take longer than usual or may fail to start.",
     "supportedTitlesLabel": "Currently supported titles ({{count}})",
     "step1Label": "Select a replay file",
     "step2Label": "Check the details",
