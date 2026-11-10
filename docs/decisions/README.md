@@ -78,7 +78,8 @@
 | [0064](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md) | 2026-11-05 | packages/shared / apps/api / worker / apps/web | GPUを確保できないth15・th20はCPU低速録画(`c7i.4xlarge`、1/2倍速・th15 Extraは1/3倍速)へ、th06ncは`g6.2xlarge`へ逃がす。低速録画はユーザーが選べず自宅ワーカーへも出さない(Issue #316) | th15・th20の経路は有効。「`options.recordingSpeed`の書き換えで落とす」実装は[0066](0066-recording-fallback-plan-as-config.md)、th06ncの`g6.2xlarge`の段は[0067](0067-th06nc-cpu-slow-motion-and-drop-1080p.md)によって置き換え済み |
 | [0065](0065-speedup-delivery-frame-rate-by-output-option.md) | 2026-11-07 | worker | 倍速録画の配信版は`fps`フィルタではなく`-r 60 -fps_mode cfr`で60fpsへ揃える。生映像のptsが信用できないため(Issue #322) | 有効 |
 | [0066](0066-recording-fallback-plan-as-config.md) | 2026-11-08 | packages/shared / apps/api / home-worker / apps/web / infra | 録画速度・インスタンス・リージョンはタイトルごとの段の配列(`recordingPlan.ts`)を先頭から試して決め、ユーザーに速度を選ばせない。フォールバックの変更は配列だけで行う(Issue #317) | 有効 |
-| [0067](0067-th06nc-cpu-slow-motion-and-drop-1080p.md) | 2026-11-09 | packages/shared / worker / apps/web | th06ncの最終段を`g6.2xlarge`からCPU描画(BC7展開)の`c7i.2xlarge`・1/2倍速に替え、1080p録画を廃止する。Extraの描画落ちは受け入れる(Issue #317) | 有効 |
+| [0067](0067-th06nc-cpu-slow-motion-and-drop-1080p.md) | 2026-11-09 | packages/shared / worker / apps/web | th06ncの最終段を`g6.2xlarge`からCPU描画(BC7展開)の`c7i.2xlarge`・1/2倍速に替え、1080p録画を廃止する。Extraも同じ段で録り、高密度弾幕の描画落ちは受け入れる(Issue #317) | 有効 |
+| [0068](0068-supply-chain-cooldown-and-dependabot.md) | 2026-11-11 | 全パッケージ | 依存パッケージ更新はDependabotとリリース後クールダウン(5〜7日)・完全ピン留め(`requirements-docker.txt`・Actions SHA固定)でサプライチェーン汚染を防ぐ(Issue #338) | 有効 |
 
 ## 書き方
 
