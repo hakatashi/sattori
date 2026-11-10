@@ -13,12 +13,12 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
-    "@aws-sdk/client-cloudwatch-logs": "^3.1162.0",
-    "@aws-sdk/client-dynamodb": "^3.1162.0",
-    "@aws-sdk/client-ecr": "^3.1162.0",
-    "@aws-sdk/client-sfn": "^3.1162.0",
-    "@aws-sdk/client-sts": "^3.1162.0",
-    "@aws-sdk/lib-dynamodb": "^3.1162.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.1163.0",
+    "@aws-sdk/client-dynamodb": "^3.1163.0",
+    "@aws-sdk/client-ecr": "^3.1163.0",
+    "@aws-sdk/client-sfn": "^3.1163.0",
+    "@aws-sdk/client-sts": "^3.1163.0",
+    "@aws-sdk/lib-dynamodb": "^3.1163.0",
     "@sattori/shared": "workspace:*"
   },
   "devDependencies": {
