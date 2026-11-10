@@ -35,10 +35,11 @@ echo "==> [Phase A] Preparing isolated worktree for PR #${PR_NUMBER} in ${TEMP_D
 git clone --quiet "$REPO_ROOT" "$TEMP_DIR/repo"
 cd "$TEMP_DIR/repo"
 
-# ホスト側で PR ブランチのみを fetch し、コンテナへ渡す前に remote 情報を完全削除する
+# ホスト側で PR ブランチのみを fetch し、最新の main とマージした状態を検証する（コンテナへ渡す前に remote 情報を完全削除）
 git remote set-url origin git@github.com:hakatashi/sattori-dev.git
 git fetch --quiet origin "pull/${PR_NUMBER}/head:pr-${PR_NUMBER}" main:base-main
 git checkout --quiet "pr-${PR_NUMBER}"
+git merge --no-edit --quiet base-main
 git remote remove origin
 
 # cdk synth 用の context (cdk.json) が .gitignore 対象の場合に備え、ホストからコピーする（秘密値は含まない）
@@ -74,19 +75,33 @@ docker run --rm \
   --security-opt=no-new-privileges \
   --memory=8g \
   --cpus=6 \
-  --pids-limit=400 \
+  --pids-limit=2048 \
   -v "$RESOLV_CONF":/etc/resolv.conf:ro \
   -v "$TEMP_DIR/repo":/workspace \
   -w /workspace \
   "$SANDBOX_IMAGE" \
   bash -c '
     set -euo pipefail
+    umask 0000
+    trap "chmod -R a+rwX /workspace 2>/dev/null || true" EXIT
     export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+    git config --global --add safe.directory /workspace
+    corepack enable --install-directory /home/agent/.local/bin
+    if ! command -v rsync >/dev/null 2>&1; then
+      cat << "EOF" > /home/agent/.local/bin/rsync
+#!/usr/bin/env python3
+import shutil, sys
+args = [a for a in sys.argv[1:] if not a.startswith("-")]
+shutil.copytree(args[-2].rstrip("/"), args[-1].rstrip("/"), dirs_exist_ok=True, ignore=shutil.ignore_patterns("replay"))
+EOF
+      chmod +x /home/agent/.local/bin/rsync
+    fi
     pnpm check:docs
     pnpm install --frozen-lockfile
-    pnpm build
-    pnpm typecheck
-    pnpm --filter "!@sattori/worker" test
+    pip3 install --user --break-system-packages --no-cache-dir -r worker/requirements-dev.txt
+    pnpm exec turbo run build --concurrency=2
+    pnpm exec turbo run typecheck --concurrency=2
+    pnpm exec turbo run test --concurrency=2
     pnpm --filter @sattori/infra synth >/dev/null
   '
 TEST_EXIT=$?
