@@ -5,5 +5,7 @@ packages:
   - "home-worker"
   - "worker"
 
+minimumReleaseAge: 7200
+
 overrides:
   "@smithy/types": "4.16.1"

@@ -1,0 +1,108 @@
+# 依存パッケージの週次更新設定（Issue #338、docs/decisions/0068-supply-chain-cooldown-and-dependabot.md）。
+# サプライチェーン攻撃対策として、リリースから5日間（メジャーは7日間）のクールダウン期間を設ける。
+version: 2
+updates:
+  # 1. Node.js (pnpm workspace monorepo)
+  - package-ecosystem: "npm"
+    directories:
+      - "/"
+      - "/apps/*"
+      - "/packages/*"
+      - "/infra"
+      - "/home-worker"
+      - "/worker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Asia/Tokyo"
+    cooldown:
+      default-days: 5
+      semver-major-days: 7
+      semver-minor-days: 5
+      semver-patch-days: 5
+    groups:
+      aws-sdk:
+        patterns:
+          - "@aws-sdk/*"
+          - "@smithy/*"
+          - "@types/aws-lambda"
+        update-types:
+          - "minor"
+          - "patch"
+      aws-cdk:
+        patterns:
+          - "aws-cdk"
+          - "aws-cdk-lib"
+          - "constructs"
+        update-types:
+          - "minor"
+          - "patch"
+      web-deps:
+        patterns:
+          - "react*"
+          - "@types/react*"
+          - "i18next*"
+          - "ionicons"
+          - "clsx"
+          - "vite*"
+          - "@vitejs/*"
+        update-types:
+          - "minor"
+          - "patch"
+      dev-test-tools:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "@testing-library/*"
+          - "jsdom"
+          - "typescript"
+          - "turbo"
+          - "esbuild"
+          - "tsx"
+          - "@types/node"
+          - "aws-sdk-client-mock"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Node.js 24 ランタイム（.tool-versions）に合わせるため @types/node の v25 以降は除外
+      - dependency-name: "@types/node"
+        versions:
+          - ">= 25.a"
+
+  # 2. Python (worker/)
+  - package-ecosystem: "pip"
+    directory: "/worker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Asia/Tokyo"
+    cooldown:
+      default-days: 5
+      semver-major-days: 7
+      semver-minor-days: 5
+      semver-patch-days: 5
+    groups:
+      worker-python:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # 3. GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Asia/Tokyo"
+    cooldown:
+      default-days: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"

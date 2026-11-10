@@ -36,8 +36,11 @@ RUN dpkg --add-architecture i386 && \
       python3 python3-numpy python3-pil python3-pip \
       ca-certificates \
     && locale-gen ja_JP.UTF-8 && update-locale \
-    && pip3 install --break-system-packages --no-cache-dir boto3 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-docker.txt /tmp/requirements-docker.txt
+RUN pip3 install --break-system-packages --no-cache-dir --no-deps -r /tmp/requirements-docker.txt && \
+    rm /tmp/requirements-docker.txt
 
 WORKDIR /app
 
