@@ -4,4 +4,4 @@
 # ローカルで直接実行する場合はこのファイルで仮想環境を作る。
 -r requirements-docker.txt
 numpy==2.2.6
-pillow==12.3.0
+pillow==13.0.0
