@@ -18,7 +18,7 @@
     "deploy": "pnpm --filter @sattori/infra run deploy"
   },
   "devDependencies": {
-    "esbuild": "^0.24.2",
+    "esbuild": "^0.28.2",
     "turbo": "^2.11.10",
     "typescript": "^7.0.2"
   },
