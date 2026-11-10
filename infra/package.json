@@ -21,11 +21,11 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "@vitest/coverage-v8": "^4.1.12",
+    "@vitest/coverage-v8": "^5.1.0",
     "aws-cdk": "^2.1148.0",
-    "esbuild": "^0.24.2",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.12"
+    "vitest": "^5.1.0"
   }
 }
