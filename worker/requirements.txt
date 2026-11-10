@@ -1,7 +1,7 @@
-# 録画ワーカーの Python 依存（Issue #338）。
+# 録画ワーカーの Python 依存（Issue #338・#339）。
 # Docker イメージ内では numpy / pillow は apt の python3-numpy / python3-pil で導入し、
 # boto3 系のみ requirements-docker.txt から pip で導入する（Dockerfile 参照）。
 # ローカルで直接実行する場合はこのファイルで仮想環境を作る。
 -r requirements-docker.txt
 numpy==2.2.6
-pillow==12.1.1
+pillow==12.3.0
