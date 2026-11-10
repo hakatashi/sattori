@@ -25,9 +25,9 @@
   "devDependencies": {
     "@types/aws-lambda": "^8.10.164",
     "@types/node": "^24.19.2",
-    "@vitest/coverage-v8": "^4.1.12",
+    "@vitest/coverage-v8": "^5.1.0",
     "aws-sdk-client-mock": "^4.1.0",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.12"
+    "vitest": "^5.1.0"
   }
 }
