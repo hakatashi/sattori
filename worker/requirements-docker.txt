@@ -1,0 +1,11 @@
+# Docker イメージ内で pip 導入する boto3 とその推移的依存のバージョン固定リスト（Issue #338）。
+# Docker 内では numpy / pillow は apt の python3-numpy / python3-pil で導入するため含めない。
+# Dockerfile / Dockerfile.gpu では --no-deps 付きでインストールし、未固定の推移的依存の混入を防ぐ
+# （docs/decisions/0068-supply-chain-cooldown-and-dependabot.md）。
+boto3==1.43.53
+botocore==1.43.53
+jmespath==1.1.0
+python-dateutil==2.9.0.post0
+s3transfer==0.19.1
+six==1.17.0
+urllib3==2.5.0

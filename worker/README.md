@@ -71,7 +71,7 @@
   スレッド(Issue #49)。15分途絶えるとタスクが失敗し`HandleFailure`が後始末に入る。主目的は
   自宅ワーカーの停電・回線断の検知だが、EC2でもハング時の失敗検知が90分→15分に縮まる |
 | `title_assets.py` | `GAME`環境変数に応じたタイトル固有アセットをS3からダウンロード・展開する(§8) |
-| `Dockerfile` | 実行イメージ定義 |
+| `Dockerfile` / `requirements*.txt` | 実行イメージ定義とPython依存ロック(`requirements-docker.txt`→`requirements.txt`→`requirements-dev.txt`、[`0068`](../docs/decisions/0068-supply-chain-cooldown-and-dependabot.md)) |
 | `mods/` | ゲームプロセスへ注入するフック DLL(`thNN_hook.dll`)とインジェクタ(`injector.exe`)の
   ソース(C++)。共通フック・タイトル別フック・倍速録画(§5)のPresentフック・スコア監視(デシンクの
   事後検知)の内訳は **[`docs/mods.md`](docs/mods.md)**。ビルドは §9 |
