@@ -80,6 +80,7 @@
 | [0066](0066-recording-fallback-plan-as-config.md) | 2026-11-08 | packages/shared / apps/api / home-worker / apps/web / infra | 録画速度・インスタンス・リージョンはタイトルごとの段の配列(`recordingPlan.ts`)を先頭から試して決め、ユーザーに速度を選ばせない。フォールバックの変更は配列だけで行う(Issue #317) | 有効 |
 | [0067](0067-th06nc-cpu-slow-motion-and-drop-1080p.md) | 2026-11-09 | packages/shared / worker / apps/web | th06ncの最終段を`g6.2xlarge`からCPU描画(BC7展開)の`c7i.2xlarge`・1/2倍速に替え、1080p録画を廃止する。Extraも同じ段で録り、高密度弾幕の描画落ちは受け入れる(Issue #317) | 有効 |
 | [0068](0068-supply-chain-cooldown-and-dependabot.md) | 2026-11-11 | 全パッケージ | 依存パッケージ更新はDependabotとリリース後クールダウン(5〜7日)・完全ピン留め(`requirements-docker.txt`・Actions SHA固定)でサプライチェーン汚染を防ぐ(Issue #338) | 有効 |
+| [0069](0069-automated-dependabot-merge-deploy-with-gvisor-sandbox.md) | 2026-11-11 | 全パッケージ | Dependabot PRのAI自動処理はgVisor隔離検査(Phase A)とホスト本番デプロイ・E2E検証(Phase B)の二段階に分離する(Issue #341) | 有効 |
 
 ## 書き方
 
