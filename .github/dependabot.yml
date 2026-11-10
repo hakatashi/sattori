@@ -91,6 +91,11 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # botocore 1.43.x が python-dateutil<3.0.0 を要求するため v3 以降は除外
+      - dependency-name: "python-dateutil"
+        versions:
+          - ">= 3.a"
 
   # 3. GitHub Actions
   - package-ecosystem: "github-actions"
