@@ -59,7 +59,7 @@
 | `mods/common/score_monitor.*` | ゲーム内スコア・ステージ番号・残機・グレイズの定期サンプリング
   (reports/50、Issue #103)。`recording.modlog.check_replay_desync()`が録画成功直後にMODログの
   スコア推移と`replayInfo.score`を突き合わせてリプレイずれ(デシンク)の疑いを判定する
-  (`JobRecord.desyncDetected`、自動リトライはしない)。RVAはタイトル毎に`dllmain.cpp`で指定
+  (`JobRecord.desyncDetected`、自動リトライはしない。ただし期待スコア>0に対し最後までスコアが0のままだった録画はリプレイ非再生とみなして自動リトライする、Issue #324)。RVAはタイトル毎に`dllmain.cpp`で指定
   (baseRva+baseIsPointer+フィールドオフセット/幅の汎用設計)。th09を除く8タイトルで実機
   動作確認済み
   ([`docs/reports/2026-08-25-th07-score-monitor-fix.md`](../../docs/reports/2026-08-25-th07-score-monitor-fix.md)、

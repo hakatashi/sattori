@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-09",
+    ja: "メニュー操作の取りこぼしでリプレイが始まらなかった場合に、リプレイが映っていない動画がそのまま完了として配信されてしまう問題を修正。リプレイの開始失敗を検知して自動で再試行するようになりました",
+    en: "Fixed an issue where a video without the replay playing could be delivered as completed when replay playback failed to start due to missed menu inputs. The system now detects playback start failures and automatically retries recording",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/324",
+  },
+  {
+    date: "2026-11-09",
     ja: "東方紅魔郷: New Classic (th06nc) は、GPUの録画サーバーに空きが無いときもGPUを使わずに録画できるように。混雑による失敗が起きにくくなります（その場合は完成までに通常より時間がかかり、Extraステージの弾幕が特に多い場面ではコマ落ちすることがあります）",
     en: "Embodiment of Scarlet Devil: New Classic (th06nc) can now be recorded without a GPU when no GPU recording servers are available, making failures due to congestion less likely (in that case it takes longer to finish, and frames may drop in scenes with especially dense bullet patterns in the Extra stage)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/317",
