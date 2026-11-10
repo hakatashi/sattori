@@ -686,6 +686,111 @@ def test_record_with_retry_saves_diagnostics_snapshot_on_duplicate_rate_discard(
     assert saved == [("/diag", "frame:/out.mp4:15.0", 1, "duplicate_rate")]
 
 
+def test_record_with_retry_discards_and_retries_when_score_is_zero(monkeypatch):
+    """スコア監視のあるタイトルで期待スコア>0なのに最後までスコアが0の録画は破棄してリトライする(Issue #324)。"""
+    config = make_config()
+    monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good", "total_record_sec": 60.0,
+    })
+    monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
+    monkeypatch.setattr(pipeline, "grab_frame_from_video", lambda video_path, at_sec: f"frame:{video_path}:{at_sec}")
+    monkeypatch.setattr(pipeline, "check_replay_desync", lambda *a, **k: False)
+
+    attempts = {"count": 0}
+
+    def fake_read_verified_scores(log_path, game_id):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            return [0]
+        return [0, 481237400]
+
+    monkeypatch.setattr(pipeline, "read_verified_scores", fake_read_verified_scores)
+
+    saved = []
+    monkeypatch.setattr(
+        pipeline, "save_diagnostics_snapshot",
+        lambda diagnostics_dir, frame, attempt, classification: saved.append(
+            (diagnostics_dir, frame, attempt, classification)
+        ),
+    )
+
+    logs = []
+    success = pipeline.record_with_retry(
+        config, "/replay.rpy", "/out.mp4", max_attempts=2, expected_score=481237400,
+        diagnostics_dir="/diag", log=logs.append,
+    )
+
+    assert success is True
+    assert attempts["count"] == 2
+    assert saved == [("/diag", "frame:/out.mp4:15.0", 1, "score_zero")]
+    assert any("最後まで 0 のままでした" in msg for msg in logs)
+
+
+def test_record_with_retry_gives_up_after_max_attempts_when_score_is_always_zero(monkeypatch):
+    config = make_config()
+    monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good", "total_record_sec": 60.0,
+    })
+    monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
+    monkeypatch.setattr(pipeline, "grab_frame_from_video", lambda video_path, at_sec: f"frame:{video_path}:{at_sec}")
+    monkeypatch.setattr(pipeline, "read_verified_scores", lambda *a, **k: [0])
+
+    saved = []
+    monkeypatch.setattr(
+        pipeline, "save_diagnostics_snapshot",
+        lambda diagnostics_dir, frame, attempt, classification: saved.append(
+            (diagnostics_dir, frame, attempt, classification)
+        ),
+    )
+
+    logs = []
+    success = pipeline.record_with_retry(
+        config, "/replay.rpy", "/out.mp4", max_attempts=2, expected_score=481237400,
+        diagnostics_dir="/diag", log=logs.append,
+    )
+
+    assert success is False
+    assert saved == [
+        ("/diag", "frame:/out.mp4:15.0", 1, "score_zero"),
+        ("/diag", "frame:/out.mp4:15.0", 2, "score_zero"),
+    ]
+    assert any("2回試行しても正常な録画が得られませんでした" in msg for msg in logs)
+
+
+def test_record_with_retry_does_not_discard_when_expected_score_is_zero_or_none(monkeypatch):
+    config = make_config()
+    monkeypatch.setattr(pipeline, "attempt_recording", lambda *a, **k: {
+        "output_exists": True, "classification": "good", "total_record_sec": 60.0,
+    })
+    monkeypatch.setattr(pipeline, "measure_duplicate_rate", lambda *a, **k: 1.0)
+    monkeypatch.setattr(pipeline, "read_verified_scores", lambda *a, **k: [0])
+    monkeypatch.setattr(pipeline, "check_replay_desync", lambda *a, **k: None)
+
+    saved = []
+    monkeypatch.setattr(
+        pipeline, "save_diagnostics_snapshot",
+        lambda diagnostics_dir, frame, attempt, classification: saved.append(
+            (diagnostics_dir, frame, attempt, classification)
+        ),
+    )
+
+    # expected_score=None
+    success_none = pipeline.record_with_retry(
+        config, "/replay.rpy", "/out.mp4", max_attempts=1, expected_score=None,
+        diagnostics_dir="/diag", log=lambda msg: None,
+    )
+    assert success_none is True
+    assert saved == []
+
+    # expected_score=0
+    success_zero = pipeline.record_with_retry(
+        config, "/replay.rpy", "/out.mp4", max_attempts=1, expected_score=0,
+        diagnostics_dir="/diag", log=lambda msg: None,
+    )
+    assert success_zero is True
+    assert saved == []
+
+
 def test_record_with_retry_uses_content_end_sec_for_duplicate_rate_window(monkeypatch):
     """重複フレーム率の計測窓の終端は`total_record_sec`ではなく`content_end_sec`を使う。
     短いリプレイでは終了検知の確認待ち(still: 16秒/template: 4秒相当)ぶんの静止画面が
