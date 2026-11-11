@@ -263,13 +263,16 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
  * 高負荷演出のみCPUでは解消しない処理落ちがありGPU（wined3d+OpenGL、DXVKは
  * 不使用）のg6f系インスタンスで録画する、touhou-recorder reports/82、Issue #82）
  * を追加した。
+ * th13（東方神霊廟。ver1.00cの非Steam版——Steam版はDRMで起動できない。%APPDATA%配下の
+ * cfg/replay・DIK経由の入力注入・VsyncPatch不要、touhou-recorder reports/100、Issue #79）
+ * を追加した。
  * th06とはリプレイのバージョンが非互換（`packages/replay-parser`がバージョン語で判別）
  * なため別`GameId`として扱う。
- * PoC（touhou-recorder）で E2E 実証済みなのはこの12本のみで、他タイトルは
+ * PoC（touhou-recorder）で E2E 実証済みなのはこの13本のみで、他タイトルは
  * MOD 移植（録画対応）が未着手（AGENTS.md 参照）。
  */
 export const SUPPORTED_GAME_IDS: readonly GameId[] = [
-  "th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th15", "th20",
+  "th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th13", "th15", "th20",
   "th128",
 ];
 

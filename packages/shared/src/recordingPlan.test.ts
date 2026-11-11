@@ -33,7 +33,7 @@ describe("RECORDING_PLANS", () => {
   });
 
   it("録画非対応タイトルは段を持たない", () => {
-    expect(recordingPlanFor("th13")).toEqual([]);
+    expect(recordingPlanFor("th14")).toEqual([]);
   });
 
   it("段のidはタイトルの中で一意", () => {
@@ -112,6 +112,16 @@ describe("RECORDING_PLANS", () => {
       // Issue #317・touhou-recorder reports/97: `g6.2xlarge`の段をCPU（BC7展開）の1/2倍速に置き換えた（0067）。
       ["gpu:eu-south-2 x2 g6f.2xlarge", "gpu:eu-north-1 x2 g6f.2xlarge", "cpu:eu-south-2 x0.5 c7i.2xlarge"],
     ],
+    [
+      ["th13"],
+      // Issue #79・touhou-recorder reports/100: GPUの段は持たない（未検証）。等倍は`c7i.4xlarge`、
+      // その次に`.2xlarge`帯の1/2倍速（0070）。
+      [
+        "home x1",
+        "cpu:eu-south-2 x1 c7i.4xlarge",
+        "cpu-slow:eu-south-2 x0.5 c7i.2xlarge,c7a.2xlarge,m7i.2xlarge",
+      ],
+    ],
   ])("%j の段", (games, expected) => {
     for (const game of games) {
       expect(recordingPlanFor(game).map(describeStep), game).toEqual(expected);
@@ -157,6 +167,24 @@ describe("currentRecordingStep / remainingRecordingSteps", () => {
   });
 });
 
+describe("CPUの段を2つ持つタイトル（th13）", () => {
+  it("等倍の段を使い切ったら1/2倍速の段へ進む（自宅ワーカーの段は記録されず毎回オファーされる）", () => {
+    const job = { game: "th13" as const, capacityExhaustedTargets: ["cpu:eu-south-2"] };
+    const remaining = remainingRecordingSteps(job);
+    expect(remaining.map((step) => step.id)).toEqual(["home", "cpu-slow:eu-south-2"]);
+    expect(recordingSpeedForStep(remaining[1]!, job)).toBe(1 / 2);
+  });
+
+  it("最初の段は自宅ワーカーの等倍", () => {
+    expect(currentRecordingStep({ game: "th13" })?.id).toBe("home");
+    expect(initialRecordingSpeed({ game: "th13" })).toBe(1);
+  });
+
+  it("GPUの段が無いので飛ばすものも無い", () => {
+    expect(skippableGpuStepIds({ game: "th13" })).toEqual([]);
+  });
+});
+
 describe("skippableGpuStepIds", () => {
   it("GPU以外の段が後ろにあれば、残っているGPUの段を返す", () => {
     expect(skippableGpuStepIds({ game: "th08" })).toEqual(["gpu:eu-south-2", "gpu:eu-north-1"]);
@@ -188,7 +216,7 @@ describe("initialRecordingSpeed", () => {
   });
 
   it("録画非対応タイトルは等倍", () => {
-    expect(initialRecordingSpeed({ game: "th13" })).toBe(1);
+    expect(initialRecordingSpeed({ game: "th14" })).toBe(1);
   });
 });
 
@@ -198,5 +226,6 @@ describe("HOME_WORKER_GAME_IDS", () => {
     expect(HOME_WORKER_GAME_IDS).not.toContain("th15");
     expect(HOME_WORKER_GAME_IDS).not.toContain("th20");
     expect(HOME_WORKER_GAME_IDS).toContain("th08");
+    expect(HOME_WORKER_GAME_IDS).toContain("th13");
   });
 });

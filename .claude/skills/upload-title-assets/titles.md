@@ -19,6 +19,7 @@ WINEPREFIX の作成は同 §3、アップロード後のレプリカ複製の�
 - [10. th15（東方紺珠伝、GPU描画必須）](#10-th15東方紺珠伝gpu描画必須)
 - [11. th20（東方錦上京）](#11-th20東方錦上京)
 - [12. th128（妖精大戦争）](#12-th128妖精大戦争)
+- [13. th13（東方神霊廟）](#13-th13東方神霊廟)
 
 ## 1. th06（東方紅魔郷）
 
@@ -292,4 +293,32 @@ tar -czf /tmp/th128-assets.tar.gz \
   mods/th128_replay_autoplay/build/th128_hook.dll
 aws s3 cp /tmp/th128-assets.tar.gz \
   "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th128/assets.tar.gz"
+```
+
+## 13. th13（東方神霊廟）
+
+`games/th13`・`prefixes/th13-wined3d-gl` は `touhou-recorder` の同名ディレクトリから `rsync` で
+コピーする（**ver1.00cの非Steam版**。Steam版`games/th13_steam`はDRMで起動しないので使わない）。
+
+1. **cfg（`th13.cfg`、ウィンドウモードのもの）を `games/th13/` 直下に必ず同梱する**
+   （`%APPDATA%`へは`prepare_instance()`が毎回配置する、th128と同じ）。
+2. **プレフィックスの`%APPDATA%/ShanghaiAlice/th13/`からスコアファイル（`scoreth13.dat`）と
+   `replay/`を消してから固める**。MODはExtra未解放の前提でDown x3を押すので、Extraを解放した
+   スコアファイルが入るとReplayに着地しない（`worker/docs/titles/th13.md`）。
+3. VsyncPatch（`vpatch*`）・公式アップデータ（`th13_ver100c_update.exe`）は使わないので同梱しない。
+
+```bash
+rsync -a --exclude='replay/' --exclude='th13_ver100c_update.exe' --exclude='vpatch*' \
+  ../../touhou-recorder/games/th13/ games/th13/
+rsync -a ../../touhou-recorder/prefixes/th13-wined3d-gl/ prefixes/th13-wined3d-gl/
+rm -rf prefixes/th13-wined3d-gl/drive_c/users/*/AppData/Roaming/ShanghaiAlice/th13/{replay,scoreth13.dat}
+
+tar -czf /tmp/th13-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" --exclude='scoreth13.dat' \
+  games/th13 \
+  prefixes/th13-wined3d-gl \
+  mods/common/build/injector.exe \
+  mods/th13_replay_autoplay/build/th13_hook.dll
+aws s3 cp /tmp/th13-assets.tar.gz \
+  "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th13/assets.tar.gz"
 ```
