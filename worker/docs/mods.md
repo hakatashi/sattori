@@ -65,7 +65,7 @@
   ([`docs/reports/2026-08-25-th07-score-monitor-fix.md`](../../docs/reports/2026-08-25-th07-score-monitor-fix.md)、
   `docs/known-limitations.md`参照。th07だけはSattoriが配布するth07.exeが当初の検証環境と
   バイナリが異なりゲームデータのバージョン差でRVAの再特定を要した。th10はtouhou-recorder
-  reports/57、th12はtouhou-recorder reports/62、th128はtouhou-recorder reports/71で
+  reports/57、th12はtouhou-recorder reports/62、th128はtouhou-recorder reports/71、th13はtouhou-recorder reports/100で
   別途確認)。**th09だけはスコアのRVAが
   未特定のため`scoreWidth=0`でスコア読み取りを無効化し、life(残機)のみ監視する**
   ([titles/th09.md](titles/th09.md)参照) |

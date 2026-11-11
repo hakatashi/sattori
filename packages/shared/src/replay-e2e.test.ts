@@ -17,10 +17,10 @@ const FIXTURES_DIR = path.resolve(
 );
 const TH06_FIXTURE = path.join(FIXTURES_DIR, "th06/th6_02.rpy");
 const TH07_FIXTURE = path.join(FIXTURES_DIR, "th07/th7_07.rpy");
-// th13 はパーサー的には認識できるが、Sattoriの録画対応タイトルには含まれない
+// th14 はパーサー的には認識できるが、Sattoriの録画対応タイトルには含まれない
 // (isSupportedGame が false を返す) ため、parseReplayInfo の unsupported_game 検証に使う。
 // (th11はth11対応で録画対応タイトルに追加されたため、この検証には使えなくなった)
-const TH13_FIXTURE = path.join(FIXTURES_DIR, "th13/th13_01.rpy");
+const TH14_FIXTURE = path.join(FIXTURES_DIR, "th14/th14_01.rpy");
 
 describe("replay-parser -> ReplayInfo end-to-end (th07)", () => {
   it("extracts a full ReplayInfo from a real th07 replay", async () => {
@@ -72,14 +72,14 @@ describe("parseReplayInfo end-to-end (Issue #8)", () => {
     });
   });
 
-  it("録画未対応タイトル（th13）は unsupported_game として日本語メッセージを返す", async () => {
-    const data = new Uint8Array(await readFile(TH13_FIXTURE));
+  it("録画未対応タイトル（th14）は unsupported_game として日本語メッセージを返す", async () => {
+    const data = new Uint8Array(await readFile(TH14_FIXTURE));
     const result = parseReplayInfo(data);
     expect(result.ok).toBe(false);
     if (result.ok) return;
 
     expect(result.error.code).toBe("unsupported_game");
-    expect(result.error.message).toContain("東方神霊廟");
+    expect(result.error.message).toContain("東方輝針城");
   });
 
   it("破損ファイル（マジックバイト不正）は unknown_magic を返す", () => {

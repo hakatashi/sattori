@@ -39,6 +39,7 @@
 | th10 東方風神録 | `record_th10.py` | [docs/titles/th10.md](docs/titles/th10.md) | テンプレート照合(絞り込み領域) | 640x480 |
 | th11 東方地霊殿 | `record_th11.py` | [docs/titles/th11.md](docs/titles/th11.md) | 画面静止のみ | 640x480 |
 | th12 東方星蓮船 | `record_th12.py` | [docs/titles/th12.md](docs/titles/th12.md) | 画面静止のみ | 640x480 |
+| th13 東方神霊廟 | `record_th13.py` | [docs/titles/th13.md](docs/titles/th13.md) | 画面静止のみ | 640x480 |
 | th15 東方紺珠伝 | `record_th15.py` | [docs/titles/th15.md](docs/titles/th15.md) | 画面静止のみ | **1280x960(GPU描画必須)** |
 | th20 東方錦上京 | `record_th20.py` | [docs/titles/th20.md](docs/titles/th20.md) | 画面静止のみ | 1280x960 |
 | th128 妖精大戦争 | `record_th128.py` | [docs/titles/th128.md](docs/titles/th128.md) | 画面静止のみ | 640x480 |
@@ -83,7 +84,7 @@
 | 変数 | 説明 |
 | --- | --- |
 | `JOB_ID` | ジョブ ID(DynamoDB キー・出力キーに使用) |
-| `GAME` | タイトル(`th06` / `th06c` / `th06nc` / `th07` / `th08` / `th09` / `th10` / `th11` / `th12` / `th15` / `th20` / `th128`) |
+| `GAME` | タイトル(`th06` / `th06c` / `th06nc` / `th07` / `th08` / `th09` / `th10` / `th11` / `th12` / `th13` / `th15` / `th20` / `th128`) |
 | `REPLAY_BUCKET` / `REPLAY_KEY` | アップロード済みリプレイの S3 位置 |
 | `OUTPUT_BUCKET` / `OUTPUT_BUCKET_REGION` | 録画動画・プレビュー画像の出力先バケット(CloudFront オリジン)とそのリージョン。GPUのフォールバック先で動くときはそのリージョンのバケット(Issue #313)。パスを書くときに`outputRegion`としてDynamoDBへ記録する(`status.py`)。リージョン省略時は`AWS_REGION` |
 | `CHECKPOINT_BUCKET` / `CHECKPOINT_BUCKET_REGION` | 変換から再開するときに読む生データのチェックポイントの置き場。前回の試行が別リージョンで動いていればそちらのバケット。省略時は`OUTPUT_BUCKET` |

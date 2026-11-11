@@ -91,6 +91,27 @@ export const CPU_2XLARGE_INSTANCE_TYPES = [
 ] as const;
 
 /**
+ * th13の等倍の候補（Issue #79）。**1タイプしか挙げていないのは意図的**で、`.4xlarge`帯で検証したのは
+ * `c7i.4xlarge`だけ（`docs/decisions/0042`のグループ化は`.2xlarge`帯に限る）。落ちはExtraで4.3%と
+ * 数値上は基準外だが、視聴して許容範囲と判断した（touhou-recorder reports/100、`docs/decisions/0070`）。
+ */
+export const TH13_NATIVE_INSTANCE_TYPES = [
+  "c7i.4xlarge", // 16vCPU/32GiB。reports/100実測でExtraの落ち4.3%
+] as const;
+
+/**
+ * th13の1/2倍速の候補（Issue #79）。touhou-recorder reports/100で実機検証したのは`c7i.2xlarge`だけで、
+ * `c7a.2xlarge`・`m7i.2xlarge`は`docs/decisions/0042`（`.2xlarge`帯実機検証済みグループ）の実績を根拠に
+ * 足した。`c7i.2xlarge`の検証は落ち・スコア一致に加えて理論尺との比較も済ませた
+ * （`docs/reports/2026-11-12-th13-recording-verification.md`）。
+ */
+export const TH13_SLOW_MOTION_INSTANCE_TYPES = [
+  "c7i.2xlarge", // reports/100実測で1/2倍速の通常・Extraとも落ちなし
+  "c7a.2xlarge", // 0042のグループ
+  "m7i.2xlarge", // 0042のグループ
+] as const;
+
+/**
  * CPU低速録画（th15・th20、Issue #316）の候補。**1タイプしか挙げていないのは意図的**で、
  * 他のタイプはこの構成で検証していない。`.2xlarge`帯は落ちが約3倍になる（reports/91）。
  */
@@ -140,13 +161,18 @@ function gpuSteps(speed: RecordingSpeed): Ec2RecordingStep[] {
 
 const HOME_NATIVE_STEP: HomeRecordingStep = { id: "home", kind: "home", speed: NATIVE_RECORDING_SPEED };
 
+/**
+ * CPUの段。`idPrefix`はCPUの段を2つ以上持つタイトルで段を区別するためのもの（既定の`cpu`は
+ * 既存ジョブの記録と互換）。
+ */
 function cpuStep(
   instanceTypes: readonly string[],
   speed: RecordingSpeed,
   speedByDifficulty?: Readonly<Record<string, RecordingSpeed>>,
+  idPrefix = "cpu",
 ): Ec2RecordingStep {
   return {
-    id: `cpu:${PRIMARY_RECORDING_REGION}`,
+    id: `${idPrefix}:${PRIMARY_RECORDING_REGION}`,
     kind: "ec2",
     platform: "cpu",
     region: PRIMARY_RECORDING_REGION,
@@ -174,6 +200,8 @@ function speedupPlan(speed: RecordingSpeed, cpuTypes: readonly string[]): Record
  * - th06nc: D3D11描画。GPUが無ければ、MODでBC7テクスチャを展開したCPU描画の1/2倍速（reports/96・97、
  *   `docs/decisions/0067`）。Extraの高密度弾幕では描画が間引かれる（`docs/known-limitations.md`）。
  *   かつての最終段`g6.2xlarge`（`gpu-full:eu-south-2`、0064）はこの段に置き換えた。
+ * - th13: GPUの段を持たない（GPUでの倍速は未検証）。自宅ワーカー→`c7i.4xlarge`の等倍→
+ *   `.2xlarge`帯の1/2倍速（touhou-recorder reports/100、`docs/decisions/0070`）。
  */
 export const RECORDING_PLANS: Readonly<Partial<Record<GameId, readonly RecordingStep[]>>> = {
   th06: speedupPlan(2, CPU_XLARGE_INSTANCE_TYPES),
@@ -188,6 +216,11 @@ export const RECORDING_PLANS: Readonly<Partial<Record<GameId, readonly Recording
   th15: [...gpuSteps(2), cpuStep(CPU_SLOW_MOTION_INSTANCE_TYPES, 1 / 2, { Extra: 1 / 3 })],
   th20: [...gpuSteps(1), cpuStep(CPU_SLOW_MOTION_INSTANCE_TYPES, 1 / 2)],
   th06nc: [...gpuSteps(2), cpuStep(TH06NC_CPU_INSTANCE_TYPES, 1 / 2)],
+  th13: [
+    HOME_NATIVE_STEP,
+    cpuStep(TH13_NATIVE_INSTANCE_TYPES, NATIVE_RECORDING_SPEED),
+    cpuStep(TH13_SLOW_MOTION_INSTANCE_TYPES, 1 / 2, undefined, "cpu-slow"),
+  ],
 };
 
 /** タイトルの段。録画非対応タイトルは空配列（ジョブは作られない）。 */

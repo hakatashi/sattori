@@ -15,8 +15,10 @@ describe("GameInfoPage", () => {
     expect(screen.getByText("東方風神録 ～ Mountain of Faith.")).toBeTruthy();
     expect(screen.getByText("東方地霊殿 ～ Subterranean Animism.")).toBeTruthy();
     expect(screen.getByText("東方星蓮船 ～ Undefined Fantastic Object.")).toBeTruthy();
+    expect(screen.getByText("東方神霊廟 ～ Ten Desires.")).toBeTruthy();
     expect(screen.getByText("東方錦上京 ～ Fossilized Wonders.")).toBeTruthy();
-    expect(screen.getByText("ver 1.00c")).toBeTruthy();
+    // th13とth20がどちらもver 1.00c。
+    expect(screen.getAllByText("ver 1.00c")).toHaveLength(2);
     expect(screen.getByText("ver 1.0.6")).toBeTruthy();
     expect(screen.getAllByText("vpatch rev4 適用済み")).toHaveLength(3);
     expect(screen.getByText("vpatch rev7 適用済み")).toBeTruthy();
