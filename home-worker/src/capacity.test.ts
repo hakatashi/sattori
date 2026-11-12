@@ -1,6 +1,6 @@
 /** 余力判定（capacity）のテスト。 */
 import { describe, expect, it } from "vitest";
-import { canAccept, loadPerCpu } from "./capacity.js";
+import { canAccept, capacityBlocker, loadPerCpu } from "./capacity.js";
 import { makeConfig } from "./testing.js";
 
 describe("loadPerCpu", () => {
@@ -32,5 +32,16 @@ describe("canAccept", () => {
   it("負荷が高ければ空きがあっても受け付けない", () => {
     // 実行中ジョブを止める判断ではない（新規claimだけを止める、Issue #49 論点4）。
     expect(canAccept(makeConfig(), 0, 0.9)).toBe(false);
+  });
+});
+
+describe("capacityBlocker", () => {
+  it("claimできない理由を返す", () => {
+    const config = makeConfig({ maxConcurrency: 2 });
+    expect(capacityBlocker(config, 0, 0.1)).toBeUndefined();
+    expect(capacityBlocker(config, 2, 0.1)).toBe("concurrency");
+    expect(capacityBlocker(config, 0, 0.9)).toBe("load");
+    // 両方に当たるときは同時実行数を優先する(負荷は録画自体が上げているため)。
+    expect(capacityBlocker(config, 2, 0.9)).toBe("concurrency");
   });
 });
