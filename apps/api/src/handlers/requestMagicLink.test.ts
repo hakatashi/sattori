@@ -21,9 +21,9 @@ const FIXTURES_DIR = path.resolve(
   "../../../../packages/replay-parser/test-fixtures",
 );
 const TH07_FIXTURE = path.join(FIXTURES_DIR, "th07/th7_07.rpy");
-// th13はパーサーとしては認識できるが、Sattoriの録画対応タイトルには含まれない
+// th14 はパーサーとしては認識できるが、Sattoriの録画対応タイトルには含まれない
 // (parseReplay.test.tsと同じ用途)。
-const TH13_FIXTURE = path.join(FIXTURES_DIR, "th13/th13_01.rpy");
+const TH14_FIXTURE = path.join(FIXTURES_DIR, "th14/th14_01.rpy");
 const TH10_MARISA_B_FIXTURE = path.join(FIXTURES_DIR, "th10/th10_23.rpy");
 const TH10_REIMU_A_FIXTURE = path.join(FIXTURES_DIR, "th10/th10_02.rpy");
 
@@ -309,7 +309,7 @@ describe("POST /magic-links", () => {
   it("実体が録画未対応タイトルなら422を返す(game/estimatedDurationSecondsはクライアントから受け取らず.rpyの再パース結果のみで決まる、Issue #133 OPS-1)", async () => {
     // job.gameはEC2インスタンスタイプ選定(ec2.tsのgetCandidateInstanceTypes())を
     // 直接左右するため、クライアントに申告させず.rpyの実体から検出する。
-    mockUploadedReplay(new Uint8Array(await readFile(TH13_FIXTURE)));
+    mockUploadedReplay(new Uint8Array(await readFile(TH14_FIXTURE)));
     const { handler } = await import("./requestMagicLink.js");
     const res = await handler(
       makeEvent({
