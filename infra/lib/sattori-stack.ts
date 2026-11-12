@@ -1503,6 +1503,21 @@ function handler(event) {
 `),
     });
 
+    // S3オブジェクトの`Cache-Control: no-cache`(下の`BucketDeployment`、Issue #210)は
+    // ブラウザ向けの指定だが、CloudFrontもそれに従うと毎回オリジン(eu-south-2)へ再検証
+    // してしまい(`x-cache: RefreshHit`)、東京POPでTTFBが約1秒になる(Issue #376)。
+    // minTtlはオリジンの`no-cache`より優先されるため、エッジでは長くキャッシュしつつ、
+    // ブラウザへはオリジンの`no-cache`がそのまま渡る。鮮度はデプロイ時の`/*`無効化で保つ
+    // ので、**S3を直接書き換えた場合は必ず無効化すること**(`docs/decisions/0072`)。
+    const webCachePolicy = new cloudfront.CachePolicy(this, "WebCachePolicy", {
+      enableAcceptEncodingGzip: true,
+      enableAcceptEncodingBrotli: true,
+      minTtl: Duration.days(1),
+      defaultTtl: Duration.days(1),
+      maxTtl: Duration.days(365),
+      comment: "Sattori Web(オリジンのno-cacheに関わらずエッジでキャッシュする)",
+    });
+
     const webDistribution = new cloudfront.Distribution(this, "WebCdn", {
       defaultRootObject: "index.html",
       domainNames: [webDomainName],
@@ -1510,6 +1525,7 @@ function handler(event) {
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(webBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        cachePolicy: webCachePolicy,
         functionAssociations: [
           {
             function: webRoutingFunction,
