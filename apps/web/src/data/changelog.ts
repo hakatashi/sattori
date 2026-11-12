@@ -17,6 +17,11 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-12",
+    ja: "東方風神録 (th10)・東方地霊殿 (th11)・東方星蓮船 (th12)・妖精大戦争 (th128)・東方神霊廟 (th13) で、会話文やスペルカード名の文字の縁がギザギザになっていた問題を修正",
+    en: "Fixed jagged edges on dialogue and spell card names in Mountain of Faith (th10), Subterranean Animism (th11), Undefined Fantastic Object (th12), Fairy Wars (th128) and Ten Desires (th13)",
+  },
+  {
+    date: "2026-11-12",
     ja: "東方神霊廟 (th13) の録画に対応",
     en: "Added support for recording Ten Desires (th13)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/79",
