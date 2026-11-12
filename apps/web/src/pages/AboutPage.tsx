@@ -50,8 +50,8 @@ export function AboutPage() {
         </li>
         <li>
           Mastodon:{" "}
-          <a href="https://pawoo.net/@hakatashi" target="_blank" rel="noopener noreferrer">
-            @hakatashi@pawoo.net
+          <a href="https://elk.zone/mastodon.hakatashi.com/@hakatashi@hakatashi.com" target="_blank" rel="noopener noreferrer">
+            @hakatashi@hakatashi.com
           </a>
         </li>
         <li>
