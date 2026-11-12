@@ -105,7 +105,7 @@
     "thpracPurposeFreezeFix": "リプレイ選択直後にゲーム本体が停止する不具合を回避するため、録画時に適用しています"
   },
   "uploadForm": {
-    "gpuOutageNotice": "録画処理が重い一部タイトル (東方紅魔郷: New Classic、東方紺珠伝、東方錦上京) の録画が利用できない状態が長らく続いていましたが、現在は復旧しています。なお、通常より時間がかかったり、録画を開始できなかったりする場合があるため、ご注意ください。",
+    "gpuOutageNotice": "録画処理が重い一部タイトル (東方紅魔郷: New Classic、東方紺珠伝、東方錦上京) の録画が利用できない状態が長らく続いていましたが、現在は復旧しています。なお、引き続き、通常より録画に時間がかかる場合があるため、ご注意ください。",
     "supportedTitlesLabel": "現在録画対応中のタイトル ({{count}}作品)",
     "step1Label": "リプレイファイルを選択",
     "step2Label": "内容を確認",
@@ -122,8 +122,7 @@
     "emailHint": "録画した動画をダウンロードするためのリンクがメールで送信されます。",
     "advancedSettings": "詳細設定",
     "watermarkOption": "ウォーターマークを合成する",
-    "watermarkHintLine1": "動画の冒頭6秒間、右下に「TouhouSattori」のロゴが表示されます。",
-    "watermarkHintLine2": "リプレイ再生の最初の数秒間にも重なって表示されます。",
+    "watermarkHintLine": "動画の冒頭6秒間、右下に「TouhouSattori」のロゴが表示されます。",
     "th10BugfixMarisaBOption": "東方風神録の魔理沙Bのショット威力修正を有効にして録画する (BugFixTh10Power3=1)",
     "th10BugfixMarisaBHintLine1": "東方風神録の魔理沙Bには、特定の条件下でショットの威力が異常上昇する既知の不具合があります (通称「バグマリ」)。プレイ時にVsyncPatchを導入してこの不具合を修正していた場合のみ、このオプションを有効にしてください。",
     "th10BugfixMarisaBHintLine2": "実際のプレイ時と異なる設定を選ぶと、録画がリプレイ本来の内容と一致しなくなります。",

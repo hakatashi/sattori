@@ -412,8 +412,7 @@ export function UploadForm() {
           <span>
             {t("uploadForm.watermarkOption")}
             <small className={styles.optionHint}>
-              {t("uploadForm.watermarkHintLine1")}<br/>
-              {t("uploadForm.watermarkHintLine2")}
+              {t("uploadForm.watermarkHintLine")}
             </small>
           </span>
         </label>
