@@ -22,6 +22,7 @@
 #include "../common/fps_limiter_hook.h"
 #include "../common/dsound_hook.h"
 #include "../common/score_monitor.h"
+#include "../common/d3dx_filter_hook.h"
 
 using namespace autoplay;
 
@@ -97,6 +98,9 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         LogInit(hinst, "th13_autoplay.log");
         Log("DLL_PROCESS_ATTACH: installing IAT hooks");
         InstallDinputHook();
+        // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
+        // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
+        InstallD3DXFilterHook();
         // QPC偽装。等倍では何もしない。低速録画ではワーカーがSPEED_HACK_MULTIPLIER<1を渡す
         // (record_th13.pyのslow_motion_speed_hack)。ゲーム自身のフレーム待ちと画面右下の
         // fps表示がQPC基準なので、Presentの上限と揃えて減速すると表示も「60.0fps」のままになる
