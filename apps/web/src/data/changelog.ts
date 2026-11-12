@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-11-12",
+    ja: "東方神霊廟 (th13) の録画に対応",
+    en: "Added support for recording Ten Desires (th13)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/79",
+    important: true,
+  },
+  {
     date: "2026-11-09",
     ja: "メニュー操作の取りこぼしでリプレイが始まらなかった場合に、リプレイが映っていない動画がそのまま完了として配信されてしまう問題を修正",
     en: "Fixed an issue where a video without the replay playing could be delivered as completed when replay playback failed to start due to missed menu inputs",

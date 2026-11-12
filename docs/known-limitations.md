@@ -22,7 +22,7 @@ Sattori の「まだできていないこと」「できているが条件付き
 
 ## 1. 対応タイトルの拡大
 
-現在の対応タイトルは th06・th06c・th06nc・th07・th08・th09・th10・th11・th12・th15・th20・th128 の12本。
+現在の対応タイトルは th06・th06c・th06nc・th07・th08・th09・th10・th11・th12・th13・th15・th20・th128 の13本。
 
 リプレイパーサー自体は th06〜th20 の大半に対応済みで、**残作業は録画対応**
 （Wine 上での MOD 移植・実機検証）である。タイトルごとの状況は
@@ -59,6 +59,15 @@ CPUの段ではExtraの高密度弾幕で描画が間引かれ、FpsMonitor・�
 GPU描画は原理的には必須でないが、Extraの処理落ちを避けるためGPUを優先する。入力ポーリングは
 GetDeviceState。このマシンではGPU描画経路を検証できない。詳細は
 [`known-limitations-gpu-recording.md`](known-limitations-gpu-recording.md) §3。
+
+### th13（東方神霊廟）は録画対応済み。EC2の等倍は数値上の基準を満たさず、GPUの倍速は未検証
+
+ver1.00cの非Steam版で録る（Steam版はDRMで起動しない）。自宅ワーカー機の等倍は落ち0.6%で問題ないが、
+EC2の等倍（`c7i.4xlarge`）はExtraで落ち4.3%・理論尺比+1.8%と数値上は基準外で、視聴で許容範囲と判断して
+採用した。等倍の段も枯渇したら`.2xlarge`帯の1/2倍速（落ちなし）で録る。GPUの在庫が無くGPU描画・倍速は
+一度も検証できていないので、段に入れていない
+（[`decisions/0070`](decisions/0070-th13-native-on-4xlarge-and-half-speed-on-2xlarge.md)、
+[`worker/docs/titles/th13.md`](../worker/docs/titles/th13.md)）。
 
 ### th09はリプレイずれの事後検知が機能しない
 

@@ -18,6 +18,8 @@ UserData を変える前に読むこと。[`apps/api/README.md`](../README.md) �
 | th11/12/128のCPU（等倍） | `CPU_2XLARGE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
 | 全タイトルのGPUの段（倍速・th20の等倍） | `GPU_INSTANCE_TYPES` | `g6f.2xlarge`のみ（Issue #241・#82・#288、[`decisions/0058`](../../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。GPUリースのvCPU量で`getCandidateInstanceTypes(step, { maxVcpu })`が絞る |
 | th06ncのCPU低速録画（BC7展開） | `TH06NC_CPU_INSTANCE_TYPES` | `c7i.2xlarge`のみ（[`decisions/0067`](../../../docs/decisions/0067-th06nc-cpu-slow-motion-and-drop-1080p.md)。かつての最後の段`g6.2xlarge`は外した） |
+| th13のCPU（等倍） | `TH13_NATIVE_INSTANCE_TYPES` | `c7i.4xlarge`のみ（[`decisions/0070`](../../../docs/decisions/0070-th13-native-on-4xlarge-and-half-speed-on-2xlarge.md)） |
+| th13のCPU低速録画（1/2倍速、段の`id`は`cpu-slow:<region>`） | `TH13_SLOW_MOTION_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge`（同上。`c7i`以外は[`0042`](../../../docs/decisions/0042-2xlarge-instance-type-group-precedent.md)のグループ） |
 | th15・th20のCPU低速録画 | `CPU_SLOW_MOTION_INSTANCE_TYPES` | `c7i.4xlarge`のみ（[`decisions/0064`](../../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)） |
 
 > **候補を足す・変える前に

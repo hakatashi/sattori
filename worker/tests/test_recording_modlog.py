@@ -274,3 +274,8 @@ def test_find_replay_start_epoch_returns_none_until_the_sequence_completes(tmp_p
 
     assert modlog.find_replay_start_epoch(str(log_path)) is None
     assert modlog.find_replay_start_epoch(str(tmp_path / "missing.log")) is None
+
+
+def test_game_score_multipliers_includes_th13():
+    # th13はthprac_th13.cppのscore(内部値)が画面表示値の1/10(touhou-recorder reports/100)。
+    assert modlog.GAME_SCORE_MULTIPLIERS["th13"] == 10
