@@ -18,6 +18,8 @@ SRC_FPS_LIM  := $(COMMON_DIR)/fps_limiter_hook.cpp
 SRC_SPEED    := $(COMMON_DIR)/speed_hack_hook.cpp
 SRC_WASAPI   := $(COMMON_DIR)/wasapi_hook.cpp
 SRC_BC7      := $(COMMON_DIR)/d3d11_bc7_hook.cpp
+# 文字の縮小フィルタ補完(th10・th11・th12・th128・th13、touhou-recorder reports/101・102)
+SRC_D3DX     := $(COMMON_DIR)/d3dx_filter_hook.cpp
 
 # 共通ソース組み合わせ
 # 倍速録画(Issue #288)のQPC偽装(speed_hack_hook)・音声周波数スケールとA/V同期マーカー
@@ -155,21 +157,21 @@ $(TARGET_TH08): th08_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_DISP
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-$(TARGET_TH10): th10_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM)
+$(TARGET_TH10): th10_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-$(TARGET_TH11): th11_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK)
+$(TARGET_TH11): th11_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_D3DX)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-$(TARGET_TH12): th12_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM)
+$(TARGET_TH12): th12_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
 # 5b. th13 hook（32bit、th128と同じD3D9フレームレート制限・DirectSound周波数フック。
 #     VsyncPatchは使わない、touhou-recorder reports/100）
-$(TARGET_TH13): th13_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM)
+$(TARGET_TH13): th13_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
@@ -184,7 +186,7 @@ $(TARGET_TH20): th20_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM)
 	$(CXX32) $(DLL_FLAGS) -static -o $@ $^
 
 # 8. th128 hook（32bit、D3D9フレームレート制限・DirectSound周波数フック）
-$(TARGET_TH128): th128_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM)
+$(TARGET_TH128): th128_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX)
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 

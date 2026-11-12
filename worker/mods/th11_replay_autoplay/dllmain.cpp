@@ -32,6 +32,7 @@
 #include "../common/dsound_hook.h"
 #include "../common/fps_monitor.h"
 #include "../common/score_monitor.h"
+#include "../common/d3dx_filter_hook.h"
 
 using namespace autoplay;
 
@@ -100,6 +101,9 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         LogInit(hinst, "th11_autoplay.log");
         Log("DLL_PROCESS_ATTACH: installing IAT hooks");
         InstallDinputHook();
+        // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
+        // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
+        InstallD3DXFilterHook();
         // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
         InstallSpeedHackHook();
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
