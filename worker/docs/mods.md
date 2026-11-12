@@ -52,7 +52,17 @@
   th12/th20が「30fps」になった、reports/90)。**`InstallSpeedHackHook()`の後に呼ぶこと**。
   th06/th08はfps計算が`timeGetTime`なのでtimeGetTime版を使う |
 
-## 3. スコア監視(デシンク事後検知)
+## 3. 描画の補正
+
+| ソース | 役割 |
+| --- | --- |
+| `mods/common/d3dx_filter_hook.*` | `D3DXLoadSurfaceFromMemory`のIATフック。縮小を伴いフィルタがLINEAR/TRIANGLE/BOXの
+  転送をMOD側でテント縮小(半径0.8×縮小率)してから`D3DX_FILTER_NONE`で元の関数へ渡し、Wineの内蔵d3dx9が
+  最近傍で間引くせいで会話文・スペルカード名がジャギーになるのを防ぐ。th10・th11・th12・th128・th13に組み込み、
+  既定で有効(`D3DX_AREA_FILTER=0`で無効)
+  ([`decisions/0071`](../../docs/decisions/0071-d3dx-text-downscale-filter-in-mod.md)) |
+
+## 4. スコア監視(デシンク事後検知)
 
 | ソース | 役割 |
 | --- | --- |
