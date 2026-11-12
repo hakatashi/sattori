@@ -59,6 +59,11 @@ S3バケットを固定名（`lib/gpu-fallback.ts`）で受け渡す。**フォ�
   一切効いていなかった問題、Issue #210）。2つに分けているのは`cacheControl`が
   `BucketDeployment`単位でしか指定できないためで、互いのファイルを消し合わないよう
   両方とも`prune: false`にしてある。
+  `WebCdn`のデフォルトビヘイビアは専用の`CachePolicy`（`WebCachePolicy`、minTTL 1日）を
+  使い、オリジンの`no-cache`に関わらずエッジでHTMLをキャッシュする（毎回S3へ再検証
+  すると東京POPのTTFBが約1秒になるため）。ブラウザへは`no-cache`がそのまま渡る。
+  鮮度はデプロイ時の`/*`無効化が担うので、S3を直接書き換えたら必ず無効化すること。
+  根拠は[`docs/decisions/0072`](../docs/decisions/0072-web-cdn-edge-cache-ignores-origin-no-cache.md)。
   `WebCdn`には計測ビーコン（`POST /beacon`、Issue #142）用の追加ビヘイビアが1つ
   あり（`additionalBehaviors["/beacon"]`）、HTTP API（`httpApi`）へ転送する。
   他のAPIエンドポイントと違いこのパスだけCloudFrontを前段に置くのは、オリジン
