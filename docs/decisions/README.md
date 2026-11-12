@@ -83,6 +83,7 @@
 | [0069](0069-automated-dependabot-merge-deploy-with-gvisor-sandbox.md) | 2026-11-11 | 全パッケージ | Dependabot PRのAI自動処理はgVisor隔離検査(Phase A)とホスト本番デプロイ・E2E検証(Phase B)の二段階に分離する(Issue #341) | 有効 |
 | [0070](0070-th13-native-on-4xlarge-and-half-speed-on-2xlarge.md) | 2026-11-12 | packages/shared / worker | th13は自宅ワーカー→`c7i.4xlarge`の等倍(数値上は基準外だが視聴で許容)→`.2xlarge`帯の1/2倍速で録り、未検証のGPUの段は持たない(Issue #79) | 有効 |
 | [0071](0071-d3dx-text-downscale-filter-in-mod.md) | 2026-11-12 | worker | th10〜th13の文字のジャギーは、MODでD3DXLoadSurfaceFromMemoryの縮小フィルタ(テント)を補って直す。既定で有効、診断機能は取り込まない | 有効 |
+| [0072](0072-web-cdn-edge-cache-ignores-origin-no-cache.md) | 2026-11-12 | infra | `WebCdn`はminTTL 1日の専用CachePolicyでHTMLをエッジにキャッシュし、オリジンの`no-cache`による毎回のS3再検証(TTFB約1秒)を避ける。鮮度はデプロイ時の無効化で保つ(Issue #376) | 有効 |
 
 ## 書き方
 
