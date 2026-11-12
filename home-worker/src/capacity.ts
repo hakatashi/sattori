@@ -40,11 +40,27 @@ export function loadPerCpu(source: LoadSource = {}): number {
   return load / cpus;
 }
 
-/** 新しいジョブをclaimしてよいか。 */
-export function canAccept(config: Config, activeJobs: number, load?: number): boolean {
+/**
+ * 新しいジョブをclaimできない理由。claimしてよければ`undefined`。
+ *
+ * - `concurrency`: 同時録画数の上限に達している。
+ * - `load`: 1コアあたりのロードアベレージが`loadThreshold`を超えている。
+ */
+export type CapacityBlocker = "concurrency" | "load";
+
+export function capacityBlocker(
+  config: Config,
+  activeJobs: number,
+  load?: number,
+): CapacityBlocker | undefined {
   if (activeJobs >= config.maxConcurrency) {
-    return false;
+    return "concurrency";
   }
   const current = load ?? loadPerCpu();
-  return current <= config.loadThreshold;
+  return current <= config.loadThreshold ? undefined : "load";
+}
+
+/** 新しいジョブをclaimしてよいか。 */
+export function canAccept(config: Config, activeJobs: number, load?: number): boolean {
+  return capacityBlocker(config, activeJobs, load) === undefined;
 }

@@ -51,7 +51,8 @@ import { SendTaskFailureCommand, SFNClient } from "@aws-sdk/client-sfn";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { WORKER_HEARTBEAT_INTERVAL_SECONDS } from "@sattori/shared";
 import type { JobRecord, WorkerEnvironment } from "@sattori/shared";
-import { canAccept, loadPerCpu } from "./capacity.js";
+import { capacityBlocker, loadPerCpu } from "./capacity.js";
+import type { CapacityBlocker } from "./capacity.js";
 import { claimJob, clearWorkerEnv, findOpenOffers, releaseClaim, touchClaim } from "./claim.js";
 import type { Config } from "./config.js";
 import { CredentialProvider } from "./credentials.js";
@@ -119,6 +120,17 @@ class RunningJob implements ClaimWatchTarget {
   promise: Promise<void> = Promise.resolve();
 }
 
+/** claim受付の状態。`accepting`以外はclaimを止めている理由。 */
+type AcceptingState = "accepting" | "stopping" | CapacityBlocker | "network";
+
+const ACCEPTING_STATE_MESSAGES: Record<AcceptingState, string> = {
+  accepting: "新規claimを受け付けます(accepting=true)",
+  stopping: "停止中のため新規claimを止めます(accepting=false)",
+  concurrency: "同時実行数の上限に達したため新規claimを止めます(accepting=false)",
+  load: "ロードアベレージが閾値を超えたため新規claimを止めます(accepting=false)",
+  network: "コンテナのネットワーク疎通が無いため新規claimを止めます(accepting=false)",
+};
+
 export class HomeWorkerDaemon {
   readonly #config: Config;
   readonly #log: (message: string) => void;
@@ -133,6 +145,11 @@ export class HomeWorkerDaemon {
   #lastNetworkCheckAtMs = 0;
   /** 直近の疎通確認の結果。起動直後は健全と仮定する（1周目で即座に確認し直る）。 */
   #networkHealthy = true;
+  /**
+   * 直近に記録したclaim受付の状態（`#noteAccepting`）。起動直後は未記録で、
+   * 1周目の状態を必ずログに残す。
+   */
+  #lastAcceptingState: AcceptingState | undefined;
   #documents: DynamoDBDocumentClient | undefined;
   #logs: CloudWatchLogsClient | undefined;
   #ecr: ECRClient | undefined;
@@ -221,10 +238,12 @@ export class HomeWorkerDaemon {
   async tick(): Promise<void> {
     const active = this.activeJobs();
     const load = this.#loadPerCpu();
-    const capacityOk = !this.#stopping.isSet && canAccept(this.#config, active, load);
+    const blocker = this.#capacityBlocker(active, load);
+    const capacityOk = blocker === undefined;
     // 空きが無い/停止中なら疎通確認自体が無意味なので省く(不要なdocker runを避ける)。
     const networkHealthy = capacityOk ? await this.#checkNetworkIfDue() : this.#networkHealthy;
     const accepting = capacityOk && networkHealthy;
+    this.#noteAccepting(blocker ?? (networkHealthy ? "accepting" : "network"), active, load);
     await this.publishHeartbeat(accepting, active);
     if (!accepting) {
       return;
@@ -235,12 +254,33 @@ export class HomeWorkerDaemon {
       // 後も最大15秒間AWSからは「空きあり」に見え、誰もclaimできないジョブが
       // オファーされて、EC2へのフォールバックが`offerWindowSeconds`ぶん遅れる。
       const remaining = this.activeJobs();
-      await this.publishHeartbeat(
-        !this.#stopping.isSet && canAccept(this.#config, remaining, load),
-        remaining,
-        { force: true },
-      );
+      const remainingBlocker = this.#capacityBlocker(remaining, load);
+      this.#noteAccepting(remainingBlocker ?? "accepting", remaining, load);
+      await this.publishHeartbeat(remainingBlocker === undefined, remaining, { force: true });
     }
+  }
+
+  #capacityBlocker(active: number, load: number): "stopping" | CapacityBlocker | undefined {
+    return this.#stopping.isSet ? "stopping" : capacityBlocker(this.#config, active, load);
+  }
+
+  /**
+   * claim受付の状態が前回から変わったときだけ、その原因と判断材料をログに残す
+   * （Issue #181）。ハートビートの`accepting`は理由を持たないため、これが無いと
+   * 「なぜそのジョブが自宅へオファーされずEC2へ流れたか」をログから確定できない。
+   * 特にロードアベレージのガードは、このマシンで並行稼働する他サービスの負荷だけで
+   * 一時的に効きうる。疎通の変化は`#checkNetworkIfDue`もログに出すが、こちらは
+   * 「受付を止めた/再開した」という結果の側を同じ書式で揃えて残す。
+   */
+  #noteAccepting(state: AcceptingState, active: number, load: number): void {
+    if (state === this.#lastAcceptingState) {
+      return;
+    }
+    this.#lastAcceptingState = state;
+    const detail =
+      `activeJobs=${active}/${this.#config.maxConcurrency} ` +
+      `loadPerCpu=${load.toFixed(2)}(閾値${this.#config.loadThreshold})`;
+    this.#log(`${ACCEPTING_STATE_MESSAGES[state]} ${detail}`);
   }
 
   /**
