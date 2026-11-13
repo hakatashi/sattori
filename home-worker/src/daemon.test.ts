@@ -364,6 +364,87 @@ describe("tick: コンテナのネットワーク疎通確認(Issue #160)", () =
   });
 });
 
+describe("tick: claim受付状態の変化のログ(Issue #181)", () => {
+  function makeLoggingDaemon(load: { value: number }, config: Config = makeConfig()) {
+    const logs: string[] = [];
+    const daemon = new HomeWorkerDaemon(config, {
+      credentials,
+      log: (message) => logs.push(message),
+      claimCheckIntervalSec: 0.01,
+      loadPerCpu: () => load.value,
+      runCommand: async () => OK,
+      spawnContainer: async () => 0,
+    });
+    return { daemon, logs: (): string[] => logs.filter((m) => m.includes("accepting=")) };
+  }
+
+  it("負荷による受付の停止と再開を、変化したときだけload値つきで記録する", async () => {
+    respondWithOffers([]);
+    const load = { value: 0.1 };
+    const { daemon, logs } = makeLoggingDaemon(load);
+
+    await daemon.tick();
+    await daemon.tick();
+    expect(logs()).toHaveLength(1);
+    expect(logs()[0]).toContain("accepting=true");
+
+    load.value = 0.85;
+    await daemon.tick();
+    await daemon.tick();
+    expect(logs()).toHaveLength(2);
+    expect(logs()[1]).toContain("ロードアベレージが閾値を超えた");
+    expect(logs()[1]).toContain("loadPerCpu=0.85(閾値0.7)");
+
+    load.value = 0.2;
+    await daemon.tick();
+    expect(logs()).toHaveLength(3);
+    expect(logs()[2]).toContain("accepting=true");
+  });
+
+  it("疎通が無いことによる停止を原因つきで記録する", async () => {
+    respondWithOffers([]);
+    const logs: string[] = [];
+    const daemon = new HomeWorkerDaemon(makeConfig(), {
+      credentials,
+      log: (message) => logs.push(message),
+      loadPerCpu: () => 0,
+      runCommand: async () => ({ code: 28, stdout: "", stderr: "timed out" }),
+      spawnContainer: async () => 0,
+    });
+
+    await daemon.tick();
+
+    expect(logs.filter((m) => m.includes("accepting="))).toEqual([
+      expect.stringContaining("ネットワーク疎通が無いため"),
+    ]);
+  });
+
+  it("claimでスロットが埋まったら同時実行数の上限として記録する", async () => {
+    respondWithOffers([{ jobId: "job-1", game: "th07" }]);
+    const container = hangingContainer();
+    const logs: string[] = [];
+    const daemon = new HomeWorkerDaemon(makeConfig({ maxConcurrency: 1 }), {
+      credentials,
+      log: (message) => logs.push(message),
+      claimCheckIntervalSec: 0.01,
+      loadPerCpu: () => 0,
+      runCommand: async () => OK,
+      spawnContainer: container.spawnContainer,
+    });
+
+    await daemon.tick();
+    await container.started;
+
+    const accepting = logs.filter((m) => m.includes("accepting="));
+    expect(accepting).toHaveLength(2);
+    expect(accepting[1]).toContain("同時実行数の上限");
+    expect(accepting[1]).toContain("activeJobs=1/1");
+
+    container.exit(0);
+    await vi.waitFor(() => expect(daemon.activeJobs()).toBe(0));
+  });
+});
+
 describe("publishHeartbeat", () => {
   it("ハートビートは間隔を空けて書く", async () => {
     ddbMock.on(PutCommand).resolves({});
