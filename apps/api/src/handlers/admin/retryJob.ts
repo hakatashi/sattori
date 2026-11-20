@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
-import { initialRecordingSpeed, isTerminalStatus } from "@sattori/shared";
+import { initialCaptureMode, initialRecordingSpeed, isTerminalStatus } from "@sattori/shared";
 import type { AdminRetryJobResponse, JobRecord } from "@sattori/shared";
 import { loadConfig, required } from "../../config.js";
 import { objectExistsStrict } from "../../downloads.js";
@@ -75,7 +75,11 @@ export function buildRetryJob(source: JobRecord, newJobId: string, now: Date): J
   } = source;
   return {
     ...carried,
-    options: { ...carried.options, recordingSpeed: initialRecordingSpeed(carried) },
+    options: {
+      ...carried.options,
+      recordingSpeed: initialRecordingSpeed(carried),
+      captureMode: initialCaptureMode(carried),
+    },
     jobId: newJobId,
     // マジックリンク（メール確認）は元ジョブで済んでいるため`pending`を経由せず、
     // `queued`で作成して直ちにStep Functionsを起動する。`pendingExpiresAt`は

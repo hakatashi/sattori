@@ -1,4 +1,9 @@
-import { NATIVE_RECORDING_SPEED, recordingSpeedOf, recordingTargetHz } from "@sattori/shared";
+import {
+  captureModeOf,
+  NATIVE_RECORDING_SPEED,
+  recordingSpeedOf,
+  recordingTargetHz,
+} from "@sattori/shared";
 import type {
   AdminJobRecord,
   JobRecord,
@@ -91,7 +96,13 @@ export function buildWorkerEnv(
     env.EXPECTED_SCORE = String(job.replayInfo.score);
   }
   const recordingSpeed = recordingSpeedOf(job.options);
-  if (recordingSpeed !== NATIVE_RECORDING_SPEED) {
+  if (captureModeOf(job.options) === "frameSync") {
+    // フレーム同期キャプチャ（Epic #399、Issue #387）。倍率という概念が無く、`FPS_LIMIT_TARGET_HZ`とは
+    // 併用できないので付けない。realtimeの段では何も渡さない（ワーカーの既定が実時間）。
+    // 値は`Launch`が段から決めて`options.captureMode`へ書いたもので、ワーカーはタイトルや
+    // 割り当て先で分岐しない（`docs/decisions/0010`・`0066`）。
+    env.CAPTURE_MODE = "frame_sync";
+  } else if (recordingSpeed !== NATIVE_RECORDING_SPEED) {
     // 倍速録画（Issue #288）・低速録画（Issue #316）。MOD（QPC偽装・Present上限・音声周波数）と
     // 録画スクリプトの実時間依存パラメータが、この1つの値（60×倍率）から同じ比率でスケールする。
     // QPC偽装の倍率（`SPEED_HACK_MULTIPLIER`）はワーカーがここから導出するので渡さない

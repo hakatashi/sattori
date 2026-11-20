@@ -17,6 +17,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import type { JobRecord, WorkerHeartbeat } from "@sattori/shared";
+import { useFrameSyncPlan } from "../../testSupport/frameSyncPlan.js";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -861,5 +862,206 @@ describe("sfn/launch handler（録画の段、Issue #315・#317）", () => {
     expect(enteredSteps()).toEqual([["cpu:eu-south-2", 1]]);
     // GPUの段を試していないのでリースにも触れない。
     expect(ddbMock.commandCalls(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE })).toHaveLength(0);
+  });
+});
+
+describe("sfn/launch handler（自宅 → CPU(frameSync) ×2 → GPUの計画、Issue #387）", () => {
+  let restorePlan: () => void;
+  const lease = {
+    slotKey: "gpu",
+    itemKey: "job#job-1",
+    jobId: "job-1",
+    vcpu: 8,
+    acquiredAt: "a",
+    expiresAt: "b",
+    expectedFinishAt: "c",
+  };
+  function capacityFailure(input: CreateFleetCommandInput) {
+    return {
+      Instances: [],
+      Errors: (input.LaunchTemplateConfigs?.[0]?.Overrides ?? []).map((override) => ({
+        ErrorCode: "UnfulfillableCapacity",
+        ErrorMessage: "no capacity",
+        LaunchTemplateAndOverrides: { Overrides: override },
+      })),
+    };
+  }
+  function frameSyncJob(overrides: Partial<JobRecord> = {}): JobRecord {
+    const { capacityExhaustedTargets: _exhausted, ...rest } = job;
+    return { ...rest, game: "th12", ...overrides } as JobRecord;
+  }
+  function mockStore(initial: JobRecord, leaseItem: object | null = lease): void {
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).resolves({ Item: initial });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves(leaseItem ? { Item: leaseItem } : {});
+    ddbMock.on(TransactWriteCommand).resolves({});
+    ddbMock.on(UpdateCommand).resolves({});
+    ec2Mock
+      .on(CreateLaunchTemplateVersionCommand)
+      .resolves({ LaunchTemplateVersion: { VersionNumber: 2 } });
+    ec2Mock.on(DescribeSpotPriceHistoryCommand).resolves({ SpotPriceHistory: [] });
+  }
+  function entered(): Array<[unknown, unknown, unknown]> {
+    return ddbMock
+      .commandCalls(UpdateCommand)
+      .filter((call) => String(call.args[0].input.UpdateExpression).includes("recordingStepId"))
+      .map((call) => [
+        call.args[0].input.ExpressionAttributeValues?.[":step"],
+        call.args[0].input.ExpressionAttributeValues?.[":speed"],
+        call.args[0].input.ExpressionAttributeValues?.[":mode"],
+      ]);
+  }
+  function userDataOf(index: number): string {
+    return Buffer.from(
+      String(
+        ec2Mock.commandCalls(CreateLaunchTemplateVersionCommand)[index]?.args[0].input.LaunchTemplateData
+          ?.UserData,
+      ),
+      "base64",
+    ).toString();
+  }
+
+  beforeEach(() => {
+    restorePlan = useFrameSyncPlan("th12");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    restorePlan();
+    vi.restoreAllMocks();
+  });
+
+  it("最初のCPU段はframeSyncで起動する（CAPTURE_MODE=frame_sync、FPS_LIMIT_TARGET_HZは無し、リースには触れない）", async () => {
+    mockStore(frameSyncJob(), null);
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.2xlarge", AvailabilityZone: "a" }],
+    });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(entered()).toEqual([["cpu-fs-2xl:eu-south-2", 1, "frameSync"]]);
+    expect(userDataOf(0)).toContain("-e CAPTURE_MODE='frame_sync'");
+    expect(userDataOf(0)).not.toContain("FPS_LIMIT_TARGET_HZ");
+    expect(userDataOf(0)).not.toContain("GPU_WORKER");
+    expect(ddbMock.commandCalls(GetCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE })).toHaveLength(0);
+  });
+
+  it("CPUの2段を使い切り、リースがあればGPUの段（realtime・2倍速）で起動する。GPUが最後なのでリースは返却しない", async () => {
+    mockStore(frameSyncJob());
+    ec2Mock
+      .on(CreateFleetCommand)
+      .callsFakeOnce(capacityFailure)
+      .callsFakeOnce(capacityFailure)
+      .resolves({
+        Instances: [{ InstanceIds: ["i-gpu"], InstanceType: "g6f.2xlarge", AvailabilityZone: "a" }],
+      });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(3);
+    expect(entered()).toEqual([
+      ["cpu-fs-2xl:eu-south-2", 1, "frameSync"],
+      ["cpu-fs-4xl:eu-south-2", 1, "frameSync"],
+      ["gpu:eu-south-2", 2, "realtime"],
+    ]);
+    const userData = userDataOf(2);
+    expect(userData).toContain("-e FPS_LIMIT_TARGET_HZ='120'");
+    expect(userData).toContain("-e GPU_WORKER='1'");
+    expect(userData).not.toContain("CAPTURE_MODE");
+    // CPUの2段を使い切りとして記録している。
+    const targets = ddbMock
+      .commandCalls(UpdateCommand)
+      .filter((call) => String(call.args[0].input.UpdateExpression).includes("capacityExhaustedTargets"))
+      .map((call) => call.args[0].input.ExpressionAttributeValues?.[":targets"]);
+    expect(targets.at(-1)).toEqual(["cpu-fs-2xl:eu-south-2", "cpu-fs-4xl:eu-south-2"]);
+  });
+
+  it("CPUの段を使い切ってGPUの段に来たがリースが無ければ、起動せず例外を投げる（AcquireGpuSlot経由のリトライへ）", async () => {
+    mockStore(frameSyncJob(), null);
+    ec2Mock.on(CreateFleetCommand).callsFake(capacityFailure);
+
+    const { handler } = await import("./launch.js");
+    await expect(handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" })).rejects.toThrow(/vCPUリース/);
+
+    // CPUの2段だけ試した。どちらも使い切りとして記録済みなので、戻った`AcquireGpuSlot`はGPUの段を待ち行列へ入れる。
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(2);
+    expect(entered().map(([step]) => step)).toEqual(["cpu-fs-2xl:eu-south-2", "cpu-fs-4xl:eu-south-2"]);
+    const targets = ddbMock
+      .commandCalls(UpdateCommand)
+      .filter((call) => String(call.args[0].input.UpdateExpression).includes("capacityExhaustedTargets"))
+      .map((call) => call.args[0].input.ExpressionAttributeValues?.[":targets"]);
+    expect(targets.at(-1)).toEqual(["cpu-fs-2xl:eu-south-2", "cpu-fs-4xl:eu-south-2"]);
+  });
+
+  it("全段（GPU含む）を使い切ったらcapacity_exhaustedで失敗させ、リースを返却する", async () => {
+    mockStore(frameSyncJob());
+    ec2Mock.on(CreateFleetCommand).callsFake(capacityFailure);
+
+    const { handler } = await import("./launch.js");
+    await expect(handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" })).rejects.toThrow();
+
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(3);
+    const failed = ddbMock
+      .commandCalls(UpdateCommand)
+      .map((call) => call.args[0].input.ExpressionAttributeValues)
+      .find((values) => values?.[":s"] === "failed");
+    expect(failed).toMatchObject({ ":ec": "capacity_exhausted" });
+    expect(ddbMock.commandCalls(TransactWriteCommand).length).toBeGreaterThan(0);
+  });
+
+  it("推定尺がmaxEstimatedDurationSecondsを超えるジョブは2xlarge段を飛ばして記録し、理由をログに残す", async () => {
+    mockStore(frameSyncJob({ estimatedDurationSeconds: 56 * 60 }), null);
+    ec2Mock.on(CreateFleetCommand).resolves({
+      Instances: [{ InstanceIds: ["i-cpu"], InstanceType: "c7i.4xlarge", AvailabilityZone: "a" }],
+    });
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(entered()).toEqual([["cpu-fs-4xl:eu-south-2", 1, "frameSync"]]);
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(1);
+    const targets = ddbMock
+      .commandCalls(UpdateCommand)
+      .filter((call) => String(call.args[0].input.UpdateExpression).includes("capacityExhaustedTargets"))
+      .map((call) => call.args[0].input.ExpressionAttributeValues?.[":targets"]);
+    expect(targets[0]).toEqual(["cpu-fs-2xl:eu-south-2"]);
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('"reason":"estimated_duration_exceeds_step_limit"'),
+    );
+  });
+
+  it("自宅の段もframeSyncとして、CAPTURE_MODE付きの環境変数でオファーする", async () => {
+    mockStore(frameSyncJob(), null);
+    ddbMock.on(ScanCommand).resolves({
+      Items: [
+        {
+          workerId: "home-1",
+          kind: "home",
+          lastHeartbeatAt: new Date().toISOString(),
+          accepting: true,
+          activeJobs: 0,
+          maxConcurrency: 4,
+          supportedGames: ["th12"],
+          ttl: Math.floor(Date.now() / 1000) + 900,
+        },
+      ],
+    });
+    ddbMock.on(GetCommand, { TableName: REQUIRED_ENV.JOBS_TABLE }).callsFake(async (input) =>
+      input.ProjectionExpression ? { Item: { assignedWorkerId: "home-1" } } : { Item: frameSyncJob() },
+    );
+
+    const { handler } = await import("./launch.js");
+    await handler({ jobId: "job-1", attempt: 1, taskToken: "token-xyz" });
+
+    expect(entered()).toEqual([["home", 1, "frameSync"]]);
+    const env = ddbMock
+      .commandCalls(UpdateCommand)
+      .find((call) => String(call.args[0].input.UpdateExpression).includes("SET homeWorkerOfferState"))
+      ?.args[0].input.ExpressionAttributeValues?.[":env"];
+    expect(env).toMatchObject({ CAPTURE_MODE: "frame_sync" });
+    expect(env).not.toHaveProperty("FPS_LIMIT_TARGET_HZ");
+    expect(ec2Mock.commandCalls(CreateFleetCommand)).toHaveLength(0);
   });
 });

@@ -9,6 +9,7 @@ import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand, UpdateCommand
 import { mockClient } from "aws-sdk-client-mock";
 import { GPU_QUOTA_STEP_SKIP_ATTEMPT, type JobRecord } from "@sattori/shared";
 import { MAX_ATTEMPTS, MAX_ATTEMPTS_DETERMINISTIC } from "../../retryPolicy.js";
+import { useFrameSyncPlan } from "../../testSupport/frameSyncPlan.js";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -654,5 +655,68 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
 
     const { handler } = await import("./handleFailure.js");
     await expect(handler({ jobId: "job-1", attempt: 1 })).resolves.toEqual({ shouldRetry: true });
+  });
+});
+
+describe("sfn/handleFailure handler（GPUの段が最後にある計画、Issue #387）", () => {
+  let restorePlan: () => void;
+  beforeEach(() => {
+    restorePlan = useFrameSyncPlan("th12");
+  });
+  afterEach(() => {
+    restorePlan();
+  });
+
+  const cpuExhausted = ["cpu-fs-2xl:eu-south-2", "cpu-fs-4xl:eu-south-2"];
+  const frameSyncJob: JobRecord = {
+    ...baseJob,
+    game: "th12",
+    capacityExhaustedTargets: cpuExhausted,
+    instanceType: "g6f.2xlarge",
+  };
+
+  it("GPUの段でリースが無かった失敗(CPUの段は使い切り済み)は、後始末をして通常どおりリトライさせる", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: frameSyncJob });
+    ddbMock.on(UpdateCommand).resolves({});
+    ddbMock.on(TransactWriteCommand).resolves({});
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ec2Mock.on(DescribeInstancesCommand).resolves({ Reservations: [] });
+
+    const { handler } = await import("./handleFailure.js");
+    const result = await handler({
+      jobId: "job-1",
+      attempt: 1,
+      error: {
+        Error: "Error",
+        Cause: JSON.stringify({ errorType: "Error", errorMessage: "GPUジョブ job-1 のvCPUリースが見つかりません" }),
+      },
+    });
+
+    expect(result).toEqual({ shouldRetry: true });
+    expect(statusUpdates(ddbMock)).toHaveLength(0);
+  });
+
+  it("GPUの段が最後なら、クォータ超過が続いてもGPUの段を飛ばさない（後ろに段が無い）", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: frameSyncJob });
+    ddbMock.on(UpdateCommand).resolves({});
+    ddbMock.on(TransactWriteCommand).resolves({});
+    ec2Mock.on(TerminateInstancesCommand).resolves({});
+    ec2Mock.on(DescribeInstancesCommand).resolves({ Reservations: [] });
+
+    const { handler } = await import("./handleFailure.js");
+    const result = await handler({
+      jobId: "job-1",
+      attempt: GPU_QUOTA_STEP_SKIP_ATTEMPT,
+      error: {
+        Error: "Error",
+        Cause: JSON.stringify({ errorType: "Error", errorMessage: "VcpuLimitExceeded: quota exceeded" }),
+      },
+    });
+
+    expect(result).toEqual({ shouldRetry: true });
+    const skipWrites = ddbMock
+      .commandCalls(UpdateCommand)
+      .filter((call) => String(call.args[0].input.UpdateExpression).includes("capacityExhaustedTargets"));
+    expect(skipWrites).toHaveLength(0);
   });
 });

@@ -5,6 +5,7 @@ import {
   EMAIL_PATTERN,
   isSupportedGame,
   isSupportedLanguage,
+  initialCaptureMode,
   initialRecordingSpeed,
   parseReplayInfo,
   supportsTh10BugfixMarisaB,
@@ -178,6 +179,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       // フロントエンドのキャッシュがtrueを送ってきても無視する。
       th06ncHighResolution: false,
       recordingSpeed,
+      captureMode: initialCaptureMode({ game }),
     },
     outputPath: null,
     outputPath720p: null,

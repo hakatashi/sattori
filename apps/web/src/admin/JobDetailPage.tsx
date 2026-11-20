@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import {
   calculateDownloadExpiresAt,
+  captureModeOf,
   recordingSpeedOf,
   OUTPUT_RETENTION_DAYS,
 } from "@sattori/shared";
@@ -131,6 +132,8 @@ export function JobDetailPage() {
                 {/* 録画の段（Issue #317、`packages/shared/src/recordingPlan.ts`）。 */}
                 <dt>recordingStepId</dt>
                 <dd>{data.job.recordingStepId ?? "-"}</dd>
+                <dt>captureMode</dt>
+                <dd>{captureModeOf(data.job.options)}</dd>
                 <dt>capacityExhaustedTargets</dt>
                 <dd>{data.job.capacityExhaustedTargets?.join(", ") || "-"}</dd>
                 <dt>th10BugfixMarisaB</dt>

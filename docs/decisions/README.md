@@ -67,7 +67,7 @@
 | [0053](0053-mount-32bit-nvidia-client-libraries-for-wine.md) | 2026-09-18 | apps/api | GPU用コンテナへ32bit版NVIDIAクライアントライブラリを個別マウントする(32bitタイトルがGPUを使えずllvmpipeへ静かにフォールバックするバグの修正) | 有効 |
 | [0054](0054-detect-wine-crash-via-wine-log-not-duration-ratio.md) | 2026-09-19 | worker | Wineクラッシュの検知は理論尺比ではなく`wine.log`の未処理例外(`Unhandled`)で行い、検知したら破棄・リトライする(理論尺比はデシンクと縮退するため使わない) | 有効 |
 | [0055](0055-exclude-eu-south-2a-from-gpu-fleet.md) | 2026-09-19 | apps/api / infra | GPUジョブのEC2 Fleet候補から`eu-south-2a`を暫定除外する(クラッシュ率が有意に高い、p=0.0021。CPU系は対象外) | [0057](0057-revert-eu-south-2a-gpu-exclusion.md)によって撤回済み |
-| [0056](0056-gpu-vcpu-lease-and-queue.md) | 2026-09-19 | apps/api / infra | GPU録画ジョブのvCPU容量をDynamoDBでリースし、`Launch`の手前で待たせる(eu-south-2のG系スポットクオータ8vCPU下でのキューイング、Issue #270) | 有効 |
+| [0056](0056-gpu-vcpu-lease-and-queue.md) | 2026-09-19 | apps/api / infra | GPU録画ジョブのvCPU容量をDynamoDBでリースし、`Launch`の手前で待たせる(eu-south-2のG系スポットクオータ8vCPU下でのキューイング、Issue #270) | 有効（リースを取る判定は[0073](0073-gpu-lease-for-next-ec2-step-and-capture-mode.md)で「次のEC2の段がGPUか」へ改訂） |
 | [0057](0057-revert-eu-south-2a-gpu-exclusion.md) | 2026-09-22 | apps/api / infra | [0055](0055-exclude-eu-south-2a-from-gpu-fleet.md)の`eu-south-2a`除外を撤回する(起動失敗の増加が実害化し、除外後もクラッシュが根絶されていないため) | 有効 |
 | [0058](0058-speedup-recording-on-gpu-instances.md) | 2026-09-30 | packages/shared / apps/api / infra / worker | 倍速録画(2〜4倍速)を導入し、2倍速以上はGPUインスタンス(g6f.2xlargeのみ)で録画する。GPU要否はタイトルではなくジョブ(タイトル+録画速度)で決まる(Issue #288) | 「低速録画の廃止」は[0064](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)、「ユーザーが速度を選ぶ」「GPU要否はジョブで決まる」は[0066](0066-recording-fallback-plan-as-config.md)によって置き換え済み |
 | [0059](0059-cut-range-decided-by-recorder.md) | 2026-10-04 | worker | 配信版のカット範囲は録画スクリプトがMODログと終了検知の時刻から決め、元の解像度版も同じ変換で作り直す。同期マーカーは音声の録音をゲーム起動直後に始めてカット区間へ追い出す(Issue #266) | 有効 |
@@ -84,6 +84,7 @@
 | [0070](0070-th13-native-on-4xlarge-and-half-speed-on-2xlarge.md) | 2026-11-12 | packages/shared / worker | th13は自宅ワーカー→`c7i.4xlarge`の等倍(数値上は基準外だが視聴で許容)→`.2xlarge`帯の1/2倍速で録り、未検証のGPUの段は持たない(Issue #79) | 有効 |
 | [0071](0071-d3dx-text-downscale-filter-in-mod.md) | 2026-11-12 | worker | th10〜th13の文字のジャギーは、MODでD3DXLoadSurfaceFromMemoryの縮小フィルタ(テント)を補って直す。既定で有効、診断機能は取り込まない | 有効 |
 | [0072](0072-web-cdn-edge-cache-ignores-origin-no-cache.md) | 2026-11-12 | infra | `WebCdn`はminTTL 1日の専用CachePolicyでHTMLをエッジにキャッシュし、オリジンの`no-cache`による毎回のS3再検証(TTFB約1秒)を避ける。鮮度はデプロイ時の無効化で保つ(Issue #376) | 有効 |
+| [0073](0073-gpu-lease-for-next-ec2-step-and-capture-mode.md) | 2026-11-21 | packages/shared / apps/api | 録画の段に`captureMode`（realtime / frameSync）と`maxEstimatedDurationSeconds`を足し、GPUのvCPUリースは「次のEC2の段」で判定してGPUの段が配列の最後にあっても動くようにする（Issue #387、Epic #399） | 有効（[0056](0056-gpu-vcpu-lease-and-queue.md)の「次の段がGPUのとき」の判定を改訂） |
 
 ## 書き方
 

@@ -1,6 +1,7 @@
 import type { GameId } from "./games.js";
 import type { JobStatus, RecordingOptions } from "./job.js";
 import type { SupportedLanguage } from "./language.js";
+import type { CaptureMode } from "./recordingPlan.js";
 import type { RecordingSpeed } from "./recordingSpeed.js";
 import type { ReplayInfo } from "./replay.js";
 
@@ -154,6 +155,11 @@ export interface GetJobResponse {
    * （録画フェーズの実時間の伸縮）に使う。段が途中で変わっても、フォールバックしたことは伝えない。
    */
   recordingSpeed: RecordingSpeed;
+  /**
+   * このジョブの録画方式（Epic #399、Issue #387）。`recordingSpeed`と同じく`Launch`が割り当てる段の値。
+   * `frameSync`のときは速度の概念が無く（`recordingSpeed`は1）、ETAは段の実時間効率で見積もる。
+   */
+  captureMode?: CaptureMode;
   /**
    * リプレイずれ（デシンク）の疑い（Issue #103、`JobRecord.desyncDetected`をそのまま
    * 転記）。`true`のときページBは「録画終了時のスコアが記録されたスコアと一致
