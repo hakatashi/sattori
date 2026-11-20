@@ -38,6 +38,11 @@ import {
  * 本体スタックとの間にCloudFormationの参照は張らない（`gpu-fallback.ts`参照）。
  */
 export class SattoriGpuFallbackStack extends Stack {
+  /** `Vpc` の検証によるAZルックアップ(cdk.context.json にアカウントIDが入る)を避ける。Issue #395。 */
+  override get availabilityZones(): string[] {
+    return GPU_FALLBACK_AVAILABILITY_ZONES;
+  }
+
   constructor(scope: Construct, id: string, props: StackProps) {
     super(scope, id, props);
 

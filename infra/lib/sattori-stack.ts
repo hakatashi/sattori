@@ -95,7 +95,19 @@ export interface SattoriStackProps extends StackProps {
  * ACM証明書とSESだけは`SattoriEdgeStack`(us-east-1固定)が持つ。理由は同スタックの
  * コメント参照。
  */
+/** 本体スタック(eu-south-2)のAZ。ルックアップを避けるため明示する(Issue #395)。 */
+const MAIN_AVAILABILITY_ZONES = ["eu-south-2a", "eu-south-2b", "eu-south-2c"];
+
 export class SattoriStack extends Stack {
+  /**
+   * CDK の `Vpc` は AZ を明示しても検証のために `stack.availabilityZones` を読み、
+   * 既定ではそれが AWS へのルックアップ(結果は cdk.context.json へ、アカウントID入りのキーで保存)になる。
+   * 公開リポジトリにアカウントIDを載せないため、固定値を返してルックアップ自体をなくす。
+   */
+  override get availabilityZones(): string[] {
+    return MAIN_AVAILABILITY_ZONES;
+  }
+
   constructor(scope: Construct, id: string, props: SattoriStackProps) {
     super(scope, id, props);
 
@@ -487,22 +499,19 @@ export class SattoriStack extends Stack {
     };
 
     // NAT を持たない公開サブネット構成(ワーカーは外向き通信のみ必要 = 最小コスト)。
-    // maxAzs は「利用可能なら使うAZ数の上限」であり、実際に作られるサブネット数は
-    // リージョンの提供AZ数とのmin(6, 提供数)になる(eu-south-2は現状3AZなので3つ)。
-    // EC2 Fleet の起動時に全AZへスポットリクエストを送ることで、単一AZでの
-    // キャパシティ枯渇(InsufficientInstanceCapacity)への耐性を高める(NATを
-    // 使わないためAZ追加によるコスト増はない)。将来AZが増えた場合に自動的に
-    // 追従してほしいため6のまま据え置く。
+    // AZ は明示指定する(Issue #395)。maxAzs だと CDK が synth 時に AZ を AWS へ問い合わせ、
+    // 結果を「アカウントID入りのキー」で cdk.context.json にキャッシュする。それをコミットすると
+    // 本番アカウントIDが公開リポジトリに載ってしまうため、ルックアップ自体をなくした。
+    // eu-south-2 は現状3AZ。EC2 Fleet は全AZへスポットリクエストを送り、単一AZでの
+    // キャパシティ枯渇(InsufficientInstanceCapacity)への耐性を高める(NAT を使わないため
+    // AZ追加によるコスト増はない)。AZ が増えたら ここへ足すこと(サブネットが1つ追加される)。
     //
     // かつて us-east-1 運用時は、レガシーAZ(us-east-1e)を availabilityZones の
-    // 明示指定で除外する案を試みたが、既存サブネットのAZ・CIDRを差し替える形の更新に
-    // なり、CloudFormationが新サブネット作成を旧サブネット削除より先に試みるため
-    // CIDR重複でデプロイが失敗した(create-before-deleteの既定挙動とCIDR一意制約が
-    // 噛み合わない, Issue #29)。WORKER_SUBNET_IDS の組み立て時に該当AZを除外する
-    // ことで同じ目的を安全に達成していたが、eu-south-2への移設でそのレガシーAZ問題
-    // 自体が解消したため、現在はフィルタリングを行っていない(下記参照)。
+    // 明示指定で除外する案が「既存サブネットのAZ・CIDRを差し替える更新」になり、CIDR重複で
+    // デプロイに失敗した(Issue #29)。今回は現行と同じ3AZ・同じ並びを指定するため、
+    // サブネットは差し替わらない(synth テンプレートが変更前と同一であることを確認済み)。
     const vpc = new ec2.Vpc(this, "WorkerVpc", {
-      maxAzs: 6,
+      availabilityZones: MAIN_AVAILABILITY_ZONES,
       natGateways: 0,
       subnetConfiguration: [
         { name: "public", subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },

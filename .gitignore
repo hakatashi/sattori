@@ -69,3 +69,6 @@ logs/
 CLAUDE.local.md
 .agents/
 .claude/scheduled_tasks.lock
+
+# CDKのルックアップ結果キャッシュ。キーにアカウントIDが入るためコミットしない(Issue #395)
+infra/cdk.context.json
