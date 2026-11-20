@@ -43,16 +43,6 @@ jobs:
           return text.rstrip("\n").encode("utf-8") + b"\n"
           '
 
-      - name: Check history for forbidden paths
-        run: |
-          FORBIDDEN_REGEX='(^worker/games/|^worker/prefixes/|^worker/assets/|\.(wav|mp3|ogg|mp4|exe|dll|dat|zip|pem)$)'
-          MATCHES=$(git log --all --diff-filter=A --name-only --pretty=format: | grep -v '^$' | grep -iE "$FORBIDDEN_REGEX" | sort -u || true)
-          if [ -n "$MATCHES" ]; then
-            echo "::error::公開してはいけないパスが履歴に含まれているため push を中止しました:"
-            echo "$MATCHES"
-            exit 1
-          fi
-
       - name: Install gitleaks
         env:
           GITLEAKS_VERSION: "8.21.2"
@@ -63,8 +53,16 @@ jobs:
           rm gitleaks gitleaks.tar.gz
           gitleaks version
 
-      - name: Scan history for leaked secrets
-        run: gitleaks detect --source . --config .gitleaks.toml --no-banner --redact
+      # 禁止パス + gitleaks(.gitleaks.toml・.gitleaksignore) + 実アカウントIDの照合。
+      # ローカルでも同じ scripts/check-public-mirror.sh で実行できる(Issue #395)。
+      # SATTORI_AWS_ACCOUNT_ID はリポジトリ secret。未登録だとここで失敗する。
+      - name: Check forbidden paths and scan history for leaked secrets
+        env:
+          SATTORI_AWS_ACCOUNT_ID: ${{ secrets.SATTORI_AWS_ACCOUNT_ID }}
+          REQUIRE_ACCOUNT_ID: "1"
+        run: |
+          scripts/test-public-mirror-rules.sh
+          scripts/check-public-mirror.sh
 
       - name: Push filtered history to public mirror
         env:
