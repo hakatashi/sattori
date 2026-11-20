@@ -101,6 +101,8 @@ paths = [
 
 [allowlist]
 description = "テストやドキュメントで使うプレースホルダ値"
+# ルールのテストは違反の見本(合成値。本番の値は含まない)を持つ。
+paths = ['''^scripts/test-public-mirror-rules\.sh$''']
 regexTarget = "match"
 regexes = [
   '''123456789012''',
