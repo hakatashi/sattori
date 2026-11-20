@@ -2,7 +2,12 @@ title = "Sattori public mirror secret scan"
 
 # 公開ミラー(.github/workflows/mirror-public.yml)へのpush前に、gitleaksの標準ルール
 # (AWSキー・秘密鍵・genericなpassword/token代入など)へ、このリポジトリ固有の
-# 漏洩パターンを追加する。Issue #137。
+# 漏洩パターンを追加する。Issue #137・#395。
+#
+# 実アカウントID(裸の12桁)は、値をこのファイルに書けないため、実行時に
+# scripts/check-public-mirror.sh が環境変数 SATTORI_AWS_ACCOUNT_ID から追加ルールを
+# 生成して照合する(CIでは secret から渡す)。汎用の「12桁の数字」ルールは誤検知が多く採らない。
+# ルールの陽性/陰性テストは scripts/test-public-mirror-rules.sh。
 
 [extend]
 useDefault = true
@@ -12,6 +17,71 @@ id = "aws-arn-real-account-id"
 description = "テスト用プレースホルダ(123456789012)ではない実アカウントIDを含むAWS ARN"
 regex = '''arn:aws[a-zA-Z-]*:[a-z0-9-]*:[a-z0-9-]*:\d{12}:'''
 tags = ["aws", "arn"]
+
+[[rules]]
+id = "aws-ecr-registry-url"
+description = "ECRレジストリURL(<12桁>.dkr.ecr.<region>.amazonaws.com)。アカウントIDを含む"
+regex = '''\b\d{12}\.dkr\.ecr(?:-fips)?\.[a-z0-9-]+\.amazonaws\.com'''
+tags = ["aws", "ecr"]
+
+[[rules]]
+id = "aws-resource-id"
+description = "AWSリソースID(EC2インスタンス・AMI・SG・VPC・サブネット・ENI・スナップショット・ボリューム・キーペア等)"
+regex = '''\b(?:i|ami|sg|vpc|subnet|eni|snap|vol|key|rtb|igw|nat|eipalloc|lt|fl|vpce|pcx|tgw)-[0-9a-f]{8}(?:[0-9a-f]{9})?\b'''
+tags = ["aws", "resource-id"]
+
+[rules.allowlist]
+description = "テストのダミー値。infra/cdk.json はGPU用AMI IDを設定として持つ(AMIは認証情報ではない)"
+paths = ['''(?i)\.test\.(ts|py)$''', '''^infra/cdk\.json$''']
+
+[[rules]]
+id = "aws-s3-bucket-with-account-id"
+description = "アカウントIDやリージョンを名前に含むS3バケット名(CDKの自動命名: <名前>-<12桁>-<region>)"
+regex = '''\b[a-z0-9][a-z0-9.-]*-\d{12}-[a-z]{2}-[a-z]+-\d\b'''
+tags = ["aws", "s3"]
+
+[[rules]]
+id = "public-ipv4-address"
+description = "グローバルIPv4アドレス(RFC1918・ループバック・リンクローカル・ドキュメント用・0.0.0.0・マルチキャスト以降を除く)"
+# 前後にドットや数字が続く(バージョン番号・長い数列の一部)ものは拾わない。
+regex = '''(?:^|[^0-9.\w/-])((?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d))(?:$|[^0-9.\w-]|\.(?:$|[^0-9\w]))'''
+secretGroup = 1
+tags = ["network", "public-ip"]
+
+[[rules.allowlists]]
+description = "version等の語を含む行(4つ組の数字はバージョン番号)とテストのfixture"
+regexTarget = "line"
+regexes = ['''(?i)version|user.?agent|chrome/|firefox/''']
+paths = ['''(?i)\.test\.(ts|py)$''']
+
+[[rules.allowlists]]
+description = "プライベート・特殊用途・ドキュメント用アドレス(別ルールで見る、または公開されても問題ない)"
+regexTarget = "secret"
+regexes = [
+  '''^10\.''',
+  '''^127\.''',
+  '''^0\.''',
+  '''^169\.254\.''',
+  '''^172\.(?:1[6-9]|2\d|3[01])\.''',
+  '''^192\.168\.''',
+  '''^192\.0\.2\.''',
+  '''^198\.51\.100\.''',
+  '''^203\.0\.113\.''',
+  '''^100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.''',
+  '''^(?:22[4-9]|2[3-5]\d)\.''',
+  '''^8\.8\.[48]\.[48]$''',
+  '''^1\.1\.1\.1$''',
+]
+
+[[rules]]
+id = "job-id-rpy-or-path"
+description = "jobId(認可の秘密値、decisions/0004)を含むUUID形式の.rpyファイル名、またはjobs/・replays/等のパス"
+regex = '''(?i)(?:\b(?:jobs|replays|videos|uploads|outputs?)/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.rpy\b)'''
+tags = ["job-id", "authorization-secret"]
+
+[rules.allowlist]
+description = "テストの固定UUID"
+paths = ['''(?i)\.test\.(ts|py)$''']
 
 [[rules]]
 id = "private-ipv4-address"
@@ -34,4 +104,8 @@ description = "テストやドキュメントで使うプレースホルダ値"
 regexTarget = "match"
 regexes = [
   '''123456789012''',
+  # AWSドキュメントの慣用ダミー(0123456789abcdef0 系、1234567890abcdef0 系、全桁0)
+  '''\b(?:i|ami|sg|vpc|subnet|eni|snap|vol|key|rtb|igw|nat|eipalloc|lt|fl|vpce|pcx|tgw)-(?:0?123456789abcdef0?|0?1234567890abcdef0?|0{8}(?:0{9})?)\b''',
+  # テストで使う固定のUUID(全桁0、または 00000000-0000-4000-8000-<12桁> の形)
+  '''(?i)\b(?:0{8}-0{4}-0{4}-0{4}-0{12}|00000000-0000-[1-8]000-[89ab]000-[0-9a-f]{12}|11111111-1111-1111-1111-111111111111)\b''',
 ]

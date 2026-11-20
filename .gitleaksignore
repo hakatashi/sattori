@@ -1,0 +1,28 @@
+# gitleaks の既知の検出(履歴上の過去コミット)。Issue #395。
+# フィンガプリント = <commit>:<file>:<rule>:<line>。履歴は書き換えない限り消えないため、
+# 検査を通すためにここへ明示する。新しい検出をここへ足す場合は、必ずユーザーの判断を得ること。
+
+# --- AMI ID / EC2インスタンスID(2026-09〜10の検証レポート・設計記録。認証情報ではなく低リスク)
+2cca80cd0263a2ec413dcd92a6cd3fe4ae1f788d:docs/reports/2026-10-11-gpu-fallback-eu-north-1-production-e2e.md:aws-resource-id:5
+78b6a7ac0c88e22122e73da7acce28cfdb34939f:.claude/skills/build-gpu-worker-ami/SKILL.md:aws-resource-id:182
+78b6a7ac0c88e22122e73da7acce28cfdb34939f:docs/reports/2026-10-11-gpu-capacity-eu-south-2-vs-eu-north-1.md:aws-resource-id:40
+78b6a7ac0c88e22122e73da7acce28cfdb34939f:docs/reports/2026-10-11-gpu-capacity-eu-south-2-vs-eu-north-1.md:aws-resource-id:5
+7de4b7f60b5a2ccbc8d137970828688944040a5f:docs/decisions/0052-gpu-xorg-driver-file-level-mount-not-directory.md:aws-resource-id:33
+7de4b7f60b5a2ccbc8d137970828688944040a5f:docs/reports/2026-09-18-th15-gpu-ami-xorg-libwfb-root-cause.md:aws-resource-id:7
+7de4b7f60b5a2ccbc8d137970828688944040a5f:docs/reports/2026-09-18-th15-gpu-ami-xorg-libwfb-root-cause.md:aws-resource-id:8
+7de4b7f60b5a2ccbc8d137970828688944040a5f:docs/reports/2026-09-18-th15-gpu-ami-xorg-libwfb-root-cause.md:aws-resource-id:98
+824730c2d219f2dbe116d2b527ba194a14da9561:docs/reports/2026-09-17-th15-production-e2e-attempt.md:aws-resource-id:58
+824730c2d219f2dbe116d2b527ba194a14da9561:docs/reports/2026-09-17-th15-production-e2e-attempt.md:aws-resource-id:84
+824730c2d219f2dbe116d2b527ba194a14da9561:docs/reports/2026-09-17-th15-production-e2e-attempt.md:aws-resource-id:85
+9b4cff919833d2c0876fb4857ac77f9e6aba50cb:docs/reports/2026-09-12-th06nc-recording-verification.md:aws-resource-id:55
+ee254773f6f64c395b3b56f50757befeccb962ab:docs/reports/2026-10-04-delivery-cut-and-1080p-verification.md:aws-resource-id:9
+
+# --- 【要判断】本番AWSアカウントIDが履歴に残っている(公開ミラーにも出ている可能性がある)。
+# 履歴を書き換えて除去するかどうかはユーザーの判断事項。決まるまでの暫定。
+# (infra/cdk.context.json は現在はコミット対象外。SKILL.md のECR URLは現在は変数化済み)
+19137d4f8d37c4ac96ac99219ab686e270f9cfe1:infra/cdk.context.json:real-aws-account-id:2
+57339bc3a79f857629df9f2a4dfcc4149a8d38b6:.claude/skills/verify-recording-locally/SKILL.md:aws-ecr-registry-url:120
+57339bc3a79f857629df9f2a4dfcc4149a8d38b6:.claude/skills/verify-recording-locally/SKILL.md:real-aws-account-id:120
+78b6a7ac0c88e22122e73da7acce28cfdb34939f:infra/cdk.context.json:real-aws-account-id:7
+935bcc722cb81674ad116b66d0b9e868ce5ae9dd:infra/cdk.context.json:real-aws-account-id:2
+e77276c5ad82a4e21b883156bdc0ddf548e29b2b:infra/cdk.context.json:real-aws-account-id:7
