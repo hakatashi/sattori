@@ -1,6 +1,6 @@
 # gitleaks の既知の検出(履歴上の過去コミット)。Issue #395。
 # フィンガプリント = <file>:<rule>:<line>(コミット非依存。CIは git filter-repo で履歴を書き換えてから検査するためハッシュは使えない)。履歴は書き換えない限り消えないため、
-# 検査を通すためにここへ明示する。新しい検出をここへ足す場合は、必ずユーザーの判断を得ること。
+# 検査を通すためにここへ明示する。(本番アカウントIDは2026-11-20に履歴を書き換えて除去済み。Issue #395)新しい検出をここへ足す場合は、必ずユーザーの判断を得ること。
 
 # --- AMI ID / EC2インスタンスID(2026-09〜10の検証レポート・設計記録。認証情報ではなく低リスク)
 docs/reports/2026-10-11-gpu-fallback-eu-north-1-production-e2e.md:aws-resource-id:5
@@ -16,11 +16,3 @@ docs/reports/2026-09-17-th15-production-e2e-attempt.md:aws-resource-id:84
 docs/reports/2026-09-17-th15-production-e2e-attempt.md:aws-resource-id:85
 docs/reports/2026-09-12-th06nc-recording-verification.md:aws-resource-id:55
 docs/reports/2026-10-04-delivery-cut-and-1080p-verification.md:aws-resource-id:9
-
-# --- 【要判断】本番AWSアカウントIDが履歴に残っている(公開ミラーにも出ている可能性がある)。
-# 履歴を書き換えて除去するかどうかはユーザーの判断事項。決まるまでの暫定。
-# (infra/cdk.context.json は現在はコミット対象外。SKILL.md のECR URLは現在は変数化済み)
-infra/cdk.context.json:real-aws-account-id:2
-.claude/skills/verify-recording-locally/SKILL.md:aws-ecr-registry-url:120
-.claude/skills/verify-recording-locally/SKILL.md:real-aws-account-id:120
-infra/cdk.context.json:real-aws-account-id:7
