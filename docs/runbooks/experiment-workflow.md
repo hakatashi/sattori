@@ -34,7 +34,7 @@
 
 ```bash
 # リプレイは、既存ジョブのもの（sourceJobId）か、POST /uploads で上げたもの（replayKey + game）
-curl -sS -X POST "$API/admin/experiments" -H "Authorization: $ADMIN_TOKEN" -H 'content-type: application/json' -d '{
+curl -sS -X POST "$API/admin/experiments" -H "Authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/json' -d '{
   "sourceJobId": "<既存のjobId>",
   "step": { "kind": "ec2", "platform": "cpu", "region": "eu-south-2",
             "instanceTypes": ["c7i.4xlarge"], "captureMode": "realtime", "speed": 1 },
@@ -42,7 +42,7 @@ curl -sS -X POST "$API/admin/experiments" -H "Authorization: $ADMIN_TOKEN" -H 'c
   "note": "frameSync 検証 1回目"
 }'
 # 結果（品質の判定値・実時間・尺比・課金時間・推定コスト）をまとめて取得
-curl -sS "$API/admin/experiments" -H "Authorization: $ADMIN_TOKEN"
+curl -sS "$API/admin/experiments" -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
 - **段は1つだけ**。使い切ったら（Spot在庫の枯渇など）ほかの段へ落ちず`capacity_exhausted`で失敗する。
