@@ -1,0 +1,52 @@
+# th128(妖精大戦争)単体のリプレイ録画ワーカー用イメージ(AWS版)。
+# th12のDockerfile.th12(フェーズ64)を土台にth128のみを含む軽量イメージを用意する
+# (フェーズ73)。th128はリプレイ選択直後のフリーズ回避のため--thprac必須
+# (reports/70)なので、games/th128/にthprac.v2.3.0.3.exeを同梱している。
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      wine wine32 wine64 winetricks \
+      xdotool xvfb openbox x11-utils procps rsync \
+      ffmpeg pulseaudio pulseaudio-utils \
+      libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 \
+      libgl1:amd64 libgl1:i386 \
+      libglx-mesa0:amd64 libglx-mesa0:i386 \
+      libegl-mesa0:amd64 libegl-mesa0:i386 \
+      language-pack-ja \
+      python3 python3-numpy python3-pil python3-pip \
+      ca-certificates \
+    && locale-gen ja_JP.UTF-8 && update-locale \
+    && pip3 install --break-system-packages --no-cache-dir boto3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY scripts/ /app/scripts/
+# 録画パイプライン本体(scripts/25_record_replay_e2e_multigame.py はこのパッケージを呼ぶシム)
+COPY recorder/ /app/recorder/
+COPY games/th128/ /app/games/th128/
+COPY prefixes/th128-wined3d-gl/ /app/prefixes/th128-wined3d-gl/
+COPY mods/common/build/injector.exe /app/mods/common/build/
+COPY mods/th128_replay_autoplay/build/th128_hook.dll /app/mods/th128_replay_autoplay/build/
+COPY assets/watermark/watermark-60fps.webm /app/assets/watermark/watermark-60fps.webm
+COPY assets/replay_end_templates/ /app/assets/replay_end_templates/
+
+COPY cloud/docker/aws/entrypoint_multigame.py /app/entrypoint.py
+RUN chmod +x /app/entrypoint.py && mkdir -p /app/instances /app/runs
+
+# PulseAudioはroot(uid 0)では起動を拒否し、wineserverはWINEPREFIXの所有者と
+# 実行時uidが一致しないと拒否するため、非rootユーザーで実行する必要がある
+# (Dockerfile.multigame参照)。ubuntu:24.04の既定ユーザー"ubuntu"(uid 1000)を
+# ローカル開発機のユーザー名(WINEPREFIX作成時のdrive_c/users/hakatashi)に
+# リネームして一致させる(th20/th10/th12のDockerfileと同じ対応)。
+RUN usermod -l hakatashi -d /home/hakatashi -m ubuntu && groupmod -n hakatashi ubuntu
+RUN chown -R hakatashi:hakatashi /app
+USER hakatashi
+
+ENV GAME=th128
+ENV THPRAC=1
+
+ENTRYPOINT ["python3", "/app/entrypoint.py"]

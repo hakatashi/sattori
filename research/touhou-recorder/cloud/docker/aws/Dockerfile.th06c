@@ -1,0 +1,54 @@
+# th06c(東方紅魔郷: Classic)単体のリプレイ録画ワーカー用イメージ(AWS版)。
+# th128のDockerfile.th128(フェーズ73)を土台にth06cのみを含む軽量イメージを用意する
+# (フェーズ77)。th06cはth06c.exeがPE32+(x86-64)なので32bit injector.exeではなく
+# injector64.exeを使う点、正規steam_api64.dllをスタブに上書きするextra_files機構
+# (scripts/25のGAME_CONFIGS["th06c"]で定義済み)を使う点が他タイトルと異なる
+# (reports/74参照)。thprac(GAME_CONFIGS["th06c"]にthprac_exeの指定なし)は不要。
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      wine wine32 wine64 winetricks \
+      xdotool xvfb openbox x11-utils procps rsync \
+      ffmpeg pulseaudio pulseaudio-utils \
+      libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 \
+      libgl1:amd64 libgl1:i386 \
+      libglx-mesa0:amd64 libglx-mesa0:i386 \
+      libegl-mesa0:amd64 libegl-mesa0:i386 \
+      language-pack-ja \
+      python3 python3-numpy python3-pil python3-pip \
+      ca-certificates \
+    && locale-gen ja_JP.UTF-8 && update-locale \
+    && pip3 install --break-system-packages --no-cache-dir boto3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY scripts/ /app/scripts/
+# 録画パイプライン本体(scripts/25_record_replay_e2e_multigame.py はこのパッケージを呼ぶシム)
+COPY recorder/ /app/recorder/
+COPY games/th06c/ /app/games/th06c/
+COPY prefixes/th06c-wined3d-gl/ /app/prefixes/th06c-wined3d-gl/
+COPY mods/common/build/injector64.exe /app/mods/common/build/
+COPY mods/th06c_replay_autoplay/build/th06c_hook.dll /app/mods/th06c_replay_autoplay/build/
+COPY mods/th06c_steam_stub/build/steam_api64.dll /app/mods/th06c_steam_stub/build/
+COPY assets/watermark/watermark-60fps.webm /app/assets/watermark/watermark-60fps.webm
+COPY assets/replay_end_templates/ /app/assets/replay_end_templates/
+
+COPY cloud/docker/aws/entrypoint_multigame.py /app/entrypoint.py
+RUN chmod +x /app/entrypoint.py && mkdir -p /app/instances /app/runs
+
+# PulseAudioはroot(uid 0)では起動を拒否し、wineserverはWINEPREFIXの所有者と
+# 実行時uidが一致しないと拒否するため、非rootユーザーで実行する必要がある
+# (Dockerfile.multigame参照)。ubuntu:24.04の既定ユーザー"ubuntu"(uid 1000)を
+# ローカル開発機のユーザー名(WINEPREFIX作成時のdrive_c/users/hakatashi)に
+# リネームして一致させる(th20/th10/th12/th128のDockerfileと同じ対応)。
+RUN usermod -l hakatashi -d /home/hakatashi -m ubuntu && groupmod -n hakatashi ubuntu
+RUN chown -R hakatashi:hakatashi /app
+USER hakatashi
+
+ENV GAME=th06c
+
+ENTRYPOINT ["python3", "/app/entrypoint.py"]

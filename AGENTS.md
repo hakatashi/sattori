@@ -12,8 +12,9 @@ Sattori（東方リプレイ録画ウェブサービス）の全体設計。着�
 説明を最小限に、操作を単純にする。想定利用規模は**月間最大1000回**の録画で、コストとオペレー
 ションの最小化を最優先に設計判断を行っている。主要機能は実装済みで、2026-08-22に初回リリース済み。
 対応タイトルは th06・th06c・th06nc・th07・th08・th09・th10・th11・th12・th13・th15・th20・th128 の13本。未実装・未検証の事項は
-[`docs/known-limitations.md`](docs/known-limitations.md) に一覧してある。実機検証レポート群は別
-リポジトリ `touhou-recorder`（PoC）にあり、各所の `reports/NN` はその番号。
+[`docs/known-limitations.md`](docs/known-limitations.md) に一覧してある。実機検証レポート群は
+[`research/touhou-recorder/`](research/touhou-recorder/README.md)（旧PoC リポジトリのスナップショット、不変）にあり、
+各所の「touhou-recorder reports/NN」は同 `reports/NN_*.md`。
 
 ## 2. アーキテクチャ概観
 

@@ -1,0 +1,69 @@
+# th06・th07・th08・th11・th20のゲームデータを含む録画ワーカー用イメージ(AWS版)。
+# フェーズ24でth08のみAWS上で重複フレーム率90%超という致命的な問題が起きた原因が
+# th08固有かパイプライン/AWS環境固有かを切り分けるため、現行th08パイプライン
+# (scripts/23)の構成をほぼそのまま流用しつつ、対象ゲームを--gameフラグで
+# 切り替えられるようにしたscripts/25_record_replay_e2e_multigame.pyを使う。
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      wine wine32 wine64 winetricks \
+      xdotool xvfb openbox x11-utils procps rsync \
+      ffmpeg pulseaudio pulseaudio-utils \
+      libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 \
+      libgl1:amd64 libgl1:i386 \
+      libglx-mesa0:amd64 libglx-mesa0:i386 \
+      libegl-mesa0:amd64 libegl-mesa0:i386 \
+      language-pack-ja \
+      python3 python3-numpy python3-pil python3-pip \
+      ca-certificates \
+    && locale-gen ja_JP.UTF-8 && update-locale \
+    && pip3 install --break-system-packages --no-cache-dir boto3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY scripts/ /app/scripts/
+# 録画パイプライン本体(scripts/25_record_replay_e2e_multigame.py はこのパッケージを呼ぶシム)
+COPY recorder/ /app/recorder/
+COPY games/th07/ /app/games/th07/
+COPY games/th08_ver100d/ /app/games/th08_ver100d/
+COPY games/th06/ /app/games/th06/
+COPY games/th11/ /app/games/th11/
+COPY games/th20/ /app/games/th20/
+COPY prefixes/th07-wined3d-gl/ /app/prefixes/th07-wined3d-gl/
+COPY prefixes/th08-wined3d-gl/ /app/prefixes/th08-wined3d-gl/
+COPY prefixes/th06-wined3d-gl/ /app/prefixes/th06-wined3d-gl/
+COPY prefixes/th11-wined3d-gl/ /app/prefixes/th11-wined3d-gl/
+COPY prefixes/th20-wined3d-gl/ /app/prefixes/th20-wined3d-gl/
+COPY mods/common/build/injector.exe /app/mods/common/build/
+COPY mods/th07_replay_autoplay/build/th07_hook.dll /app/mods/th07_replay_autoplay/build/
+COPY mods/th08_replay_autoplay/build/th08_hook.dll /app/mods/th08_replay_autoplay/build/
+COPY mods/th06_replay_autoplay/build/th06_hook.dll /app/mods/th06_replay_autoplay/build/
+COPY mods/th11_replay_autoplay/build/th11_hook.dll /app/mods/th11_replay_autoplay/build/
+COPY mods/th20_replay_autoplay/build/th20_hook.dll /app/mods/th20_replay_autoplay/build/
+COPY assets/watermark/watermark-60fps.webm /app/assets/watermark/watermark-60fps.webm
+COPY assets/replay_end_templates/ /app/assets/replay_end_templates/
+
+COPY cloud/docker/aws/entrypoint_multigame.py /app/entrypoint.py
+RUN chmod +x /app/entrypoint.py && mkdir -p /app/instances /app/runs
+
+# PulseAudioはroot(uid 0)では起動を拒否する("not intended to be run as root")ため、
+# 非rootユーザーで実行する必要がある。またwineserverはWINEPREFIXの所有者と実行時
+# uidが一致しないと拒否する("is not owned by you")ため、COPY時にrootで所有者に
+# なったprefixes/games一式をビルド時点で非rootユーザーにchownし、そのユーザーを
+# デフォルトの実行ユーザーとして固定する(docker run側で--userを指定する必要がない)。
+# ubuntu:24.04には既定でuid 1000の"ubuntu"ユーザーが存在するが、th20はcfg/replayを
+# WINEPREFIX側の%APPDATA%/ShanghaiAlice/th20/(c:\users\<実行時ユーザー名>\...)から
+# 読み込む仕様(reports/44)のため、WINEPREFIX作成時のユーザー名(drive_c/users/
+# hakatashi、ローカル開発機のユーザー名)と実行時ユーザー名が一致していないと、
+# Wineが未知のユーザーとして空の新規プロファイルを作成してしまいcfgが見つからず
+# 初回起動ダイアログで停止する(フェーズ46で発覚)。"ubuntu"ユーザーをリネームして
+# これを回避する(他タイトルはこの仕組みに依存しないため影響なし)。
+RUN usermod -l hakatashi -d /home/hakatashi -m ubuntu && groupmod -n hakatashi ubuntu
+RUN chown -R hakatashi:hakatashi /app
+USER hakatashi
+
+ENTRYPOINT ["python3", "/app/entrypoint.py"]

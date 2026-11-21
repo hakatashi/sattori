@@ -16,7 +16,8 @@
 2. AWS 上で東方本体を Wine + Xvfb + ffmpeg によりヘッドレス録画（GPU不要）
 3. 完成した動画を CloudFront 経由でダウンロード
 
-録画パイプラインは別リポジトリ [`touhou-recorder`](../touhou-recorder) の PoC で
+録画パイプラインは、PoC（実機検証レポート・MOD・スクリプト一式を
+[`research/touhou-recorder`](research/touhou-recorder/README.md) にスナップショットとして収録）で
 th07（妖々夢）・th08（永夜抄）の E2E 動作を実証済みで、その知見をもとに構築しています。
 
 ## モノレポ構成

@@ -90,6 +90,8 @@ docs/
   research/                     # ④ のうち長大な調査レポート
     README.md
     aws-region-cost-analysis.md
+research/
+  touhou-recorder/              # 旧 PoC リポジトリのスナップショット（コードを含む。不変、§4 末尾）
 <package>/
   README.md                     # ① そのパッケージの参照仕様
   docs/                         # ② のうち、パッケージ内で軸を切った方が自然なもの
@@ -102,10 +104,18 @@ docs/
 判断基準は「その軸で今後も件数が増え続けるか」であり、増えるなら README の表に
 1行足すだけで済む構造にする。
 
-`touhou-recorder`（PoC リポジトリ）の `reports/NN` は**別リポジトリのもので、
-こちらへは移設しない**。混同を避けるため、あちらは連番、こちらの `docs/reports/` は
-日付ベースの命名とする。このリポジトリの文書から参照する場合は
-「touhou-recorder reports/50」のようにリポジトリ名を添えること。
+**`research/`（トップレベル）と `docs/research/` の使い分け**: `docs/research/` は
+sattori 自身の長大な調査レポート（Markdown のみ）の置き場。`research/` は、**コード・スクリプト・
+設定を含む過去資料のスナップショット**の置き場で、今は `research/touhou-recorder/` だけがある
+（Issue #396、[`0074`](decisions/0074-import-touhou-recorder-snapshot.md)）。後者は
+**取り込んだ当時の姿を保つ不変の資料**で、新しい検証記録はここへ足さず `docs/reports/` へ書く。
+サイズ上限は適用しない（§6）。
+
+**`touhou-recorder reports/NN` の指す先**: 本文中の「touhou-recorder reports/NN」は
+**`research/touhou-recorder/reports/NN_*.md`** を指す（旧リポジトリのレポート番号と同じ）。
+約890か所の参照は書き換えず、この定義で解決する。連番の `research/touhou-recorder/reports/` と
+日付ベースの `docs/reports/` は混ざらないので、参照するときは従来どおり
+「touhou-recorder reports/50」のように名前を添えること。
 
 ## 5. 書式規約
 
@@ -248,6 +258,7 @@ README（①）と決定記録（②）・検証記録（④）は必ず双方�
 | `docs/` 配下 | 500行 | 必要なときに1件だけ開く前提 |
 | `docs/reports/` 配下 | 上限なし | 1件が長いこと自体は問題ない。不変で、必要な人が1件だけ開く |
 | `docs/research/` 配下 | 上限なし | 同上 |
+| `research/` 配下（取り込んだ過去資料） | 上限なし | 不変のスナップショットのため（Issue #396） |
 
 上限の **80% を超えたら警告**を出す。上限に達してから慌てて分割するより、余裕のある
 うちに気づける方が望ましい。
