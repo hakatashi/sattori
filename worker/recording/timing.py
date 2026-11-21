@@ -8,8 +8,8 @@ import os
 
 
 # 起動側(apps/api/src/workerEnv.ts)が`FPS_LIMIT_TARGET_HZ`を渡してきた場合、MOD
-# (mods/common/fps_limiter_hook.cpp)がIDirect3DDevice9::Presentをその周波数へ
-# スロットルし、倍速録画ではさらに`speed_hack_hook`がQueryPerformanceCounterの経過時間を
+# (mods/present/limiter.cpp)がIDirect3DDevice9::Presentをその周波数へ
+# スロットルし、倍速録画ではさらに`clock/speed_hack`がQueryPerformanceCounterの経過時間を
 # 同じ倍率で伸ばす(`GameConfig.build_env()`が`SPEED_HACK_MULTIPLIER`を導出して渡す)。
 # 東方作品はレンダリングfpsとゲームロジック更新が直結しているため、これはゲーム進行
 # そのものの速度変更になる(touhou-recorder reports/47・85・89)。
@@ -18,8 +18,8 @@ import os
 # 有無だけで決まり、未設定なら従来どおり等倍で動く(全タイトル共通)。
 #
 # ここで得られるスケール係数は「実時間がゲーム内時間の何倍になるか」で、等倍なら1.0、
-# 120Hz指定(2倍速)なら0.5、30Hz指定(低速録画)なら2.0。**MOD内部の待機(dllmain.cppの
-# ScaledSleep)だけでなく、それを監視するこちら側の猶予時間も同じ比率で伸縮しないと
+# 120Hz指定(2倍速)なら0.5、30Hz指定(低速録画)なら2.0。**MOD内部の待機
+# (mods/core/time_scale.h の MenuSleep)だけでなく、それを監視するこちら側の猶予時間も同じ比率で伸縮しないと
 # 録画速度の変更は成立しない**(reports/47で、スケール未適用のPOST_START_GRACE_SECのまま
 # ステージ開始の導入演出中に処理落ち検知が走り、3回とも誤リトライする事象が実際に発生した)。
 NATIVE_FRAME_RATE_HZ = 60.0
@@ -89,7 +89,7 @@ def capture_frame_rate_hz(time_scale):
 def audio_capture_rate_hz(time_scale):
     """音声の録音サンプルレート。
 
-    倍速録画ではMOD(dsound_hook/wasapi_hook)がゲームの再生周波数を倍率ぶん上げる
+    倍速録画ではMOD(audio/dsound/audio/wasapi)がゲームの再生周波数を倍率ぶん上げる
     (2倍速なら44100Hz→88200Hz、「テープの早回し」)。録音側も同じレートにしないと
     圧縮空間での高域(等倍へ戻すと11025Hz超に相当)が録音時点で失われる(reports/85・86)。
     等倍・低速録画ではNoneを返し、従来どおりシンクの既定レートのまま録る。

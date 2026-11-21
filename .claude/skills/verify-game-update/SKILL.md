@@ -95,7 +95,7 @@ GPU無しで検証できる**ので、以下の条件で行う。
   `Unhandled division by zero` で落ちる(旧exeでも同じ、2026-09-28対照実験済み)。
   コンテナ内で `record_th06nc.py` の `dxvk_dll_overrides` を `...=b` に書き換え、
   wineビルトインのwined3d(+`LIBGL_ALWAYS_SOFTWARE=1`)で描画する。
-- 約10fpsしか出ないので `TH06NC_TIME_SCALE=7`(MODのメニュー操作待ちを7倍に延長)を渡す。
+- 約10fpsしか出ないので `MENU_WAIT_EXTRA_SCALE=7`(MODのメニュー操作待ちを7倍に延長する検証専用の変数、`worker/mods/core/runtime_config.h`)を渡す。
   重複フレーム率チェックは必ず落ちるので `--max-duplicate-rate 100 --max-attempts 1` にする。
   再生時間は `frameCount / 10` 秒程度かかる(パイプラインの60分タイムアウトに収まる長さの
   リプレイを選ぶこと)。
@@ -115,7 +115,7 @@ docker run --rm --name sattori-verify-th06nc \
   -e WINEPREFIX=/mnt/th06nc-assets/prefixes/th06nc-wined3d-gl \
   -e SATTORI_GAME_DIR=/mnt/th06nc-assets/games/th06nc \
   -e SATTORI_MOD_DIR=/mnt/th06nc-assets/mods \
-  -e TH06NC_TIME_SCALE=7 -e LIBGL_ALWAYS_SOFTWARE=1 \
+  -e MENU_WAIT_EXTRA_SCALE=7 -e LIBGL_ALWAYS_SOFTWARE=1 \
   --entrypoint bash sattori-th06nc-verify:local -c '
     sed -i "s/d3d10core=n/d3d10core=b/" record_th06nc.py
     pulseaudio -D --exit-idle-time=-1 --disallow-exit; sleep 1
@@ -130,7 +130,7 @@ docker run --rm --name sattori-verify-th06nc \
 ### 3.3 見るべき結果
 
 - MODログに `sequence complete`(メニュー操作の完走)、`run.log` に終了検知が出ていること
-  (`TH06NC_TIME_SCALE=7` ではメニュー操作が20秒を超えるため、`run.log` 側の
+  (`MENU_WAIT_EXTRA_SCALE=7` ではメニュー操作が20秒を超えるため、`run.log` 側の
   「キーシーケンス完了ログが検出できませんでした」警告は無視してよい)。
 - `desync.json` が一致(`desyncDetected: false`)であること。MODログ
   (`th06nc_autoplay.log`)の `ScoreMonitor: score=` が0やゴミ値のまま動かない場合は

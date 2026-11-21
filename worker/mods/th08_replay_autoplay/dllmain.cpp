@@ -14,14 +14,15 @@
 // verification log of this specific MOD.
 
 #include <windows.h>
-#include "../common/dinput_hook.h"
-#include "../common/window_wait.h"
-#include "../common/menu_wait.h"
-#include "../common/logging.h"
-#include "../common/speed_hack_hook.h"
-#include "../common/dsound_hook.h"
-#include "../common/fps_display_hook.h"
-#include "../common/score_monitor.h"
+#include "audio/dsound.h"
+#include "autoplay/window_wait.h"
+#include "clock/fps_display.h"
+#include "clock/speed_hack.h"
+#include "core/log.h"
+#include "core/runtime_config.h"
+#include "core/time_scale.h"
+#include "input/dinput.h"
+#include "monitor/score_monitor.h"
 
 using namespace autoplay;
 
@@ -33,43 +34,43 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th08_replay_autoplay: AutoPlayThread started ===");
 
     DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
+    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/time_scale::StartupTimeout(30000));
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
         return 1;
     }
 
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
+    if (!WaitForHookActive(/*timeoutMs=*/time_scale::StartupTimeout(30000))) {
         Log("ERROR: GetDeviceState hook was never called, aborting sequence");
         return 1;
     }
 
     Log("Buffering 1500ms for title screen animation...");
-    MenuSleep(1500);
+    time_scale::MenuSleep(1500);
 
-    Log("Step 1: Down x2 (select 'Replay' on main menu)");
+    LogStep(1, "Down x2 (select 'Replay' on main menu)");
     for (int i = 0; i < 2; i++) {
         PressKey(DIK_DOWN);
-        MenuSleep(250);
+        time_scale::MenuSleep(250);
     }
 
-    Log("Step 2: Enter (confirm 'Replay', enter replay list)");
+    LogStep(2, "Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    MenuSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 3: Enter (select 1st replay file)");
+    LogStep(3, "Enter (select 1st replay file)");
     PressKey(DIK_RETURN);
-    MenuSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 4: Enter (select default start stage)");
+    LogStep(4, "Enter (select default start stage)");
     PressKey(DIK_RETURN);
-    MenuSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 5: Enter (select normal playback mode, start replay)");
+    LogStep(5, "Enter (select normal playback mode, start replay)");
     PressKey(DIK_RETURN);
-    MenuSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("=== th08_replay_autoplay: sequence complete ===");
+    LogSequenceComplete("th08");
     return 0;
 }
 
@@ -77,17 +78,18 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
         LogInit(hinst, "th08_autoplay.log");
+        InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
         // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
         InstallSpeedHackHook();
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。
-        InstallDSoundHook(1.0);
+        InstallDSoundHook();
         // 画面上fpsカウンター表示の倍速録画補正(reports/90)。th08(ver1.00d)の
         // fps計算(書式"%.02ffps"、RVA 0x47031で参照)はWINMM.dll!timeGetTimeで経過時間を
         // 測る(0x46fa7=初回のみ基準時刻、0x46fb2=毎フレーム現在時刻、500ms毎に更新)。
-        // speed_hack_hookはQPCしか偽装しないため、補正しないと2倍速で「120.00fps」と
+        // clock/speed_hackはQPCしか偽装しないため、補正しないと2倍速で「120.00fps」と
         // 表示される。InstallSpeedHackHook()の後に呼ぶこと。
         static const ULONG_PTR kFpsTimeRvas[] = {0x00046fad, 0x00046fb8};
         InstallFpsDisplayCorrectionHookTimeGetTime(kFpsTimeRvas, 2);

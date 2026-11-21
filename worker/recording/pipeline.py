@@ -222,7 +222,7 @@ def _start_audio_capture(config, env, output_path, time_scale, log):
     カットされる区間(リプレイの再生を確定するキーの1秒前より前、`recording/cut.py`)へ
     確実に追い出すため。以前は映像の録画開始の2秒後に鳴らしていたため、メニュー操作の
     速いタイトルではカット後の動画の冒頭にマーカーのノイズが残った。MODはゲームが
-    DirectSoundを作るまでトリガーを待つ(`mods/common/dsound_hook.cpp`)。mux時の同期補正は
+    DirectSoundを作るまでトリガーを待つ(`mods/audio/dsound.cpp`)。mux時の同期補正は
     壁時計時刻で行うので、音声が映像より先に始まっていても成り立つ(`ffmpeg.mux_audio_video()`)。
     """
     base, _ext = os.path.splitext(output_path)
@@ -318,7 +318,7 @@ def _settle_crop_geometry(config, env, game_pid, seen_lines, log):
         return None
     log("ウィンドウの安定を確認しました。クロップ座標を確定します")
 
-    # MOD側のWaitForStableWindowはHWNDの同一性しか見ておらず(mods/common/window_wait.cpp)、
+    # MOD側のWaitForStableWindowはHWNDの同一性しか見ておらず(mods/autoplay/window_wait.cpp)、
     # 位置・サイズの安定までは保証しない。座標そのものが落ち着いたことは
     # wait_for_stable_geometry()で別途確認する。
     geom = wait_for_stable_geometry(config, env, game_pid, log=log)
@@ -410,7 +410,7 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     end_template_mad_threshold = detection.template_mad_threshold
     still_mask = detection.still_mask
 
-    # MODのメニュー自動操作(dllmain.cppのScaledSleep)は低速録画では同じ比率で実時間が伸びるので、
+    # MODのメニュー自動操作(mods/core/time_scale.h の MenuSleep)は低速録画では同じ比率で実時間が伸びるので、
     # タイムアウトも伸ばす(1/3倍速のth15は約24秒かかる)。倍速録画では縮めない
     # (th06c/th06ncのメニュー操作は実時間のSleepで待つため、`scaled_timeout_sec()`)。
     sequence_complete_time = wait_for_log_marker(

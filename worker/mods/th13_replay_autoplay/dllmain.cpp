@@ -14,14 +14,16 @@
 
 #include <windows.h>
 #include <stdlib.h>
-#include "../common/dinput_hook.h"
-#include "../common/window_wait.h"
-#include "../common/logging.h"
-#include "../common/speed_hack_hook.h"
-#include "../common/fps_limiter_hook.h"
-#include "../common/dsound_hook.h"
-#include "../common/score_monitor.h"
-#include "../common/d3dx_filter_hook.h"
+#include "audio/dsound.h"
+#include "autoplay/window_wait.h"
+#include "clock/speed_hack.h"
+#include "core/log.h"
+#include "core/runtime_config.h"
+#include "core/time_scale.h"
+#include "input/dinput.h"
+#include "monitor/score_monitor.h"
+#include "present/limiter.h"
+#include "texture/d3dx_filter.h"
 
 using namespace autoplay;
 
@@ -30,64 +32,47 @@ static const BYTE DIK_DOWN = 0xD0;
 static const BYTE DIK_RIGHT = 0xCD;
 static const BYTE DIK_RETURN = 0x1C;
 
-// 低速録画(FPS_LIMIT_TARGET_HZ<60)ではメニューの画面遷移もゲーム内時間で遅くなるため、
-// 待ち時間を60/FPS_LIMIT_TARGET_HZ倍に伸ばす(th128と同じ)。等倍・未設定なら1.0。
-static double GetMenuTimeScale() {
-    double targetHz = 60.0;
-    const char* env = getenv("FPS_LIMIT_TARGET_HZ");
-    if (env) {
-        double hz = atof(env);
-        if (hz > 0.0) targetHz = hz;
-    }
-    return 60.0 / targetHz;
-}
-
-static void ScaledSleep(DWORD baseMs) {
-    static double scale = GetMenuTimeScale();
-    Sleep((DWORD)(baseMs * scale));
-}
-
 static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th13_replay_autoplay: AutoPlayThread started ===");
 
     DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
+    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/time_scale::StartupTimeout(30000));
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
         return 1;
     }
 
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
+    if (!WaitForHookActive(/*timeoutMs=*/time_scale::StartupTimeout(30000))) {
         Log("ERROR: GetDeviceState hook was never called, aborting sequence");
         return 1;
     }
 
     Log("Buffering 10000ms (scaled) for title screen load...");
-    ScaledSleep(10000);
+    time_scale::MenuSleep(10000);
 
-    Log("Step 1: Down x3 (select 'Replay' on main menu)");
+    LogStep(1, "Down x3 (select 'Replay' on main menu)");
     for (int i = 0; i < 3; i++) {
         PressKey(DIK_DOWN);
-        ScaledSleep(250);
+        time_scale::MenuSleep(250);
     }
 
-    Log("Step 2: Enter (confirm 'Replay', enter replay list)");
+    LogStep(2, "Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 3: Right (switch to user replay tab)");
+    LogStep(3, "Right (switch to user replay tab)");
     PressKey(DIK_RIGHT);
-    ScaledSleep(500);
+    time_scale::MenuSleep(500);
 
-    Log("Step 4: Enter (select 1st user replay file)");
+    LogStep(4, "Enter (select 1st user replay file)");
     PressKey(DIK_RETURN);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 5: Enter (confirm playback, start replay)");
+    LogStep(5, "Enter (confirm playback, start replay)");
     PressKey(DIK_RETURN);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("=== th13_replay_autoplay: sequence complete ===");
+    LogSequenceComplete("th13");
     return 0;
 }
 
@@ -95,6 +80,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
         LogInit(hinst, "th13_autoplay.log");
+        InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hooks");
         InstallDinputHook();
         // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
@@ -107,10 +93,10 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InstallSpeedHackHook();
         // VsyncPatchを使わないので、等倍でもPresentを60fpsに制限する(th10・th128と同じ。
         // FPS_LIMIT_TARGET_HZがあればそちらを優先する)。
-        InstallFpsLimiterHook(60.0);
+        InstallFpsLimiterHook();
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。
-        InstallDSoundHook(1.0);
+        InstallDSoundHook();
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th13.cpp)の絶対VAからimage base(0x400000)を引いたもの:
         //   score: 0x4be7c0 (+0x00、内部値=表示値の1/10)

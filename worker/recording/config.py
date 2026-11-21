@@ -138,7 +138,7 @@ class GameConfig:
     # MODのBC7展開(`D3D11_DECODE_BC7`)やllvmpipeのスレッド数を渡すのに使う。
     extra_env: tuple[tuple[str, str], ...] = ()
     # 低速録画(FPS_LIMIT_TARGET_HZ<60)でもMODのQPC偽装(`SPEED_HACK_MULTIPLIER`<1)で減速するか。
-    # Present上限(fps_limiter_hook)で減速するタイトル(th15・th20)は二重に遅くなるのでFalse。
+    # Present上限(present/limiter)で減速するタイトル(th15・th20)は二重に遅くなるのでFalse。
     # th06ncはDXライブラリが時間基準でゲームを進め、fps_limiterを持たないのでTrueにする
     # (touhou-recorder reports/96・97)。
     slow_motion_speed_hack: bool = False
@@ -240,7 +240,7 @@ class GameConfig:
         env["PULSE_SINK"] = self.pulse_sink
         if self.dxvk_dll_overrides:
             env["WINEDLLOVERRIDES"] = self.dxvk_dll_overrides
-        # 倍速録画(Issue #288)ではMODのspeed_hack_hookがQueryPerformanceCounterの経過時間を
+        # 倍速録画(Issue #288)ではMODのclock/speed_hackがQueryPerformanceCounterの経過時間を
         # この倍率で伸ばす。起動側は`FPS_LIMIT_TARGET_HZ`(=60×倍率)だけを渡し、倍率は
         # ここで導出する——2つの値を別々に渡すと食い違ったときにゲーム進行とPresent上限・
         # 音声レートがずれ、しかもワーカーからは検知できないため、出所を1つにする。
@@ -254,7 +254,7 @@ class GameConfig:
         for name, value in self.extra_env:
             env[name] = value
         # 同期マーカー(A/V同期補正、touhou-recorder reports/88)のトリガーファイル。MOD
-        # (dsound_hook/wasapi_hook)はWine内から開くのでWindows形式(Z:)のパスで渡す。
+        # (audio/dsound/audio/wasapi)はWine内から開くのでWindows形式(Z:)のパスで渡す。
         # 等倍でも常に有効にする(start_timeの差による従来の補正は等倍でも+90〜+190ms
         # 遅れていた、reports/88)。
         from .sync_marker import trigger_path, windows_path

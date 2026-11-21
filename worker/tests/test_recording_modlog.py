@@ -69,7 +69,7 @@ def test_read_verified_scores_th06_is_unscaled(tmp_path):
 def test_read_verified_scores_th06c_is_unscaled(tmp_path):
     # th06cはオリジナルth06の完全な再実装だが、スコアの倍率はth06から変わっていない
     # (touhou-recorder reports/75)。ステージ番号・残機・グレイズのRVAは未特定のため、
-    # mods/common/score_monitor.hのwidth=0設定によりMODは常にgraze=0を出力する
+    # mods/monitor/score_monitor.hのwidth=0設定によりMODは常にgraze=0を出力する
     # (0ではなく-1を出すtouhou-recorder側の実装とは異なる。graze<0の除外フィルタに
     # 引っかからないことを確認する)。
     log_path = tmp_path / "th06c_autoplay.log"

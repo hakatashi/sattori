@@ -20,8 +20,8 @@
 g6f.2xlarge)専用**。CPU描画(llvmpipe)では2倍速を維持できない。倍速時にパイプラインが
 変えることは次のとおり(実装は `recording/timing.py` に集約):
 
-- **ゲーム側(MOD)**: `speed_hack_hook`がQueryPerformanceCounterの経過時間を倍率ぶん伸ばし、
-  `dsound_hook`/`wasapi_hook`が再生周波数を倍率ぶん上げる(テープの早回し)。VsyncPatchを
+- **ゲーム側(MOD)**: `clock/speed_hack`がQueryPerformanceCounterの経過時間を倍率ぶん伸ばし、
+  `audio/dsound`/`audio/wasapi`が再生周波数を倍率ぶん上げる(テープの早回し)。VsyncPatchを
   注入するタイトル(th06/th07/th10/th12)は`vpatch.ini`の`GameFPS`を`60×倍率`、`CalcFPS`を0に
   書き換える(`recording.config.with_runtime_overrides()`)。
 - **キャプチャ**: x11grabを`60×倍率`fps・`-vsync 0`で撮る。音声はジョブ専用sinkを

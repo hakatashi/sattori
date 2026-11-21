@@ -1,0 +1,8 @@
+# 同期マーカーの系列のゴールデン(mods/tests/test_sync_marker.cpp・worker/tests/test_mod_log_contract.py)
+# first64: 先頭64サンプルの符号、positives: +の数、fnv1a64: 符号ビット(+=1,-=0)の列のFNV-1a(64bit)
+samples=131072
+seed=2545F491
+amp=256
+first64=-+--++-+-+++----++-+-+++++--+--+-++--+-++-+++-+-++-------+-+-+--
+positives=65622
+fnv1a64=def19b3acaa039c1

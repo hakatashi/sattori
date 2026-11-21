@@ -16,7 +16,7 @@ import time
 # ---------------------------------------------------------------------------
 # リプレイずれ(デシンク)の事後検証(Issue #103)
 # ---------------------------------------------------------------------------
-# mods/common/score_monitor.* が1秒間隔でMODログへ出力する
+# mods/monitor/score_monitor.* が1秒間隔でMODログへ出力する
 # "ScoreMonitor: score=N stage=N lives=N graze=N epoch_ms=N" 行から、リプレイ
 # 再生終了時点のゲーム内スコア(生値)を読み取る。th06/07/08/11/20は実機検証済み
 # (touhou-recorder reports/53_phase53_score_monitor_all_titles.md)。th10は別途
@@ -84,7 +84,7 @@ def wait_for_log_marker(log_path, marker, timeout, poll_interval=0.1, log_all=Fa
 # 再生を確定したキーとみなす(Step番号・文言はタイトルで違う)。MODを足すときはこの並びを守ること。
 MENU_STEP_LOG_RE = re.compile(r"\] Step \d+: ")
 SEQUENCE_COMPLETE_LOG = "sequence complete"
-# MODログの行頭の時刻(`mods/common/logging.cpp`、`GetLocalTime()`のローカル時刻・日付なし)。
+# MODログの行頭の時刻(`mods/core/log.cpp`、`GetLocalTime()`のローカル時刻・日付なし)。
 _LOG_LINE_TIME_RE = re.compile(r"^\[(\d{2}):(\d{2}):(\d{2})\.(\d{3})\] ")
 # 同期マーカー行(`recording/sync_marker.py`)。行頭のローカル時刻と壁時計のepoch秒の両方を
 # 持つので、ローカル時刻→epoch秒の換算(タイムゾーン差)を実測できる。
@@ -112,7 +112,7 @@ def find_replay_start_epoch(log_path, reference_epoch=None):
     同期マーカー行(行頭のローカル時刻と`epoch=`の両方を持つ)からタイムゾーン差を実測して
     換算する。同期マーカーが無ければ、このプロセスのタイムゾーン(WineもPythonも同じ
     コンテナの`TZ`を見る)で換算する。`GetLocalTime()`はスピードハック(QPC等の偽装、
-    `mods/common/speed_hack_hook.cpp`)の対象外なので、倍速録画でも実時間のまま。
+    `mods/clock/speed_hack.cpp`)の対象外なので、倍速録画でも実時間のまま。
 
     `reference_epoch`(既定は現在時刻)は日付を補うための目安で、ログ時刻の前後12時間以内なら
     よい(日付をまたいだ録画のため)。

@@ -26,14 +26,16 @@
 
 #include <windows.h>
 #include <stdlib.h>
-#include "../common/dinput_hook.h"
-#include "../common/window_wait.h"
-#include "../common/logging.h"
-#include "../common/speed_hack_hook.h"
-#include "../common/fps_limiter_hook.h"
-#include "../common/dsound_hook.h"
-#include "../common/fps_display_hook.h"
-#include "../common/score_monitor.h"
+#include "audio/dsound.h"
+#include "autoplay/window_wait.h"
+#include "clock/fps_display.h"
+#include "clock/speed_hack.h"
+#include "core/log.h"
+#include "core/runtime_config.h"
+#include "core/time_scale.h"
+#include "input/dinput.h"
+#include "monitor/score_monitor.h"
+#include "present/limiter.h"
 
 using namespace autoplay;
 
@@ -42,38 +44,17 @@ static const BYTE VK_DOWN_KEY = 0x28;
 static const BYTE VK_RIGHT_KEY = 0x27;
 static const BYTE VK_RETURN_KEY = 0x0D;
 
-// th20はレンダリングfpsとゲーム内ロジック更新が直結しており(fps_limiter_hook.h参照)、
-// FPS_LIMIT_TARGET_HZでPresentを間引くとメニューのロゴアニメーション・カーソル移動
-// アニメーション等のフレームベース処理も同じ比率で実時間換算が伸びる。以下の
-// Sleep()呼び出しは全て「60fps基準で必要な実時間」のハードコード値のため、
-// 目標fpsが60未満の場合はその比率分だけ延長しないとアニメーション完了前に次の
-// キー入力を送ってしまい操作が空振りする(スローモーション化PoCで実際に発生)。
-static double GetMenuTimeScale() {
-    double targetHz = 60.0;
-    const char* env = getenv("FPS_LIMIT_TARGET_HZ");
-    if (env) {
-        double hz = atof(env);
-        if (hz > 0.0) targetHz = hz;
-    }
-    return 60.0 / targetHz;
-}
-
-static void ScaledSleep(DWORD baseMs) {
-    static double scale = GetMenuTimeScale();
-    Sleep((DWORD)(baseMs * scale));
-}
-
 static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th20_replay_autoplay: AutoPlayThread started ===");
 
     DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
+    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/time_scale::StartupTimeout(30000));
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
         return 1;
     }
 
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
+    if (!WaitForHookActive(/*timeoutMs=*/time_scale::StartupTimeout(30000))) {
         Log("ERROR: neither GetDeviceState nor GetKeyboardState hook was ever called, aborting sequence");
         return 1;
     }
@@ -84,31 +65,31 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     // まだ表示されておらず最初の数回のDown入力が空振りすることを確認した。
     // 10000ms待つことで確実にメニュー表示後からDown x3を開始できる。
     Log("Buffering 10000ms (scaled) for title screen logo animation...");
-    ScaledSleep(10000);
+    time_scale::MenuSleep(10000);
 
-    Log("Step 1: Down x3 (select 'Replay' on main menu)");
+    LogStep(1, "Down x3 (select 'Replay' on main menu)");
     for (int i = 0; i < 3; i++) {
         PressVKey(VK_DOWN_KEY);
-        ScaledSleep(250);
+        time_scale::MenuSleep(250);
     }
 
-    Log("Step 2: Enter (confirm 'Replay', enter replay list)");
+    LogStep(2, "Enter (confirm 'Replay', enter replay list)");
     PressVKey(VK_RETURN_KEY);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 3: Right (switch to user replay tab)");
+    LogStep(3, "Right (switch to user replay tab)");
     PressVKey(VK_RIGHT_KEY);
-    ScaledSleep(500);
+    time_scale::MenuSleep(500);
 
-    Log("Step 4: Enter (select 1st user replay file)");
+    LogStep(4, "Enter (select 1st user replay file)");
     PressVKey(VK_RETURN_KEY);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 5: Enter (confirm playback, start replay from Stage 1)");
+    LogStep(5, "Enter (confirm playback, start replay from Stage 1)");
     PressVKey(VK_RETURN_KEY);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("=== th20_replay_autoplay: sequence complete ===");
+    LogSequenceComplete("th20");
     return 0;
 }
 
@@ -116,6 +97,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
         LogInit(hinst, "th20_autoplay.log");
+        InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hooks");
         InstallDinputHook();
         // 倍速録画(reports/85・89): QPCの経過時間をSPEED_HACK_MULTIPLIER倍に伸ばす。
@@ -124,12 +106,12 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InstallKeyboardStateHook();
         // AWS実機(Intel Xeon/Nitro仮想化)でth20のフレームペーシングが崩れ、
         // ゲーム内fpsカウンターが常時75fps前後(本来60fps)になりリプレイが
-        // 早回しになる不具合への対策(フェーズ46追加調査、詳細はfps_limiter_hook.h参照)。
-        InstallFpsLimiterHook(60.0);
-        // fps_limiter_hookによるゲーム進行のスローモーション化(reports/47)は
+        // 早回しになる不具合への対策(フェーズ46追加調査、詳細はpresent/limiter.h参照)。
+        InstallFpsLimiterHook();
+        // present/limiterによるゲーム進行のスローモーション化(reports/47)は
         // 映像・ゲームロジックのみに効き、DirectSoundのBGM/SEストリーミングには
         // 連動しないため、別途SetFrequencyフックで音声側も同じ比率でスケールする。
-        InstallDSoundHook(1.0);
+        InstallDSoundHook();
         // th20自身のfpsカウンター表示がスローモーション化(FPS_LIMIT_TARGET_HZ)
         // に連動して低い値を表示してしまう問題(reports/47の既知の制約)への対策。
         // 表示計算に使われていることを実証済みの特定コールサイトのみ時刻の

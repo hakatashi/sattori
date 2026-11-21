@@ -17,20 +17,21 @@
 // th06 additionally requires the fan-made VsyncPatch (vpatch_th06.dll) to
 // avoid a wined3d white-screen hang (see reports/30_phase30_th06_rendering_fix.md);
 // that DLL must be injected into the same process alongside this one (see
-// mods/common/injector.cpp, which supports injecting multiple DLLs).
+// mods/tools/injector.cpp, which supports injecting multiple DLLs).
 //
 // See docs/touhou_menu_automation.md for the technical background
 // (DirectInput GetDeviceState vtable hook), shared with the th07/th08 MODs.
 
 #include <windows.h>
-#include "../common/dinput_hook.h"
-#include "../common/window_wait.h"
-#include "../common/menu_wait.h"
-#include "../common/logging.h"
-#include "../common/speed_hack_hook.h"
-#include "../common/dsound_hook.h"
-#include "../common/fps_display_hook.h"
-#include "../common/score_monitor.h"
+#include "audio/dsound.h"
+#include "autoplay/window_wait.h"
+#include "clock/fps_display.h"
+#include "clock/speed_hack.h"
+#include "core/log.h"
+#include "core/runtime_config.h"
+#include "core/time_scale.h"
+#include "input/dinput.h"
+#include "monitor/score_monitor.h"
 
 using namespace autoplay;
 
@@ -42,43 +43,43 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th06_replay_autoplay: AutoPlayThread started ===");
 
     DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
+    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/time_scale::StartupTimeout(30000));
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
         return 1;
     }
 
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
+    if (!WaitForHookActive(/*timeoutMs=*/time_scale::StartupTimeout(30000))) {
         Log("ERROR: GetDeviceState hook was never called, aborting sequence");
         return 1;
     }
 
     Log("Buffering 2000ms for title logo animation...");
-    MenuSleep(2000);
+    time_scale::MenuSleep(2000);
 
-    Log("Step 1: Enter (dismiss attract-mode demo, show main menu)");
+    LogStep(1, "Enter (dismiss attract-mode demo, show main menu)");
     PressKey(DIK_RETURN);
-    MenuSleep(500);
+    time_scale::MenuSleep(500);
 
-    Log("Step 2: Down x2 (select 'Replay' on main menu)");
+    LogStep(2, "Down x2 (select 'Replay' on main menu)");
     for (int i = 0; i < 2; i++) {
         PressKey(DIK_DOWN);
-        MenuSleep(250);
+        time_scale::MenuSleep(250);
     }
 
-    Log("Step 3: Enter (confirm 'Replay', enter replay list)");
+    LogStep(3, "Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    MenuSleep(2000);
+    time_scale::MenuSleep(2000);
 
-    Log("Step 4: Enter (select 1st replay file)");
+    LogStep(4, "Enter (select 1st replay file)");
     PressKey(DIK_RETURN);
-    MenuSleep(1000);
+    time_scale::MenuSleep(1000);
 
-    Log("Step 5: Enter (start replay playback)");
+    LogStep(5, "Enter (start replay playback)");
     PressKey(DIK_RETURN);
-    MenuSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("=== th06_replay_autoplay: sequence complete ===");
+    LogSequenceComplete("th06");
     return 0;
 }
 
@@ -86,17 +87,18 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
         LogInit(hinst, "th06_autoplay.log");
+        InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
         // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
         InstallSpeedHackHook();
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。
-        InstallDSoundHook(1.0);
+        InstallDSoundHook();
         // 画面上fpsカウンター表示の倍速録画補正(reports/90)。th06のfps計算
         // (RVA 0x23f3f〜、書式"%.02ffps")はWINMM.dll!timeGetTimeで経過時間を測る
         // (0x23f5d=初回のみ基準時刻、0x23f68=毎フレーム現在時刻、500ms毎に更新)。
-        // speed_hack_hookはQPCしか偽装しないため、補正しないと2倍速(vpatch GameFPS=120)で
+        // clock/speed_hackはQPCしか偽装しないため、補正しないと2倍速(vpatch GameFPS=120)で
         // 「120.00fps」と表示される。両呼び出しの戻り先RVAを対象にする。
         // なおvpatch.iniのCalcFPS=1だとvpatch自身がfpsを計算・表示するため、倍速録画時は
         // recording/instance.pyがCalcFPS=0に書き換える。InstallSpeedHackHook()の後に呼ぶこと。

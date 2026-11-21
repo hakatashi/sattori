@@ -133,7 +133,7 @@ th20（東方錦上京）はタイトル固有の制約が多い。詳細は
 
 ### デシンクの自動検知は録画後のスコア突き合わせのみ
 
-Issue #103 で、MOD が1秒間隔で出すゲーム内スコア（`mods/common/score_monitor.*`）と
+Issue #103 で、MOD が1秒間隔で出すゲーム内スコア（`mods/monitor/score_monitor.*`）と
 リプレイファイルの記録スコア（`replayInfo.score`）を録画成功直後に突き合わせる検証を
 実装した（`worker/recording.modlog.check_replay_desync()`）。不一致を検知しても
 **自動リトライ・失敗扱いはせず**、`JobRecord.desyncDetected` に記録してユーザーへ

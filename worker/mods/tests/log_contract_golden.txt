@@ -1,0 +1,5 @@
+[01:02:03.004] Step 5: Enter (confirm playback, start replay)
+[01:02:03.905] === th12_replay_autoplay: sequence complete ===
+[23:59:58.007] WaitForStableWindow: stable after 1234 ms total
+[12:00:00.000] ScoreMonitor: score=3122125 stage=7 lives=2 graze=345 epoch_ms=1763700000123
+[12:00:01.500] SYNC_MARKER played epoch=1763700000.123456 play_call_sec=0.000789 rate=88200 samples=131072 amp=256 seed=0x2545F491 hr=0x00000000

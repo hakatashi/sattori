@@ -22,15 +22,17 @@
 #include <windows.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../common/dinput_hook.h"
-#include "../common/window_wait.h"
-#include "../common/menu_wait.h"
-#include "../common/logging.h"
-#include "../common/speed_hack_hook.h"
-#include "../common/fps_limiter_hook.h"
-#include "../common/dsound_hook.h"
-#include "../common/score_monitor.h"
-#include "../common/d3dx_filter_hook.h"
+#include "audio/dsound.h"
+#include "autoplay/window_wait.h"
+#include "clock/speed_hack.h"
+#include "core/code_patch.h"
+#include "core/log.h"
+#include "core/runtime_config.h"
+#include "core/time_scale.h"
+#include "input/dinput.h"
+#include "monitor/score_monitor.h"
+#include "present/limiter.h"
+#include "texture/d3dx_filter.h"
 
 using namespace autoplay;
 
@@ -43,45 +45,45 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th12_replay_autoplay: AutoPlayThread started ===");
 
     DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
+    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/time_scale::StartupTimeout(30000));
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
         return 1;
     }
 
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
+    if (!WaitForHookActive(/*timeoutMs=*/time_scale::StartupTimeout(30000))) {
         Log("ERROR: GetDeviceState hook was never called, aborting sequence");
         return 1;
     }
 
     Log("Buffering 6000ms for title screen logo animation...");
-    MenuSleep(6000);
+    time_scale::MenuSleep(6000);
 
-    Log("Step 1: Down x2 (select 'Replay' on main menu)");
+    LogStep(1, "Down x2 (select 'Replay' on main menu)");
     for (int i = 0; i < 2; i++) {
         PressKey(DIK_DOWN);
-        MenuSleep(250);
+        time_scale::MenuSleep(250);
     }
 
-    Log("Step 2: Enter (confirm 'Replay', enter replay list)");
+    LogStep(2, "Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    MenuSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 3: Right (switch to user replay tab)");
+    LogStep(3, "Right (switch to user replay tab)");
     PressKey(DIK_RIGHT);
-    MenuSleep(500);
+    time_scale::MenuSleep(500);
 
     // th11と同じスロット命名規約: 対象リプレイをインスタンスのreplay/配下に
     // "th12_ud0000.rpy"として配置しておく必要がある(record_th12.pyのcanonical_slot)。
-    Log("Step 4: Enter (select 1st user replay file)");
+    LogStep(4, "Enter (select 1st user replay file)");
     PressKey(DIK_RETURN);
-    MenuSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 5: Enter (confirm playback, start replay)");
+    LogStep(5, "Enter (confirm playback, start replay)");
     PressKey(DIK_RETURN);
-    MenuSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("=== th12_replay_autoplay: sequence complete ===");
+    LogSequenceComplete("th12");
     return 0;
 }
 
@@ -94,12 +96,12 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
 static void InstallFpsDisplayScalePatch(double targetHz) {
     static const ULONG_PTR kRva = 0x1cc9e;
     static const BYTE kExpected[10] = {0xd9, 0x40, 0x34, 0x56, 0x8b, 0x35, 0xb8, 0x43, 0x4b, 0x00};
-    BYTE* site = (BYTE*)GetModuleHandle(NULL) + kRva;
-    if (memcmp(site, kExpected, sizeof(kExpected)) != 0) {
+    if (!code_patch::Matches(kRva, kExpected, sizeof(kExpected))) {
         Log("InstallFpsDisplayScalePatch: unexpected bytes at RVA 0x%lx, skipped", (unsigned long)kRva);
         return;
     }
-    BYTE* cave = (BYTE*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    BYTE* site = code_patch::At(kRva);
+    BYTE* cave = code_patch::AllocCave(64);
     if (!cave) {
         Log("InstallFpsDisplayScalePatch: VirtualAlloc failed");
         return;
@@ -114,18 +116,9 @@ static void InstallFpsDisplayScalePatch(double targetHz) {
     memcpy(p, &addr, 4); p += 4;
     *p++ = 0x56;                                            // push esi
     *p++ = 0x8b; *p++ = 0x35; *p++ = 0xb8; *p++ = 0x43; *p++ = 0x4b; *p++ = 0x00; // mov esi,[0x4b43b8]
-    *p++ = 0xe9;                                            // jmp site+10
-    LONG rel = (LONG)((site + 10) - (p + 4));
-    memcpy(p, &rel, 4);
+    code_patch::EmitJmp(p, site + 10);                      // jmp site+10
 
-    DWORD oldProt;
-    VirtualProtect(site, 10, PAGE_EXECUTE_READWRITE, &oldProt);
-    site[0] = 0xe9;
-    LONG toCave = (LONG)(cave - (site + 5));
-    memcpy(site + 1, &toCave, 4);
-    for (int i = 5; i < 10; i++) site[i] = 0x90;
-    VirtualProtect(site, 10, oldProt, &oldProt);
-    FlushInstructionCache(GetCurrentProcess(), site, 10);
+    code_patch::RedirectTo(site, 10, cave);                 // site: jmp cave; nop x5
     Log("InstallFpsDisplayScalePatch: OK (factor=%.4f)", factor);
 }
 
@@ -133,6 +126,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
         LogInit(hinst, "th12_autoplay.log");
+        InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
         // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
@@ -142,20 +136,19 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InstallSpeedHackHook();
         // 倍速録画(reports/89)ではPresentの上限をFPS_LIMIT_TARGET_HZ(60×倍率)に合わせる
         // (touhou-recorderでは低速録画検証のフェーズ58・62から同じ構成)。**等倍では入れない**:
-        // このタイトルはVsyncPatchが60fpsへのフレーム制御を担っており、fps_limiter_hookは
+        // このタイトルはVsyncPatchが60fpsへのフレーム制御を担っており、present/limiterは
         // FPS_LIMIT_TARGET_HZ未設定でも60fpsで間引くため、二重の制御でゲーム進行が約3%遅れた
         // (MOD統合テストで被弾タイミングが127秒時点で4.1秒遅延、Issue #288)。
         {
-            const char* hz = getenv("FPS_LIMIT_TARGET_HZ");
-            double targetHz = hz ? atof(hz) : 0.0;
+            const double targetHz = Config().fpsLimitTargetHz;
             if (targetHz > 0.0 && targetHz != 60.0) {
-                InstallFpsLimiterHook(targetHz);
+                InstallFpsLimiterHook();
                 InstallFpsDisplayScalePatch(targetHz);
             }
         }
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。
-        InstallDSoundHook(1.0);
+        InstallDSoundHook();
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th12.cppの`THAdvOptWnd`内、プラクティスモードパラメータ書き込み
         // コード)から収集した絶対VA(0x4b0c44=score)を、image base(0x400000)を

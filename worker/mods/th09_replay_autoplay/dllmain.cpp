@@ -21,14 +21,16 @@
 
 #include <windows.h>
 #include <stdlib.h>
-#include "../common/dinput_hook.h"
-#include "../common/window_wait.h"
-#include "../common/logging.h"
-#include "../common/speed_hack_hook.h"
-#include "../common/score_monitor.h"
-#include "../common/fps_limiter_hook_d3d8.h"
-#include "../common/dsound_hook.h"
-#include "../common/fps_display_hook.h"
+#include "audio/dsound.h"
+#include "autoplay/window_wait.h"
+#include "clock/fps_display.h"
+#include "clock/speed_hack.h"
+#include "core/log.h"
+#include "core/runtime_config.h"
+#include "core/time_scale.h"
+#include "input/dinput.h"
+#include "monitor/score_monitor.h"
+#include "present/limiter.h"
 
 using namespace autoplay;
 
@@ -37,39 +39,18 @@ static const BYTE DIK_DOWN = 0xD0;
 static const BYTE DIK_RIGHT = 0xCD;
 static const BYTE DIK_RETURN = 0x1C;
 
-// 低速録画(th10/th12と同じ方式、fps_limiter_hook_d3d8.h参照)。
-// **ユーザー向けにはth09の低速録画は未サポート**(recordingPlan.tsのth09の段に
-// 低速録画の段が無い)。フックの実装・実機検証(touhou-recorder reports/68・69)自体は
-// 済んでおり、Issue #101で他タイトルへ展開する際にそのまま使える状態にしてある。
-// FPS_LIMIT_TARGET_HZ未設定時はscale=1.0で従来動作と完全互換。
-static double GetMenuTimeScale() {
-    double targetHz = 60.0;
-    const char* env = getenv("FPS_LIMIT_TARGET_HZ");
-    if (env) {
-        double hz = atof(env);
-        if (hz > 0.0) targetHz = hz;
-    }
-    return 60.0 / targetHz;
-}
-
-static void ScaledSleep(DWORD baseMs) {
-    static double scale = GetMenuTimeScale();
-    Sleep((DWORD)(baseMs * scale));
-}
-
 static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th09_replay_autoplay: AutoPlayThread started ===");
 
     DWORD pid = GetCurrentProcessId();
-    // 低速録画時はfps_limiter_hook_d3d8のPresent間引き(Sleep+ビジーウェイト)が
-    // CPUを占有し、タイトル画面ロード完了までの実時間が通常より延びることを
-    // 実機確認した(30fps設定でホスト高負荷時に30秒を超えることがあった、
-    // touhou-recorder reports/68)。他の待機と同様ScaledSleepと同じ比率で延長する。
-    // ただし倍速録画(scale<1)では縮めない: ゲームの起動・ウィンドウ生成は実時間で進むため、
-    // 2倍速で15秒に縮めたところ本番E2Eで起動待ちがタイムアウトした(Issue #288)。
-    // ワーカー側の`scaled_timeout_sec()`と同じく延長方向にだけ効かせる。
-    const double startupScale = GetMenuTimeScale() > 1.0 ? GetMenuTimeScale() : 1.0;
-    const DWORD startupTimeoutMs = (DWORD)(30000 * startupScale);
+    // 起動待ちの上限は低速録画でだけ伸ばす(core/time_scale.h の StartupTimeout)。
+    // 低速録画時はD3D8のPresent間引き(present/limiter、Sleep+ビジーウェイト)がCPUを占有し、
+    // タイトル画面ロード完了までの実時間が通常より延びることを実機確認した(30fps設定で
+    // ホスト高負荷時に30秒を超えることがあった、touhou-recorder reports/68)。
+    // 倍速録画では縮めない: ゲームの起動・ウィンドウ生成は実時間で進むため、2倍速で15秒に
+    // 縮めたところ本番E2Eで起動待ちがタイムアウトした(Issue #288)。Issue #393 でこの扱いを
+    // 全タイトルの起動待ちに広げた。
+    const DWORD startupTimeoutMs = time_scale::StartupTimeout(30000);
     HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/startupTimeoutMs);
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
@@ -82,31 +63,31 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     }
 
     Log("Buffering 1500ms (scaled) for title screen animation...");
-    ScaledSleep(1500);
+    time_scale::MenuSleep(1500);
 
-    Log("Step 1: Down x2 (select 'Replay' on main menu)");
+    LogStep(1, "Down x2 (select 'Replay' on main menu)");
     for (int i = 0; i < 2; i++) {
         PressKey(DIK_DOWN);
-        ScaledSleep(250);
+        time_scale::MenuSleep(250);
     }
 
-    Log("Step 2: Enter (confirm 'Replay', enter replay list)");
+    LogStep(2, "Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 3: Right (switch to user-replay tab)");
+    LogStep(3, "Right (switch to user-replay tab)");
     PressKey(DIK_RIGHT);
-    ScaledSleep(400);
+    time_scale::MenuSleep(400);
 
-    Log("Step 4: Enter (select 1st replay file)");
+    LogStep(4, "Enter (select 1st replay file)");
     PressKey(DIK_RETURN);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 5: Enter (confirm playback, start replay)");
+    LogStep(5, "Enter (confirm playback, start replay)");
     PressKey(DIK_RETURN);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("=== th09_replay_autoplay: sequence complete ===");
+    LogSequenceComplete("th09");
     return 0;
 }
 
@@ -114,18 +95,19 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
         LogInit(hinst, "th09_autoplay.log");
+        InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
         // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
         InstallSpeedHackHook();
-        // 低速録画(未サポート、上記コメント参照)。th09はDirect3D8エンジンのため、
-        // th10/th12(Direct3D9)向けのfps_limiter_hook.hではなくD3D8版
-        // (fps_limiter_hook_d3d8.h)を使う。FPS_LIMIT_TARGET_HZ未設定時は
-        // scale=1.0で従来動作と完全互換。
-        InstallFpsLimiterHookD3D8(60.0);
-        InstallDSoundHook(1.0);
+        // Presentの上限(present/limiter)。th09はDirect3D8エンジンのため、D3D8のアダプタを使う。
+        // **ユーザー向けにはth09の低速録画は未サポート**(recordingPlan.tsのth09の段に低速録画の
+        // 段が無い)。倍速録画ではPresentの上限を60×倍率へ引き上げる。FPS_LIMIT_TARGET_HZ未設定時は
+        // 60fpsの上限。
+        InstallFpsLimiterHookD3D8();
+        InstallDSoundHook();
         // 低速録画時の画面上fpsカウンター表示補正(touhou-recorder reports/69)。
-        // th09は`mods/common/timer_probe_hook.*`による調査の結果、th20と異なり
+        // th09はtouhou-recorder の `mods/common/timer_probe_hook.*`による調査の結果、th20と異なり
         // QueryPerformanceCounterではなくWINMM.dll!timeGetTime(rva=0x00031701、
         // Present呼び出し頻度と1:1で相関する唯一の持続的なtimeGetTime呼び出し元)が
         // fps表示計算に使われていることが判明した。FPS_LIMIT_TARGET_HZ未設定時は
