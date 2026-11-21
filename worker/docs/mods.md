@@ -13,12 +13,12 @@
 
 | ソース | 役割 |
 | --- | --- |
-| `mods/common/` | DLL インジェクタ(`injector.exe`。複数DLLの順次注入に対応)・共通フック処理・
-  fps計測スレッド(`fps_monitor.*`)のソース(C++)。5秒毎に`FpsMonitor: N GetDeviceState
-  calls in M ms (H.H Hz)`をMODログへ出力し続けるが、これを読んで異常判定・自動リトライに
-  使うPython側のロジックは真陽性の実績が無く偽陽性のみだったため削除済み
-  ([`decisions/0043`](../../docs/decisions/0043-remove-fps-runaway-detection.md))。ログ出力
-  自体は将来の調査用診断情報として残してある |
+| `mods/common/` | DLL インジェクタ(`injector.exe`。複数DLLの順次注入に対応)・共通フック処理のソース(C++)。
+  かつてあったfps計測スレッド(`fps_monitor.*`、5秒毎に`FpsMonitor: ...`をログ出力)は、読む側のロジック
+  (fps暴走検知)の削除([`decisions/0043`](../../docs/decisions/0043-remove-fps-runaway-detection.md))後も
+  誰にも読まれないログだけが残っていたため、Issue #392で削除した |
+| `mods/steam_stub/` | th06c・th06ncで共用するSteamworks APIスタブのソース。`-DAPP_ID`・`-DLOG_NAME`
+  でタイトルごとに2つのDLL(`mods/th06c_steam_stub/build/`・`mods/th06nc_steam_stub/build/`)をビルドする |
 | `mods/thNN_replay_autoplay/` | タイトルごとの自動再生フック DLL(`thNN_hook.dll`)のソース(C++)。
   組み込むフックの違いは各タイトルの背景ファイル([`titles/`](titles/README.md))を参照 |
 
@@ -29,7 +29,7 @@
 | ソース | 役割 |
 | --- | --- |
 | `mods/common/speed_hack_hook.*` | 倍速録画(Issue #288)の本体。`QueryPerformanceCounter`
-  (と、`SPEED_HACK_TIMERS`指定時は`timeGetTime`/`GetTickCount`)の経過時間を
+  (と、64bitタイトルでは`GetProcAddress`経由の`timeGetTime`)の経過時間を
   `SPEED_HACK_MULTIPLIER`倍に伸ばし、ゲームに「時間がN倍速く進んだ」と思わせる
   (touhou-recorder reports/85)。全32bitタイトルのMODに組み込み、64bitのth06c/th06ncは
   `GetProcAddress`経由の取得を`WrapQueryPerformanceCounterForSpeedHack()`で差し替える |
@@ -79,5 +79,6 @@
   別途確認)。**th09だけはスコアのRVAが
   未特定のため`scoreWidth=0`でスコア読み取りを無効化し、life(残機)のみ監視する**
   ([titles/th09.md](titles/th09.md)参照) |
-| `mods/common/score_probe_hook.*` / `stage_probe_hook.*` | RVA特定用の診断専用コード(本番ビルドには
-  含めない)。score_monitorのRVAが通用しないタイトル・ゲームバージョンが出た場合の再調査に使う |
+| `research/archive/mod-probes/`(`score_probe_hook.*` / `stage_probe_hook.*`) | RVA特定用の診断専用コード。
+  ビルドされないため`mods/common/`から移した(Issue #392)。score_monitorのRVAが通用しないタイトル・
+  ゲームバージョンが出た場合の再調査の参考にする |

@@ -25,7 +25,6 @@
 #include "../common/window_wait.h"
 #include "../common/logging.h"
 #include "../common/speed_hack_hook.h"
-#include "../common/fps_monitor.h"
 #include "../common/score_monitor.h"
 #include "../common/fps_limiter_hook_d3d8.h"
 #include "../common/dsound_hook.h"
@@ -39,8 +38,8 @@ static const BYTE DIK_RIGHT = 0xCD;
 static const BYTE DIK_RETURN = 0x1C;
 
 // 低速録画(th10/th12と同じ方式、fps_limiter_hook_d3d8.h参照)。
-// **ユーザー向けにはth09の低速録画は未サポート**(SLOW_MOTION_SUPPORTED_GAME_IDSに
-// 含めていない)。フックの実装・実機検証(touhou-recorder reports/68・69)自体は
+// **ユーザー向けにはth09の低速録画は未サポート**(recordingPlan.tsのth09の段に
+// 低速録画の段が無い)。フックの実装・実機検証(touhou-recorder reports/68・69)自体は
 // 済んでおり、Issue #101で他タイトルへ展開する際にそのまま使える状態にしてある。
 // FPS_LIMIT_TARGET_HZ未設定時はscale=1.0で従来動作と完全互換。
 static double GetMenuTimeScale() {
@@ -154,7 +153,6 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
             sm.intervalMs = 1000;
             StartScoreMonitorThread(sm);
         }
-        StartFpsMonitorThread();
         CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
     }
     return TRUE;

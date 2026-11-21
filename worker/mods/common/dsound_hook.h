@@ -53,11 +53,9 @@ namespace autoplay {
 bool InstallDSoundHook(double freqScale = 1.0);
 
 // DirectSoundをIATではなくGetProcAddress/CoCreateInstanceで取得するエンジン
-// (DXライブラリ製のth06nc、reports/89)向けの入口。InitDSoundHookDynamic()で倍率の決定と
-// 同期マーカーの準備だけを行い、呼び出し側のGetProcAddressフックで
+// (DXライブラリ製のth06nc、reports/89)向けの入口。呼び出し側のGetProcAddressフックで
 // "DirectSoundCreate8" の戻り値を WrapDirectSoundCreate8() に差し替えるか、
 // CoCreateInstanceで作られたIDirectSound(8)を HookDirectSoundObject() に渡す。
-void InitDSoundHookDynamic(double freqScale = 1.0);
 void* WrapDirectSoundCreate8(void* real);
 void HookDirectSoundObject(void* ds8);
 

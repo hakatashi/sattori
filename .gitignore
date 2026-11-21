@@ -44,6 +44,7 @@ worker/assets/
 # MODビルド成果物（ソース・ビルドスクリプトのみコミットする。Windows+MSVCでビルド）
 worker/mods/**/build/
 worker/mods/**/*.obj
+worker/mods/obj/
 worker/mods/**/*.exp
 worker/mods/**/*.lib
 worker/mods/**/*.pdb

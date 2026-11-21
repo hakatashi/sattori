@@ -15,4 +15,4 @@
 
 ## 一覧
 
-（まだ無い）
+- [`mod-probes/`](mod-probes/README.md) — MOD のステージ・スコア探索用プローブ（Issue #392）

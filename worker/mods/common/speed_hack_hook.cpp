@@ -8,11 +8,9 @@ namespace autoplay {
 typedef BOOL(WINAPI* QueryPerformanceCounter_t)(LARGE_INTEGER* lpPerformanceCount);
 
 typedef DWORD(WINAPI* timeGetTime_t)();
-typedef DWORD(WINAPI* GetTickCount_t)();
 
 static QueryPerformanceCounter_t g_origQPC = nullptr;
 static timeGetTime_t g_origTimeGetTime = nullptr;
-static GetTickCount_t g_origGetTickCount = nullptr;
 static double g_speedMultiplier = 1.0;
 static LONGLONG g_baseReal = 0;
 static bool g_haveBase = false;
@@ -37,22 +35,16 @@ static BOOL WINAPI MyQueryPerformanceCounter(LARGE_INTEGER* lpPerformanceCount) 
     return TRUE;
 }
 
-// timeGetTime / GetTickCount(ミリ秒カウンタ)も同じ考え方で伸長する(フェーズ89)。
-// th10以前のタイトルはQPCではなくtimeGetTimeでフレーム時刻を測っている可能性があるため、
-// exeがインポートしていれば両方フックする。基準はそれぞれ最初の呼び出し時刻。
-static DWORD g_baseTgt = 0, g_baseTick = 0;
-static bool g_haveBaseTgt = false, g_haveBaseTick = false;
+// timeGetTime(ミリ秒カウンタ)も同じ考え方で伸長する(フェーズ89)。
+// timeGetTimeでフレーム時刻を測るタイトル向けに、GetProcAddressフック経由
+// (WrapTimeGetTimeForSpeedHack)でだけ差し込む。基準は最初の呼び出し時刻。
+static DWORD g_baseTgt = 0;
+static bool g_haveBaseTgt = false;
 
 static DWORD WINAPI MyTimeGetTime() {
     DWORD real = g_origTimeGetTime();
     if (!g_haveBaseTgt) { g_baseTgt = real; g_haveBaseTgt = true; }
     return g_baseTgt + (DWORD)((double)(DWORD)(real - g_baseTgt) * g_speedMultiplier);
-}
-
-static DWORD WINAPI MyGetTickCount() {
-    DWORD real = g_origGetTickCount();
-    if (!g_haveBaseTick) { g_baseTick = real; g_haveBaseTick = true; }
-    return g_baseTick + (DWORD)((double)(DWORD)(real - g_baseTick) * g_speedMultiplier);
 }
 
 // 基準時刻を、フックを差し込む時点(DLL_PROCESS_ATTACH中＝ローダーロック下の単一スレッド、
@@ -70,10 +62,6 @@ static void InitBases() {
     if (g_origTimeGetTime && !g_haveBaseTgt) {
         g_baseTgt = g_origTimeGetTime();
         g_haveBaseTgt = true;
-    }
-    if (g_origGetTickCount && !g_haveBaseTick) {
-        g_baseTick = g_origGetTickCount();
-        g_haveBaseTick = true;
     }
 }
 
@@ -138,24 +126,9 @@ bool InstallSpeedHackHook(double multiplier) {
 
     bool ok = HookIATEntry("KERNEL32.dll", "QueryPerformanceCounter",
                             (void*)MyQueryPerformanceCounter, (void**)&g_origQPC);
-    // SPEED_HACK_TIMERS(カンマ区切り、既定"qpc")で偽装するタイマーを選ぶ。
-    // 例: "qpc,tgt"(timeGetTimeも)、"qpc,tgt,tick"(GetTickCountも)。
-    const char* timers = getenv("SPEED_HACK_TIMERS");
-    bool tgt = timers && strstr(timers, "tgt");
-    bool tick = timers && strstr(timers, "tick");
-    bool okTgt = false, okTick = false;
-    if (tgt)
-        okTgt = HookIATEntry("WINMM.dll", "timeGetTime", (void*)MyTimeGetTime,
-                             (void**)&g_origTimeGetTime);
-    if (tick)
-        okTick = HookIATEntry("KERNEL32.dll", "GetTickCount", (void*)MyGetTickCount,
-                              (void**)&g_origGetTickCount);
     InitBases();
-    Log("InstallSpeedHackHook: QPC hook %s, timeGetTime hook %s, GetTickCount hook %s "
-        "(multiplier=%.2f)",
-        ok ? "OK" : "FAILED", tgt ? (okTgt ? "OK" : "FAILED") : "off",
-        tick ? (okTick ? "OK" : "FAILED") : "off", multiplier);
-    return ok || okTgt || okTick;
+    Log("InstallSpeedHackHook: QPC hook %s (multiplier=%.2f)", ok ? "OK" : "FAILED", multiplier);
+    return ok;
 }
 
 } // namespace autoplay

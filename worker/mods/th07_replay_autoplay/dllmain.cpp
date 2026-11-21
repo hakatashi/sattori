@@ -16,7 +16,6 @@
 #include "../common/logging.h"
 #include "../common/speed_hack_hook.h"
 #include "../common/dsound_hook.h"
-#include "../common/fps_monitor.h"
 #include "../common/score_monitor.h"
 
 using namespace autoplay;
@@ -117,7 +116,6 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
             StartScoreMonitorThread(sm);
         }
         // 倍速録画の進行速度確認用(reports/89)。
-        StartFpsMonitorThread();
         CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
     }
     return TRUE;

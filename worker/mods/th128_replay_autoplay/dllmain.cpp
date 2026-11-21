@@ -25,7 +25,6 @@
 #include "../common/window_wait.h"
 #include "../common/logging.h"
 #include "../common/speed_hack_hook.h"
-#include "../common/fps_monitor.h"
 #include "../common/fps_limiter_hook.h"
 #include "../common/dsound_hook.h"
 #include "../common/score_monitor.h"
@@ -40,7 +39,7 @@ static const BYTE DIK_RETURN = 0x1C;
 
 // 低速録画対応(th10・th12・th20と同じ方式)。FPS_LIMIT_TARGET_HZ未設定時はscale=1.0で
 // 従来動作と完全互換(30fpsでの実機検証はtouhou-recorder reports/72で完了済みだが、
-// Sattori側のSLOW_MOTION_SUPPORTED_GAME_IDSには未登録、worker/docs/titles/th128.md)。
+// Sattori側の録画の段(recordingPlan.ts)にも未登録、worker/docs/titles/th128.md)。
 static double GetMenuTimeScale() {
     double targetHz = 60.0;
     const char* env = getenv("FPS_LIMIT_TARGET_HZ");
@@ -140,7 +139,6 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
             sm.intervalMs = 1000;
             StartScoreMonitorThread(sm);
         }
-        StartFpsMonitorThread();
         CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
     }
     return TRUE;

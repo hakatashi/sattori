@@ -21,8 +21,8 @@ static CreateDevice_t g_origCreateDevice = nullptr;
 static Present_t g_origPresent = nullptr;
 
 static double g_targetIntervalSec = 1.0 / 60.0;
-static LARGE_INTEGER g_qpcFreq = {0};
-static LARGE_INTEGER g_lastPresentQpc = {0};
+static LARGE_INTEGER g_qpcFreq = {};
+static LARGE_INTEGER g_lastPresentQpc = {};
 static bool g_haveLastPresent = false;
 
 static void PatchVTable(void** vtable, int index, void* newFunc, void** outOld) {

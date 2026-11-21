@@ -122,8 +122,6 @@ aws s3 cp /tmp/th07-assets.tar.gz \
 
 - `games/th08` には公式アップデータ **ver1.00d 相当**のゲームデータを配置すること
   （ver1.00a は fps 暴走の既知不具合あり、`worker/docs/titles/th08.md` 参照）。
-- `mods/th08_replay_autoplay/build/th08_hook.dll` は `mods/common/fps_monitor.cpp` を
-  含めて再ビルドが必要。
 - `prefixes/th08-wined3d-gl` はシンボリックリンクではなく**実ディレクトリ**として
   配置すること（`rsync -a` 等で実体コピー）。
 

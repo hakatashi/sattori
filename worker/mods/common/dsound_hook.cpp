@@ -307,12 +307,6 @@ bool InstallDSoundHook(double freqScale) {
     return ok;
 }
 
-void InitDSoundHookDynamic(double freqScale) {
-    InitFreqScale(freqScale);
-    Log("InitDSoundHookDynamic: freqScale=%.4f", g_freqScale);
-    ArmSyncMarker();
-}
-
 void* WrapDirectSoundCreate8(void* real) {
     if (!real) return real;
     if (!g_origDirectSoundCreate8) g_origDirectSoundCreate8 = (DirectSoundCreate8_t)real;

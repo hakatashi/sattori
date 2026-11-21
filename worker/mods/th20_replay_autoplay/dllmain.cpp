@@ -30,7 +30,6 @@
 #include "../common/window_wait.h"
 #include "../common/logging.h"
 #include "../common/speed_hack_hook.h"
-#include "../common/fps_monitor.h"
 #include "../common/fps_limiter_hook.h"
 #include "../common/dsound_hook.h"
 #include "../common/fps_display_hook.h"
@@ -161,7 +160,6 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
             sm.intervalMs = 1000;
             StartScoreMonitorThread(sm);
         }
-        StartFpsMonitorThread();
         CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
     }
     return TRUE;

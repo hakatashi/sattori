@@ -183,29 +183,6 @@ void WaitFrames(LONG start, unsigned int frames, unsigned int timeoutMs) {
     }
 }
 
-// 入力ポーリングの実効レート(=実効描画fps相当)を一定間隔でログし続ける常駐スレッド。
-// th06cはロード中だけポーリングが1〜2Hzまで落ち、タイトル画面以降は描画フレームと
-// 1:1の60Hzになる(touhou-recorder reports/74で実測)。出力形式は
-// mods/common/fps_monitor.cpp と揃えてあるが、th06cはDirectInputのGetDeviceStateフック
-// (g_hookCallCount)に依存しない独自のポーリングカウンタ(g_pollCount)を使うため、
-// 共通実装は使わずここで直接実装する。
-DWORD WINAPI FpsMonitorThread(LPVOID) {
-    LONG lastCount = g_pollCount;
-    DWORD lastTick = GetTickCount();
-    for (;;) {
-        Sleep(5000);
-        LONG current = g_pollCount;
-        DWORD now = GetTickCount();
-        LONG delta = current - lastCount;
-        DWORD elapsedMs = now - lastTick;
-        double hz = elapsedMs > 0 ? (delta * 1000.0 / elapsedMs) : 0.0;
-        Log("FpsMonitor: %ld GetDeviceState calls in %lu ms (%.1f Hz)", (long)delta, elapsedMs, hz);
-        lastCount = current;
-        lastTick = now;
-    }
-    return 0;
-}
-
 // vk を holdFrames 回分のポーリングだけ押下状態にし、releaseFrames 回分離す。
 void PressVKey(BYTE vk, unsigned int holdFrames = 1, unsigned int releaseFrames = 2,
                unsigned int timeoutMs = 2000) {
@@ -399,8 +376,6 @@ bool NavigateToReplay() {
 
 DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th06c_replay_autoplay: AutoPlayThread started ===");
-    CreateThread(nullptr, 0, FpsMonitorThread, nullptr, 0, nullptr);
-
     if (!DismissStartupDialog(/*timeoutMs=*/60000)) {
         Log("ERROR: 起動ダイアログを閉じられませんでした。中断します");
         return 1;

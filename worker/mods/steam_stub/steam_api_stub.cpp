@@ -1,20 +1,32 @@
-// th06nc(東方紅魔郷: New Classic)用の最小限Steamworks APIスタブ。
+// th06c(東方紅魔郷: Classic)・th06nc(同: New Classic)共用の最小限Steamworks APIスタブ。
+// 1つのソースから`-DAPP_ID=... -DLOG_NAME=...`でタイトルごとにビルドする(Makefile参照。
+// 違いはSteam AppIDとログファイル名だけ。Issue #392)。
 //
-// th06c用スタブ(th06c_steam_stub/steam_api_stub.cpp)からの派生。th06nc.exeも
-// steam_api64.dllが無いと起動直後にexit(255)する構造は同じで、th06cのスタブが
-// そのまま通用することを実機確認済み(touhou-recorder reports/78 §3)。
-// th06ncが実際に要求したインターフェースはth06cよりさらに少なく(SteamUtils010の
-// メソッドは一度も呼ばれなかった)、個別対応(ResolveOverride)を追加する必要は
-// 無かった。唯一の差分はSteam AppID(kAppId、GetAppID()が呼ばれた場合に備えた値)。
+// th06c.exeはsteam_api64.dllの9関数だけをインポートしており、SteamAPI_Init()が
+// 成功しないと起動直後にexit(255)する(touhou-recorder reports/74)。Xvfb+wineの
+// ヘッドレス環境ではSteamクライアントを常駐させられないため、本DLLを正規の
+// steam_api64.dllの代わりにタイトル資産(games/th06c/)へ同梱し、Initを成功させる
+// (upload-title-assets skill参照。録画パイプライン側での差し替え処理は不要)。
 //
 // ゲームが取得するインターフェースは、全スロットが0を返すダミーvtableを持つ
 // フェイクオブジェクトとして返す。どのインターフェースの何番スロットが呼ばれたかは
 // ログに残るので、0を返すと不都合なメソッドが見つかった場合はここで個別に
-// 実装を足していく方針(th06c用スタブと同じ)。
+// 実装を足していく方針(touhou-recorder reports/74で実機確認済みの3インターフェース
+// のみ個別対応が要った)。th06nc.exeも同じ構造で、th06ncが実際に要求したインターフェースは
+// th06cよりさらに少なく(SteamUtils010のメソッドは一度も呼ばれなかった、
+// touhou-recorder reports/78 §3)、個別対応の追加は要らなかった。
 //
-// ビルド: x86_64-w64-mingw32-g++ -shared -O2 -static -o steam_api64.dll steam_api_stub.cpp
+// ビルド: x86_64-w64-mingw32-g++ -shared -O2 -static -DAPP_ID=4771400 \
+//           -DLOG_NAME='"th06c_steam_stub.log"' -o steam_api64.dll steam_api_stub.cpp
 
 #include <windows.h>
+
+#ifndef APP_ID
+#error "APP_ID(Steam AppID)を-DAPP_ID=...で指定してください"
+#endif
+#ifndef LOG_NAME
+#error "LOG_NAME(ログファイル名)を-DLOG_NAME='\"xxx.log\"'で指定してください"
+#endif
 
 #include <cstdarg>
 #include <cstdint>
@@ -32,7 +44,7 @@ bool g_log_ready = false;
 void LogOpen() {
   if (g_log_ready) return;
   InitializeCriticalSection(&g_log_lock);
-  g_log = fopen("th06nc_steam_stub.log", "w");
+  g_log = fopen(LOG_NAME, "w");
   g_log_ready = true;
 }
 
@@ -70,9 +82,9 @@ const char *NameOf(void *self) {
   return "?";
 }
 
-// th06nc.exeが埋め込んでいるSteam AppID(SteamAPI_RestartAppIfNecessaryの引数から判明、
-// touhou-recorder reports/78。th06cは4771400で別物)。
-constexpr uint32_t kAppId = 4763590;
+// ゲームexeが埋め込んでいるSteam AppID(SteamAPI_RestartAppIfNecessaryの引数から判明、
+// touhou-recorder reports/74・78。th06cは4771400、th06ncは4763590。GetAppID()が呼ばれた場合に備えた値)。
+constexpr uint32_t kAppId = APP_ID;
 
 // 既定の戻り値0(false/NULL)では不都合なメソッドの個別対応。
 // スロット番号はSteamworks SDKの各インターフェースのvtable順。
