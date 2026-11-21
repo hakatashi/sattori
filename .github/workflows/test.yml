@@ -75,7 +75,8 @@ jobs:
           path: reports
           coverage-files: "apps/api/coverage/lcov.info apps/web/coverage/lcov.info home-worker/coverage/lcov.info infra/coverage/lcov.info packages/replay-parser/coverage/lcov.info packages/shared/coverage/lcov.info worker/coverage.xml"
 
-  # 録画用MOD(*_hook.dll)がmingw-w64クロスビルドで壊れていないかの簡易確認。
+  # 録画用MOD(*_hook.dll)がmingw-w64クロスビルドで壊れていないかの簡易確認と、Win32に依存しない
+  # ロジックの単体テスト・DLLのインポートの検査(worker/docs/mods.md §9)。
   # 実機注入テストの代わりにはならない(.claude/skills/build-mods/SKILL.md)。
   mods-build-smoketest:
     runs-on: ubuntu-latest
@@ -89,5 +90,11 @@ jobs:
       - name: Build MODs and tools
         working-directory: worker/mods
         run: make -j$(nproc) all
+
+      # check-compile(未使用のソースのコンパイル)・check-imports(i686/x86_64 とも libgcc_s 等への
+      # 依存が出ていないか)・test(ホストの g++ による単体テスト)
+      - name: Check MODs
+        working-directory: worker/mods
+        run: make -j$(nproc) check
 
 

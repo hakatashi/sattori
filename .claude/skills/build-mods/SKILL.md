@@ -15,14 +15,17 @@ description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w6
 同梱して配布する（`upload-title-assets` skill）。**MOD を再ビルドしたら、必ず
 タイトル資産も再アップロードすること**。しないと本番は古い DLL のまま動く。
 
-## ビルドの仕組み(Issue #392)
+## ビルドの仕組み(Issue #392・#393)
 
+- **タイトルが組み込むモジュールは`Makefile`の「タイトルの宣言」**（`thNN_ARCH`・`thNN_MODS`・
+  `thNN_STATIC`・`thNN_LIBS`）で決まる。モジュールとソースの対応は同じ`Makefile`の`MOD_*`、各ソースの役割は
+  `worker/docs/mods.md`。フックを足すときは`MOD_*`と宣言を書き換えるだけで、規則は書かない。
 - オブジェクトはアーキテクチャごとに1回だけ`worker/mods/obj/{32,64}/`へコンパイルし、タイトル間で共有する
-  （gitignore済み）。`-MMD -MP`で依存関係を自動生成するので、`common/*.h`を変えても該当オブジェクトが
-  再ビルドされる。
+  （gitignore済み）。`-MMD -MP`で依存関係を自動生成するので、ヘッダを変えても該当オブジェクトが
+  再ビルドされる。ソースは`-I.`で`"core/log.h"`のように`mods/`からのパスで include する。
 - 共通フラグは`-std=c++20 -Wall -Wextra -Werror`（`-Wno-cast-function-type`のみ除外。GetProcAddressの
   FARPROCキャストは避けられないため）、リンクは`-s`（strip）。警告は残さず直すこと。
-- Steamworks APIスタブは`steam_stub/steam_api_stub.cpp`の1本から、`-DAPP_ID`・`-DLOG_NAME`だけ変えて
+- Steamworks APIスタブは`tools/steam_stub.cpp`の1本から、`-DAPP_ID`・`-DLOG_NAME`だけ変えて
   th06c用・th06nc用の2つをビルドする。出力パスは`th06c_steam_stub/build/`・`th06nc_steam_stub/build/`のまま。
 
 ## 一括ビルド
@@ -32,6 +35,18 @@ description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w6
 ```bash
 make -C worker/mods -j$(nproc) all
 ```
+
+ビルドしたら検査も通す（CIの`mods-build-smoketest`と同じ。ホストの`g++`が要る）:
+
+```bash
+make -C worker/mods -j$(nproc) check   # check-compile・check-imports・test
+```
+
+- `check-imports`: 全DLL・EXEのインポートにMinGWのランタイム（`libgcc_s`・`libstdc++`・`libwinpthread`）が
+  出ていないか。出ているとWineで注入に失敗する（th20、touhou-recorder reports/44）。
+- `test`: Win32に依存しないロジックの単体テスト（`worker/mods/tests/test_*.cpp`）。ログの契約
+  （`core/log_contract.h`）を変えたら`worker/tests/test_mod_log_contract.py`も通ること。
+- `check-compile`: どのタイトルにも組み込んでいないソース（`present/dxgi.cpp`）のコンパイル。
 
 ビルド成果物を削除してクリーンビルドする場合:
 
@@ -61,7 +76,7 @@ make -C worker/mods injector64
 th06cは他タイトルと異なり **th06c.exeがPE32+(x86-64)** なので、injector・MOD・
 Steamworks APIスタブのすべてを `x86_64-w64-mingw32-g++` でクロスビルドする
 （`-static`付き。`worker/docs/titles/th06c.md`参照）。入力はDirectInputでは
-なくGetProcAddressフック方式のため、`dinput_hook.cpp`・`window_wait.cpp`は使わない
+なくGetProcAddressフック方式のため、`input/dinput.cpp`は使わない（th06ncと共通の部分は`autoplay/dxlib_common.cpp`・`input/dxlib_input.cpp`）
 （起動ダイアログの除外ロジックがth06c専用に`dllmain.cpp`内へ実装済み）。
 
 ```bash
@@ -79,7 +94,7 @@ make -C worker/mods steam_api64
 th06ncはth06cと同じDXライブラリ系エンジンの64bitバイナリで、ビルド方法もth06cと
 ほぼ同一（`-static`必須、Steamworks APIスタブが要る）。通常はGPUインスタンス・別ECRイメージ
 （worker-gpu）で録画し、CPU描画は1/2倍速でだけ使う（`worker/docs/titles/th06nc.md`、Issue #241）。
-CPU描画用のBC7展開フック（`common/d3d11_bc7_hook.cpp`）を一緒にリンクするため、
+CPU描画用のBC7展開フック（`texture/d3d11_bc7.cpp`）を一緒にリンクするため、
 **`-ldxguid`が要る**（Makefileに記述済み。無いと`IID_ID3D11Device`等が未解決になる）。
 Steam AppIDがth06cと異なる（4763590、th06cは4771400）ため、Steamworks APIスタブは
 `th06nc_steam_stub/`として別ビルドする（インターフェースの個別対応は不要だった
@@ -98,8 +113,7 @@ make -C worker/mods steam_api64_th06nc
 th09はth06/07/08/10/12と同じPressKey（DIK経由）を使う。倍速録画フック（D3D8版
 Present間引き・DirectSound周波数スケーリング・fps表示補正、`worker/docs/titles/th09.md`）も
 ここで組み込む。
-`dllmain.cpp`がこれらのフックを呼ぶため、ビルド時は`fps_limiter_hook_d3d8.cpp`・
-`dsound_hook.cpp`・`fps_display_hook.cpp`を含める必要がある（th20と異なり`-static`は不要）。
+`Makefile`の宣言では`present`（D3D8のアダプタを含む）・`fps_display`を組み込む（th20と異なり`-static`は不要）。
 
 ```bash
 make -C worker/mods th09
@@ -132,7 +146,7 @@ make -C worker/mods th20
 
 ### th06 / th07 / th08
 
-th08 と th06 は fps 表示補正（`fps_display_hook.cpp`）を含め、th07 は含めない。
+th08 と th06 は fps 表示補正（`clock/fps_display.cpp`）を含め、th07 は含めない。
 `score_monitor.cpp`（リプレイずれ判定用のスコア監視、Issue #103）は3タイトルとも共通で含める。
 
 ```bash
@@ -145,8 +159,7 @@ make -C worker/mods th08
 
 th128はth10/th12と同じPressKey（DIK経由）を使う（`InstallKeyboardStateHook`は不要）。
 倍速録画フック（Presentの間引き・DirectSound周波数スケーリング、`worker/docs/titles/th128.md`）を含む。
-`dllmain.cpp`がこれらのフックを呼ぶため、ビルド時は`fps_limiter_hook.cpp`・
-`dsound_hook.cpp`を含める必要がある（th20と異なり`-static`は不要）。
+`Makefile`の宣言では`present`を組み込む（`dsound`は全32bitタイトル共通。th20と異なり`-static`は不要）。
 
 ```bash
 make -C worker/mods th128

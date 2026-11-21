@@ -13,7 +13,7 @@
 // input polling goes through the plain Win32 GetKeyboardState() API
 // instead, so this MOD injects via that hook (PressVKey) rather than
 // PressKey/DIK codes. See touhou-recorder reports/35 for the verification
-// log that found this and mods/common/dinput_hook.h for the added hook.
+// log that found this and mods/input/dinput.h for the added hook.
 //
 // The replay list screen has two tabs: the built-in numbered slots
 // (No.01-No.24, th11_01.rpy style filenames) and a separate "user replay"
@@ -24,14 +24,15 @@
 // -> Enter(confirm playback).
 
 #include <windows.h>
-#include "../common/dinput_hook.h"
-#include "../common/window_wait.h"
-#include "../common/menu_wait.h"
-#include "../common/logging.h"
-#include "../common/speed_hack_hook.h"
-#include "../common/dsound_hook.h"
-#include "../common/score_monitor.h"
-#include "../common/d3dx_filter_hook.h"
+#include "audio/dsound.h"
+#include "autoplay/window_wait.h"
+#include "clock/speed_hack.h"
+#include "core/log.h"
+#include "core/runtime_config.h"
+#include "core/time_scale.h"
+#include "input/dinput.h"
+#include "monitor/score_monitor.h"
+#include "texture/d3dx_filter.h"
 
 using namespace autoplay;
 
@@ -44,13 +45,13 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th11_replay_autoplay: AutoPlayThread started ===");
 
     DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
+    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/time_scale::StartupTimeout(30000));
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
         return 1;
     }
 
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
+    if (!WaitForHookActive(/*timeoutMs=*/time_scale::StartupTimeout(30000))) {
         Log("ERROR: neither GetDeviceState nor GetKeyboardState hook was ever called, aborting sequence");
         return 1;
     }
@@ -60,21 +61,21 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     // Start, Rank Select, etc.) instead of "Replay". 6000ms was found to
     // reliably reach the main menu (touhou-recorder reports/35).
     Log("Buffering 6000ms for title screen animation...");
-    MenuSleep(6000);
+    time_scale::MenuSleep(6000);
 
-    Log("Step 1: Down x2 (select 'Replay' on main menu)");
+    LogStep(1, "Down x2 (select 'Replay' on main menu)");
     for (int i = 0; i < 2; i++) {
         PressVKey(VK_DOWN_KEY);
-        MenuSleep(250);
+        time_scale::MenuSleep(250);
     }
 
-    Log("Step 2: Enter (confirm 'Replay', enter replay list)");
+    LogStep(2, "Enter (confirm 'Replay', enter replay list)");
     PressVKey(VK_RETURN_KEY);
-    MenuSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 3: Right (switch to user replay tab)");
+    LogStep(3, "Right (switch to user replay tab)");
     PressVKey(VK_RIGHT_KEY);
-    MenuSleep(500);
+    time_scale::MenuSleep(500);
 
     // Within the user replay tab, th11 assigns each replay file to a fixed
     // list slot parsed from the number in its filename (th11_ud0001.rpy
@@ -82,15 +83,15 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     // copied file simply occupies slot 1. The caller MUST place the target
     // replay as "th11_ud0000.rpy" in the instance's replay/ directory for
     // this Enter to land on it (verified in touhou-recorder reports/35).
-    Log("Step 4: Enter (select 1st user replay file)");
+    LogStep(4, "Enter (select 1st user replay file)");
     PressVKey(VK_RETURN_KEY);
-    MenuSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 5: Enter (confirm playback, start replay)");
+    LogStep(5, "Enter (confirm playback, start replay)");
     PressVKey(VK_RETURN_KEY);
-    MenuSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("=== th11_replay_autoplay: sequence complete ===");
+    LogSequenceComplete("th11");
     return 0;
 }
 
@@ -98,6 +99,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
         LogInit(hinst, "th11_autoplay.log");
+        InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hooks");
         InstallDinputHook();
         // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
@@ -107,7 +109,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InstallSpeedHackHook();
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。
-        InstallDSoundHook(1.0);
+        InstallDSoundHook();
         InstallKeyboardStateHook();
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th11.cpp)の`Globals* globals = (Globals*)0x4a56e0`(絶対VA、

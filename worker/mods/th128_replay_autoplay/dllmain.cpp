@@ -21,14 +21,16 @@
 
 #include <windows.h>
 #include <stdlib.h>
-#include "../common/dinput_hook.h"
-#include "../common/window_wait.h"
-#include "../common/logging.h"
-#include "../common/speed_hack_hook.h"
-#include "../common/fps_limiter_hook.h"
-#include "../common/dsound_hook.h"
-#include "../common/score_monitor.h"
-#include "../common/d3dx_filter_hook.h"
+#include "audio/dsound.h"
+#include "autoplay/window_wait.h"
+#include "clock/speed_hack.h"
+#include "core/log.h"
+#include "core/runtime_config.h"
+#include "core/time_scale.h"
+#include "input/dinput.h"
+#include "monitor/score_monitor.h"
+#include "present/limiter.h"
+#include "texture/d3dx_filter.h"
 
 using namespace autoplay;
 
@@ -37,35 +39,17 @@ static const BYTE DIK_DOWN = 0xD0;
 static const BYTE DIK_RIGHT = 0xCD;
 static const BYTE DIK_RETURN = 0x1C;
 
-// 低速録画対応(th10・th12・th20と同じ方式)。FPS_LIMIT_TARGET_HZ未設定時はscale=1.0で
-// 従来動作と完全互換(30fpsでの実機検証はtouhou-recorder reports/72で完了済みだが、
-// Sattori側の録画の段(recordingPlan.ts)にも未登録、worker/docs/titles/th128.md)。
-static double GetMenuTimeScale() {
-    double targetHz = 60.0;
-    const char* env = getenv("FPS_LIMIT_TARGET_HZ");
-    if (env) {
-        double hz = atof(env);
-        if (hz > 0.0) targetHz = hz;
-    }
-    return 60.0 / targetHz;
-}
-
-static void ScaledSleep(DWORD baseMs) {
-    static double scale = GetMenuTimeScale();
-    Sleep((DWORD)(baseMs * scale));
-}
-
 static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th128_replay_autoplay: AutoPlayThread started ===");
 
     DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
+    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/time_scale::StartupTimeout(30000));
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
         return 1;
     }
 
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
+    if (!WaitForHookActive(/*timeoutMs=*/time_scale::StartupTimeout(30000))) {
         Log("ERROR: GetDeviceState hook was never called, aborting sequence");
         return 1;
     }
@@ -75,32 +59,32 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     // sattori本体での実機検証(docs/reports/2026-09-16-th128-title-screen-wait-reduction-verification.md)
     // で2000msでもシーケンスが安定して成功することを確認し、短縮した。
     Log("Buffering 2000ms (scaled) for title screen load...");
-    ScaledSleep(2000);
+    time_scale::MenuSleep(2000);
 
-    Log("Step 1: Down x1 (select 'Replay' on main menu)");
+    LogStep(1, "Down x1 (select 'Replay' on main menu)");
     PressKey(DIK_DOWN);
-    ScaledSleep(500);
+    time_scale::MenuSleep(500);
 
-    Log("Step 2: Enter (confirm 'Replay', enter replay list)");
+    LogStep(2, "Enter (confirm 'Replay', enter replay list)");
     PressKey(DIK_RETURN);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 3: Right (switch to user replay tab)");
+    LogStep(3, "Right (switch to user replay tab)");
     PressKey(DIK_RIGHT);
-    ScaledSleep(500);
+    time_scale::MenuSleep(500);
 
     // th11/th12/th20と同じ規約: 対象リプレイは事前にインスタンスの
     // replay/ディレクトリへ"th128_ud0000.rpy"として配置されている必要がある
     // (record_th128.pyのcanonical_slot)。
-    Log("Step 4: Enter (select 1st user replay file)");
+    LogStep(4, "Enter (select 1st user replay file)");
     PressKey(DIK_RETURN);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("Step 5: Enter (confirm playback, start replay)");
+    LogStep(5, "Enter (confirm playback, start replay)");
     PressKey(DIK_RETURN);
-    ScaledSleep(700);
+    time_scale::MenuSleep(700);
 
-    Log("=== th128_replay_autoplay: sequence complete ===");
+    LogSequenceComplete("th128");
     return 0;
 }
 
@@ -108,6 +92,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
         LogInit(hinst, "th128_autoplay.log");
+        InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hooks");
         InstallDinputHook();
         // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
@@ -117,8 +102,8 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InstallSpeedHackHook();
         // 低速録画用フック。FPS_LIMIT_TARGET_HZ未設定時はscale=1.0で従来動作と完全互換
         // (touhou-recorder reports/72で30fps実機検証済み)。
-        InstallFpsLimiterHook(60.0);
-        InstallDSoundHook(1.0);
+        InstallFpsLimiterHook();
+        InstallDSoundHook();
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th128.cppの`th128_patch_main`フック内で練習モードの初期値を
         // ゲーム内変数へ直接書き込んでいる箇所)の絶対VA(image base 0x400000)から収集し、

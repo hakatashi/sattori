@@ -39,9 +39,9 @@ touhou-recorderでの事前検証（reports/74〜77）を踏まえた設計:
   `USER32!DialogBoxIndirectParamW`によるモーダルダイアログ（クラス`#32770`）が毎回
   表示される。MOD内のワーカースレッドから直接コントロールを操作して「ウィンドウ
   640x480」+VSyncを選び「ゲーム起動」ボタンを押す（コントロールIDは実機列挙済み、
-  `dllmain.cpp`参照）。**ウィンドウ検出はこのダイアログを誤認しないよう独自実装**
-  （`mods/common/window_wait.cpp`は使わない。DirectInputのGetDeviceStateフックに依存
-  しているうえ、起動ダイアログを除外するロジックが無いため）。
+  `dllmain.cpp`参照）。**ウィンドウ検出はこのダイアログを誤認しないよう、
+  `WindowFilter::kDxlib`（クラス`#32770`と幅320未満を除く）で行う**
+  （`mods/autoplay/window_wait.h`。th06ncと共通の部分は`mods/autoplay/dxlib_common.*`）。
 - **Xvfb画面を1400x1100x24へ拡大する**（`record_th06c.py`の`xvfb_screen`）:
   既定の800x600のままだと、openboxの初期配置で640x480ウィンドウが画面内に収まらず
   `recording/pipeline.py`の`_settle_crop_geometry()`が(0,0)への強制移動を行う。この
@@ -72,7 +72,7 @@ touhou-recorderでの事前検証（reports/74〜77）を踏まえた設計:
   探す」プローブで内部スコア（即時加算される真の値、`module+0x003A3B4C`）を特定した
   （touhou-recorder reports/75）。画面表示用の追いかけ値（`+0x003A3B50`、集計アニメ
   中は遅れる）ではなく内部スコア側を使うこと。**ステージ番号・残機・グレイズのRVAは
-  未特定**なので`mods/common/score_monitor.h`の`ScoreMonitorConfig`は`scoreWidth=4`
+  未特定**なので`mods/monitor/score_monitor.h`の`ScoreMonitorConfig`は`scoreWidth=4`
   のみ指定し、他は既定の`width=0`（無効化）のままにする。倍率は等倍
   （`recording/modlog.py`の`GAME_SCORE_MULTIPLIERS["th06c"] = 1`、th06と同じ）。
 - **理論尺比較は「超過方向」のみで判定する**: th06cのリプレイ`frameCount`合計は
@@ -90,5 +90,5 @@ touhou-recorderでの事前検証（reports/74〜77）を踏まえた設計:
   一致判定のみに限られる（デシンクの検知手段としては他タイトルよりやや弱い）。
 - Steamworks APIスタブは実機で観測された呼び出しにのみ対応しているため、将来の
   ゲームアップデートで新しいインターフェース/メソッドが呼ばれるとNULL逆参照で
-  クラッシュしうる（`mods/steam_stub/steam_api_stub.cpp`(th06c・th06nc共用)のログでスロット番号を
+  クラッシュしうる（`mods/tools/steam_stub.cpp`(th06c・th06nc共用)のログでスロット番号を
   特定し`ResolveOverride()`に追加する運用）。

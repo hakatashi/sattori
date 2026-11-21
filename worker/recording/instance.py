@@ -131,5 +131,5 @@ def apply_vpatch_ini_overrides(path, overrides, log=print):
 def build_injector_cmd(config):
     """injector.exeへ渡す引数列を組み立てる。extra_dllsが指定されていれば
     hook_dllより前に指定順で注入させる(injector.exeは指定順に全DLLを注入してから
-    メインスレッドを再開する、mods/common/injector.cpp参照)。"""
+    メインスレッドを再開する、mods/tools/injector.cpp参照)。"""
     return ["wine", config.injector, config.game_exe, *config.extra_dlls, config.hook_dll]

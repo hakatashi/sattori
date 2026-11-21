@@ -19,7 +19,7 @@ import os
 
 from recording import cli
 from recording.config import WORKER_ROOT, GameConfig
-from recording.timing import gpu_worker, recording_time_scale
+from recording.timing import gpu_worker
 
 # th06.env(12バイト)のbyte[5]で解像度が決まる(touhou-recorder reports/78 §4.1)。
 # 720p/1080pそれぞれの完成済みth06.envをタイトル資産(games/th06nc/)に同梱しておき、
@@ -47,19 +47,19 @@ def _scale_rect(rects, from_wh, to_wh):
     ]
 
 
-def _cpu_rendering_env(time_scale):
-    """CPU描画(Xvfb+wined3d+llvmpipe)用にゲームへ渡す環境変数(touhou-recorder reports/96・97)。"""
+def _cpu_rendering_env():
+    """CPU描画(Xvfb+wined3d+llvmpipe)用にゲームへ渡す環境変数(touhou-recorder reports/96・97)。
+
+    低速録画でのメニュー操作の待ちの伸長は、MODが`FPS_LIMIT_TARGET_HZ`から導く
+    (`mods/core/time_scale.h`。かつてここで渡していた`TH06NC_TIME_SCALE`は廃止した、Issue #393)。
+    """
     env = [
-        # MODがBC7テクスチャをロード時にRGBA8へ展開する(mods/common/d3d11_bc7_hook.cpp)。
+        # MODがBC7テクスチャをロード時にRGBA8へ展開する(mods/texture/d3d11_bc7.cpp)。
         ("D3D11_DECODE_BC7", "1"),
         # llvmpipeのラスタライズスレッドを使えるvCPU数に合わせる(reports/97の構成)。
         # `os.cpu_count()`はCPU affinity(`docker run --cpuset-cpus`)を見ない。
         ("LP_NUM_THREADS", str(len(os.sched_getaffinity(0)))),
     ]
-    if time_scale > 1.0:
-        # メニュー操作のSleep()は実時間で待つので、低速録画ではゲーム内の遷移アニメーションに
-        # 合わせて同じ比率で伸ばす(MODの`GetTimeScale()`)。倍速の短縮は`MenuWaitScale()`が担う。
-        env.append(("TH06NC_TIME_SCALE", f"{time_scale:g}"))
     return tuple(env)
 
 
@@ -78,7 +78,6 @@ def build_config(pulse_sink):
     spec = _RESOLUTIONS[resolution]
     window_w, window_h = spec["window"]
     gpu = gpu_worker()
-    time_scale = recording_time_scale()
 
     return GameConfig.for_game(
         "th06nc", pulse_sink,
@@ -98,7 +97,7 @@ def build_config(pulse_sink):
         gpu_display=gpu,
         dxvk_dll_overrides="d3d11,dxgi,d3d10core=n" if gpu else "d3d11,dxgi,d3d10core=b",
         crtc_mode=spec["crtc_mode"] if gpu else None,
-        extra_env=() if gpu else _cpu_rendering_env(time_scale),
+        extra_env=() if gpu else _cpu_rendering_env(),
         # DXライブラリは時間基準でゲームを進め、fps_limiterを持たないので、低速録画も
         # QPC偽装で減速する(reports/97)。
         slow_motion_speed_hack=True,
