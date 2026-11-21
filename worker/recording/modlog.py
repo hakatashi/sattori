@@ -4,9 +4,8 @@
 事後検証(Issue #103)を担う。
 
 **fps暴走検知(旧`scan_fps_runaway()`)は削除済み**([`decisions/0043`](../../docs/decisions/0043-remove-fps-runaway-detection.md))。
-MOD側の`fps_monitor.cpp`(GetDeviceStateフックの呼び出し頻度を5秒毎にログ出力する
-スレッド)自体は残っているため、`FpsMonitor: N GetDeviceState calls in M ms (H.H Hz)`
-行はMODログに引き続き出力されるが、読み取って自動判定に使う経路は無い。
+MOD側の`fps_monitor.cpp`(`FpsMonitor: ...`行を出力していたスレッド)も、誰も読まない
+ログだったためIssue #392で削除した。
 """
 import datetime
 import os

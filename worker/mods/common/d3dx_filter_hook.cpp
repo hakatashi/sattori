@@ -175,7 +175,7 @@ void AreaResample(const BYTE* src, UINT pitch, DWORD fmt, int bpp, UINT sw, UINT
     static DWORD lutFmt = 0;
     if (bpp == 2 && lutFmt != fmt) {
         lut.resize(65536);
-        for (DWORD v = 0; v < 65536; v++) { WORD w16 = (WORD)v; lut[v] = Expand(fmt, (const BYTE*)&w16); }
+        for (DWORD v = 0; v < 65536; v++) { DWORD w = v; lut[v] = Expand(fmt, (const BYTE*)&w); }  // リトルエンディアンなので下位2バイトが16bit値(4バイト確保は-Warray-boundsの回避)
         lutFmt = fmt;
     }
     // 横方向

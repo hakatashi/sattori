@@ -16,8 +16,7 @@
 //     gpu_display.py`)。
 //   * Steam AppIDは4763590(th06cは4771400)。スタブは共通の設計だが
 //     AppID差分のため`th06nc_steam_stub/`として別ビルドする。
-//   * メニューカーソル位置のRVAは未特定のため、環境変数`TH06NC_MENU_DOWNS`
-//     (既定3回)による固定回数のDownでフォールバックする。
+//   * メニューカーソル位置のRVAは未特定のため、固定3回のDownでフォールバックする。
 //   * スコアのRVAは特定済み(kScoreRva = 0x0053D3E8、内部即時値。th06cとは
 //     内部値/表示値の前後関係が逆)。**ゲームのバージョンごとに変わる**
 //     (ver 1.0.6で0x004F2798から移動、docs/reports/2026-09-28-th06nc-v1.0.6-
@@ -237,25 +236,6 @@ void WaitFrames(LONG start, unsigned int frames, unsigned int timeoutMs) {
     }
 }
 
-// 入力ポーリングの実効レート(=実効描画fps相当)を一定間隔でログし続ける常駐スレッド。
-// 出力形式は mods/common/fps_monitor.cpp と揃えてある。
-DWORD WINAPI FpsMonitorThread(LPVOID) {
-    LONG lastCount = g_pollCount;
-    DWORD lastTick = GetTickCount();
-    for (;;) {
-        Sleep(5000);
-        LONG current = g_pollCount;
-        DWORD now = GetTickCount();
-        LONG delta = current - lastCount;
-        DWORD elapsedMs = now - lastTick;
-        double hz = elapsedMs > 0 ? (delta * 1000.0 / elapsedMs) : 0.0;
-        Log("FpsMonitor: %ld GetDeviceState calls in %lu ms (%.1f Hz)", (long)delta, elapsedMs, hz);
-        lastCount = current;
-        lastTick = now;
-    }
-    return 0;
-}
-
 // vk を holdFrames 回分のポーリングだけ押下状態にし、releaseFrames 回分離す。
 void PressVKey(BYTE vk, unsigned int holdFrames = 1, unsigned int releaseFrames = 2,
                unsigned int timeoutMs = 2000) {
@@ -384,12 +364,10 @@ HWND WaitForStableWindow(DWORD pid, unsigned int stableMs, unsigned int timeoutM
 //
 // th06ncのメインメニューはth06cと同じ9項目構成と見られるが、カーソル位置の
 // RVAは未特定(touhou-recorder reports/78)。特定するまでは環境変数
-// TH06NC_MENU_DOWNS(既定3回)による固定回数のDownでフォールバックする
+// 固定3回のDownでフォールバックする
 // (未解放セーブデータの状態でも "Replay" に到達することを実機確認済み)。
 bool NavigateToReplayByFixedDowns() {
-    char buf[16] = {0};
-    GetEnvironmentVariableA("TH06NC_MENU_DOWNS", buf, sizeof(buf));
-    int downs = buf[0] ? atoi(buf) : 3;
+    const int downs = 3;
     Log("Step 2: カーソル位置RVAが未特定のため Down を固定 %d 回送ります", downs);
     for (int i = 0; i < downs; i++) {
         PressVKey(VK_DOWN);
@@ -416,8 +394,6 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
         return 1;
     }
     Log("入力ポーリング開始を検出");
-
-    CreateThread(nullptr, 0, FpsMonitorThread, nullptr, 0, nullptr);
 
     // th06ncには起動ダイアログが無い。復活していないかの確認だけ行う(1秒)。
     WarnIfStartupDialogPresent(/*watchMs=*/1000);

@@ -1,8 +1,16 @@
 CXX32 ?= i686-w64-mingw32-g++
 CXX64 ?= x86_64-w64-mingw32-g++
 
-COMMON_FLAGS := -O2 -static-libgcc -static-libstdc++
-DLL_FLAGS    := -shared $(COMMON_FLAGS) -luser32
+# -MMD -MP: ヘッダ(common/*.h)の変更でも該当オブジェクトが再ビルドされるよう、依存関係(.d)を自動生成する。
+# -s: シンボルを落としてDLLを小さくする。-Werror: 警告を残さない(Issue #392)。
+# -Wno-cast-function-type: GetProcAddress(FARPROC)との相互キャストはWin32フックの定石で避けられない。
+CXXFLAGS_COMMON := -O2 -std=c++20 -Wall -Wextra -Wno-cast-function-type -Werror -MMD -MP
+LDFLAGS_COMMON  := -s -static-libgcc -static-libstdc++
+DLL_FLAGS       := -shared $(LDFLAGS_COMMON) -luser32
+
+# オブジェクトはアーキテクチャごと(32/64)に1回だけコンパイルし、タイトル間で共有する
+# (common/*.cppとタイトルのdllmain.cppを同じ規則で扱う)。
+OBJ_DIR := obj
 
 # 共通ソースファイル
 COMMON_DIR   := common
@@ -10,7 +18,6 @@ SRC_LOGGING  := $(COMMON_DIR)/logging.cpp
 SRC_SCORE    := $(COMMON_DIR)/score_monitor.cpp
 SRC_DINPUT   := $(COMMON_DIR)/dinput_hook.cpp
 SRC_WAIT     := $(COMMON_DIR)/window_wait.cpp
-SRC_FPS      := $(COMMON_DIR)/fps_monitor.cpp
 SRC_FPS_D3D8 := $(COMMON_DIR)/fps_limiter_hook_d3d8.cpp
 SRC_DSOUND   := $(COMMON_DIR)/dsound_hook.cpp
 SRC_FPS_DISP := $(COMMON_DIR)/fps_display_hook.cpp
@@ -25,7 +32,6 @@ SRC_D3DX     := $(COMMON_DIR)/d3dx_filter_hook.cpp
 # 倍速録画(Issue #288)のQPC偽装(speed_hack_hook)・音声周波数スケールとA/V同期マーカー
 # (dsound_hook)は全32bitタイトル共通で組み込む。
 SRCS_BASE_HOOK := $(SRC_DINPUT) $(SRC_WAIT) $(SRC_LOGGING) $(SRC_SCORE) $(SRC_SPEED) $(SRC_DSOUND)
-SRCS_FPS_HOOK  := $(SRCS_BASE_HOOK) $(SRC_FPS)
 
 # ターゲット出力ファイル
 TARGET_INJECTOR32 := common/build/injector.exe
@@ -91,6 +97,7 @@ th128: $(TARGET_TH128)
 th15: $(TARGET_TH15)
 
 clean:
+	rm -rf $(OBJ_DIR)
 	rm -rf common/build
 	rm -rf th06_replay_autoplay/build
 	rm -rf th06c_replay_autoplay/build
@@ -108,91 +115,103 @@ clean:
 	rm -rf th128_replay_autoplay/build
 	rm -rf th15_replay_autoplay/build
 
+# ---------------------------------------------------------------------------
+# コンパイル規則(アーキテクチャごとに1回だけ。-MMDで生成した.dを取り込む)
+# ---------------------------------------------------------------------------
+O32 = $(patsubst %.cpp,$(OBJ_DIR)/32/%.o,$(filter %.cpp,$1))
+O64 = $(patsubst %.cpp,$(OBJ_DIR)/64/%.o,$(filter %.cpp,$1))
+
+$(OBJ_DIR)/32/%.o: %.cpp
+	@mkdir -p $(@D)
+	$(CXX32) $(CXXFLAGS_COMMON) -c -o $@ $<
+
+$(OBJ_DIR)/64/%.o: %.cpp
+	@mkdir -p $(@D)
+	$(CXX64) $(CXXFLAGS_COMMON) -c -o $@ $<
+
+-include $(shell find $(OBJ_DIR) -name '*.d' 2>/dev/null)
+
 # 1. injector（32bit / 64bit）
-$(TARGET_INJECTOR32): common/injector.cpp
+$(TARGET_INJECTOR32): $(call O32,common/injector.cpp)
 	@mkdir -p $(@D)
-	$(CXX32) $(COMMON_FLAGS) -o $@ $<
+	$(CXX32) $(LDFLAGS_COMMON) -o $@ $^
 
-$(TARGET_INJECTOR64): common/injector.cpp
+$(TARGET_INJECTOR64): $(call O64,common/injector.cpp)
 	@mkdir -p $(@D)
-	$(CXX64) $(COMMON_FLAGS) -static -o $@ $<
+	$(CXX64) $(LDFLAGS_COMMON) -static -o $@ $^
 
-# 2. Steamworks API stub for th06c（64bit）
-$(TARGET_STEAM_API): th06c_steam_stub/steam_api_stub.cpp
+# 2. Steamworks APIスタブ（64bit。th06c・th06ncで同じソースを使い、AppIDとログ名だけ変える）。
+#    スタブは-Werrorの対象外にしたいのでobj/を経由せず直接ビルドする。
+STEAM_STUB_SRC := steam_stub/steam_api_stub.cpp
+
+$(TARGET_STEAM_API): $(STEAM_STUB_SRC)
 	@mkdir -p $(@D)
-	$(CXX64) $(DLL_FLAGS) -static -o $@ $<
+	$(CXX64) -O2 -std=c++20 $(DLL_FLAGS) -static -DAPP_ID=4771400 -DLOG_NAME='"th06c_steam_stub.log"' -o $@ $<
 
-# 2b. Steamworks API stub for th06nc（64bit、AppIDのみth06cと異なる）
-$(TARGET_STEAM_API_NC): th06nc_steam_stub/steam_api_stub.cpp
+$(TARGET_STEAM_API_NC): $(STEAM_STUB_SRC)
 	@mkdir -p $(@D)
-	$(CXX64) $(DLL_FLAGS) -static -o $@ $<
+	$(CXX64) -O2 -std=c++20 $(DLL_FLAGS) -static -DAPP_ID=4763590 -DLOG_NAME='"th06nc_steam_stub.log"' -o $@ $<
 
-# 3. th06c hook（64bit、UTF-8/UTF-16LE、-static）
-$(TARGET_TH06C): th06c_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE) $(SRC_DSOUND) $(SRC_SPEED) $(SRC_WASAPI)
+# 3. th06c hook（64bit、-static）
+$(TARGET_TH06C): $(call O64,th06c_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE) $(SRC_DSOUND) $(SRC_SPEED) $(SRC_WASAPI))
 	@mkdir -p $(@D)
-	$(CXX64) $(DLL_FLAGS) -static \
-		-finput-charset=UTF-8 -fexec-charset=UTF-8 -fwide-exec-charset=UTF-16LE \
-		-o $@ $^ -lole32
+	$(CXX64) $(DLL_FLAGS) -static -o $@ $^
 
-# 3b. th06nc hook（64bit、UTF-8/UTF-16LE、-static、Issue #241）。CPU描画用のBC7展開フック
+# 3b. th06nc hook（64bit、-static、Issue #241）。CPU描画用のBC7展開フック
 # （`D3D11_DECODE_BC7=1`のときだけ有効、touhou-recorder reports/96）を含むため-ldxguidが要る。
-$(TARGET_TH06NC): th06nc_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE) $(SRC_DSOUND) $(SRC_SPEED) $(SRC_WASAPI) $(SRC_BC7) \
-		$(COMMON_DIR)/d3d11_bc7_hook.h $(COMMON_DIR)/bc7_decode.h
+$(TARGET_TH06NC): $(call O64,th06nc_replay_autoplay/dllmain.cpp $(SRC_LOGGING) $(SRC_SCORE) $(SRC_DSOUND) $(SRC_SPEED) $(SRC_WASAPI) $(SRC_BC7))
 	@mkdir -p $(@D)
-	$(CXX64) $(DLL_FLAGS) -static \
-		-finput-charset=UTF-8 -fexec-charset=UTF-8 -fwide-exec-charset=UTF-16LE \
-		-o $@ $(filter %.cpp,$^) -lole32 -ldxguid
+	$(CXX64) $(DLL_FLAGS) -static -o $@ $^ -ldxguid
 
-# 4. th06（vpatch＋fps表示補正のtimeGetTime版、reports/90）・th07
-$(TARGET_TH06): th06_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_DISP)
+# 4. 32bitフックDLL。th06（vpatch＋fps表示補正のtimeGetTime版、reports/90）・th07・th08（fps表示補正）
+$(TARGET_TH06): $(call O32,th06_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK) $(SRC_FPS_DISP))
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-$(TARGET_TH07): th07_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK)
+$(TARGET_TH07): $(call O32,th07_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK))
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-# 5. 標準的な32bitフックDLL（th08はfps表示補正、th10/th12はD3D9フレームレート制限つき）
-$(TARGET_TH08): th08_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_DISP)
+$(TARGET_TH08): $(call O32,th08_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK) $(SRC_FPS_DISP))
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-$(TARGET_TH10): th10_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX)
+# 5. th10/th12はD3D9フレームレート制限つき。th10・th11・th12・th13・th128は文字の縮小フィルタ補完つき
+$(TARGET_TH10): $(call O32,th10_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX))
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-$(TARGET_TH11): th11_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_D3DX)
+$(TARGET_TH11): $(call O32,th11_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK) $(SRC_D3DX))
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-$(TARGET_TH12): th12_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX)
+$(TARGET_TH12): $(call O32,th12_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX))
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-# 5b. th13 hook（32bit、th128と同じD3D9フレームレート制限・DirectSound周波数フック。
-#     VsyncPatchは使わない、touhou-recorder reports/100）
-$(TARGET_TH13): th13_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX)
+# th13（th128と同じD3D9フレームレート制限・DirectSound周波数フック。VsyncPatchは使わない、
+# touhou-recorder reports/100）
+$(TARGET_TH13): $(call O32,th13_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX))
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-# 6. th09 hook（32bit、D3D8フレームレート制限・DirectSound周波数・fps表示補正フック）
-$(TARGET_TH09): th09_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_D3D8) $(SRC_FPS_DISP)
+# 6. th09（D3D8フレームレート制限・DirectSound周波数・fps表示補正フック）
+$(TARGET_TH09): $(call O32,th09_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK) $(SRC_FPS_D3D8) $(SRC_FPS_DISP))
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-# 7. th20 hook（32bit、D3D9フレームレート制限・DirectSound周波数・fps表示補正フック、-static）
-$(TARGET_TH20): th20_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_FPS_DISP)
+# 7. th20（D3D9フレームレート制限・DirectSound周波数・fps表示補正フック、-static）
+$(TARGET_TH20): $(call O32,th20_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK) $(SRC_FPS_LIM) $(SRC_FPS_DISP))
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -static -o $@ $^
 
-# 8. th128 hook（32bit、D3D9フレームレート制限・DirectSound周波数フック）
-$(TARGET_TH128): th128_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX)
+# 8. th128（D3D9フレームレート制限・DirectSound周波数フック）
+$(TARGET_TH128): $(call O32,th128_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK) $(SRC_FPS_LIM) $(SRC_D3DX))
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -o $@ $^
 
-# 9. th15 hook（32bit、GetDeviceState方式・D3D9フレームレート制限・DirectSound周波数フック、
-#    -static。touhou-recorder reports/82参照）
-$(TARGET_TH15): th15_replay_autoplay/dllmain.cpp $(SRCS_FPS_HOOK) $(SRC_FPS_LIM) $(SRC_FPS_DISP)
+# 9. th15（GetDeviceState方式・D3D9フレームレート制限・DirectSound周波数フック、-static。
+#    touhou-recorder reports/82参照）
+$(TARGET_TH15): $(call O32,th15_replay_autoplay/dllmain.cpp $(SRCS_BASE_HOOK) $(SRC_FPS_LIM) $(SRC_FPS_DISP))
 	@mkdir -p $(@D)
 	$(CXX32) $(DLL_FLAGS) -static -o $@ $^
-

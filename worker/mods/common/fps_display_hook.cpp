@@ -10,7 +10,7 @@ typedef BOOL(WINAPI* QueryPerformanceCounter_t)(LARGE_INTEGER* lpPerformanceCoun
 static QueryPerformanceCounter_t g_origQPC = nullptr;
 static double g_scale = 1.0;
 static bool g_epochSet = false;
-static LARGE_INTEGER g_epoch = {0};
+static LARGE_INTEGER g_epoch = {};
 
 // reports/48参照: mods/common/timer_probe_hook.*での実測により特定した、対象
 // ゲームのfpsカウンター表示計算に使われていると実証されたQueryPerformanceCounter
@@ -43,7 +43,8 @@ static bool RvaMatches(const ULONG_PTR* rvas, int n, ULONG_PTR rva) {
 // そのまま targetHz/60 を掛けると二重掛けになり、2倍速(targetHz=120, m=2)でth12/th20の
 // 表示が「30fps」になっていた(reports/90)。伸長済みの分をmで割り戻す。
 // speedHacked: 対象APIをspeed_hack_hookが偽装しているか(QPCは倍率≠1なら常に、
-// timeGetTimeはSPEED_HACK_TIMERSに"tgt"を含むときのみ。speed_hack_hook.cppと同じ判定)。
+// timeGetTimeは、IATフックでは偽装されない(GetProcAddress経由のWrapTimeGetTimeForSpeedHack
+// だけで偽装され、本フックはIATに入れるため常にfalse))。
 static double ComputeDisplayScale(bool speedHacked) {
     double targetHz = 60.0;
     const char* env = getenv("FPS_LIMIT_TARGET_HZ");
@@ -58,11 +59,6 @@ static double ComputeDisplayScale(bool speedHacked) {
         if (mult > 0.0 && mult != 1.0) scale /= mult;
     }
     return scale;
-}
-
-static bool SpeedHackCoversTimeGetTime() {
-    const char* timers = getenv("SPEED_HACK_TIMERS");
-    return timers && strstr(timers, "tgt");
 }
 
 static BOOL WINAPI MyQueryPerformanceCounter(LARGE_INTEGER* lpPerformanceCount) {
@@ -163,7 +159,7 @@ static int CopyRvas(ULONG_PTR* dst, const ULONG_PTR* src, int n) {
 
 bool InstallFpsDisplayCorrectionHookTimeGetTime(const ULONG_PTR* targetRvas, int numRvas) {
     g_numTargetRvasTgt = CopyRvas(g_targetRvasTgt, targetRvas, numRvas);
-    g_scaleTgt = ComputeDisplayScale(SpeedHackCoversTimeGetTime());
+    g_scaleTgt = ComputeDisplayScale(/*speedHacked=*/false);
 
     bool ok = HookIATEntry("WINMM.dll", "timeGetTime", (void*)MyTimeGetTime,
                             (void**)&g_origTimeGetTime);

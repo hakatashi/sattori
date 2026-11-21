@@ -67,7 +67,7 @@ touhou-recorderでの事前検証（reports/74〜77）を踏まえた設計:
   （`end_template_rect`、touhou-recorder reports/76）。閾値は既定値
   （`END_TEMPLATE_MAD_THRESHOLD`）のままでよい。
 - **スコア監視RVAはメモリ全域探索で特定**: th06cはオリジナルth06の完全な再実装であり
-  **thpracのth06用RVAは一切流用できない**。64bitのため32bit専用の`score_probe_hook.*`
+  **thpracのth06用RVAは一切流用できない**。64bitのため32bit専用の`score_probe_hook.*`(現在は`research/archive/mod-probes/`)
   も使えず、touhou-recorder側で「既知の値（記録スコア）を全コミット済みRWメモリから
   探す」プローブで内部スコア（即時加算される真の値、`module+0x003A3B4C`）を特定した
   （touhou-recorder reports/75）。画面表示用の追いかけ値（`+0x003A3B50`、集計アニメ
@@ -90,5 +90,5 @@ touhou-recorderでの事前検証（reports/74〜77）を踏まえた設計:
   一致判定のみに限られる（デシンクの検知手段としては他タイトルよりやや弱い）。
 - Steamworks APIスタブは実機で観測された呼び出しにのみ対応しているため、将来の
   ゲームアップデートで新しいインターフェース/メソッドが呼ばれるとNULL逆参照で
-  クラッシュしうる（`mods/th06c_steam_stub/steam_api_stub.cpp`のログでスロット番号を
+  クラッシュしうる（`mods/steam_stub/steam_api_stub.cpp`(th06c・th06nc共用)のログでスロット番号を
   特定し`ResolveOverride()`に追加する運用）。

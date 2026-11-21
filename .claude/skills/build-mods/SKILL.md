@@ -1,6 +1,6 @@
 ---
 name: build-mods
-description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th06c・th06nc・th09・th10・th11・th12・th13・th15・th20・th128）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th20/th15 は `-static` が必須、th06c/th06nc は64bitクロスビルドとSteamworks APIスタブが必要など、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
+description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w64 でクロスビルドする手順（th06c・th06nc・th09・th10・th11・th12・th13・th15・th20・th128）。「hook DLL をビルドして」「MOD をビルドし直して」等で使う。th06c/th06nc は64bitクロスビルドとSteamworks APIスタブが必要、th20/th15/64bit は `-static` 付きなど、知らないと DLL 注入が失敗する注意点があるため必ずこの手順に従うこと。
 ---
 
 # MOD（`*_hook.dll`）・injector.exe のビルド
@@ -14,6 +14,16 @@ description: 東方タイトルの録画用 MOD（`thNN_hook.dll`）を mingw-w6
 ビルド成果物（`mods/**/build/`）は gitignore 済みで、S3 のタイトル資産アーカイブに
 同梱して配布する（`upload-title-assets` skill）。**MOD を再ビルドしたら、必ず
 タイトル資産も再アップロードすること**。しないと本番は古い DLL のまま動く。
+
+## ビルドの仕組み(Issue #392)
+
+- オブジェクトはアーキテクチャごとに1回だけ`worker/mods/obj/{32,64}/`へコンパイルし、タイトル間で共有する
+  （gitignore済み）。`-MMD -MP`で依存関係を自動生成するので、`common/*.h`を変えても該当オブジェクトが
+  再ビルドされる。
+- 共通フラグは`-std=c++20 -Wall -Wextra -Werror`（`-Wno-cast-function-type`のみ除外。GetProcAddressの
+  FARPROCキャストは避けられないため）、リンクは`-s`（strip）。警告は残さず直すこと。
+- Steamworks APIスタブは`steam_stub/steam_api_stub.cpp`の1本から、`-DAPP_ID`・`-DLOG_NAME`だけ変えて
+  th06c用・th06nc用の2つをビルドする。出力パスは`th06c_steam_stub/build/`・`th06nc_steam_stub/build/`のまま。
 
 ## 一括ビルド
 
@@ -50,8 +60,7 @@ make -C worker/mods injector64
 
 th06cは他タイトルと異なり **th06c.exeがPE32+(x86-64)** なので、injector・MOD・
 Steamworks APIスタブのすべてを `x86_64-w64-mingw32-g++` でクロスビルドする
-（`-static`必須。付けないとwine実行時にlibgcc_s/libstdc++が見つからずDLL注入が
-失敗する、th20と同じ理由。`worker/docs/titles/th06c.md`参照）。入力はDirectInputでは
+（`-static`付き。`worker/docs/titles/th06c.md`参照）。入力はDirectInputでは
 なくGetProcAddressフック方式のため、`dinput_hook.cpp`・`window_wait.cpp`は使わない
 （起動ダイアログの除外ロジックがth06c専用に`dllmain.cpp`内へ実装済み）。
 
@@ -111,9 +120,11 @@ make -C worker/mods th12
 
 th20 はフック3つ（Present 制御・DirectSound 周波数・fps 表示補正）が追加で要る。
 
-**`-static` が必須**。付けないと wine 実行時に `libgcc_s_dw2-1.dll` /
-`libstdc++-6.dll` が見つからず **DLL 注入が失敗する**（th20 固有で判明、
-touhou-recorder reports/44）。
+`-static` を付けてビルドする（th20 で判明した、wine 実行時に `libgcc_s_dw2-1.dll` /
+`libstdc++-6.dll` が見つからず DLL 注入が失敗する問題への対策、touhou-recorder reports/44）。
+ただし objdump で確認すると、32bit DLL のインポートは `-static` の有無にかかわらず
+`KERNEL32`・`msvcrt`・`USER32` だけで、`-static` 無しの th10 等でも注入できている。全タイトルを
+`-static` に揃えるかは、全タイトルの MOD 統合テストを伴う別の判断（Issue #392 では揃えていない）。
 
 ```bash
 make -C worker/mods th20
@@ -121,9 +132,8 @@ make -C worker/mods th20
 
 ### th06 / th07 / th08
 
-`fps_monitor.cpp` を含めるかどうかだけが違う。th06/th07 は含めず、th08 は含める
-（fps 暴走検知用、touhou-recorder reports/22）。`score_monitor.cpp`（リプレイずれ
-判定用のスコア監視、Issue #103）は3タイトルとも共通で含める。
+th08 と th06 は fps 表示補正（`fps_display_hook.cpp`）を含め、th07 は含めない。
+`score_monitor.cpp`（リプレイずれ判定用のスコア監視、Issue #103）は3タイトルとも共通で含める。
 
 ```bash
 make -C worker/mods th06
@@ -156,7 +166,8 @@ make -C worker/mods th13
 th15はth10/th12と同じPressKey（DIK経由）を使う（`InstallKeyboardStateHook`は不要。
 「TH10以降のエンジンはGetKeyboardState」という経験則はth15には当てはまらない、
 `worker/docs/titles/th15.md`）。フック構成はth20と同じ（Present制御・DirectSound
-周波数、fps表示補正フックは無し）で、**`-static`が必須**（th20と同じ理由）。
+周波数・fps表示補正フック。`ViaCaller`方式で`dllmain.cpp`から組み込む）で、`-static`付きでビルドする
+（th20と同じ理由）。
 
 ```bash
 make -C worker/mods th15
