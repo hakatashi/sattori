@@ -59,7 +59,7 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    条件不成立（既に起動済み）なら `JobAlreadyStartedError` を捕まえて現在の状態を
    冪等に返すだけで、Step Functionsは再起動しない。
 2. **`sfn/acquireGpuSlot.ts`**（GPU vCPU容量リース、Issue #270）が最初に呼ばれる。
-   次に試す録画の段（`currentRecordingStep(job)`、§4）がGPUのジョブだけ`GpuSlotsTable`でvCPU容量を会計し、
+   次に試すEC2の段（`nextEc2Step(job)`、自宅の段は飛ばす。§4）がGPUのジョブだけ`GpuSlotsTable`でvCPU容量を会計し、
    空きが無ければ`WaitForGpuSlot`（アダプティブな間隔）を挟んで自分自身へ戻る
    ループを回す。投入順（FIFO）は`JobsTable`のsparse GSI`GpuQueueIndex`
    （PK=`gpuQueueState`, SK=`gpuQueuedAt`）で守り、列の先頭でなければ枠取りを
@@ -67,7 +67,10 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
    した待機者は先頭判定から除外する（head-of-line blocking対策）。非GPUジョブは
    `GpuSlotsTable`にも`gpuQueue*`属性にも一切触れず即座に通過する。詳細・設計根拠は
    [`0056`](../../docs/decisions/0056-gpu-vcpu-lease-and-queue.md)。
-   GPU以外の段を持つジョブ（`skippableGpuStepIds()`）は、30分以上待ったらGPUの段を使い切ったものとして
+   GPUの段がCPUの段より後ろにある計画では、`Launch`がCPUの段を使い切ってGPUの段に着いた時点でリースが無く
+   例外を投げ、`HandleFailure`の通常のリトライでここへ戻って待ち行列に入る
+   （[`0073`](../../docs/decisions/0073-gpu-lease-for-next-ec2-step-and-capture-mode.md)）。
+   GPUの段より後ろにGPU以外の段を持つジョブ（`skippableGpuStepIds()`）は、30分以上待ったらGPUの段を使い切ったものとして
    `capacityExhaustedTargets`へ記録して待機列を抜け、`Launch`へ進む。クォータ超過などが3回目以降まで続いた
    `HandleFailure`も同様（[`0066`](../../docs/decisions/0066-recording-fallback-plan-as-config.md)）。
 3. `sfn/launch.ts`（`waitForTaskToken`パターン、タスクタイムアウト150分・ハートビート
@@ -145,6 +148,9 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 `Launch`は先頭から試し、Spot在庫の枯渇なら段を`capacityExhaustedTargets`へ記録して同じ呼び出しの中で次の段へ
 進む。全段を使い切ったら`capacity_exhausted`で失敗させる。**フォールバックを変えるときは配列だけを書き換え、
 ここに段やタイトルの分岐を書かないこと**（[`0066`](../../docs/decisions/0066-recording-fallback-plan-as-config.md)）。
+段は`captureMode`も持ち、`Launch`が`options.captureMode`へ書く。`frameSync`の段ではワーカーへ
+`CAPTURE_MODE=frame_sync`を渡し`FPS_LIMIT_TARGET_HZ`は付けない（`workerEnv.ts`）。`maxEstimatedDurationSeconds`
+を超える推定尺のジョブは、その段を`capacityExhaustedTargets`へ記録して飛ばす。
 検証用の管理設定（`skipGpuSteps`・`forceGpuFallbackRegion`）は段の除外として読む（`recordingSteps.ts`）。
 
 EC2の段は`launchTierFor()`がLaunch Template・サブネット・ワーカーイメージへ解決し、サブネット（=AZ）×

@@ -1,5 +1,4 @@
 import {
-  currentRecordingStep,
   estimateGpuOccupancySeconds,
   estimateQueueWaitSeconds,
   GPU_QUEUE_INDEX,
@@ -8,6 +7,7 @@ import {
   GPU_VCPU_QUOTA,
   isGpuStep,
   isQueueWaitTimedOut,
+  nextEc2Step,
   nextPollIntervalSeconds,
   recordingSpeedForStep,
   recordingSpeedOf,
@@ -178,7 +178,9 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
 
   // 管理設定でGPUの段を飛ばしているジョブにGPU枠を確保させない（`Launch`と同じ判定）。
   const excluded = await loadRecordingStepFilter(config, event.jobId);
-  const step = currentRecordingStep(job, excluded);
+  // 自宅の段は使い切りにならず先頭に残り続けるので、次に試す**EC2の段**で判定する
+  // （自宅 → CPU → GPU の計画でも、CPUを使い切ったあとGPUの段でリースを取れるように。`docs/decisions/0073`）。
+  const step = nextEc2Step(job, excluded);
   if (step === null || !isGpuStep(step)) {
     return { jobId: event.jobId, attempt: event.attempt, acquired: true, timedOut: false, waitSeconds: 0 };
   }

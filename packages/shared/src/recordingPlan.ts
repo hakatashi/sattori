@@ -29,8 +29,10 @@ import type { RecordingSpeed } from "./recordingSpeed.js";
  *
  * - 段の`id`は配列の中で一意にする。デプロイの時点で走っているジョブの記録を読み違えないよう、
  *   既存の`id`の意味は変えないこと。
- * - **GPUの段はGPU以外の段より前に置く**。GPU vCPU枠のリースは`AcquireGpuSlot`ステートが
- *   最初の段についてだけ確保し、`Launch`はGPU以外の段へ進むときに返却するため。
+ * - GPUの段は配列のどこに置いてもよい（先頭でも最後でも動く、`docs/decisions/0073`）。GPU vCPU枠の
+ *   リースは、次に試すEC2の段（自宅の段を除く）がGPUのとき`AcquireGpuSlot`が確保する。CPUの段を
+ *   使い切ってからGPUの段へ来た場合は、`Launch`が`GpuLeaseRequired`で失敗してリトライ経由で
+ *   `AcquireGpuSlot`へ戻す。
  * - `region`は一次リージョン（CPU・GPUとも）か、GPUのフォールバック先リージョン（GPUのみ）。
  *   それ以外のリージョンにはLaunch Template・AMI・出力バケットが無い（`apps/api/src/ec2.ts`）。
  *
@@ -40,25 +42,56 @@ import type { RecordingSpeed } from "./recordingSpeed.js";
  */
 export type RecordingStep = HomeRecordingStep | Ec2RecordingStep;
 
-/** 自宅ワーカーへのオファー（Issue #49）。GPUを持たない前提なのでCPU描画の段。 */
-export interface HomeRecordingStep {
-  id: string;
-  kind: "home";
-  speed: RecordingSpeed;
+/**
+ * 録画方式（Epic #399、Issue #387）。
+ *
+ * - `realtime`: ゲームを実時間で動かし、外からx11grabで取り込む（従来の方式）。`speed`で倍速・低速にする。
+ * - `frameSync`: ゲームのPresentごとにMODがバックバッファを書き出し、タイマーを仮想化して1フレーム
+ *   1/60秒ずつ進める。倍率という概念が無いので`speed`は1固定で、`FPS_LIMIT_TARGET_HZ`とは併用できない。
+ *
+ * ワーカーへは`CAPTURE_MODE=frame_sync`として渡す（`apps/api/src/workerEnv.ts`）。
+ */
+export type CaptureMode = "realtime" | "frameSync";
+
+/** 型で`frameSync`と`speed !== 1`の組み合わせを作れなくする。 */
+export type StepCapture =
+  | { captureMode: "realtime"; speed: RecordingSpeed }
+  | { captureMode: "frameSync"; speed: 1 };
+
+/** 段の種類によらない任意の設定。 */
+export interface RecordingStepLimits {
+  /**
+   * リプレイの推定尺（`JobRecord.estimatedDurationSeconds`）がこれを超えるジョブは、この段を飛ばす
+   * （`remainingRecordingSteps()`）。1280x960タイトルの2xlarge段のように、尺の長いリプレイでは
+   * 上限に当たりうる段への保険。推定尺が不明（null）のジョブは飛ばさない。
+   */
+  maxEstimatedDurationSeconds?: number;
+  /**
+   * 実時間効率（1.0なら尺と同じ時間で録れる）。フロントのETA用で、frameSyncの段はCPUの性能で
+   * 速度が決まるため段ごとに実測値を入れる。未設定ならETAは従来の見積もり（`recordingSpeed`）。
+   */
+  estimatedRealtimeFactor?: number;
 }
 
+/** 自宅ワーカーへのオファー（Issue #49）。GPUを持たない前提なのでCPU描画の段。 */
+export type HomeRecordingStep = {
+  id: string;
+  kind: "home";
+} & StepCapture &
+  RecordingStepLimits;
+
 /** EC2 Spotの1段。全サブネット×候補タイプを1回の`CreateFleet`に渡す。 */
-export interface Ec2RecordingStep {
+export type Ec2RecordingStep = {
   id: string;
   kind: "ec2";
   /** GPU系（GPU用Launch Template・`worker-gpu`イメージ・GPU vCPUリース）か。 */
   platform: "gpu" | "cpu";
   region: string;
   instanceTypes: readonly string[];
-  speed: RecordingSpeed;
-  /** 難易度ごとの速度の上書き（`replayInfo.difficulty`が一致したときだけ使う）。 */
+  /** 難易度ごとの速度の上書き（`replayInfo.difficulty`が一致したときだけ使う。`realtime`の段のみ）。 */
   speedByDifficulty?: Readonly<Record<string, RecordingSpeed>>;
-}
+} & StepCapture &
+  RecordingStepLimits;
 
 /** 一次リージョン（`AGENTS.md` §2）。 */
 export const PRIMARY_RECORDING_REGION = "eu-south-2";
@@ -146,6 +179,7 @@ function gpuSteps(speed: RecordingSpeed): Ec2RecordingStep[] {
       platform: "gpu",
       region: PRIMARY_RECORDING_REGION,
       instanceTypes: GPU_INSTANCE_TYPES,
+      captureMode: "realtime",
       speed,
     },
     {
@@ -154,12 +188,18 @@ function gpuSteps(speed: RecordingSpeed): Ec2RecordingStep[] {
       platform: "gpu",
       region: GPU_FALLBACK_RECORDING_REGION,
       instanceTypes: GPU_INSTANCE_TYPES,
+      captureMode: "realtime",
       speed,
     },
   ];
 }
 
-const HOME_NATIVE_STEP: HomeRecordingStep = { id: "home", kind: "home", speed: NATIVE_RECORDING_SPEED };
+const HOME_NATIVE_STEP: HomeRecordingStep = {
+  id: "home",
+  kind: "home",
+  captureMode: "realtime",
+  speed: NATIVE_RECORDING_SPEED,
+};
 
 /**
  * CPUの段。`idPrefix`はCPUの段を2つ以上持つタイトルで段を区別するためのもの（既定の`cpu`は
@@ -177,6 +217,7 @@ function cpuStep(
     platform: "cpu",
     region: PRIMARY_RECORDING_REGION,
     instanceTypes,
+    captureMode: "realtime",
     speed,
     ...(speedByDifficulty ? { speedByDifficulty } : {}),
   };
@@ -260,9 +301,29 @@ export interface RecordingStepState {
    * これがあるジョブはGPUの段を使い切ったものとして扱う（デプロイを跨いで走っているジョブがGPUへ戻らないように）。
    */
   requestedRecordingSpeed?: unknown;
+  /** リプレイの推定尺（秒）。`maxEstimatedDurationSeconds`を持つ段の判定に使う。 */
+  estimatedDurationSeconds?: number | null;
 }
 
-/** まだ試せる段（使い切った段と`excluded`が真の段を除く）。 */
+/** 推定尺が段の`maxEstimatedDurationSeconds`を超えているか（推定尺が不明なら false）。 */
+function exceedsMaxDuration(step: RecordingStep, job: RecordingStepState): boolean {
+  const limit = step.maxEstimatedDurationSeconds;
+  const estimated = job.estimatedDurationSeconds;
+  return limit !== undefined && typeof estimated === "number" && estimated > limit;
+}
+
+/**
+ * 推定尺が長すぎて飛ばす段（`maxEstimatedDurationSeconds`）のうち、まだ使い切りとして記録されていない
+ * もの。`Launch`が`capacityExhaustedTargets`へ記録し、理由をログに残す。
+ */
+export function durationSkippedStepIds(job: RecordingStepState): string[] {
+  const exhausted = job.capacityExhaustedTargets ?? [];
+  return recordingPlanFor(job.game)
+    .filter((step) => !exhausted.includes(step.id) && exceedsMaxDuration(step, job))
+    .map((step) => step.id);
+}
+
+/** まだ試せる段（使い切った段・`excluded`が真の段・推定尺が上限を超える段を除く）。 */
 export function remainingRecordingSteps(
   job: RecordingStepState,
   excluded: RecordingStepFilter = () => false,
@@ -270,7 +331,11 @@ export function remainingRecordingSteps(
   const exhausted = job.capacityExhaustedTargets ?? [];
   const legacyFellBack = job.requestedRecordingSpeed !== undefined;
   return recordingPlanFor(job.game).filter(
-    (step) => !exhausted.includes(step.id) && !excluded(step) && !(legacyFellBack && isGpuStep(step)),
+    (step) =>
+      !exhausted.includes(step.id) &&
+      !excluded(step) &&
+      !(legacyFellBack && isGpuStep(step)) &&
+      !exceedsMaxDuration(step, job),
   );
 }
 
@@ -283,14 +348,32 @@ export function currentRecordingStep(
 }
 
 /**
+ * 次に試すEC2の段（自宅ワーカーの段は飛ばして数える）。自宅の段はclaimされなくても使い切りに
+ * ならず先頭に残り続けるため、`currentRecordingStep()`ではGPU vCPUリースの要否を判定できない
+ * （`docs/decisions/0073`）。EC2の段が残っていなければ null。
+ */
+export function nextEc2Step(
+  job: RecordingStepState,
+  excluded?: RecordingStepFilter,
+): Ec2RecordingStep | null {
+  const step = remainingRecordingSteps(job, excluded).find((candidate) => candidate.kind === "ec2");
+  return step?.kind === "ec2" ? step : null;
+}
+
+/**
  * GPUの段を飛ばせるなら、飛ばす段の`id`を返す（GPU枠の長時間待ち・クォータ超過、Issue #289・#316）。
- * 次に試す段がGPUで、その後ろにGPU以外の段が残っているときだけ。飛ばせなければ空配列
- * （後ろのGPU以外の段を使い切ったジョブは、待つか失敗するしかない）。
+ * 次に試すEC2の段がGPUで、**最初のGPUの段より後ろ**にGPU以外の段が残っているときだけ。飛ばせなければ
+ * 空配列（後ろにGPU以外の段が無い——GPUの段が最後の計画や、後ろの段を使い切ったジョブは、待つか
+ * 失敗するしかない。前にある自宅の段は飛ばしても戻るだけで意味が無いので数えない）。
  */
 export function skippableGpuStepIds(job: RecordingStepState, excluded?: RecordingStepFilter): string[] {
   const remaining = remainingRecordingSteps(job, excluded);
-  const first = remaining[0];
-  if (!first || !isGpuStep(first) || !remaining.some((step) => !isGpuStep(step))) {
+  const firstEc2 = remaining.find((step) => step.kind === "ec2");
+  if (!firstEc2 || !isGpuStep(firstEc2)) {
+    return [];
+  }
+  const afterFirstGpu = remaining.slice(remaining.indexOf(firstEc2));
+  if (!afterFirstGpu.some((step) => !isGpuStep(step))) {
     return [];
   }
   return remaining.filter(isGpuStep).map((step) => step.id);
@@ -306,6 +389,16 @@ export function initialRecordingSpeed(job: {
 }): RecordingSpeed {
   const first = recordingPlanFor(job.game)[0];
   return first ? recordingSpeedForStep(first, job) : NATIVE_RECORDING_SPEED;
+}
+
+/** ジョブの録画オプションから録画方式を読む（欠損・不正値は`realtime`）。 */
+export function captureModeOf(options: { captureMode?: unknown } | undefined): CaptureMode {
+  return options?.captureMode === "frameSync" ? "frameSync" : "realtime";
+}
+
+/** ジョブ作成時に`options.captureMode`へ入れる値（最初の段の録画方式。`initialRecordingSpeed()`と対）。 */
+export function initialCaptureMode(job: { game: GameId }): CaptureMode {
+  return recordingPlanFor(job.game)[0]?.captureMode ?? "realtime";
 }
 
 /** 自宅ワーカーの段を持つタイトル（`home-worker/src/config.ts`の既定・拒否リスト）。 */

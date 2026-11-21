@@ -8,6 +8,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import type {
+  CaptureMode,
   JobRecord,
   JobStatus,
   RecordingSpeed,
@@ -496,7 +497,7 @@ export async function clearGpuQueueState(
 }
 
 /**
- * これから割り当てを試みる録画の段（`recordingPlan.ts`、Issue #317）と、その段の録画速度を書く。
+ * これから割り当てを試みる録画の段（`recordingPlan.ts`、Issue #317）と、その段の録画速度・録画方式を書く。
  * `Launch`がワーカーの環境変数を組み立てる前に呼ぶ（環境変数・コスト帯・表示はすべて
  * `options.recordingSpeed`から導かれる）。
  *
@@ -508,17 +509,19 @@ export async function setRecordingStep(
   jobId: string,
   stepId: string,
   speed: RecordingSpeed,
+  captureMode: CaptureMode,
 ): Promise<boolean> {
   try {
     await client.send(
       new UpdateCommand({
         TableName: table,
         Key: { jobId },
-        UpdateExpression: "SET #o.recordingSpeed = :speed, recordingStepId = :step, updatedAt = :u",
+        UpdateExpression: "SET #o.recordingSpeed = :speed, #o.captureMode = :mode, recordingStepId = :step, updatedAt = :u",
         ConditionExpression: "attribute_not_exists(stopRequestedAt) AND #s <> :done",
         ExpressionAttributeNames: { "#o": "options", "#s": "status" },
         ExpressionAttributeValues: {
           ":speed": speed,
+          ":mode": captureMode,
           ":step": stepId,
           ":u": new Date().toISOString(),
           ":done": "done",

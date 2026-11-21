@@ -1,12 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { SUPPORTED_GAME_IDS } from "./games.js";
 import type { GameId } from "./games.js";
 import {
+  captureModeOf,
   currentRecordingStep,
+  durationSkippedStepIds,
   GPU_FALLBACK_RECORDING_REGION,
   HOME_WORKER_GAME_IDS,
+  initialCaptureMode,
   initialRecordingSpeed,
   isGpuStep,
+  nextEc2Step,
   PRIMARY_RECORDING_REGION,
   RECORDING_PLANS,
   recordingPlanFor,
@@ -43,11 +47,13 @@ describe("RECORDING_PLANS", () => {
     }
   });
 
-  it("GPUの段はGPU以外の段より前にある（GPUリースの確保・返却の前提）", () => {
+  it("今の段はすべて実時間（realtime）録画で、frameSyncの段は速度1固定（Issue #387）", () => {
     for (const [game, steps] of Object.entries(RECORDING_PLANS)) {
-      const firstNonGpu = steps!.findIndex((step) => !isGpuStep(step));
-      if (firstNonGpu !== -1) {
-        expect(steps!.slice(firstNonGpu).some(isGpuStep), game).toBe(false);
+      for (const step of steps!) {
+        expect(step.captureMode, `${game} ${step.id}`).toBe("realtime");
+        if (step.captureMode === "frameSync") {
+          expect(step.speed).toBe(1);
+        }
       }
     }
   });
@@ -227,5 +233,107 @@ describe("HOME_WORKER_GAME_IDS", () => {
     expect(HOME_WORKER_GAME_IDS).not.toContain("th20");
     expect(HOME_WORKER_GAME_IDS).toContain("th08");
     expect(HOME_WORKER_GAME_IDS).toContain("th13");
+  });
+});
+
+
+/** 「自宅 → CPU(frameSync) ×2 → GPU」。GPUの段が最後に来る新しい計画（Epic #399）の架空版。 */
+const FRAME_SYNC_PLAN: readonly RecordingStep[] = [
+  { id: "home", kind: "home", captureMode: "frameSync", speed: 1 },
+  {
+    id: "cpu-fs-2xl:eu-south-2",
+    kind: "ec2",
+    platform: "cpu",
+    region: PRIMARY_RECORDING_REGION,
+    instanceTypes: ["c7i.2xlarge"],
+    captureMode: "frameSync",
+    speed: 1,
+    maxEstimatedDurationSeconds: 55 * 60,
+    estimatedRealtimeFactor: 1.2,
+  },
+  {
+    id: "cpu-fs-4xl:eu-south-2",
+    kind: "ec2",
+    platform: "cpu",
+    region: PRIMARY_RECORDING_REGION,
+    instanceTypes: ["c7i.4xlarge"],
+    captureMode: "frameSync",
+    speed: 1,
+  },
+  {
+    id: "gpu:eu-south-2",
+    kind: "ec2",
+    platform: "gpu",
+    region: PRIMARY_RECORDING_REGION,
+    instanceTypes: ["g6f.2xlarge"],
+    captureMode: "realtime",
+    speed: 2,
+  },
+];
+
+describe("GPUの段が最後にある計画（Issue #387）", () => {
+  const plans = RECORDING_PLANS as Partial<Record<GameId, readonly RecordingStep[]>>;
+  const original = plans.th12;
+  afterEach(() => {
+    plans.th12 = original;
+  });
+
+  it("nextEc2Stepは自宅の段を飛ばして次のEC2の段を返す", () => {
+    plans.th12 = FRAME_SYNC_PLAN;
+    expect(currentRecordingStep({ game: "th12" })?.id).toBe("home");
+    expect(nextEc2Step({ game: "th12" })?.id).toBe("cpu-fs-2xl:eu-south-2");
+    expect(
+      nextEc2Step({ game: "th12", capacityExhaustedTargets: ["cpu-fs-2xl:eu-south-2", "cpu-fs-4xl:eu-south-2"] })?.id,
+    ).toBe("gpu:eu-south-2");
+    expect(
+      nextEc2Step({
+        game: "th12",
+        capacityExhaustedTargets: ["cpu-fs-2xl:eu-south-2", "cpu-fs-4xl:eu-south-2", "gpu:eu-south-2"],
+      }),
+    ).toBeNull();
+  });
+
+  it("GPUの段が最後なら、後ろに段が無いのでskippableGpuStepIdsは空（自宅の段へは戻らない）", () => {
+    plans.th12 = FRAME_SYNC_PLAN;
+    const exhaustedCpu = ["cpu-fs-2xl:eu-south-2", "cpu-fs-4xl:eu-south-2"];
+    expect(skippableGpuStepIds({ game: "th12", capacityExhaustedTargets: exhaustedCpu })).toEqual([]);
+    // CPUの段が残っているうちは、次のEC2の段がGPUでないので飛ばす対象ではない。
+    expect(skippableGpuStepIds({ game: "th12" })).toEqual([]);
+  });
+
+  it("GPUの段が先頭の計画では従来どおり、後ろにGPU以外の段があれば飛ばせる", () => {
+    plans.th12 = [FRAME_SYNC_PLAN[3]!, FRAME_SYNC_PLAN[0]!, FRAME_SYNC_PLAN[2]!];
+    expect(skippableGpuStepIds({ game: "th12" })).toEqual(["gpu:eu-south-2"]);
+  });
+
+  it("推定尺がmaxEstimatedDurationSecondsを超える段は残りの段から外れる", () => {
+    plans.th12 = FRAME_SYNC_PLAN;
+    const long = { game: "th12", estimatedDurationSeconds: 56 * 60 } as const;
+    expect(remainingRecordingSteps(long).map((step) => step.id)).toEqual([
+      "home",
+      "cpu-fs-4xl:eu-south-2",
+      "gpu:eu-south-2",
+    ]);
+    expect(durationSkippedStepIds(long)).toEqual(["cpu-fs-2xl:eu-south-2"]);
+    // 記録済みなら重複して返さない。
+    expect(
+      durationSkippedStepIds({ ...long, capacityExhaustedTargets: ["cpu-fs-2xl:eu-south-2"] }),
+    ).toEqual([]);
+  });
+
+  it("上限ちょうど・推定尺が不明のジョブは段を飛ばさない", () => {
+    plans.th12 = FRAME_SYNC_PLAN;
+    expect(remainingRecordingSteps({ game: "th12", estimatedDurationSeconds: 55 * 60 })).toHaveLength(4);
+    expect(remainingRecordingSteps({ game: "th12", estimatedDurationSeconds: null })).toHaveLength(4);
+    expect(remainingRecordingSteps({ game: "th12" })).toHaveLength(4);
+  });
+
+  it("captureModeOf・initialCaptureMode", () => {
+    expect(captureModeOf(undefined)).toBe("realtime");
+    expect(captureModeOf({ captureMode: "frameSync" })).toBe("frameSync");
+    expect(captureModeOf({ captureMode: "bogus" })).toBe("realtime");
+    plans.th12 = FRAME_SYNC_PLAN;
+    expect(initialCaptureMode({ game: "th12" })).toBe("frameSync");
+    expect(initialRecordingSpeed({ game: "th12" })).toBe(1);
   });
 });

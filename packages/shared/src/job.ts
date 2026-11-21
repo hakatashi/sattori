@@ -1,5 +1,6 @@
 import type { GameId } from "./games.js";
 import type { SpeedupFallbackReason } from "./gpuRecording.js";
+import type { CaptureMode } from "./recordingPlan.js";
 import type { RecordingSpeed } from "./recordingSpeed.js";
 import type { SupportedLanguage } from "./language.js";
 import type { ReplayInfo } from "./replay.js";
@@ -70,6 +71,12 @@ export interface RecordingOptions {
    * 必ず`recordingSpeedOf()`を通すこと（欠損は等倍）。
    */
   recordingSpeed?: RecordingSpeed;
+  /**
+   * 録画方式（Epic #399、Issue #387）。`recordingSpeed`と同じく録画の段が決め、`Launch`が実際に割り当てる
+   * 段の値を書く。ワーカーへは`frameSync`のとき`CAPTURE_MODE=frame_sync`として渡る。無い（Issue #387の
+   * 導入前に作られた）ジョブは`realtime`。読むときは`captureModeOf()`を通すこと。
+   */
+  captureMode?: CaptureMode;
 }
 
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {

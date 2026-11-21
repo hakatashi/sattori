@@ -102,10 +102,15 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 
 - `RecordingStep`: `kind: "home"`（自宅ワーカーへのオファー）か`kind: "ec2"`（`platform`・`region`・
   `instanceTypes`・`speed`、任意で`speedByDifficulty`）。候補インスタンスタイプの定数もここにある。
-- 配列の制約: 段の`id`は一意（既存の`capacityExhaustedTargets`と互換に保つ）、GPUの段はGPU以外の段より前、
+- 全段が`captureMode`（`"realtime"`＝従来の実時間録画、`"frameSync"`＝フレーム同期、`speed`は1固定）を持つ。
+  任意で`maxEstimatedDurationSeconds`（推定尺がこれを超えるジョブはその段を飛ばす）・`estimatedRealtimeFactor`
+  （フロントのETA用）。[`0073`](../../docs/decisions/0073-gpu-lease-for-next-ec2-step-and-capture-mode.md)。
+- 配列の制約: 段の`id`は一意（既存の`capacityExhaustedTargets`と互換に保つ）、
   リージョンは一次リージョンかGPUのフォールバック先（GPUのみ）。`recordingPlan.test.ts`が守る。
-- `currentRecordingStep(job, excluded?)`: 使い切った段（`capacityExhaustedTargets`）と除外条件の段を除いた
-  最初の段。`skippableGpuStepIds()`: GPU枠の長時間待ち・クォータ超過で飛ばすGPUの段。
+  GPUの段は先頭にも最後にも置ける。
+- `currentRecordingStep(job, excluded?)`: 使い切った段（`capacityExhaustedTargets`）・除外条件の段・推定尺が
+  上限を超える段を除いた最初の段。`nextEc2Step()`: そこから自宅の段を飛ばした次のEC2の段（GPUリースの判定に使う）。
+  `skippableGpuStepIds()`: GPU枠の長時間待ち・クォータ超過で飛ばすGPUの段（後ろにGPU以外の段があるときだけ）。
 - `recordingSpeedForStep(step, job)`・`initialRecordingSpeed(job)`: 段の速度（難易度の上書きを解決）。
 - `HOME_WORKER_GAME_IDS`: 段に自宅ワーカーを持つタイトル。
 - 倍率は起動側が`FPS_LIMIT_TARGET_HZ`（60×倍率）と`GPU_WORKER=1`の環境変数で渡す。ワーカー

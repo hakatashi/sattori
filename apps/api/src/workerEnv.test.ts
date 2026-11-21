@@ -74,6 +74,31 @@ describe("buildWorkerEnv", () => {
     expect(env.FPS_LIMIT_TARGET_HZ).toBeUndefined();
   });
 
+  it("frameSyncの段では CAPTURE_MODE=frame_sync を付け、FPS_LIMIT_TARGET_HZ は付けない(Issue #387)", () => {
+    const frameSync = { ...job, options: { ...job.options, captureMode: "frameSync", recordingSpeed: 1 } } as unknown as JobRecord;
+    const env = buildWorkerEnv(config, frameSync, "task-token", { spotInterruptionWatch: true, dataRegion: config.ec2.region, gpuWorker: false });
+
+    expect(env.CAPTURE_MODE).toBe("frame_sync");
+    expect(env.FPS_LIMIT_TARGET_HZ).toBeUndefined();
+  });
+
+  it("frameSyncの段なら、速度が1でなくても FPS_LIMIT_TARGET_HZ は付けない（併用できない）", () => {
+    const frameSync = { ...job, options: { ...job.options, captureMode: "frameSync", recordingSpeed: 2 } } as unknown as JobRecord;
+    const env = buildWorkerEnv(config, frameSync, "task-token", { spotInterruptionWatch: true, dataRegion: config.ec2.region, gpuWorker: true });
+
+    expect(env.CAPTURE_MODE).toBe("frame_sync");
+    expect(env.FPS_LIMIT_TARGET_HZ).toBeUndefined();
+  });
+
+  it("realtimeの段（captureModeが無い旧ジョブを含む）には CAPTURE_MODE を付けない", () => {
+    const realtime = { ...job, options: { ...job.options, captureMode: "realtime", recordingSpeed: 2 } } as unknown as JobRecord;
+    const env = buildWorkerEnv(config, realtime, "task-token", { spotInterruptionWatch: true, dataRegion: config.ec2.region, gpuWorker: true });
+
+    expect(env.CAPTURE_MODE).toBeUndefined();
+    expect(env.FPS_LIMIT_TARGET_HZ).toBe("120");
+    expect(buildWorkerEnv(config, job, "task-token", { spotInterruptionWatch: true, dataRegion: config.ec2.region, gpuWorker: false }).CAPTURE_MODE).toBeUndefined();
+  });
+
   it("spotInterruptionWatch が有効なら SPOT_INTERRUPTION_WATCH を付ける(EC2起動時)", () => {
     const env = buildWorkerEnv(config, job, "task-token", {
       spotInterruptionWatch: true, dataRegion: config.ec2.region, gpuWorker: false });

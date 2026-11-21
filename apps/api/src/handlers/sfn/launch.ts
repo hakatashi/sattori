@@ -1,4 +1,5 @@
 import {
+  durationSkippedStepIds,
   isGpuStep,
   recordingSpeedForStep,
   remainingRecordingSteps,
@@ -95,9 +96,26 @@ async function assignWorker(
   // 試した段のうち、Spot在庫の枯渇以外の理由（一部のサブネットのクォータ超過など）で
   // 起動できなかった段があるか。あればリトライの余地があるので、失敗させずに例外を投げる。
   let retryable = false;
-  // この呼び出しでGPUの段を試したか。GPUの段はGPU以外の段より前にある（`recordingPlan.ts`）ので、
-  // 試した後でGPU以外の段へ進むならリースはもう要らない。
+  // この呼び出しでGPUの段を試したか。GPUの段を試した後でGPU以外の段へ進むならリースはもう要らない
+  // （GPUの段が最後の計画では、GPUの段の後に段が無いので返却は`HandleFailure`・`ReleaseGpuSlot`に任せる）。
   let triedGpu = false;
+
+  // 推定尺が段の`maxEstimatedDurationSeconds`を超えるジョブはその段を飛ばす（Issue #387）。
+  // `remainingRecordingSteps()`が除外済みなので、ここでは記録とログだけを行う。
+  const durationSkipped = durationSkippedStepIds(job);
+  if (durationSkipped.length > 0) {
+    exhausted.push(...durationSkipped);
+    await recordExhaustedSteps(config, event.jobId, exhausted);
+    console.log(
+      JSON.stringify({
+        event: "launch_steps_skipped",
+        jobId: job.jobId,
+        reason: "estimated_duration_exceeds_step_limit",
+        estimatedDurationSeconds: job.estimatedDurationSeconds,
+        skipped: durationSkipped,
+      }),
+    );
+  }
 
   const steps = remainingRecordingSteps(job, excluded);
   console.log(
@@ -171,14 +189,30 @@ async function assignWorker(
  */
 async function enterStep(config: ApiConfig, job: JobRecord, step: RecordingStep): Promise<JobRecord> {
   const recordingSpeed = recordingSpeedForStep(step, job);
-  const written = await setRecordingStep(config.jobsTable, job.jobId, step.id, recordingSpeed);
+  const written = await setRecordingStep(
+    config.jobsTable,
+    job.jobId,
+    step.id,
+    recordingSpeed,
+    step.captureMode,
+  );
   if (!written) {
     throw new Error(`ジョブ ${job.jobId} は停止済みか完了済みのため、段 ${step.id} を割り当てません`);
   }
   console.log(
-    JSON.stringify({ event: "launch_step", jobId: job.jobId, stepId: step.id, recordingSpeed }),
+    JSON.stringify({
+      event: "launch_step",
+      jobId: job.jobId,
+      stepId: step.id,
+      recordingSpeed,
+      captureMode: step.captureMode,
+    }),
   );
-  return { ...job, recordingStepId: step.id, options: { ...job.options, recordingSpeed } };
+  return {
+    ...job,
+    recordingStepId: step.id,
+    options: { ...job.options, recordingSpeed, captureMode: step.captureMode },
+  };
 }
 
 /** 複数の段の失敗を1つの例外にまとめる。 */
@@ -266,6 +300,11 @@ async function launchOnEc2(
     // 詳細は `docs/decisions/0056-gpu-vcpu-lease-and-queue.md`）。
     const lease = await getGpuLease(config.gpuSlotsTable, event.jobId);
     if (!lease) {
+      // GPUの段がCPUの段より後ろにある計画で、CPUの段を使い切ってここへ来た場合（`AcquireGpuSlot`は
+      // まだGPUの段を「次の段」と見なしていなかった）。待ち行列を経由するため、リトライで戻す。
+      // 失敗として`HandleFailure`へ渡り、通常のリトライ（`WaitBeforeCheck`の3分と試行回数を1つ消費する）で
+      // `AcquireGpuSlot`へ戻る。CPUの段は使い切りとして記録済みなので、戻った`AcquireGpuSlot`は
+      // GPUの段を次のEC2の段として待ち行列へ入れる（`docs/decisions/0073`）。
       throw new Error(`GPUジョブ ${event.jobId} のvCPUリースが見つかりません`);
     }
     maxVcpu = lease.vcpu;

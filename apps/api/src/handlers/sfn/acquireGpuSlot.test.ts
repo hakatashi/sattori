@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
@@ -9,6 +9,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import { GPU_VCPU_QUOTA, type JobRecord } from "@sattori/shared";
+import { useFrameSyncPlan } from "../../testSupport/frameSyncPlan.js";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -492,5 +493,79 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
 
     const { handler } = await import("./acquireGpuSlot.js");
     await expect(handler({ jobId: "missing", attempt: 1 })).rejects.toThrow(/ジョブが見つかりません/);
+  });
+});
+
+describe("sfn/acquireGpuSlot handler（GPUの段が最後にある計画、Issue #387・docs/decisions/0073）", () => {
+  let restorePlan: () => void;
+  beforeEach(() => {
+    restorePlan = useFrameSyncPlan("th12");
+  });
+  afterEach(() => {
+    restorePlan();
+  });
+
+  function frameSyncJob(capacityExhaustedTargets: string[] = []): JobRecord {
+    return createJobRecord({ game: "th12", status: "queued", jobId: "job-1", capacityExhaustedTargets });
+  }
+
+  it("自宅の段が先頭でも、次のEC2の段がCPUならリースを取らず即acquired:trueを返す", async () => {
+    ddbMock.on(GetCommand).resolves({ Item: frameSyncJob() });
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 1 });
+
+    expect(result.acquired).toBe(true);
+    expect(ddbMock.commandCalls(UpdateCommand)).toHaveLength(0);
+    expect(ddbMock.commandCalls(QueryCommand)).toHaveLength(0);
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("CPUの段を使い切ったあとは、自宅の段が残っていてもGPUのリースを確保する", async () => {
+    ddbMock
+      .on(GetCommand)
+      .resolves({ Item: frameSyncJob(["cpu-fs-2xl:eu-south-2", "cpu-fs-4xl:eu-south-2"]) });
+    ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({ Items: [waitingEntry("job-1", 0)] });
+    ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: 0 }],
+    });
+    ddbMock.on(TransactWriteCommand).resolves({});
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 2 });
+
+    expect(result.acquired).toBe(true);
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(1);
+  });
+
+  it("GPUの待ち行列が満杯なら待つ。後ろにGPU以外の段が無いので30分経っても段を飛ばさない", async () => {
+    ddbMock
+      .on(GetCommand)
+      .resolves({ Item: frameSyncJob(["cpu-fs-2xl:eu-south-2", "cpu-fs-4xl:eu-south-2"]) });
+    // 40分前から待っている。
+    ddbMock.on(UpdateCommand).resolves({
+      Attributes: {
+        gpuQueueEnteredAt: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+        gpuQueuedAt: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+        gpuQueueHeartbeatAt: new Date().toISOString(),
+      },
+    });
+    ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
+      Items: [waitingEntry("job-1", -40 * 60)],
+    });
+    ddbMock.on(QueryCommand, { TableName: REQUIRED_ENV.GPU_SLOTS_TABLE }).resolves({
+      Items: [{ slotKey: "gpu", itemKey: "#quota", usedVcpu: GPU_VCPU_QUOTA }],
+    });
+
+    const { handler } = await import("./acquireGpuSlot.js");
+    const result = await handler({ jobId: "job-1", attempt: 2 });
+
+    expect(result.acquired).toBe(false);
+    expect(result.timedOut).toBe(false);
+    expect(ddbMock.commandCalls(TransactWriteCommand)).toHaveLength(0);
+    const skipWrites = ddbMock
+      .commandCalls(UpdateCommand)
+      .filter((call) => call.args[0].input.ExpressionAttributeValues?.[":targets"] !== undefined);
+    expect(skipWrites).toHaveLength(0);
   });
 });

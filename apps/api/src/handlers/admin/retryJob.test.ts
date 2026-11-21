@@ -89,6 +89,7 @@ describe("buildRetryJob", () => {
       th10BugfixMarisaB: false,
       th06ncHighResolution: false,
       recordingSpeed: 2,
+      captureMode: "realtime",
     });
     expect(retried.email).toBe("user@example.com");
     expect(retried.language).toBe("en");
