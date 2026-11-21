@@ -16,6 +16,8 @@ const REQUIRED_ENV: Record<string, string> = {
   JOBS_TABLE: "sattori-jobs",
   WORKER_IMAGE: "123456789012.dkr.ecr.us-east-1.amazonaws.com/sattori-worker:latest",
   WORKER_GPU_IMAGE: "123456789012.dkr.ecr.us-east-1.amazonaws.com/sattori-worker-gpu:latest",
+  WORKER_EXPERIMENTAL_REPO: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker-experimental",
+  WORKER_EXPERIMENTAL_GPU_REPO: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker-experimental-gpu",
   TITLE_ASSETS_BUCKET: "title-assets-bucket",
   WORKER_LOG_GROUP: "/sattori/worker",
   WORKER_SUBNET_IDS: "subnet-xxxx,subnet-yyyy",

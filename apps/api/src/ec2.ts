@@ -12,7 +12,7 @@ import {
   type _InstanceType as InstanceType,
   TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
-import type { Ec2RecordingStep, JobRecord } from "@sattori/shared";
+import type { Ec2RecordingStep, ExperimentSpec, JobRecord } from "@sattori/shared";
 import { vcpusForInstanceType } from "@sattori/shared";
 import type { ApiConfig, GpuFallbackConfig } from "./config.js";
 import { workerRegions } from "./config.js";
@@ -405,6 +405,11 @@ export interface LaunchTier {
   candidateInstanceTypes: InstanceType[];
 }
 
+/** 検証用ECRリポジトリのイメージURI（実験ジョブの`workerImageTag`、`docs/decisions/0075`）。 */
+export function experimentalWorkerImage(config: ApiConfig, gpu: boolean, tag: string): string {
+  return `${gpu ? config.workerExperimentalGpuRepo : config.workerExperimentalRepo}:${tag}`;
+}
+
 /**
  * 段をLaunch Template・サブネット・ワーカーイメージへ解決する。一次リージョンならCPU/GPUの
  * Launch Template、GPUのフォールバック先リージョンならそちらのGPU Launch Template（Issue #296）。
@@ -414,8 +419,12 @@ export function launchTierFor(
   config: ApiConfig,
   step: Ec2RecordingStep,
   constraints: LaunchConstraints = {},
+  experiment?: Pick<ExperimentSpec, "workerImageTag">,
 ): LaunchTier | null {
   const gpu = step.platform === "gpu";
+  const experimentalImage = experiment?.workerImageTag
+    ? experimentalWorkerImage(config, gpu, experiment.workerImageTag)
+    : undefined;
   const candidateInstanceTypes = getCandidateInstanceTypes(step, constraints);
   if (step.region === config.ec2.region) {
     return {
@@ -426,12 +435,13 @@ export function launchTierFor(
         LaunchTemplateId: gpu ? config.ec2.gpuLaunchTemplateId : config.ec2.launchTemplateId,
       },
       resolveSubnetIds: async () => config.ec2.subnetIds,
-      workerImage: undefined,
+      workerImage: experimentalImage,
       candidateInstanceTypes,
     };
   }
   const fallback = config.ec2.gpuFallback;
-  if (gpu && fallback !== null && step.region === fallback.region) {
+  // 検証用イメージは一次リージョンにしか無い（フォールバック先へは複製しない、`docs/decisions/0075`）。
+  if (gpu && fallback !== null && step.region === fallback.region && experimentalImage === undefined) {
     return {
       id: step.id,
       region: step.region,

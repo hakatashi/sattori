@@ -269,6 +269,18 @@ export function recordingPlanFor(game: GameId): readonly RecordingStep[] {
   return RECORDING_PLANS[game] ?? [];
 }
 
+/**
+ * ジョブの段の配列。実験ジョブ（`JobRecord.experiment`、Epic #399・Issue #397、`docs/decisions/0075`）は
+ * 指定された1段だけ、通常のジョブはタイトルの段（`recordingPlanFor()`）。**段を読む処理は
+ * `recordingPlanFor(job.game)`ではなくこれを使うこと**（実験ジョブが自分の段を使えなくなる）。
+ */
+export function recordingPlanOf(job: {
+  game: GameId;
+  experiment?: { step: RecordingStep };
+}): readonly RecordingStep[] {
+  return job.experiment ? [job.experiment.step] : recordingPlanFor(job.game);
+}
+
 /** GPU系の段か（自宅ワーカーは常にCPU）。 */
 export function isGpuStep(step: RecordingStep): boolean {
   return step.kind === "ec2" && step.platform === "gpu";
@@ -295,6 +307,8 @@ export type RecordingStepFilter = (step: RecordingStep) => boolean;
 /** ジョブ・リトライが参照する段の状態。 */
 export interface RecordingStepState {
   game: GameId;
+  /** 実験ジョブの指定。あれば段はこの1段だけ（`recordingPlanOf()`）。 */
+  experiment?: { step: RecordingStep };
   capacityExhaustedTargets?: string[];
   /**
    * 段の導入前に速度を落としたジョブの記録（`JobRecord.requestedRecordingSpeed`、0060・0064）。
@@ -318,7 +332,7 @@ function exceedsMaxDuration(step: RecordingStep, job: RecordingStepState): boole
  */
 export function durationSkippedStepIds(job: RecordingStepState): string[] {
   const exhausted = job.capacityExhaustedTargets ?? [];
-  return recordingPlanFor(job.game)
+  return recordingPlanOf(job)
     .filter((step) => !exhausted.includes(step.id) && exceedsMaxDuration(step, job))
     .map((step) => step.id);
 }
@@ -330,7 +344,7 @@ export function remainingRecordingSteps(
 ): RecordingStep[] {
   const exhausted = job.capacityExhaustedTargets ?? [];
   const legacyFellBack = job.requestedRecordingSpeed !== undefined;
-  return recordingPlanFor(job.game).filter(
+  return recordingPlanOf(job).filter(
     (step) =>
       !exhausted.includes(step.id) &&
       !excluded(step) &&
@@ -385,9 +399,10 @@ export function skippableGpuStepIds(job: RecordingStepState, excluded?: Recordin
  */
 export function initialRecordingSpeed(job: {
   game: GameId;
+  experiment?: { step: RecordingStep };
   replayInfo?: { difficulty: string | null } | null;
 }): RecordingSpeed {
-  const first = recordingPlanFor(job.game)[0];
+  const first = recordingPlanOf(job)[0];
   return first ? recordingSpeedForStep(first, job) : NATIVE_RECORDING_SPEED;
 }
 
@@ -397,8 +412,11 @@ export function captureModeOf(options: { captureMode?: unknown } | undefined): C
 }
 
 /** ジョブ作成時に`options.captureMode`へ入れる値（最初の段の録画方式。`initialRecordingSpeed()`と対）。 */
-export function initialCaptureMode(job: { game: GameId }): CaptureMode {
-  return recordingPlanFor(job.game)[0]?.captureMode ?? "realtime";
+export function initialCaptureMode(job: {
+  game: GameId;
+  experiment?: { step: RecordingStep };
+}): CaptureMode {
+  return recordingPlanOf(job)[0]?.captureMode ?? "realtime";
 }
 
 /** 自宅ワーカーの段を持つタイトル（`home-worker/src/config.ts`の既定・拒否リスト）。 */

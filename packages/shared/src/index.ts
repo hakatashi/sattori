@@ -6,6 +6,7 @@ export * from "./worker.js";
 export * from "./recordingSpeed.js";
 export * from "./th10BugfixMarisaB.js";
 export * from "./recordingPlan.js";
+export * from "./experiment.js";
 export * from "./gpuRecording.js";
 export * from "./gpuQueue.js";
 export * from "./job.js";

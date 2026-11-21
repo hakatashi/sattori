@@ -43,6 +43,37 @@ describe("SattoriStack", () => {
     });
   });
 
+  it("検証用のECRリポジトリがCPU・GPUの2つ存在し、4世代保持・タグ無しは1日で消す(Issue #397)", () => {
+    for (const RepositoryName of ["sattori-worker-experimental", "sattori-worker-experimental-gpu"]) {
+      template.hasResourceProperties("AWS::ECR::Repository", {
+        RepositoryName,
+        LifecyclePolicy: {
+          LifecyclePolicyText: Match.serializedJson(
+            Match.objectLike({
+              rules: Match.arrayWith([
+                Match.objectLike({
+                  selection: Match.objectLike({ tagStatus: "untagged", countType: "sinceImagePushed" }),
+                }),
+                Match.objectLike({
+                  selection: Match.objectLike({ countType: "imageCountMoreThan", countNumber: 4 }),
+                }),
+              ]),
+            }),
+          ),
+        },
+      });
+    }
+  });
+
+  it("実験ジョブの管理APIはAuthorizer付きで公開される(Issue #397)", () => {
+    for (const method of ["POST", "GET"]) {
+      template.hasResourceProperties("AWS::ApiGatewayV2::Route", {
+        RouteKey: `${method} /admin/experiments`,
+        AuthorizationType: "CUSTOM",
+      });
+    }
+  });
+
   it("ECRリポジトリのライフサイクルポリシーは最大2世代保持(Issue #22、タイトル追加に伴うストレージコスト対策)", () => {
     template.hasResourceProperties("AWS::ECR::Repository", {
       LifecyclePolicy: {
@@ -461,8 +492,8 @@ describe("SattoriStack", () => {
     });
   });
 
-  it("STATE_MACHINE_ARN 環境変数を個別付与されているLambdaは6つ(循環依存回避のためcommonEnvに含めていない)", () => {
-    // StartJob / AdminGetExecution / AdminStopJob / AdminRetryJob / SweepOrphanInstances /
+  it("STATE_MACHINE_ARN 環境変数を個別付与されているLambdaは7つ(循環依存回避のためcommonEnvに含めていない)", () => {
+    // StartJob / AdminGetExecution / AdminStopJob / AdminRetryJob / AdminCreateExperiment(Issue #397) / SweepOrphanInstances /
     // SweepStalledJobs (AdminStopJob・AdminRetryJobはIssue #59のジョブ緊急停止・再実行、
     // SweepOrphanInstancesはIssue #23の孤児インスタンス掃除、
     // SweepStalledJobsはIssue #132の非終端ジョブレコード掃除)。
@@ -475,7 +506,7 @@ describe("SattoriStack", () => {
         },
       },
     });
-    expect(Object.keys(startJobResources).length).toBe(6);
+    expect(Object.keys(startJobResources).length).toBe(7);
   });
 
   it("レート制限用のDynamoDBテーブルが存在する(Issue #9、token廃止によりMagicLinksTableは無い)", () => {

@@ -43,6 +43,9 @@ const config: ApiConfig = {
   jobsTable: "sattori-jobs",
   workerImage: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker:latest",
   workerGpuImage: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker-gpu:latest",
+  workerExperimentalRepo: "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker-experimental",
+  workerExperimentalGpuRepo:
+    "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker-experimental-gpu",
   titleAssetsBucket: "title-assets-bucket",
   logGroup: "/sattori/worker",
   maxReplayBytes: 5 * 1024 * 1024,
@@ -875,5 +878,28 @@ describe("fetchSpotPrice", () => {
   it("APIが失敗しても例外を投げずnullを返す（録画そのものを落とさないため）", async () => {
     ec2Mock.on(DescribeSpotPriceHistoryCommand).rejects(new Error("throttled"));
     await expect(fetchSpotPrice("c7i.xlarge", "us-east-1a")).resolves.toBeNull();
+  });
+});
+
+describe("launchTierFor の検証用イメージ（Issue #397）", () => {
+  const cpuStep = {
+    id: "experiment:cpu:eu-south-2",
+    kind: "ec2",
+    platform: "cpu",
+    region: "eu-south-2",
+    instanceTypes: ["c7i.4xlarge"],
+    captureMode: "realtime",
+    speed: 1,
+  } as const;
+
+  it("workerImageTagがあれば検証用リポジトリのイメージを使い、無ければ既定（undefined）", () => {
+    expect(launchTierFor(config, cpuStep, {}, { workerImageTag: "exp-1" })?.workerImage).toBe(
+      "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker-experimental:exp-1",
+    );
+    expect(launchTierFor(config, cpuStep, {}, {})?.workerImage).toBeUndefined();
+    expect(
+      launchTierFor(config, { ...cpuStep, platform: "gpu", instanceTypes: ["g6f.2xlarge"] }, {}, { workerImageTag: "x" })
+        ?.workerImage,
+    ).toBe("123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/sattori-worker-experimental-gpu:x");
   });
 });

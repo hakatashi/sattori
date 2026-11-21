@@ -92,6 +92,7 @@ docs/
     aws-region-cost-analysis.md
 research/
   touhou-recorder/              # 旧 PoC リポジトリのスナップショット（コードを含む。不変、§4 末尾）
+  archive/<テーマ>/             # 検証で採用しなかったコード（§4 末尾、experiment-workflow.md §5）
 <package>/
   README.md                     # ① そのパッケージの参照仕様
   docs/                         # ② のうち、パッケージ内で軸を切った方が自然なもの
@@ -110,6 +111,12 @@ sattori 自身の長大な調査レポート（Markdown のみ）の置き場。
 （Issue #396、[`0074`](decisions/0074-import-touhou-recorder-snapshot.md)）。後者は
 **取り込んだ当時の姿を保つ不変の資料**で、新しい検証記録はここへ足さず `docs/reports/` へ書く。
 サイズ上限は適用しない（§6）。
+
+**検証と不採用コード**（Issue #397）: 技術検証は sattori のブランチ上で本番パイプラインに直接手を入れて行い、
+採用しなかったコードは **`research/archive/<テーマ>/`** へ移す。検証レポート（`docs/reports/`、日付ベース
+`YYYY-MM-DD-*.md`）からそこへ**パスでリンクを張り、commit hash で参照しない**（公開ミラーは
+`git filter-repo` を通すので hash が変わる）。TR の `reports/NN` の番号体系は112（と追補）で凍結。運用の詳細は
+[`docs/runbooks/experiment-workflow.md`](runbooks/experiment-workflow.md)。
 
 **`touhou-recorder reports/NN` の指す先**: 本文中の「touhou-recorder reports/NN」は
 **`research/touhou-recorder/reports/NN_*.md`** を指す（旧リポジトリのレポート番号と同じ）。

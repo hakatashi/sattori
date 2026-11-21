@@ -414,6 +414,29 @@ export class SattoriStack extends Stack {
       lifecycleRules: [{ maxImageCount: 2 }],
     });
 
+    // 検証用のワーカーイメージ置き場（Epic #399・Issue #397、`docs/decisions/0075`）。本番の
+    // リポジトリは2イメージしか保持しないため、検証用タグをそこへpushすると本番のイメージが消える。
+    // 実験ジョブ（`POST /admin/experiments`）が`workerImageTag`を指定したときだけ、起動側
+    // （`apps/api/src/ec2.ts`の`launchTierFor`）がここからpullする。CPU系・GPU系は本番と同じく別リポジトリ。
+    // 複数の検証を並べて比較できるよう4世代を保持し、タグの無いイメージは1日で消す。
+    // フォールバック先リージョンへは複製しない（検証用イメージは一次リージョンのEC2の段でだけ使う）。
+    const experimentalRepoLifecycle: ecr.LifecycleRule[] = [
+      { rulePriority: 1, tagStatus: ecr.TagStatus.UNTAGGED, maxImageAge: Duration.days(1) },
+      { rulePriority: 2, tagStatus: ecr.TagStatus.ANY, maxImageCount: 4 },
+    ];
+    const workerExperimentalRepo = new ecr.Repository(this, "WorkerExperimentalRepo", {
+      repositoryName: "sattori-worker-experimental",
+      removalPolicy: RemovalPolicy.DESTROY,
+      emptyOnDelete: true,
+      lifecycleRules: experimentalRepoLifecycle,
+    });
+    const workerExperimentalGpuRepo = new ecr.Repository(this, "WorkerExperimentalGpuRepo", {
+      repositoryName: "sattori-worker-experimental-gpu",
+      removalPolicy: RemovalPolicy.DESTROY,
+      emptyOnDelete: true,
+      lifecycleRules: experimentalRepoLifecycle,
+    });
+
     // GPUイメージだけをフォールバック先（eu-north-1、Issue #296）へ複製する。pushのたびに
     // ECRが自動で複製するため、デプロイ手順はレプリカへの到着確認を足すだけでよい
     // （`deploy-sattori` skill）。受け皿のリポジトリ（ライフサイクル付き）は
@@ -552,6 +575,10 @@ export class SattoriStack extends Stack {
     // GPU用Launch Templateも同じworkerRoleを共用する（権限セットに差が無いため、
     // Issue #241）。CPU系ワーカーにもGPUリポジトリのpull権限が付くが実害はない。
     workerGpuRepo.grantPull(workerRole);
+    // 実験ジョブの検証用イメージ（Issue #397）。自宅ワーカーのロールには付けない（実験ジョブは自宅へ
+    // 検証用イメージを出さない、`docs/decisions/0075`）。
+    workerExperimentalRepo.grantPull(workerRole);
+    workerExperimentalGpuRepo.grantPull(workerRole);
     // awslogs ドライバはストリーム作成とイベント送出を行う。
     workerLogGroup.grantWrite(workerRole);
     // taskToken 経由で Step Functions へ成功/失敗(Spot中断の早期通知含む)を通知する。
@@ -706,6 +733,8 @@ export class SattoriStack extends Stack {
       JOBS_TABLE: jobsTable.tableName,
       WORKER_IMAGE: `${workerRepo.repositoryUri}:latest`,
       WORKER_GPU_IMAGE: `${workerGpuRepo.repositoryUri}:latest`,
+      WORKER_EXPERIMENTAL_REPO: workerExperimentalRepo.repositoryUri,
+      WORKER_EXPERIMENTAL_GPU_REPO: workerExperimentalGpuRepo.repositoryUri,
       TITLE_ASSETS_BUCKET: titleAssetsBucket.bucketName,
       WORKER_LOG_GROUP: workerLogGroup.logGroupName,
       WORKER_SUBNET_IDS: workerSubnets.map((subnet) => subnet.subnetId).join(","),
@@ -1312,6 +1341,26 @@ export class SattoriStack extends Stack {
     uploadBucket.grantRead(adminRetryJobFn); // 元の.rpyが残っているかの確認のため
     adminRetryJobFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
 
+    // 実験ジョブ（Issue #397、`apps/api/src/handlers/admin/createExperiment.ts`）。段を明示した
+    // 録画ジョブを新しいjobIdで作って起動する。権限は再実行（`adminRetryJobFn`）とほぼ同じで、
+    // リプレイを読む（アップロードバケット）・ジョブを書く・実行を開始するだけ。
+    const adminCreateExperimentFn = makeHandler(
+      "AdminCreateExperimentFn",
+      "admin/createExperiment.ts",
+    );
+    jobsTable.grantReadWriteData(adminCreateExperimentFn);
+    stateMachine.grantStartExecution(adminCreateExperimentFn);
+    uploadBucket.grantRead(adminCreateExperimentFn);
+    adminCreateExperimentFn.addEnvironment("STATE_MACHINE_ARN", stateMachine.stateMachineArn);
+    // 実験ジョブの結果の一覧（JobsTableのScan。コスト集計と同じ理由でタイムアウトを広げる）。
+    const adminListExperimentsFn = makeHandler(
+      "AdminListExperimentsFn",
+      "admin/listExperiments.ts",
+      commonEnv,
+      { timeout: Duration.seconds(60), memorySize: 512 },
+    );
+    jobsTable.grantReadData(adminListExperimentsFn);
+
     // コスト集計（Issue #60）はJobsTableの全件Scan + アプリ側集計。月1000ジョブ規模
     // では素朴なScanで十分だが、件数に比例して実行時間が伸びるためタイムアウトと
     // メモリだけ既定より広げておく（`apps/api/src/adminCosts.ts`参照）。
@@ -1436,6 +1485,18 @@ export class SattoriStack extends Stack {
       path: "/admin/jobs/{jobId}/retry",
       methods: [apigw.HttpMethod.POST],
       integration: new HttpLambdaIntegration("AdminRetryJobInt", adminRetryJobFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/experiments",
+      methods: [apigw.HttpMethod.POST],
+      integration: new HttpLambdaIntegration("AdminCreateExperimentInt", adminCreateExperimentFn),
+      authorizer: adminAuthorizer,
+    });
+    httpApi.addRoutes({
+      path: "/admin/experiments",
+      methods: [apigw.HttpMethod.GET],
+      integration: new HttpLambdaIntegration("AdminListExperimentsInt", adminListExperimentsFn),
       authorizer: adminAuthorizer,
     });
     httpApi.addRoutes({
@@ -1700,6 +1761,10 @@ function handler(event) {
     new CfnOutput(this, "MediaCdnDomain", { value: mediaDistribution.distributionDomainName });
     new CfnOutput(this, "WorkerRepoUri", { value: workerRepo.repositoryUri });
     new CfnOutput(this, "WorkerGpuRepoUri", { value: workerGpuRepo.repositoryUri });
+    new CfnOutput(this, "WorkerExperimentalRepoUri", { value: workerExperimentalRepo.repositoryUri });
+    new CfnOutput(this, "WorkerExperimentalGpuRepoUri", {
+      value: workerExperimentalGpuRepo.repositoryUri,
+    });
     // タイトル資産アップロード先(worker/README.md §8 参照)。
     new CfnOutput(this, "TitleAssetsBucketName", { value: titleAssetsBucket.bucketName });
     // 自宅ワーカー(Issue #49)の設定に必要な値。`home-worker/README.md`参照。

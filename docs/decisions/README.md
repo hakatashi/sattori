@@ -86,6 +86,7 @@
 | [0072](0072-web-cdn-edge-cache-ignores-origin-no-cache.md) | 2026-11-12 | infra | `WebCdn`はminTTL 1日の専用CachePolicyでHTMLをエッジにキャッシュし、オリジンの`no-cache`による毎回のS3再検証(TTFB約1秒)を避ける。鮮度はデプロイ時の無効化で保つ(Issue #376) | 有効 |
 | [0073](0073-gpu-lease-for-next-ec2-step-and-capture-mode.md) | 2026-11-21 | packages/shared / apps/api | 録画の段に`captureMode`（realtime / frameSync）と`maxEstimatedDurationSeconds`を足し、GPUのvCPUリースは「次のEC2の段」で判定してGPUの段が配列の最後にあっても動くようにする（Issue #387、Epic #399） | 有効（[0056](0056-gpu-vcpu-lease-and-queue.md)の「次の段がGPUのとき」の判定を改訂） |
 | [0074](0074-import-touhou-recorder-snapshot.md) | 2026-11-21 | research / docs | 旧 PoC リポジトリ touhou-recorder を、伏せ字化した履歴なしスナップショットとして `research/touhou-recorder/` へ取り込み、「touhou-recorder reports/NN」を同ディレクトリの `reports/NN_*.md` と定義する（Issue #396、Epic #399） | 有効 |
+| [0075](0075-experiment-jobs-and-experimental-ecr.md) | 2026-11-21 | packages/shared / apps/api / infra / docs | クラウドでの技術検証は、段を明示した「実験ジョブ」（管理API）と検証用ECRリポジトリ（CDK管理）で本番パイプラインに乗せ、手作業のEC2・terraformでの検証はやめる（Issue #397、Epic #399） | 有効 |
 
 ## 書き方
 
