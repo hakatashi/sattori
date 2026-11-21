@@ -79,6 +79,10 @@ void* WrapTimeGetTimeForSpeedHack(void* real) {
 }
 
 bool InstallSpeedHackHook() {
+    if (Config().FrameSyncEnabled()) {
+        Log("InstallSpeedHackHook: フレーム同期有効のためスキップ(no-op)");
+        return true;
+    }
     const double multiplier = Config().speedHackMultiplier;
     g_speedMultiplier = multiplier;
 

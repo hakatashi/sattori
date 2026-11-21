@@ -14,12 +14,18 @@ typedef HRESULT(WINAPI* DirectSoundCreate8_t)(const void* pcGuidDevice, void** p
                                                void* pUnkOuter);
 typedef HRESULT(WINAPI* CreateSoundBuffer_t)(void* pThis, const void* pcDSBufferDesc,
                                               void** ppDSBuffer, void* pUnkOuter);
+typedef HRESULT(WINAPI* DuplicateSoundBuffer_t)(void* pThis, void* pDSBufferOriginal,
+                                                 void** ppDSBufferDuplicate);
 typedef HRESULT(WINAPI* GetFrequency_t)(void* pThis, DWORD* lpdwFrequency);
 typedef HRESULT(WINAPI* SetFrequency_t)(void* pThis, DWORD dwFrequency);
 
 static DirectSoundCreate8_t g_origDirectSoundCreate8 = nullptr;
 static CreateSoundBuffer_t g_origCreateSoundBuffer = nullptr;
+static DuplicateSoundBuffer_t g_origDuplicateSoundBuffer = nullptr;
 static SetFrequency_t g_origSetFrequency = nullptr;
+
+static dsound::BufferCreatedCallback g_onBufferCreated = nullptr;
+static dsound::BufferDuplicatedCallback g_onBufferDuplicated = nullptr;
 
 static double g_freqScale = 1.0;
 
@@ -66,9 +72,10 @@ static HRESULT WINAPI MyCreateSoundBuffer(void* pThis, const void* pcDSBufferDes
 
     HRESULT hr = g_origCreateSoundBuffer(pThis, descToUse, ppDSBuffer, pUnkOuter);
     if (SUCCEEDED(hr) && ppDSBuffer && *ppDSBuffer) {
+        if (g_onBufferCreated) g_onBufferCreated(*ppDSBuffer, pcDSBufferDesc, isPrimary);
         // プライマリバッファには何もしない。Wineではプライマリのフォーマットを
         // いじっても実際の出力ストリームのレートは変わらない(audio/dsound.h のコメント参照)。
-        if (!isPrimary) {
+        if (!isPrimary && !Config().FrameSyncEnabled()) {
             void** vt = vtable::Of(*ppDSBuffer);
             // 複数のバッファが同じ静的vtableを共有している(core/vtable_hook.h)。
             if (vtable::Hook(vt, 17, &MySetFrequency, &g_origSetFrequency)) {
@@ -92,16 +99,33 @@ static HRESULT WINAPI MyCreateSoundBuffer(void* pThis, const void* pcDSBufferDes
     return hr;
 }
 
+static HRESULT WINAPI MyDuplicateSoundBuffer(void* pThis, void* pDSBufferOriginal,
+                                              void** ppDSBufferDuplicate) {
+    HRESULT hr = g_origDuplicateSoundBuffer(pThis, pDSBufferOriginal, ppDSBufferDuplicate);
+    if (SUCCEEDED(hr) && ppDSBufferDuplicate && *ppDSBufferDuplicate && g_onBufferDuplicated) {
+        g_onBufferDuplicated(pDSBufferOriginal, *ppDSBufferDuplicate);
+    }
+    return hr;
+}
+
+static void HookDirectSoundVtable(void* ds8, const char* tag) {
+    if (vtable::HookObject(ds8, 3, &MyCreateSoundBuffer, &g_origCreateSoundBuffer)) {
+        Log("%s: hooked CreateSoundBuffer (vtable[3])", tag);
+    } else {
+        Log("%s: CreateSoundBuffer already hooked (shared vtable), skipping", tag);
+    }
+    if (g_onBufferDuplicated &&
+        vtable::HookObject(ds8, 5, &MyDuplicateSoundBuffer, &g_origDuplicateSoundBuffer)) {
+        Log("%s: hooked DuplicateSoundBuffer (vtable[5])", tag);
+    }
+}
+
 static HRESULT WINAPI MyDirectSoundCreate8(const void* pcGuidDevice, void** ppDS8,
                                             void* pUnkOuter) {
     HRESULT hr = g_origDirectSoundCreate8(pcGuidDevice, ppDS8, pUnkOuter);
     if (SUCCEEDED(hr) && ppDS8 && *ppDS8) {
         g_ds8 = *ppDS8;
-        if (vtable::HookObject(*ppDS8, 3, &MyCreateSoundBuffer, &g_origCreateSoundBuffer)) {
-            Log("DirectSoundCreate8: hooked CreateSoundBuffer (vtable[3])");
-        } else {
-            Log("DirectSoundCreate8: CreateSoundBuffer already hooked (shared vtable), skipping");
-        }
+        HookDirectSoundVtable(*ppDS8, "DirectSoundCreate8");
     }
     return hr;
 }
@@ -226,9 +250,14 @@ void* WrapDirectSoundCreate8(void* real) {
 void HookDirectSoundObject(void* ds8) {
     if (!ds8) return;
     g_ds8 = ds8;
-    if (vtable::HookObject(ds8, 3, &MyCreateSoundBuffer, &g_origCreateSoundBuffer)) {
-        Log("HookDirectSoundObject: hooked CreateSoundBuffer (vtable[3])");
-    }
+    HookDirectSoundVtable(ds8, "HookDirectSoundObject");
 }
+
+namespace dsound {
+void SetBufferCallbacks(BufferCreatedCallback onCreated, BufferDuplicatedCallback onDuplicated) {
+    g_onBufferCreated = onCreated;
+    g_onBufferDuplicated = onDuplicated;
+}
+}  // namespace dsound
 
 } // namespace autoplay

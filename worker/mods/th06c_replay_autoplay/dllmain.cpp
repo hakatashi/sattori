@@ -44,6 +44,8 @@
 #include "core/time_scale.h"
 #include "input/dxlib_input.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d11_readback.h"
+#include "present/capture/frame_sync.h"
 
 using namespace autoplay;
 using autoplay::dxlib::g_pollCount;
@@ -182,7 +184,7 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
 
     LogStep(1, "Enter (デモ再生を抜けてメインメニューを表示)");
     PressVKey(VK_RETURN);
-    time_scale::MenuSleep(500);
+    time_scale::MenuSleep(frame_sync::Active() ? 1200 : 500);
 
     if (!NavigateToReplay()) {
         Log("ERROR: メインメニューで 'Replay' を選択できませんでした。中断します");
@@ -201,6 +203,7 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
     PressVKey(VK_RETURN);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th06c");
     return 0;
 }
@@ -214,12 +217,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         InitRuntimeConfig();
         Log("=== th06c_replay_autoplay DllMain: DLL_PROCESS_ATTACH ===");
 
+        const bool fs = InstallFrameSyncD3D11(64);
         // 入力・時刻・音声のGetProcAddress横取り(autoplay/dxlib_common.h)。
         dxlib::InstallHooks(dxlib::Options{});
-        // 倍速録画(Issue #288): QPC偽装とWASAPIのレート偽装・同期マーカーの準備。
-        // FPS_LIMIT_TARGET_HZ未設定(等倍)ならレートは変えない。
-        InstallSpeedHackHook();
-        InstallWasapiHook();
+        if (!fs) {
+            // 倍速録画(Issue #288): QPC偽装とWASAPIのレート偽装・同期マーカーの準備。
+            // FPS_LIMIT_TARGET_HZ未設定(等倍)ならレートは変えない。
+            InstallSpeedHackHook();
+            InstallWasapiHook();
+        }
 
         // リプレイずれ判定用のスコア監視(Issue #103)。th06cはオリジナルth06の完全な
         // 再実装であり、thpracのth06用RVAは一切流用できない。touhou-recorder reports/75の

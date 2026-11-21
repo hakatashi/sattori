@@ -61,7 +61,7 @@ def wait_for_log_marker(log_path, marker, timeout, poll_interval=0.1, log_all=Fa
     t0 = time.time()
     while time.time() - t0 < timeout:
         if os.path.exists(log_path):
-            with open(log_path) as f:
+            with open(log_path, encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
             for line in lines:
                 if line in seen_lines:
@@ -164,7 +164,7 @@ def read_verified_scores(log_path, game_id):
     スコアと完全一致するサンプルがあるか」で判定することでこれに対処する。"""
     if not os.path.exists(log_path):
         return []
-    with open(log_path) as f:
+    with open(log_path, encoding="utf-8", errors="replace") as f:
         text = f.read()
     multiplier = GAME_SCORE_MULTIPLIERS.get(game_id, 1)
     scores = []

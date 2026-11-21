@@ -35,4 +35,12 @@ inline constexpr const char* kSyncMarkerPlayedFmt =
     "SYNC_MARKER played epoch=%.6f play_call_sec=%.6f rate=%lu samples=%lu amp=%d seed=0x%08lX "
     "hr=0x%08lX";
 
+// フレーム同期キャプチャ(touhou-recorder reports/104〜112)。
+inline constexpr const char* kFrameSyncCaptureStartFmt =
+    "FrameSync: capture start width=%u height=%u d3dfmt=%lu pix_fmt=%s multisample=%lu";
+inline constexpr const char* kFrameSyncCaptureStoppedFmt =
+    "FrameSync: capture stopped frames_written=%lld present_count=%lld "
+    "frames_with_live_threads=%lld throttle_while_threads=%d";
+inline constexpr const char* kFrameSyncUnthrottledFmt = "FrameSync: unthrottled=%d at frame=%lld";
+
 }  // namespace autoplay::log_contract

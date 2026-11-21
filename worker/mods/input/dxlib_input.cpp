@@ -1,7 +1,9 @@
 #include "input/dxlib_input.h"
 #include "core/log.h"
 #include "core/pe_iat.h"
+#include "core/runtime_config.h"
 #include "input/key_inject.h"
+#include "present/capture/frame_sync.h"
 
 namespace autoplay::dxlib {
 
@@ -40,7 +42,9 @@ SHORT WINAPI MyGetAsyncKeyState(int vKey) {
 void* WrapGetKeyboardState(void* real) {
     if (!g_origGetKeyboardState) {
         g_origGetKeyboardState = (GetKeyboardState_t)real;
-        Log("GetProcAddress hook: GetKeyboardState を自前実装に差し替えました");
+        if (!Config().FrameSyncEnabled()) {
+            Log("GetProcAddress hook: GetKeyboardState を自前実装に差し替えました");
+        }
     }
     return (void*)MyGetKeyboardState;
 }
@@ -58,6 +62,13 @@ void RegisterInputOverrides(bool hookAsyncKeyState) {
 }
 
 void PressVKey(BYTE vk, unsigned int holdFrames, unsigned int releaseFrames, unsigned int timeoutMs) {
+    if (frame_sync::Active()) {
+        g_injectVk[vk] = 1;
+        frame_sync::WaitPresentFrames(2);
+        g_injectVk[vk] = 0;
+        frame_sync::WaitPresentFrames(3);
+        return;
+    }
     key_inject::Press(&g_pollCount, g_injectVk, vk, holdFrames, releaseFrames, timeoutMs);
 }
 

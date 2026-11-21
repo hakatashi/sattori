@@ -25,13 +25,22 @@ OBJ_DIR := obj
 # ---------------------------------------------------------------------------
 # モジュール(ディレクトリの構成は worker/docs/mods.md)
 # ---------------------------------------------------------------------------
-MOD_core        := core/log.cpp core/pe_iat.cpp core/runtime_config.cpp
+MOD_core        := core/log.cpp core/pe_iat.cpp core/runtime_config.cpp core/time_scale.cpp
 MOD_code_patch  := core/code_patch.cpp
 MOD_dinput      := input/dinput.cpp
 MOD_window_wait := autoplay/window_wait.cpp
 MOD_speed_hack  := clock/speed_hack.cpp
 MOD_fps_display := clock/fps_display.cpp
 MOD_present     := present/bus.cpp present/limiter.cpp present/d3d8.cpp present/d3d9.cpp
+MOD_frame_sync_core := clock/virtual_clock.cpp present/capture/pipe_writer.cpp \
+                       present/capture/frame_sync.cpp
+MOD_frame_sync_d3d9 := $(MOD_frame_sync_core) present/bus.cpp present/limiter.cpp present/d3d9.cpp \
+                       present/capture/d3d9_readback.cpp audio/virtual/dsound_mixer.cpp
+MOD_frame_sync_d3d8 := $(MOD_frame_sync_core) present/bus.cpp present/limiter.cpp present/d3d8.cpp \
+                       present/capture/d3d8_readback.cpp audio/virtual/dsound_mixer.cpp
+MOD_frame_sync_d3d11 := $(MOD_frame_sync_core) present/bus.cpp present/limiter.cpp \
+                        present/dxgi.cpp present/capture/d3d11_readback.cpp \
+                        audio/virtual/wasapi_mixer.cpp
 MOD_dsound      := audio/dsound.cpp audio/sync_marker.cpp
 MOD_wasapi      := audio/wasapi.cpp audio/sync_marker.cpp
 MOD_score       := monitor/score_monitor.cpp
@@ -42,8 +51,8 @@ MOD_dxlib       := autoplay/dxlib_common.cpp input/dxlib_input.cpp $(MOD_dsound)
                    $(MOD_speed_hack) $(MOD_window_wait)
 
 # ビルドはするがどのタイトルにも組み込んでいないソース(-Werror で壊れていないかだけ確かめる)。
-# present/dxgi.cpp は #388(フレーム同期)で使う予定。
-CHECK_ONLY_SRCS_64 := present/dxgi.cpp
+# present/dxgi.cpp は #388 で frame_sync_d3d11 に組み込み済み。
+CHECK_ONLY_SRCS_64 :=
 
 # 倍速録画(Issue #288)のQPC偽装・音声周波数スケールとA/V同期マーカー・スコア監視は、
 # 全32bitタイトル共通で組み込む。
@@ -58,45 +67,45 @@ TITLES := th06 th06c th06nc th07 th08 th09 th10 th11 th12 th13 th15 th20 th128
 
 # th06: vpatch＋fps表示補正のtimeGetTime版(touhou-recorder reports/90)
 th06_ARCH := 32
-th06_MODS := $(BASE32) fps_display
+th06_MODS := $(BASE32) fps_display frame_sync_d3d8
 # th06c: 64bit(PE32+)。DXライブラリなので入力・音声はGetProcAddress経由
 th06c_ARCH   := 64
-th06c_MODS   := core dxlib score
+th06c_MODS   := core dxlib score frame_sync_d3d11
 th06c_STATIC := 1
 # th06nc: th06cに加えてCPU描画用のBC7展開(D3D11_DECODE_BC7=1のときだけ有効、reports/96)。-ldxguidが要る
 th06nc_ARCH   := 64
-th06nc_MODS   := core dxlib score bc7
+th06nc_MODS   := core dxlib score bc7 frame_sync_d3d11
 th06nc_STATIC := 1
 th06nc_LIBS   := -ldxguid
 th07_ARCH := 32
-th07_MODS := $(BASE32)
+th07_MODS := $(BASE32) frame_sync_d3d8
 # th08: fps表示補正(timeGetTime版)
 th08_ARCH := 32
-th08_MODS := $(BASE32) fps_display
+th08_MODS := $(BASE32) fps_display frame_sync_d3d8
 # th09: D3D8のPresentの上限・fps表示補正
 th09_ARCH := 32
-th09_MODS := $(BASE32) present fps_display
+th09_MODS := $(BASE32) present fps_display frame_sync_d3d8
 # th10・th11・th12・th13・th128: 文字の縮小フィルタ補完(touhou-recorder reports/101・102)
 th10_ARCH := 32
-th10_MODS := $(BASE32) present d3dx_filter
+th10_MODS := $(BASE32) present d3dx_filter frame_sync_d3d9
 th11_ARCH := 32
-th11_MODS := $(BASE32) d3dx_filter
+th11_MODS := $(BASE32) d3dx_filter frame_sync_d3d9
 # th12: 倍速時のfps表示をコードケーブで補正する(core/code_patch)
 th12_ARCH := 32
-th12_MODS := $(BASE32) present d3dx_filter code_patch
+th12_MODS := $(BASE32) present d3dx_filter code_patch frame_sync_d3d9
 # th13: th128と同じ構成(VsyncPatchは使わない、touhou-recorder reports/100)
 th13_ARCH := 32
-th13_MODS := $(BASE32) present d3dx_filter
+th13_MODS := $(BASE32) present d3dx_filter frame_sync_d3d9
 # th15: GetDeviceState方式・Presentの上限・fps表示補正(ViaCaller)、-static(touhou-recorder reports/82)
 th15_ARCH   := 32
-th15_MODS   := $(BASE32) present fps_display
+th15_MODS   := $(BASE32) present fps_display frame_sync_d3d9
 th15_STATIC := 1
 # th20: Presentの上限・fps表示補正、-static(wine実行時にlibgcc_s等が見つからず注入に失敗した、reports/44)
 th20_ARCH   := 32
-th20_MODS   := $(BASE32) present fps_display
+th20_MODS   := $(BASE32) present fps_display frame_sync_d3d9
 th20_STATIC := 1
 th128_ARCH := 32
-th128_MODS := $(BASE32) present d3dx_filter
+th128_MODS := $(BASE32) present d3dx_filter frame_sync_d3d9
 
 # ---------------------------------------------------------------------------
 # ツール(出力パスはタイトル資産の配置と同じ。変えないこと)

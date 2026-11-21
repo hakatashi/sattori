@@ -35,6 +35,8 @@
 #include "core/time_scale.h"
 #include "input/dinput.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d9_readback.h"
+#include "present/capture/frame_sync.h"
 #include "present/limiter.h"
 
 using namespace autoplay;
@@ -89,6 +91,7 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     PressVKey(VK_RETURN_KEY);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th20");
     return 0;
 }
@@ -100,23 +103,25 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hooks");
         InstallDinputHook();
-        // 倍速録画(reports/85・89): QPCの経過時間をSPEED_HACK_MULTIPLIER倍に伸ばす。
-        // 未設定(等倍)なら何もしない。
-        InstallSpeedHackHook();
         InstallKeyboardStateHook();
-        // AWS実機(Intel Xeon/Nitro仮想化)でth20のフレームペーシングが崩れ、
-        // ゲーム内fpsカウンターが常時75fps前後(本来60fps)になりリプレイが
-        // 早回しになる不具合への対策(フェーズ46追加調査、詳細はpresent/limiter.h参照)。
-        InstallFpsLimiterHook();
+        if (!InstallFrameSyncD3D9(1024)) {
+            // 倍速録画(reports/85・89): QPCの経過時間をSPEED_HACK_MULTIPLIER倍に伸ばす。
+            // 未設定(等倍)なら何もしない。
+            InstallSpeedHackHook();
+            // AWS実機(Intel Xeon/Nitro仮想化)でth20のフレームペーシングが崩れ、
+            // ゲーム内fpsカウンターが常時75fps前後(本来60fps)になりリプレイが
+            // 早回しになる不具合への対策(フェーズ46追加調査、詳細はpresent/limiter.h参照)。
+            InstallFpsLimiterHook();
+            // th20自身のfpsカウンター表示がスローモーション化(FPS_LIMIT_TARGET_HZ)
+            // に連動して低い値を表示してしまう問題(reports/47の既知の制約)への対策。
+            // 表示計算に使われていることを実証済みの特定コールサイトのみ時刻の
+            // 進み方を補正し、等倍相当のfps値を表示させる(reports/48参照)。
+            InstallFpsDisplayCorrectionHook(0x0001cb54);
+        }
         // present/limiterによるゲーム進行のスローモーション化(reports/47)は
         // 映像・ゲームロジックのみに効き、DirectSoundのBGM/SEストリーミングには
         // 連動しないため、別途SetFrequencyフックで音声側も同じ比率でスケールする。
         InstallDSoundHook();
-        // th20自身のfpsカウンター表示がスローモーション化(FPS_LIMIT_TARGET_HZ)
-        // に連動して低い値を表示してしまう問題(reports/47の既知の制約)への対策。
-        // 表示計算に使われていることを実証済みの特定コールサイトのみ時刻の
-        // 進み方を補正し、等倍相当のfps値を表示させる(reports/48参照)。
-        InstallFpsDisplayCorrectionHook(0x0001cb54);
         // リプレイずれ判定用に、ゲーム内スコア・ステージ番号・残機・グレイズを
         // 1秒間隔でMODログへ出力する(Issue #103、reports/50)。
         // RVAはthpracのthprac_th20.cpp(rel_addrs::GAME_SIDE0 = 0x1ba568 と

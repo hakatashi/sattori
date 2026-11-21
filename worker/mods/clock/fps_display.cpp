@@ -114,6 +114,10 @@ static int CopyRvas(ULONG_PTR* dst, const ULONG_PTR* src, int n) {
 }
 
 bool InstallFpsDisplayCorrectionHookTimeGetTime(const ULONG_PTR* targetRvas, int numRvas) {
+    if (Config().FrameSyncEnabled()) {
+        Log("InstallFpsDisplayCorrectionHookTimeGetTime: フレーム同期有効のためスキップ(no-op)");
+        return true;
+    }
     g_numTargetRvasTgt = CopyRvas(g_targetRvasTgt, targetRvas, numRvas);
     g_scaleTgt = ComputeDisplayScale(/*speedHacked=*/false);
 
@@ -129,6 +133,10 @@ bool InstallFpsDisplayCorrectionHookTimeGetTime(ULONG_PTR targetRva) {
 }
 
 bool InstallFpsDisplayCorrectionHook(const ULONG_PTR* targetRvas, int numRvas) {
+    if (Config().FrameSyncEnabled()) {
+        Log("InstallFpsDisplayCorrectionHook: フレーム同期有効のためスキップ(no-op)");
+        return true;
+    }
     g_numTargetRvas = CopyRvas(g_targetRvas, targetRvas, numRvas);
     // 実際に間引かれたPresent間隔(targetHzが低いほど長い)を、ゲーム自身の
     // fps計算からは「短い間隔」に見せかけて等倍相当のfps値を表示させたい。

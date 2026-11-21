@@ -1,10 +1,11 @@
-"""MODログの契約(`mods/core/log_contract.h`)をワーカー側の読み取りで確かめる(Issue #393)。
+"""MODログの契約(`mods/core/log_contract.h`)をワーカー側の読み取りで確かめる(Issue #393・#388)。
 
 `mods/tests/log_contract_golden.txt` は、MODの書式で整形した行のゴールデン。MOD側の
 `mods/tests/test_log_contract.cpp`(`make -C worker/mods test`)が同じ書式で各行を再現できることを、
 このテストがワーカーの正規表現・部分一致で各行を読めることを確かめる。どちらかの書式を変えると
 片方が落ちる。同期マーカーの系列(`mods/tests/sync_marker_golden.txt`)も同じ考え方。
 """
+import re
 from pathlib import Path
 
 from recording import modlog, sync_marker
@@ -26,7 +27,7 @@ def _write_log(tmp_path, lines):
 
 
 def test_every_golden_line_has_log_line_prefix():
-    assert len(GOLDEN_LINES) == 5
+    assert len(GOLDEN_LINES) == 8
     for line in GOLDEN_LINES:
         assert modlog._LOG_LINE_TIME_RE.match(line), line
 
@@ -65,6 +66,27 @@ def test_replay_start_is_the_last_step_before_sequence_complete(tmp_path):
 def test_read_verified_scores_reads_golden_line(tmp_path):
     log = _write_log(tmp_path, GOLDEN_LINES)
     assert modlog.read_verified_scores(str(log), "th12") == [31221250]
+
+
+def test_frame_sync_contract_lines():
+    m_start = re.search(
+        r"FrameSync: capture start width=(\d+) height=(\d+) d3dfmt=(\d+) pix_fmt=(\S+) multisample=(\d+)",
+        _golden("FrameSync: capture start"),
+    )
+    assert m_start
+    assert m_start.groups() == ("640", "480", "21", "bgr0", "0")
+
+    m_unth = re.search(r"FrameSync: unthrottled=(\d+) at frame=(\d+)", _golden("FrameSync: unthrottled"))
+    assert m_unth
+    assert m_unth.groups() == ("1", "420")
+
+    m_stop = re.search(
+        r"FrameSync: capture stopped frames_written=(\d+) present_count=(\d+) "
+        r"frames_with_live_threads=(\d+) throttle_while_threads=(\d+)",
+        _golden("FrameSync: capture stopped"),
+    )
+    assert m_stop
+    assert m_stop.groups() == ("3600", "3601", "12", "0")
 
 
 def _read_sync_marker_golden():

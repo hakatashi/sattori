@@ -32,6 +32,8 @@
 #include "core/time_scale.h"
 #include "input/dinput.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d8_readback.h"
+#include "present/capture/frame_sync.h"
 
 using namespace autoplay;
 
@@ -79,6 +81,7 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     PressKey(DIK_RETURN);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th06");
     return 0;
 }
@@ -90,20 +93,22 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
-        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
-        InstallSpeedHackHook();
+        if (!InstallFrameSyncD3D8(1024)) {
+            // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+            InstallSpeedHackHook();
+            // 画面上fpsカウンター表示の倍速録画補正(reports/90)。th06のfps計算
+            // (RVA 0x23f3f〜、書式"%.02ffps")はWINMM.dll!timeGetTimeで経過時間を測る
+            // (0x23f5d=初回のみ基準時刻、0x23f68=毎フレーム現在時刻、500ms毎に更新)。
+            // clock/speed_hackはQPCしか偽装しないため、補正しないと2倍速(vpatch GameFPS=120)で
+            // 「120.00fps」と表示される。両呼び出しの戻り先RVAを対象にする。
+            // なおvpatch.iniのCalcFPS=1だとvpatch自身がfpsを計算・表示するため、倍速録画時は
+            // recording/instance.pyがCalcFPS=0に書き換える。InstallSpeedHackHook()の後に呼ぶこと。
+            static const ULONG_PTR kFpsTimeRvas[] = {0x00023f63, 0x00023f6e};
+            InstallFpsDisplayCorrectionHookTimeGetTime(kFpsTimeRvas, 2);
+        }
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。
         InstallDSoundHook();
-        // 画面上fpsカウンター表示の倍速録画補正(reports/90)。th06のfps計算
-        // (RVA 0x23f3f〜、書式"%.02ffps")はWINMM.dll!timeGetTimeで経過時間を測る
-        // (0x23f5d=初回のみ基準時刻、0x23f68=毎フレーム現在時刻、500ms毎に更新)。
-        // clock/speed_hackはQPCしか偽装しないため、補正しないと2倍速(vpatch GameFPS=120)で
-        // 「120.00fps」と表示される。両呼び出しの戻り先RVAを対象にする。
-        // なおvpatch.iniのCalcFPS=1だとvpatch自身がfpsを計算・表示するため、倍速録画時は
-        // recording/instance.pyがCalcFPS=0に書き換える。InstallSpeedHackHook()の後に呼ぶこと。
-        static const ULONG_PTR kFpsTimeRvas[] = {0x00023f63, 0x00023f6e};
-        InstallFpsDisplayCorrectionHookTimeGetTime(kFpsTimeRvas, 2);
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th06.cpp)の`GAME_MANAGER = (GameManager*)0x69bca0`(絶対VA、
         // ImageBase=0x400000前提、RVA=0x29bca0)由来。GameManager構造体はポインタ

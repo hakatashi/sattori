@@ -23,6 +23,8 @@
 #include "core/time_scale.h"
 #include "input/dinput.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d8_readback.h"
+#include "present/capture/frame_sync.h"
 
 using namespace autoplay;
 
@@ -70,6 +72,7 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     PressKey(DIK_RETURN);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th08");
     return 0;
 }
@@ -81,18 +84,20 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
-        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
-        InstallSpeedHackHook();
+        if (!InstallFrameSyncD3D8(32)) {
+            // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+            InstallSpeedHackHook();
+            // 画面上fpsカウンター表示の倍速録画補正(reports/90)。th08(ver1.00d)の
+            // fps計算(書式"%.02ffps"、RVA 0x47031で参照)はWINMM.dll!timeGetTimeで経過時間を
+            // 測る(0x46fa7=初回のみ基準時刻、0x46fb2=毎フレーム現在時刻、500ms毎に更新)。
+            // clock/speed_hackはQPCしか偽装しないため、補正しないと2倍速で「120.00fps」と
+            // 表示される。InstallSpeedHackHook()の後に呼ぶこと。
+            static const ULONG_PTR kFpsTimeRvas[] = {0x00046fad, 0x00046fb8};
+            InstallFpsDisplayCorrectionHookTimeGetTime(kFpsTimeRvas, 2);
+        }
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。
         InstallDSoundHook();
-        // 画面上fpsカウンター表示の倍速録画補正(reports/90)。th08(ver1.00d)の
-        // fps計算(書式"%.02ffps"、RVA 0x47031で参照)はWINMM.dll!timeGetTimeで経過時間を
-        // 測る(0x46fa7=初回のみ基準時刻、0x46fb2=毎フレーム現在時刻、500ms毎に更新)。
-        // clock/speed_hackはQPCしか偽装しないため、補正しないと2倍速で「120.00fps」と
-        // 表示される。InstallSpeedHackHook()の後に呼ぶこと。
-        static const ULONG_PTR kFpsTimeRvas[] = {0x00046fad, 0x00046fb8};
-        InstallFpsDisplayCorrectionHookTimeGetTime(kFpsTimeRvas, 2);
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th08.cpp)の`GetMemAddr`ヘルパが辿るプレイヤー状態構造体への
         // ポインタ変数(絶対VA 0x160f510、RVA=0x120f510)由来。1段階のポインタ間接

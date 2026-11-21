@@ -9,6 +9,7 @@
 // (input/dinput.cppと同じ方針)。
 
 #include "present/bus.h"
+#include "present/limiter.h"
 #include "core/log.h"
 #include "core/pe_iat.h"
 #include "core/vtable_hook.h"
@@ -77,3 +78,15 @@ bool InstallD3D9() {
 }
 
 }  // namespace autoplay::present
+
+namespace autoplay {
+
+bool InstallFpsLimiterHook() {
+    const double targetHz = InstallFpsLimiterHandlers();
+    bool ok = present::InstallD3D9();
+    Log("InstallFpsLimiterHook: IAT hook %s (target=%.2f fps)",
+        ok ? "OK" : "FAILED (Direct3DCreate9 not found in IAT)", targetHz);
+    return ok;
+}
+
+}  // namespace autoplay

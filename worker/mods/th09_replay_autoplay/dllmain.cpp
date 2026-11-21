@@ -30,6 +30,8 @@
 #include "core/time_scale.h"
 #include "input/dinput.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d8_readback.h"
+#include "present/capture/frame_sync.h"
 #include "present/limiter.h"
 
 using namespace autoplay;
@@ -87,6 +89,7 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     PressKey(DIK_RETURN);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th09");
     return 0;
 }
@@ -98,21 +101,23 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
-        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
-        InstallSpeedHackHook();
-        // Presentの上限(present/limiter)。th09はDirect3D8エンジンのため、D3D8のアダプタを使う。
-        // **ユーザー向けにはth09の低速録画は未サポート**(recordingPlan.tsのth09の段に低速録画の
-        // 段が無い)。倍速録画ではPresentの上限を60×倍率へ引き上げる。FPS_LIMIT_TARGET_HZ未設定時は
-        // 60fpsの上限。
-        InstallFpsLimiterHookD3D8();
+        if (!InstallFrameSyncD3D8(32)) {
+            // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+            InstallSpeedHackHook();
+            // Presentの上限(present/limiter)。th09はDirect3D8エンジンのため、D3D8のアダプタを使う。
+            // **ユーザー向けにはth09の低速録画は未サポート**(recordingPlan.tsのth09の段に低速録画の
+            // 段が無い)。倍速録画ではPresentの上限を60×倍率へ引き上げる。FPS_LIMIT_TARGET_HZ未設定時は
+            // 60fpsの上限。
+            InstallFpsLimiterHookD3D8();
+            // 低速録画時の画面上fpsカウンター表示補正(touhou-recorder reports/69)。
+            // th09はtouhou-recorder の `mods/common/timer_probe_hook.*`による調査の結果、th20と異なり
+            // QueryPerformanceCounterではなくWINMM.dll!timeGetTime(rva=0x00031701、
+            // Present呼び出し頻度と1:1で相関する唯一の持続的なtimeGetTime呼び出し元)が
+            // fps表示計算に使われていることが判明した。FPS_LIMIT_TARGET_HZ未設定時は
+            // scale=1.0で実質無効化。
+            InstallFpsDisplayCorrectionHookTimeGetTime(0x00031701);
+        }
         InstallDSoundHook();
-        // 低速録画時の画面上fpsカウンター表示補正(touhou-recorder reports/69)。
-        // th09はtouhou-recorder の `mods/common/timer_probe_hook.*`による調査の結果、th20と異なり
-        // QueryPerformanceCounterではなくWINMM.dll!timeGetTime(rva=0x00031701、
-        // Present呼び出し頻度と1:1で相関する唯一の持続的なtimeGetTime呼び出し元)が
-        // fps表示計算に使われていることが判明した。FPS_LIMIT_TARGET_HZ未設定時は
-        // scale=1.0で実質無効化。
-        InstallFpsDisplayCorrectionHookTimeGetTime(0x00031701);
         // P1残機の監視(Issue #103の枠組み、touhou-recorder reports/68)。
         // thprac(thprac_th09.cpp)のTH09Toolsから収集したRVA(絶対VA 0x4a7d94、
         // image base 0x400000)を基点(RVA=0xa7d94)としたポインタ間接参照で、

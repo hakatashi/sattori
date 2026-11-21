@@ -29,6 +29,8 @@
 #include "core/time_scale.h"
 #include "input/dinput.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d9_readback.h"
+#include "present/capture/frame_sync.h"
 #include "present/limiter.h"
 #include "texture/d3dx_filter.h"
 
@@ -58,8 +60,9 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     // (ユーザー申告、touhou-recorder reports/70)という懸念から当初8000msを取っていたが、
     // sattori本体での実機検証(docs/reports/2026-09-16-th128-title-screen-wait-reduction-verification.md)
     // で2000msでもシーケンスが安定して成功することを確認し、短縮した。
-    Log("Buffering 2000ms (scaled) for title screen load...");
-    time_scale::MenuSleep(2000);
+    const DWORD titleWaitMs = frame_sync::Active() ? 8000 : 2000;
+    Log("Buffering %lums (scaled) for title screen load...", (unsigned long)titleWaitMs);
+    time_scale::MenuSleep(titleWaitMs);
 
     LogStep(1, "Down x1 (select 'Replay' on main menu)");
     PressKey(DIK_DOWN);
@@ -84,6 +87,7 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     PressKey(DIK_RETURN);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th128");
     return 0;
 }
@@ -98,11 +102,13 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
         // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
         InstallD3DXFilterHook();
-        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
-        InstallSpeedHackHook();
-        // 低速録画用フック。FPS_LIMIT_TARGET_HZ未設定時はscale=1.0で従来動作と完全互換
-        // (touhou-recorder reports/72で30fps実機検証済み)。
-        InstallFpsLimiterHook();
+        if (!InstallFrameSyncD3D9(1024)) {
+            // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+            InstallSpeedHackHook();
+            // 低速録画用フック。FPS_LIMIT_TARGET_HZ未設定時はscale=1.0で従来動作と完全互換
+            // (touhou-recorder reports/72で30fps実機検証済み)。
+            InstallFpsLimiterHook();
+        }
         InstallDSoundHook();
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th128.cppの`th128_patch_main`フック内で練習モードの初期値を

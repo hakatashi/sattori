@@ -32,6 +32,8 @@
 #include "core/time_scale.h"
 #include "input/dinput.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d9_readback.h"
+#include "present/capture/frame_sync.h"
 #include "texture/d3dx_filter.h"
 
 using namespace autoplay;
@@ -58,10 +60,11 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
 
     // th08 only needs 1500ms here; th11's title logo animation is longer and
     // sending Down/Enter too early lands on the wrong menu item (Practice
-    // Start, Rank Select, etc.) instead of "Replay". 6000ms was found to
-    // reliably reach the main menu (touhou-recorder reports/35).
-    Log("Buffering 6000ms for title screen animation...");
-    time_scale::MenuSleep(6000);
+    // Start, Rank Select, etc.) instead of "Replay". 6000ms (8000ms for
+    // frame-sync) was found to reliably reach the main menu.
+    const DWORD titleWaitMs = frame_sync::Active() ? 8000 : 6000;
+    Log("Buffering %lums for title screen animation...", (unsigned long)titleWaitMs);
+    time_scale::MenuSleep(titleWaitMs);
 
     LogStep(1, "Down x2 (select 'Replay' on main menu)");
     for (int i = 0; i < 2; i++) {
@@ -91,6 +94,7 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     PressVKey(VK_RETURN_KEY);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th11");
     return 0;
 }
@@ -105,8 +109,10 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
         // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
         InstallD3DXFilterHook();
-        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
-        InstallSpeedHackHook();
+        if (!InstallFrameSyncD3D9(1024)) {
+            // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+            InstallSpeedHackHook();
+        }
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。
         InstallDSoundHook();

@@ -35,6 +35,11 @@ TEST(LogContractMatchesGolden) {
         Prefixed(12, 0, 1, 500,
                  Format(kSyncMarkerPlayedFmt, 1763700000.123456, 0.000789, 88200UL, 131072UL, 256,
                         0x2545F491UL, 0UL)),
+        Prefixed(12, 0, 2, 0,
+                 Format(kFrameSyncCaptureStartFmt, 640U, 480U, 21UL, "bgr0", 0UL)),
+        Prefixed(12, 0, 2, 500, Format(kFrameSyncUnthrottledFmt, 1, 420LL)),
+        Prefixed(12, 0, 10, 0,
+                 Format(kFrameSyncCaptureStoppedFmt, 3600LL, 3601LL, 12LL, 0)),
     };
     CHECK_EQ(got.size(), expected.size());
     for (size_t i = 0; i < got.size() && i < expected.size(); i++) CHECK_STR_EQ(got[i], expected[i]);

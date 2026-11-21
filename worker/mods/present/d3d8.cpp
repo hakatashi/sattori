@@ -23,6 +23,7 @@
 // CreateDevice/Presentのパラメータの並び自体はD3D9と同じ形。
 
 #include "present/bus.h"
+#include "present/limiter.h"
 #include "core/log.h"
 #include "core/pe_iat.h"
 #include "core/vtable_hook.h"
@@ -91,3 +92,15 @@ bool InstallD3D8() {
 }
 
 }  // namespace autoplay::present
+
+namespace autoplay {
+
+bool InstallFpsLimiterHookD3D8() {
+    const double targetHz = InstallFpsLimiterHandlers();
+    bool ok = present::InstallD3D8();
+    Log("InstallFpsLimiterHookD3D8: IAT hook %s (target=%.2f fps)",
+        ok ? "OK" : "FAILED (Direct3DCreate8 not found in IAT)", targetHz);
+    return ok;
+}
+
+}  // namespace autoplay

@@ -39,6 +39,8 @@
 #include "core/time_scale.h"
 #include "input/dinput.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d9_readback.h"
+#include "present/capture/frame_sync.h"
 #include "present/limiter.h"
 #include "texture/d3dx_filter.h"
 
@@ -63,8 +65,9 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
         return 1;
     }
 
-    Log("Buffering 6000ms for title screen logo animation...");
-    time_scale::MenuSleep(6000);
+    const DWORD titleWaitMs = frame_sync::Active() ? 8000 : 6000;
+    Log("Buffering %lums for title screen logo animation...", (unsigned long)titleWaitMs);
+    time_scale::MenuSleep(titleWaitMs);
 
     LogStep(0, "Enter (dismiss 'Press Any Button' title screen)");
     PressKey(DIK_RETURN);
@@ -88,6 +91,7 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     PressKey(DIK_RETURN);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th10");
     return 0;
 }
@@ -102,16 +106,18 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
         // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
         InstallD3DXFilterHook();
-        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
-        InstallSpeedHackHook();
-        // 倍速録画(reports/89)ではPresentの上限をFPS_LIMIT_TARGET_HZ(60×倍率)に合わせる
-        // (touhou-recorderでは低速録画検証のフェーズ58・62から同じ構成)。**等倍では入れない**:
-        // このタイトルはVsyncPatchが60fpsへのフレーム制御を担っており、present/limiterは
-        // FPS_LIMIT_TARGET_HZ未設定でも60fpsで間引くため、二重の制御でゲーム進行が約3%遅れた
-        // (MOD統合テストで被弾タイミングが127秒時点で4.1秒遅延、Issue #288)。
-        {
-            const double targetHz = Config().fpsLimitTargetHz;
-            if (targetHz > 0.0 && targetHz != 60.0) InstallFpsLimiterHook();
+        if (!InstallFrameSyncD3D9(1024)) {
+            // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+            InstallSpeedHackHook();
+            // 倍速録画(reports/89)ではPresentの上限をFPS_LIMIT_TARGET_HZ(60×倍率)に合わせる
+            // (touhou-recorderでは低速録画検証のフェーズ58・62から同じ構成)。**等倍では入れない**:
+            // このタイトルはVsyncPatchが60fpsへのフレーム制御を担っており、present/limiterは
+            // FPS_LIMIT_TARGET_HZ未設定でも60fpsで間引くため、二重の制御でゲーム進行が約3%遅れた
+            // (MOD統合テストで被弾タイミングが127秒時点で4.1秒遅延、Issue #288)。
+            {
+                const double targetHz = Config().fpsLimitTargetHz;
+                if (targetHz > 0.0 && targetHz != 60.0) InstallFpsLimiterHook();
+            }
         }
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。

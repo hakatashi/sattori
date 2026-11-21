@@ -25,6 +25,15 @@ void InitRuntimeConfig() {
         c.fpsLimitTargetHz, c.speedHackMultiplier, (int)c.d3d11DecodeBc7,
         c.d3dxAreaFilterDisabled ? "0" : "(default)", c.menuWaitExtraScale,
         c.syncMarkerTrigger[0] ? c.syncMarkerTrigger : "(none)");
+    if (c.FrameSyncEnabled()) {
+        Log("RuntimeConfig(FrameSync): pipe=%s stop=%s audio=%s step_div=%d skip_present=%d "
+            "pipeline=%d throttle_while_threads=%d thread_max_ms=%lu refill_wait_ms=%lu",
+            c.frameSyncPipe, c.frameSyncStop[0] ? c.frameSyncStop : "(none)",
+            c.frameSyncAudio[0] ? c.frameSyncAudio : "(none)", c.frameSyncStepDiv,
+            (int)c.frameSyncSkipPresent, (int)c.frameSyncPipeline,
+            (int)c.frameSyncThrottleWhileThreads, c.frameSyncThreadMaxMs,
+            c.frameSyncAudioRefillWaitMs);
+    }
 }
 
 }  // namespace autoplay
