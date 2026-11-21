@@ -136,6 +136,7 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm --filter @sattori/infra synth   # CDK 合
 - **実機検証・実測をした** → [`docs/reports/`](docs/reports/README.md)（不変。長大な調査は `docs/research/`）
 - **既知の制約・未実装事項** → [`docs/known-limitations.md`](docs/known-limitations.md)
 - **手順が増えた** → `docs/runbooks/` か Skill
+- **技術検証をする・不採用コードを置く** → [`docs/runbooks/experiment-workflow.md`](docs/runbooks/experiment-workflow.md)
 
 移設・分割の際は必ず相互リンクを張ること（同ガイドライン §5.5）。
 

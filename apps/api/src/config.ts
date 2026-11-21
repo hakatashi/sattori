@@ -21,6 +21,13 @@ export interface ApiConfig {
    */
   workerGpuImage: string;
   /**
+   * 検証用ECRリポジトリのURI（タグなし。Epic #399・Issue #397、`docs/decisions/0075`）。実験ジョブが
+   * `workerImageTag`を指定したときだけ`<URI>:<タグ>`を使う。本番のリポジトリ（2イメージしか保持しない）とは
+   * 別なので、検証用タグのpushで本番のイメージは消えない。CPU系・GPU系で別リポジトリ。
+   */
+  workerExperimentalRepo: string;
+  workerExperimentalGpuRepo: string;
+  /**
    * タイトル固有アセット(ゲーム本体+WINEPREFIX+MOD)を保管するバケット。ワーカーが
    * GAME環境変数に応じて起動時にダウンロード・展開する（`titles/{game}/assets.tar.gz`、
    * Issue #22）。ECRイメージ自体をタイトル数に依存しない共通部分のみにするための分離。
@@ -217,6 +224,8 @@ export function loadConfig(): ApiConfig {
     jobsTable: required("JOBS_TABLE"),
     workerImage: required("WORKER_IMAGE"),
     workerGpuImage: required("WORKER_GPU_IMAGE"),
+    workerExperimentalRepo: required("WORKER_EXPERIMENTAL_REPO"),
+    workerExperimentalGpuRepo: required("WORKER_EXPERIMENTAL_GPU_REPO"),
     titleAssetsBucket: required("TITLE_ASSETS_BUCKET"),
     logGroup: required("WORKER_LOG_GROUP"),
     maxReplayBytes: Number(process.env.MAX_REPLAY_BYTES ?? 5 * 1024 * 1024),

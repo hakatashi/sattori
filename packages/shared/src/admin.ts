@@ -33,6 +33,7 @@ export type AdminJobSummary = Pick<
   | "availabilityZone"
   | "progress"
   | "replayInfo"
+  | "experiment"
 >;
 
 /** GET /admin/jobs のレスポンス。 */

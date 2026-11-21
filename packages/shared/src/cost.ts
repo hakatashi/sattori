@@ -1,4 +1,4 @@
-import { currentRecordingStep, recordingPlanFor } from "./recordingPlan.js";
+import { currentRecordingStep, recordingPlanOf } from "./recordingPlan.js";
 import type { JobRecord } from "./job.js";
 import { OUTPUT_RETENTION_DAYS } from "./job.js";
 
@@ -187,6 +187,7 @@ export type JobCostInput = Pick<
   | "game"
   | "capacityExhaustedTargets"
   | "recordingStepId"
+  | "experiment"
   | "workerKind"
   | "createdAt"
   | "updatedAt"
@@ -350,9 +351,9 @@ function sizeClassOf(instanceType: string): keyof typeof FALLBACK_SPOT_PRICE_USD
  * 第一候補のインスタンスタイプから決める。自宅ワーカーの段なら、その次のEC2の段で見積もる。
  */
 function sizeClassOfJob(
-  job: Pick<JobCostInput, "game" | "capacityExhaustedTargets" | "recordingStepId">,
+  job: Pick<JobCostInput, "game" | "capacityExhaustedTargets" | "recordingStepId" | "experiment">,
 ): keyof typeof FALLBACK_SPOT_PRICE_USD_PER_HOUR {
-  const plan = recordingPlanFor(job.game);
+  const plan = recordingPlanOf(job);
   const current =
     plan.find((step) => step.id === job.recordingStepId) ?? currentRecordingStep(job) ?? plan[0];
   const from = current ? plan.indexOf(current) : 0;

@@ -1,7 +1,7 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { ADMIN_JOB_LIST_DEFAULT_LIMIT, ADMIN_JOB_LIST_MAX_LIMIT, JOB_STATUSES } from "@sattori/shared";
-import type { AdminJobSummary, JobStatus } from "@sattori/shared";
+import type { AdminJobSummary, JobRecord, JobStatus } from "@sattori/shared";
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -17,7 +17,7 @@ export const STATUS_CREATED_AT_INDEX = "StatusCreatedAtIndex";
  * GSIのProjectionは`ALL`だが、通信量を抑えるためクエリ側でも絞る。
  */
 const SUMMARY_PROJECTION =
-  "jobId, game, #status, createdAt, updatedAt, email, #error, workerKind, instanceType, availabilityZone, progress, replayInfo";
+  "jobId, game, #status, createdAt, updatedAt, email, #error, workerKind, instanceType, availabilityZone, progress, replayInfo, experiment";
 const SUMMARY_EXPRESSION_ATTRIBUTE_NAMES = {
   // "status"はDynamoDBの予約語、"error"も同様に予約語のためプレースホルダが必要。
   "#status": "status",
@@ -210,4 +210,27 @@ export async function listJobs(table: string, params: ListJobsParams): Promise<L
   }
 
   return { items: page, nextCursor: hasMore && page.length > 0 ? nextCursor : null };
+}
+
+/**
+ * 実験ジョブ（`JobRecord.experiment`、Issue #397）を新しい順に全件返す。`StatusCreatedAtIndex`は
+ * statusごとの索引で実験の絞り込みができないため、`attribute_exists(experiment)`のScanにする
+ * （`getCosts`も全件Scanしており、ジョブ数は月間最大1000件規模）。実験ジョブは多くても数十件で、
+ * Scanの読み取り量はテーブル全体だが管理者が検証レポートを書くときにしか呼ばない。
+ */
+export async function listExperimentJobs(table: string): Promise<JobRecord[]> {
+  const items: JobRecord[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(
+      new ScanCommand({
+        TableName: table,
+        FilterExpression: "attribute_exists(experiment)",
+        ...(exclusiveStartKey ? { ExclusiveStartKey: exclusiveStartKey } : {}),
+      }),
+    );
+    items.push(...((result.Items as JobRecord[] | undefined) ?? []));
+    exclusiveStartKey = result.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+  return items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 }

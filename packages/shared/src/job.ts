@@ -1,4 +1,5 @@
 import type { GameId } from "./games.js";
+import type { ExperimentSpec } from "./experiment.js";
 import type { SpeedupFallbackReason } from "./gpuRecording.js";
 import type { CaptureMode } from "./recordingPlan.js";
 import type { RecordingSpeed } from "./recordingSpeed.js";
@@ -225,6 +226,12 @@ export interface JobRecord {
    * 記録の無いジョブには属性自体が無い。
    */
   capacityExhaustedTargets?: string[];
+  /**
+   * 実験ジョブの指定（Epic #399・Issue #397、`docs/decisions/0075`）。管理API（`POST /admin/experiments`）が
+   * 作ったジョブにだけある。あるジョブは、タイトルの録画の段の代わりに`experiment.step`だけを試し、
+   * 完了メールを送らない（`email`はnull）。`recordingPlanOf()`が段の読み取りを一本化している。
+   */
+  experiment?: ExperimentSpec;
   /**
    * 最後に割り当てを試みた録画の段（`RecordingStep.id`、Issue #317）。`Launch`が段ごとに
    * `options.recordingSpeed`と同時に書く。管理画面の表示用で、段の導入前のジョブには無い。

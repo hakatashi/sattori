@@ -45,6 +45,8 @@ API契約自体は `packages/shared/README.md` を参照。**ここには「今�
 | `admin/getLogs.ts` | `GET /admin/jobs/{jobId}/logs` | ワーカーコンテナのCloudWatch Logs（見つからない場合はEC2コンソール出力にフォールバック） |
 | `admin/stopJob.ts` | `POST /admin/jobs/{jobId}/stop` | 暴走ジョブの緊急停止（実行停止→インスタンス終了→`failed`確定） |
 | `admin/retryJob.ts` | `POST /admin/jobs/{jobId}/retry` | 失敗ジョブの再実行（**新しいjobId**へ複製して起動） |
+| `admin/createExperiment.ts` | `POST /admin/experiments` | 段を明示した実験ジョブの作成・起動（Issue #397。[`docs/admin-api.md`](docs/admin-api.md) §10） |
+| `admin/listExperiments.ts` | `GET /admin/experiments` | 実験ジョブの結果（品質の判定値・実時間・課金時間・推定コスト）の一覧 |
 | `admin/getCosts.ts` | `GET /admin/costs` | コスト推定の日次/週次/月次集計（全件Scan + アプリ側集計）。CloudFrontの月次配信量はジョブ単位推定に加えCloudWatch実測値も併記（Issue #163） |
 | `admin/getAnalytics.ts` | `GET /admin/analytics` | 訪問者アナリティクスの日別集計（ユニーク訪問者数・ページビュー数・パースエラー件数・属性別内訳、Issue #149。§13） |
 | `admin/getSettings.ts` | `GET /admin/settings` | キルスイッチ・月間コストガード閾値の現在値と当月推定コストを取得（Issue #14） |

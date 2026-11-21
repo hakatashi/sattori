@@ -310,7 +310,7 @@ async function launchOnEc2(
     maxVcpu = lease.vcpu;
   }
 
-  const tier = launchTierFor(config, step, { maxVcpu });
+  const tier = launchTierFor(config, step, { maxVcpu }, job.experiment);
   if (tier === null) {
     console.warn(
       JSON.stringify({ event: "launch_step_unresolvable", jobId: job.jobId, stepId: step.id, region: step.region }),

@@ -23,6 +23,7 @@ jobId自体を秘密値として使うユーザー向けの認可方式（`start
 - [7. 緊急停止](#7-緊急停止)
 - [8. 再実行](#8-再実行)
 - [9. コスト集計](#9-コスト集計)
+- [10. 実験ジョブ](#10-実験ジョブissue-397)
 
 エンドポイントとハンドラの対応は `apps/api/README.md`「ハンドラ一覧」にある。
 
@@ -215,3 +216,33 @@ CloudFrontの配信料だけは`granularity`によらず常に月次で返す—
 CloudWatchにまだデータが無い等）は`null`——`GET /admin/costs`自体は失敗させない
 （`docs/decisions/0021`と同じ「付随データは本体を壊さない」方針、
 [`docs/decisions/0030`](../../../docs/decisions/0030-cloudfront-measured-usage-best-effort.md)）。
+
+## 10. 実験ジョブ（Issue #397）
+
+（`admin/createExperiment.ts`・`admin/listExperiments.ts`、ロジックは`experiments.ts`）
+技術検証のために**段を明示して録画ジョブを投げる**API。運用の手順は
+[`docs/runbooks/experiment-workflow.md`](../../../docs/runbooks/experiment-workflow.md)、
+なぜこの形かは[`docs/decisions/0075`](../../../docs/decisions/0075-experiment-jobs-and-experimental-ecr.md)。
+
+**`POST /admin/experiments`**（`AdminCreateExperimentRequest`）: リプレイは`sourceJobId`（既存ジョブの
+リプレイ・解析結果を使う）か`replayKey`＋`game`（`POST /uploads`で上げたもの。S3から取得して解析し、`game`との
+一致を確かめる）のどちらか一方。`step`は`kind`（`home`/`ec2`）・`platform`（`cpu`/`gpu`）・`region`・
+`instanceTypes`・`captureMode`（`realtime`/`frameSync`）・`speed`。ほかに`workerImageTag`・`note`・
+`options`（`watermark`・`th10BugfixMarisaB`）。検証（`parseExperimentRequest()`）:
+
+- CPUの段は一次リージョンのみ、GPUの段は一次・フォールバック先。GPUのインスタンスタイプは
+  `GPU_INSTANCE_TYPE_VCPUS`に載っているものだけ。`frameSync`のspeedは1固定。
+- `workerImageTag`は一次リージョンのEC2の段でだけ使える（自宅・フォールバック先は400）。タグの存在は**確かめない**
+  （存在しないタグはワーカーのpull失敗になる。pushしてから投げること）。
+
+レスポンスは`{jobId, status: "queued", stepId}`。作られるジョブは`JobRecord.experiment`（`ExperimentSpec`）を持ち、
+**タイトルの段の代わりにその1段だけ**を試す（`recordingPlanOf()`）。`email`はnullで完了メールは送られない。
+マジックリンクのレート制限・月間コストガードは通らず、キルスイッチは`Launch`側で効く。GPUの待ち行列は通常のジョブと
+同じFIFO。緊急停止・再実行・ログ・コスト集計は通常のジョブと共通（再実行は`experiment`を引き継ぐ）。
+
+**`GET /admin/experiments`**（`AdminExperimentListResponse`）: 実験ジョブだけを新しい順に全件返す
+（`attribute_exists(experiment)`のScan）。各行は`AdminExperimentResult`: 段・速度・インスタンスタイプ・
+`desyncDetected`/`timedOut`（品質の判定値はこの2つだけ。重複フレーム率などはワーカーログ）・
+`wallClockSeconds`（`launchedAt`から終了まで。リトライ間の待機を含み過大）・`wallClockToDurationRatio`
+（実時間÷推定尺）・`billedSeconds`・`estimatedCostUsd`（推定。請求額ではない）。
+`GET /admin/jobs`の各行にも`experiment`が載るので、一覧で見分けられる。

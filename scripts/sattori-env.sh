@@ -16,6 +16,9 @@
 #   SATTORI_ECR_REPO              ワーカーイメージの ECR リポジトリURI
 #   SATTORI_ECR_GPU_REPO          GPU描画必須タイトル(th06nc等、Issue #241)専用ワーカー
 #                                 イメージの ECR リポジトリURI(worker-gpu)
+#   SATTORI_ECR_EXPERIMENTAL_REPO / SATTORI_ECR_EXPERIMENTAL_GPU_REPO
+#                                 実験ジョブ用の検証用ワーカーイメージの ECR リポジトリURI
+#                                 (Issue #397。本番のイメージと混ぜないこと)
 #
 # いずれも呼び出し側で環境変数として先に与えれば、そちらが優先される
 # (AWS CLI を叩けない環境向け)。キャッシュを作り直したいときは
@@ -59,6 +62,8 @@ fi
 
 SATTORI_ECR_REPO="${SATTORI_AWS_ACCOUNT_ID}.dkr.ecr.${SATTORI_REGION}.amazonaws.com/sattori-worker"
 SATTORI_ECR_GPU_REPO="${SATTORI_AWS_ACCOUNT_ID}.dkr.ecr.${SATTORI_REGION}.amazonaws.com/sattori-worker-gpu"
+SATTORI_ECR_EXPERIMENTAL_REPO="${SATTORI_AWS_ACCOUNT_ID}.dkr.ecr.${SATTORI_REGION}.amazonaws.com/sattori-worker-experimental"
+SATTORI_ECR_EXPERIMENTAL_GPU_REPO="${SATTORI_AWS_ACCOUNT_ID}.dkr.ecr.${SATTORI_REGION}.amazonaws.com/sattori-worker-experimental-gpu"
 
 mkdir -p "$(dirname "$_sattori_cache")"
 cat > "$_sattori_cache" <<EOF
@@ -70,6 +75,7 @@ SATTORI_JOBS_TABLE=${SATTORI_JOBS_TABLE}
 EOF
 
 export SATTORI_REGION SATTORI_AWS_ACCOUNT_ID SATTORI_TITLE_ASSETS_BUCKET \
-  SATTORI_UPLOAD_BUCKET SATTORI_JOBS_TABLE SATTORI_ECR_REPO SATTORI_ECR_GPU_REPO
+  SATTORI_UPLOAD_BUCKET SATTORI_JOBS_TABLE SATTORI_ECR_REPO SATTORI_ECR_GPU_REPO \
+  SATTORI_ECR_EXPERIMENTAL_REPO SATTORI_ECR_EXPERIMENTAL_GPU_REPO
 
 unset _sattori_root _sattori_cache

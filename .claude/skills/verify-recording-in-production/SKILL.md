@@ -15,6 +15,12 @@ description: 未マージのPR(新タイトル対応等)を、公開フロント
 **本番AWSへの実デプロイ・実課金を伴う**。ユーザーから明示的に依頼された場合のみ
 実行すること。
 
+> **ワーカーイメージ・インスタンスタイプ・録画の段だけを試したいなら、この skill ではなく実験ジョブ
+> （`POST /admin/experiments`、`docs/runbooks/experiment-workflow.md`）を使う**。デプロイ済みの本番に、
+> 検証用イメージ（`sattori-worker-experimental`）と段を指定して投げられ、Lambdaの先出しもフロント隠しも要らない
+> （Issue #397）。この skill は、**PRのLambda・ワーカー・タイトル資産を本番のジョブ経路に先出しして**確認したい
+> とき（新タイトル対応など）に使う。
+
 ## 0. なぜフロントエンドだけ隠せるのか
 
 `infra/lib/sattori-stack.ts`は`apps/web/dist`をビルド時ではなく**デプロイ実行時に

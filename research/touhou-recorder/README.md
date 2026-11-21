@@ -39,7 +39,11 @@
 同じ種類の別々の値も同じ伏せ字になるので、**レポートの中で「どの ID とどの ID が同じか」は追えない**
 ことがある。検査は `scripts/check-public-mirror.sh --tree research/touhou-recorder`（Issue #395）。
 `docs/aws-resources.md` は残存リソースの一覧と削除コマンドだが、識別子がすべて伏せ字なので、
-そのままでは実行できない（棚卸しは Issue #397）。
+そのままでは実行できない（棚卸しは Issue #397、
+[`docs/reports/2026-11-21-touhou-recorder-cloud-resources-inventory.md`](../../docs/reports/2026-11-21-touhou-recorder-cloud-resources-inventory.md)）。
+**`cloud/terraform` と `docs/aws-resources.md` は今後使わない**（クラウドでの検証は sattori の実験ジョブ、
+[`docs/runbooks/experiment-workflow.md`](../../docs/runbooks/experiment-workflow.md)）。`docs/aws-resources.md` の
+内容は取り込み時点の古い記録で、実態とは異なる（上のレポート）。
 
 ---
 

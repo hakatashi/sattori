@@ -117,6 +117,11 @@ S3バケットを固定名（`lib/gpu-fallback.ts`）で受け渡す。**フォ�
   タイトル固有アセットをS3側へ分離済み）。GPU描画必須タイトル（th06nc等、Issue #241）
   専用に`sattori-worker-gpu`をもう1本持つ（別Dockerfile・別ベースイメージのため分離、
   [`docs/decisions/0048`](../docs/decisions/0048-separate-ecr-repo-for-gpu-workers.md)）。
+  実験ジョブ（Issue #397）の検証用イメージ置き場として`sattori-worker-experimental`・
+  `sattori-worker-experimental-gpu`も持つ（4世代保持・タグ無しは1日で削除。ワーカーのEC2ロールにだけpull権限、
+  自宅ワーカーのロールには付けない。フォールバック先へは複製しない。
+  [`docs/decisions/0075`](../docs/decisions/0075-experiment-jobs-and-experimental-ecr.md)）。本番のリポジトリは
+  2世代しか保持しないので、検証用タグを押さないこと。
 - **VPC**: NATなし公開サブネット×最大6AZ（`maxAzs: 6`。実際に作られる数は
   リージョンの提供AZ数とのmin。eu-south-2は現状3AZなので3つ）+ SG（egressのみ）。
   ワーカーは外向き通信のみのためNAT不要=コスト増なしでAZを広げられる。

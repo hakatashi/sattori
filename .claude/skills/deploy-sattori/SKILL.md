@@ -118,6 +118,29 @@ done
 コンテナが期待するユーザースペースライブラリのバージョンが食い違うと、Xorg/DXVKの
 起動に失敗する可能性がある（`worker/docs/titles/th06nc.md`参照）。
 
+### 2.1 検証用イメージ(実験ジョブ用、`sattori-worker-experimental`)
+
+**本番のリポジトリ（`sattori-worker`・`-gpu`）に検証用のタグを押してはならない**。本番のECRは2イメージしか
+保持しないので、押すと本番のイメージが消えて全ジョブが失敗する。実験ジョブ（`POST /admin/experiments`の
+`workerImageTag`）が使う検証用イメージは、CDKで作った別リポジトリへ押す（4世代保持・タグ無しは1日で削除）。
+**`pnpm run deploy`の前後は問わない**（本番のジョブは参照しない）が、リポジトリ自体はCDKデプロイで作られるので、
+初回はデプロイ後に押す。`latest`は使わず、`exp-<テーマ>-<連番>`のようにタグを分ける。
+
+```bash
+source scripts/sattori-env.sh
+TAG=exp-<テーマ>-1
+docker build -t "${SATTORI_ECR_EXPERIMENTAL_REPO}:${TAG}" worker/                     # GPU系は -f worker/Dockerfile.gpu と ..._GPU_REPO
+aws ecr get-login-password --region "$SATTORI_REGION" \
+  | docker login --username AWS --password-stdin \
+      "${SATTORI_AWS_ACCOUNT_ID}.dkr.ecr.${SATTORI_REGION}.amazonaws.com"
+docker push "${SATTORI_ECR_EXPERIMENTAL_REPO}:${TAG}"
+aws ecr describe-images --region "$SATTORI_REGION" --repository-name sattori-worker-experimental \
+  --image-ids imageTag="$TAG" --query 'imageDetails[].imageTags'   # 実験ジョブを投げる前にタグの存在を確認
+```
+
+実験ジョブへのタグの渡し方・制約（一次リージョンのEC2の段のみ、自宅ワーカーには使えない）は
+`docs/runbooks/experiment-workflow.md` §2・§3。
+
 ## 3. 管理画面（`/admin`）トークンの投入・ローテーション
 
 管理画面は SSM Parameter Store（SecureString）に置いた共有トークンで認証する（Issue #51）。
