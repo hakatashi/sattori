@@ -36,6 +36,13 @@ const HINT_ALWAYS_LOADED = [
 // 扱わないため。
 const rules = [
   {
+    // touhou-recorder のスナップショット（Issue #396）。取り込んだ当時のまま保つ不変の記録で、
+    // 500行を超えるレポートがあるため上限を設けない（docs/decisions/0074）。
+    label: "取り込んだ過去資料（research/）",
+    match: (file) => file.startsWith("research/"),
+    maxLines: null,
+  },
+  {
     label: "常時ロードされるファイル",
     match: (file) => file === "AGENTS.md",
     maxLines: 200,

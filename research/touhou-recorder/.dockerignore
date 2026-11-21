@@ -1,0 +1,17 @@
+# Dockerビルドコンテキストを絞り込むためのファイル。
+# Dockerfile側のCOPYは必要なgames/*・prefixes/*・mods/*/buildのみを個別指定しているが、
+# .dockerignoreが無いとdocker buildの初回コンテキスト転送でリポジトリ全体(19GB超、
+# instances/やruns/の生成物・未使用ゲームデータ込み)がdaemonへ送られてしまうため、
+# 明示的に不要なものを除外する。
+.git/
+__pycache__/
+instances/
+runs/
+reports/
+docs/
+games/th08/
+games/th13/
+games/th14/
+games/th20_steam/
+games/assets/
+games/replays/

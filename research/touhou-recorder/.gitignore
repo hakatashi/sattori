@@ -1,0 +1,35 @@
+# ゲーム本体・セーブデータ・リプレイ(著作権物・個人データ、リポジトリには含めない)
+/games/
+
+# 並列実行検証用のゲームディレクトリコピー(games/と同様、著作権物のため含めない)
+/instances/
+
+# WINEPREFIX実体(生成物、環境依存)
+/prefixes/
+
+# 実行結果の生成物(動画・ログ・静止画・fps統計等)。レポートに転載した図表は reports/assets/ に個別コピーする
+/runs/*/
+!/runs/.gitkeep
+
+__pycache__/
+*.pyc
+
+# MODビルド成果物(ソース・スクリプトのみコミットする)
+/mods/**/build/
+/mods/**/*.obj
+/mods/**/*.exp
+/mods/**/*.lib
+/mods/**/*.pdb
+/mods/**/*.ilk
+/mods/**/*.log
+
+
+# Terraformのstate・provider実体(環境依存・機微情報を含みうるためコミットしない)
+/cloud/terraform/**/.terraform/
+/cloud/terraform/**/terraform.tfstate
+/cloud/terraform/**/terraform.tfstate.backup
+/cloud/terraform/**/.terraform.lock.hcl
+
+
+# 検証用Win32プローブのビルド成果物(mods/と同様、ソース・ビルドスクリプトのみコミットする)
+/scripts/**/*.exe

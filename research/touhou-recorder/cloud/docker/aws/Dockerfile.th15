@@ -1,0 +1,48 @@
+# th15(東方紺珠伝)単体のリプレイ録画ワーカー用イメージ(AWS版)。
+# Dockerfile.th20を踏襲した軽量イメージ(単一タイトルのみ同梱、フェーズ82)。
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      wine wine32 wine64 winetricks \
+      xdotool xvfb openbox x11-utils procps rsync \
+      ffmpeg pulseaudio pulseaudio-utils \
+      libgl1-mesa-dri:amd64 libgl1-mesa-dri:i386 \
+      libgl1:amd64 libgl1:i386 \
+      libglx-mesa0:amd64 libglx-mesa0:i386 \
+      libegl-mesa0:amd64 libegl-mesa0:i386 \
+      language-pack-ja \
+      python3 python3-numpy python3-pil python3-pip \
+      ca-certificates \
+    && locale-gen ja_JP.UTF-8 && update-locale \
+    && pip3 install --break-system-packages --no-cache-dir boto3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY scripts/ /app/scripts/
+# 録画パイプライン本体(scripts/25_record_replay_e2e_multigame.py はこのパッケージを呼ぶシム)
+COPY recorder/ /app/recorder/
+COPY games/th15/ /app/games/th15/
+COPY prefixes/th15-wined3d-gl/ /app/prefixes/th15-wined3d-gl/
+COPY mods/common/build/injector.exe /app/mods/common/build/
+COPY mods/th15_replay_autoplay/build/th15_hook.dll /app/mods/th15_replay_autoplay/build/
+COPY assets/watermark/watermark-60fps.webm /app/assets/watermark/watermark-60fps.webm
+COPY assets/replay_end_templates/ /app/assets/replay_end_templates/
+
+COPY cloud/docker/aws/entrypoint_multigame.py /app/entrypoint.py
+RUN chmod +x /app/entrypoint.py && mkdir -p /app/instances /app/runs
+
+# th20と同じくcfg/replayをWINEPREFIX側の%APPDATA%/ShanghaiAlice/th15/
+# (c:\users\<実行時ユーザー名>\...)から読み込む仕様のため、WINEPREFIX作成時の
+# ユーザー名(drive_c/users/hakatashi)と実行時ユーザー名を一致させる必要がある
+# (Dockerfile.th20参照、reports/44/46)。
+RUN usermod -l hakatashi -d /home/hakatashi -m ubuntu && groupmod -n hakatashi ubuntu
+RUN chown -R hakatashi:hakatashi /app
+USER hakatashi
+
+ENV GAME=th15
+
+ENTRYPOINT ["python3", "/app/entrypoint.py"]

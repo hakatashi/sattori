@@ -35,6 +35,16 @@ description = "テストのダミー値。infra/cdk.json はGPU用AMI IDを設�
 paths = ['''(?i)\.test\.(ts|py)$''', '''^infra/cdk\.json$''']
 
 [[rules]]
+id = "aws-spot-instance-request-id"
+description = "スポットインスタンスリクエストID(sir-<英数字8桁>)"
+regex = '''\bsir-[0-9a-z]{8}\b'''
+tags = ["aws", "resource-id"]
+
+[rules.allowlist]
+description = "テストのダミー値"
+paths = ['''(?i)\.test\.(ts|py)$''']
+
+[[rules]]
 id = "aws-s3-bucket-with-account-id"
 description = "アカウントIDやリージョンを名前に含むS3バケット名(CDKの自動命名: <名前>-<12桁>-<region>)"
 regex = '''\b[a-z0-9][a-z0-9.-]*-\d{12}-[a-z]{2}-[a-z]+-\d\b'''
