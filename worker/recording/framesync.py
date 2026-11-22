@@ -739,7 +739,10 @@ def attempt_recording_frame_sync(config, replay_path, output_path, progress_dir,
         # どこで例外が起きてもwineserver/winedeviceを残さない(2026-08-27インシデント)。先に録画側の
         # 読み口を閉じる(ゲームが死んでいる場合、ffmpegがFIFOの読み出しで待ち続けないようにEOFを届ける)。
         if pipe_fd is not None:
-            os.close(pipe_fd)
+            try:
+                os.close(pipe_fd)
+            except OSError:
+                pass
         if video_proc is not None and video_proc.poll() is None:
             video_proc.send_signal(signal.SIGINT)
             try:

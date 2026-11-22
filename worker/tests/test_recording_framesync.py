@@ -530,6 +530,19 @@ def test_attempt_attaches_thprac_after_the_window_appears(monkeypatch, fake_envi
     assert calls == ["window", "attach"]
 
 
+def test_attempt_cleans_up_even_if_stop_capture_raises_after_closing_pipe(monkeypatch, fake_environment):
+    """_stop_capture() が pipe_fd を閉じた後に例外を出しても、finally が二重クローズで落ちず後片付けを完遂する。"""
+    def stop_that_closes_pipe_and_fails(config, pipe_fd, video_proc, seen_lines, log):
+        os.close(pipe_fd)
+        raise RuntimeError("wait failed")
+
+    monkeypatch.setattr(framesync, "_stop_capture", stop_that_closes_pipe_and_fails)
+    with pytest.raises(RuntimeError, match="wait failed"):
+        _attempt(fake_environment)
+    assert fake_environment["killed"] == 1
+    assert not os.path.exists(framesync.pipe_path(fake_environment["config"]))
+
+
 # ---------------------------------------------------------------------------
 # 合否判定: ワーカーの中ではリトライしない
 # ---------------------------------------------------------------------------
