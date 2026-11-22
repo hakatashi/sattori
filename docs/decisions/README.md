@@ -88,6 +88,7 @@
 | [0074](0074-import-touhou-recorder-snapshot.md) | 2026-11-21 | research / docs | 旧 PoC リポジトリ touhou-recorder を、伏せ字化した履歴なしスナップショットとして `research/touhou-recorder/` へ取り込み、「touhou-recorder reports/NN」を同ディレクトリの `reports/NN_*.md` と定義する（Issue #396、Epic #399） | 有効 |
 | [0075](0075-experiment-jobs-and-experimental-ecr.md) | 2026-11-21 | packages/shared / apps/api / infra / docs | クラウドでの技術検証は、段を明示した「実験ジョブ」（管理API）と検証用ECRリポジトリ（CDK管理）で本番パイプラインに乗せ、手作業のEC2・terraformでの検証はやめる（Issue #397、Epic #399） | 有効 |
 | [0076](0076-mod-core-and-present-bus.md) | 2026-11-21 | worker / docs | MODを共通基盤(`core/`)と機能別のディレクトリへ再編し、Presentをイベントバスにする。メニュー待ちは`60/FPS_LIMIT_TARGET_HZ`の1系統、起動待ちは低速録画でだけ伸ばし、`TH06NC_TIME_SCALE`は廃止(Issue #393、Epic #399) | 有効 |
+| [0077](0077-worker-frame-sync-recording-path.md) | 2026-11-22 | worker | ワーカーにフレーム同期キャプチャの録画経路(`CAPTURE_MODE=frame_sync`、`recording/framesync.py`)を足す。経路の分岐は`CAPTURE_MODE`だけで、ワーカーの中ではリトライせず、重複フレーム率の代わりに三者照合と理論尺(短い側-30%・長い側+10%)で判定する(Issue #389、Epic #399) | 有効 |
 
 ## 書き方
 

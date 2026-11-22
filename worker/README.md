@@ -96,6 +96,7 @@
 | `EXPECTED_SCORE` | リプレイファイルの記録スコア(画面表示値)。リプレイずれの事後検証(Issue #103、
   [`docs/mods.md`](docs/mods.md)の`score_monitor`)に使う。`replayInfo.score`が取得できていなければ省略される |
 | `FPS_LIMIT_TARGET_HZ` | 録画速度(§5)の目標fps。**省略時は等倍**(既定60)。倍速録画では`60×倍率`(2倍速なら`120`)、低速録画では`30`・`20`。MODへ渡す`SPEED_HACK_MULTIPLIER`(倍率)と`SYNC_MARKER_TRIGGER`(同期マーカー)はワーカーがここから導出するので、起動側は渡さない |
+| `CAPTURE_MODE` | `frame_sync`ならフレーム同期キャプチャ(`recording/framesync.py`、Issue #389)で録画する。**経路の分岐はこの値だけ**(タイトル・自宅/EC2・GPUの有無では分けない)。MODがゲームのPresentごとにバックバッファをFIFOへ書き、音声も仮想ミキサがPCMで書くので、`FPS_LIMIT_TARGET_HZ`・`GPU_WORKER`とは併用しない(渡されても`FPS_LIMIT_TARGET_HZ`は使わず`time_scale`は常に1.0)。未設定・それ以外の値は従来の実時間の経路。起動側が録画の段の`captureMode`から渡す(`apps/api/src/workerEnv.ts`)。**この経路はワーカーの中でリトライせず、重複フレーム率の判定を使わない**([`decisions/0077`](../docs/decisions/0077-worker-frame-sync-recording-path.md)) |
 | `GPU_WORKER` | `1`ならGPU(NVIDIA)搭載ワーカー。GPU描画が必須でないタイトルもGPU描画(Xorg+nvidia)で録画し、録画・変換とも映像をNVENCでエンコードする(§5)。GPU系インスタンスで起動する場合だけ起動側が渡す |
 | `THPRAC_ATTACH_TIMEOUT_SEC` / `_CONFIRM_SEC` / `_ATTEMPTS` | th20 の thprac アタッチの予算([`titles/th20.md`](docs/titles/th20.md)) |
 | `TH10_BUGFIX_MARISA_B` | `1` で th10 の VsyncPatch(`vpatch.ini`の`BugFixTh10Power3`)を有効にして録画する

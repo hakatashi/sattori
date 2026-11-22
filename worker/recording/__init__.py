@@ -18,6 +18,7 @@
   sync_marker  同期マーカーによるA/V同期補正(Issue #288)
   artifacts  別プロセスへファイル経由で渡す成果物の書き出し
   pipeline   1回の録画試行と自動リトライ
+  framesync  フレーム同期キャプチャの録画経路(CAPTURE_MODE=frame_sync、Issue #389。リトライしない)
   cli        record_thNN.py が共有する CLI
 
 Issue #13(th08 対応)に伴う touhou-recorder での検証(reports/22〜26)で、
