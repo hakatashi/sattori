@@ -36,5 +36,7 @@ namespace autoplay {
 // 上限は FPS_LIMIT_TARGET_HZ(core/runtime_config.h)、未設定なら60fps。
 bool InstallFpsLimiterHook();      // D3D9
 bool InstallFpsLimiterHookD3D8();  // D3D8(th09)
+// アダプタ登録を行わず Present バスのハンドラだけを登録する(フレーム同期用)。戻り値は目標fps。
+double InstallFpsLimiterHandlers();
 
 } // namespace autoplay

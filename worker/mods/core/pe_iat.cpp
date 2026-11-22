@@ -23,6 +23,7 @@ bool HookImpl(HMODULE module, const char* dll, DllMatch dllMatch, const char* na
                                                   : _stricmp(impName, dll) == 0;
         if (!dllOk) continue;
 
+        if (!imp->OriginalFirstThunk) continue;
         auto* thunk = (IMAGE_THUNK_DATA*)(base + imp->FirstThunk);
         auto* ithunk = (IMAGE_THUNK_DATA*)(base + imp->OriginalFirstThunk);
         for (; thunk->u1.Function; thunk++, ithunk++) {
@@ -35,9 +36,13 @@ bool HookImpl(HMODULE module, const char* dll, DllMatch dllMatch, const char* na
                 if (_stricmp((const char*)byName->Name, name) != 0) continue;
             }
 
+            if ((void*)thunk->u1.Function == fn) {
+                if (matchedDll) *matchedDll = impName;
+                return true;
+            }
             DWORD oldProt;
             VirtualProtect(&thunk->u1.Function, sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProt);
-            if (orig) *orig = (void*)thunk->u1.Function;
+            if (orig && !*orig) *orig = (void*)thunk->u1.Function;
             thunk->u1.Function = (ULONG_PTR)fn;
             VirtualProtect(&thunk->u1.Function, sizeof(void*), oldProt, &oldProt);
             if (matchedDll) *matchedDll = impName;
@@ -73,7 +78,7 @@ struct Entry {
     Wrap wrap;
     bool evenIfNull;
 };
-constexpr int kMaxEntries = 16;
+constexpr int kMaxEntries = 32;
 Entry g_entries[kMaxEntries];
 int g_numEntries = 0;
 

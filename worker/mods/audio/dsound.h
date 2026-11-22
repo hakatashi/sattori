@@ -60,4 +60,10 @@ bool InstallDSoundHook();
 void* WrapDirectSoundCreate8(void* real);
 void HookDirectSoundObject(void* ds8);
 
+namespace dsound {
+using BufferCreatedCallback = void (*)(void* buffer, const void* desc, bool isPrimary);
+using BufferDuplicatedCallback = void (*)(void* original, void* duplicate);
+void SetBufferCallbacks(BufferCreatedCallback onCreated, BufferDuplicatedCallback onDuplicated);
+}  // namespace dsound
+
 } // namespace autoplay

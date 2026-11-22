@@ -133,6 +133,9 @@ void StartScoreMonitorThread(const ScoreMonitorConfig& config) {
     if (multiplier > 1.0) {
         g_config.intervalMs = (DWORD)(config.intervalMs / multiplier);
         if (g_config.intervalMs < 1) g_config.intervalMs = 1;
+    } else if (Config().FrameSyncEnabled() && g_config.intervalMs > 20) {
+        // フレーム同期は等速の5〜10倍以上で進むため、粗い間隔では終端のスコアを取りこぼす。
+        g_config.intervalMs = 20;
     }
     CreateThread(NULL, 0, ScoreMonitorThread, NULL, 0, NULL);
 }

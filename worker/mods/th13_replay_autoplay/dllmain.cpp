@@ -22,6 +22,8 @@
 #include "core/time_scale.h"
 #include "input/dinput.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d9_readback.h"
+#include "present/capture/frame_sync.h"
 #include "present/limiter.h"
 #include "texture/d3dx_filter.h"
 
@@ -72,6 +74,7 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     PressKey(DIK_RETURN);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th13");
     return 0;
 }
@@ -86,14 +89,16 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
         // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
         InstallD3DXFilterHook();
-        // QPC偽装。等倍では何もしない。低速録画ではワーカーがSPEED_HACK_MULTIPLIER<1を渡す
-        // (record_th13.pyのslow_motion_speed_hack)。ゲーム自身のフレーム待ちと画面右下の
-        // fps表示がQPC基準なので、Presentの上限と揃えて減速すると表示も「60.0fps」のままになる
-        // (reports/100の1/2倍速の録画で確認、worker/docs/titles/th13.md)。
-        InstallSpeedHackHook();
-        // VsyncPatchを使わないので、等倍でもPresentを60fpsに制限する(th10・th128と同じ。
-        // FPS_LIMIT_TARGET_HZがあればそちらを優先する)。
-        InstallFpsLimiterHook();
+        if (!InstallFrameSyncD3D9(1024)) {
+            // QPC偽装。等倍では何もしない。低速録画ではワーカーがSPEED_HACK_MULTIPLIER<1を渡す
+            // (record_th13.pyのslow_motion_speed_hack)。ゲーム自身のフレーム待ちと画面右下の
+            // fps表示がQPC基準なので、Presentの上限と揃えて減速すると表示も「60.0fps」のままになる
+            // (reports/100の1/2倍速の録画で確認、worker/docs/titles/th13.md)。
+            InstallSpeedHackHook();
+            // VsyncPatchを使わないので、等倍でもPresentを60fpsに制限する(th10・th128と同じ。
+            // FPS_LIMIT_TARGET_HZがあればそちらを優先する)。
+            InstallFpsLimiterHook();
+        }
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。
         InstallDSoundHook();

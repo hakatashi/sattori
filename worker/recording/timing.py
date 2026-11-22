@@ -46,14 +46,33 @@ MAX_SLOW_MOTION_SCALE = 3.0
 SLOW_MOTION_MAX_DUPLICATE_RATE = 90.0
 
 
+# フレーム同期キャプチャ(Issue #389)を指す`CAPTURE_MODE`の値。起動側
+# (`apps/api/src/workerEnv.ts`)が録画の段の`captureMode: "frameSync"`から渡す。
+# 未設定なら従来どおりの実時間キャプチャ(x11grab・PulseAudio・同期マーカー)で、
+# **ワーカーの録画経路の分岐はこの値だけで決める**(タイトルや「自宅かEC2か」では分けない)。
+CAPTURE_MODE_FRAME_SYNC = "frame_sync"
+
+
+def frame_sync_mode(env=None):
+    """フレーム同期キャプチャ(`recording/framesync.py`)で録画するか。"""
+    return (env if env is not None else os.environ).get("CAPTURE_MODE") == CAPTURE_MODE_FRAME_SYNC
+
+
 def recording_time_scale(env=None):
     """`FPS_LIMIT_TARGET_HZ`から実時間のスケール係数を求める(等倍なら1.0)。
+
+    **フレーム同期キャプチャでは常に1.0**(`frame_sync_mode()`)。時間の基準が実時間ではなく動画の
+    フレーム番号なので倍率の概念が無く、`FPS_LIMIT_TARGET_HZ`が渡されても使わない。生動画の
+    チェックポイントのメタデータ`sattori-time-scale`(`entrypoint.py`)にも1.0が書かれ、
+    再開側・変換側の互換が保たれる(`docs/decisions/0015`)。
 
     未設定・数値でない・0以下はいずれも1.0へ丸める。倍速側は`MAX_SPEEDUP_MULTIPLIER`倍速
     (scale=0.25)より速い値を指定されても0.25で頭打ちにする(起動側の不具合で極端な値が
     渡っても、監視のタイムアウトが際限なく縮んで誤検知しないようにするため)。低速側も同じ理由で
     `MAX_SLOW_MOTION_SCALE`で頭打ちにする。
     """
+    if frame_sync_mode(env):
+        return 1.0
     raw = (env if env is not None else os.environ).get("FPS_LIMIT_TARGET_HZ")
     if not raw:
         return 1.0

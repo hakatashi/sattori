@@ -31,6 +31,8 @@
 #include "core/time_scale.h"
 #include "input/dinput.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d9_readback.h"
+#include "present/capture/frame_sync.h"
 #include "present/limiter.h"
 
 using namespace autoplay;
@@ -57,8 +59,9 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
 
     // th20と同じ10秒。短くした5秒では1/3倍速の`c7i.4xlarge`でメニュー操作を取りこぼした(Issue #316)。
     // この区間は配信版でカットされる(`recording/cut.py`)ので、長くても動画には残らない。
-    Log("Buffering 10000ms (scaled) for title screen logo animation...");
-    time_scale::MenuSleep(10000);
+    const DWORD titleWaitMs = frame_sync::Active() ? 11500 : 10000;
+    Log("Buffering %lums (scaled) for title screen logo animation...", (unsigned long)titleWaitMs);
+    time_scale::MenuSleep(titleWaitMs);
 
     LogStep(1, "Down x2 (select 'Replay' on main menu, skipping grayed-out 'Extra Start')");
     for (int i = 0; i < 2; i++) {
@@ -82,6 +85,7 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     PressKey(DIK_RETURN);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th15");
     return 0;
 }
@@ -93,21 +97,23 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hooks");
         InstallDinputHook();
-        // 倍速録画(reports/85・89): QPCの経過時間をSPEED_HACK_MULTIPLIER倍に伸ばす。
-        // 未設定(等倍)なら何もしない。
-        InstallSpeedHackHook();
-        // 低速録画(Issue #316)対応。D3D9 Presentフックでフレームレートを制限する
-        // (th20と同じ経路、touhou-recorder reports/82で動作確認済み)。
-        InstallFpsLimiterHook();
+        if (!InstallFrameSyncD3D9(1024)) {
+            // 倍速録画(reports/85・89): QPCの経過時間をSPEED_HACK_MULTIPLIER倍に伸ばす。
+            // 未設定(等倍)なら何もしない。
+            InstallSpeedHackHook();
+            // 低速録画(Issue #316)対応。D3D9 Presentフックでフレームレートを制限する
+            // (th20と同じ経路、touhou-recorder reports/82で動作確認済み)。
+            InstallFpsLimiterHook();
+            // 低速録画でfps表示が低いままになる問題の補正(touhou-recorder reports/93)。FPSInfの
+            // 更新(0x335f0)が時刻取得関数(0x72c90)を呼ぶ経路だけを偽装する。0x72c90はフレーム
+            // ペーシング等と共有なのでQPCの戻り先だけでは絞り込めない。等倍・倍速録画では倍率
+            // 1.0となり無効。IATの外側に置くためInstallSpeedHackHookより後に呼ぶこと。
+            InstallFpsDisplayCorrectionHookViaCaller(0x00072ccb, 0x00033600);
+        }
         // present/limiterによる映像・ゲームロジックのスローモーション化は
         // DirectSoundのBGM/SEストリーミングには連動しないため、SetFrequency
         // フックで音声側も同じ比率でスケールする(th20と同じ理由)。
         InstallDSoundHook();
-        // 低速録画でfps表示が低いままになる問題の補正(touhou-recorder reports/93)。FPSInfの
-        // 更新(0x335f0)が時刻取得関数(0x72c90)を呼ぶ経路だけを偽装する。0x72c90はフレーム
-        // ペーシング等と共有なのでQPCの戻り先だけでは絞り込めない。等倍・倍速録画では倍率
-        // 1.0となり無効。IATの外側に置くためInstallSpeedHackHookより後に呼ぶこと。
-        InstallFpsDisplayCorrectionHookViaCaller(0x00072ccb, 0x00033600);
         // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
         // (thprac_th15.cpp)のth15_patch_mainフック内の絶対アドレス書き込み
         // (0x4E740C=score/10, 0x4E7450=life, 0x4E741C=graze)から、th15.exeの

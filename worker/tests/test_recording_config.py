@@ -283,3 +283,25 @@ def test_runtime_overrides_do_not_touch_vpatch_below_native_rate_or_titles_witho
     assert with_runtime_overrides(with_vpatch, {"FPS_LIMIT_TARGET_HZ": "30"}, log=lambda m: None) is with_vpatch
     without = make_config()
     assert with_runtime_overrides(without, {"FPS_LIMIT_TARGET_HZ": "120"}, log=lambda m: None) is without
+
+
+# --- フレーム同期キャプチャ(Issue #389) -------------------------------------
+
+
+def test_frame_sync_sets_calc_fps_zero_on_vpatch_titles():
+    """vpatchが画面上のfps表示を実時間で計算すると、可変速のフレーム同期では数百fpsと表示される。"""
+    config = make_config(extra_dlls=("vpatch_th06.dll",))
+    config = with_runtime_overrides(config, {"CAPTURE_MODE": "frame_sync"}, log=lambda m: None)
+    assert ("Option", "CalcFPS", "0") in config.vpatch_ini_overrides
+    # GameFPSは60のまま(倍速録画のように書き換えない)
+    assert not any(key == "GameFPS" for _section, key, _value in config.vpatch_ini_overrides)
+
+
+def test_frame_sync_leaves_titles_without_vpatch_untouched():
+    config = make_config()
+    assert with_runtime_overrides(config, {"CAPTURE_MODE": "frame_sync"}, log=lambda m: None) is config
+
+
+def test_no_capture_mode_does_not_touch_vpatch_ini_in_realtime_native_speed():
+    config = make_config(extra_dlls=("vpatch_th06.dll",))
+    assert with_runtime_overrides(config, {}, log=lambda m: None) is config

@@ -1,5 +1,7 @@
 """配信版から落とすリプレイ再生区間外のカット範囲(Issue #266)。"""
 
+import pytest
+
 from recording import cut
 from recording_helpers import make_config
 
@@ -94,3 +96,46 @@ def test_keeps_the_lead_when_the_sync_marker_ended_earlier(monkeypatch):
     })
 
     assert _compute()["startSec"] == 4.0
+
+
+# --- フレーム同期キャプチャ(Issue #389) -------------------------------------
+
+_FRAME_SYNC_LOG = [
+    "[00:00:02.000] FrameSync: capture start width=640 height=480 d3dfmt=21 pix_fmt=bgr0 multisample=0",
+    "[00:00:09.000] Step 5: Enter (start replay)",
+    "[00:00:09.700] FrameSync: unthrottled=1 at frame=700",
+    "[00:00:09.701] === th08_replay_autoplay: sequence complete ===",
+]
+
+
+def _frame_sync_config(tmp_path, lines=_FRAME_SYNC_LOG):
+    config = make_config(instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return config
+
+
+def test_frame_sync_cut_starts_one_second_before_the_replay_start_frame(tmp_path):
+    config = _frame_sync_config(tmp_path)
+    result = cut.compute_frame_sync_cut_range(config, 700.0, log=lambda m: None)
+    # リプレイ再生確定 = 700 - 42 = 658フレーム目(10.967秒)。その1秒前から残す
+    assert result["startSec"] == pytest.approx(658 / 60 - 1.0)
+    assert result["endSec"] == 700.0
+
+
+def test_frame_sync_cut_uses_video_time_not_wall_clock(tmp_path):
+    """壁時計(epoch)の情報は使わない。同期マーカーも鳴らさないのでその配慮も無い。"""
+    config = _frame_sync_config(tmp_path)
+    assert cut.compute_frame_sync_cut_range(config, None, log=lambda m: None)["endSec"] is None
+
+
+def test_frame_sync_cut_keeps_the_start_when_the_log_has_no_frame(tmp_path):
+    config = _frame_sync_config(tmp_path, ["[00:00:02.000] Step 1: Enter"])
+    result = cut.compute_frame_sync_cut_range(config, 100.0, log=lambda m: None)
+    assert result == {"startSec": None, "endSec": 100.0}
+
+
+def test_frame_sync_cut_drops_an_end_too_close_to_the_start(tmp_path):
+    config = _frame_sync_config(tmp_path)
+    result = cut.compute_frame_sync_cut_range(config, 10.5, log=lambda m: None)
+    assert result["endSec"] is None

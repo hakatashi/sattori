@@ -39,7 +39,9 @@ DWORD WINAPI WatchThread(LPVOID) {
 }  // namespace
 
 bool Arm(const Watch& watch, const char* armedBy) {
-    const char* trig = Config().syncMarkerTrigger;
+    const RuntimeConfig& cfg = Config();
+    if (cfg.FrameSyncEnabled() || cfg.frameSyncAudio[0]) return false;
+    const char* trig = cfg.syncMarkerTrigger;
     if (!trig[0]) return false;
     // 監視は1プロセスに1つだけ(DirectSound と WASAPI を両方フックする th06c/th06nc でも、
     // 鳴らすのは Arm を呼んだ側だけ)。

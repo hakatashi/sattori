@@ -18,6 +18,7 @@
 
 #include "present/bus.h"
 #include "core/log.h"
+#include "core/runtime_config.h"
 #include "core/vtable_hook.h"
 
 #include <d3d11.h>
@@ -27,7 +28,16 @@ namespace autoplay::present {
 
 namespace {
 
+// -ldxguid に頼らず th06c でもリンクできるよう IID はここで定義する。
+const GUID kIID_IDXGIFactory = {
+    0x7b7166ec, 0x21c7, 0x44ae, {0xb2, 0x1a, 0xc9, 0xae, 0x32, 0x1a, 0xe3, 0x69}};
+const GUID kIID_IDXGIDevice = {
+    0x54ec77fa, 0x1377, 0x44e6, {0x8c, 0x32, 0x88, 0xfd, 0x5f, 0x44, 0xc8, 0x4c}};
+const GUID kIID_IDXGIFactory2 = {
+    0x50c83a1c, 0xe072, 0x4c48, {0x87, 0xb0, 0x36, 0x30, 0xfa, 0x36, 0xa6, 0xd0}};
+
 typedef HRESULT(WINAPI* Present_t)(IDXGISwapChain*, UINT, UINT);
+typedef HRESULT(WINAPI* ResizeBuffers_t)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
 typedef HRESULT(WINAPI* CreateSwapChain_t)(IDXGIFactory*, IUnknown*, DXGI_SWAP_CHAIN_DESC*,
                                            IDXGISwapChain**);
 typedef HRESULT(WINAPI* CreateSwapChainForHwnd_t)(IDXGIFactory2*, IUnknown*, HWND,
@@ -41,12 +51,18 @@ typedef HRESULT(WINAPI* D3D11CreateDeviceAndSwapChain_t)(
     IDXGIAdapter*, D3D_DRIVER_TYPE, HMODULE, UINT, const D3D_FEATURE_LEVEL*, UINT, UINT,
     const DXGI_SWAP_CHAIN_DESC*, IDXGISwapChain**, ID3D11Device**, D3D_FEATURE_LEVEL*,
     ID3D11DeviceContext**);
+typedef HRESULT(WINAPI* CreateDXGIFactory_t)(REFIID, void**);
+typedef HRESULT(WINAPI* CreateDXGIFactory2_t)(UINT, REFIID, void**);
 
 Present_t g_origPresent = nullptr;
+ResizeBuffers_t g_origResizeBuffers = nullptr;
 CreateSwapChain_t g_origCreateSwapChain = nullptr;
 CreateSwapChainForHwnd_t g_origCreateSwapChainForHwnd = nullptr;
 D3D11CreateDevice_t g_origD3D11CreateDevice = nullptr;
 D3D11CreateDeviceAndSwapChain_t g_origD3D11CreateDeviceAndSwapChain = nullptr;
+CreateDXGIFactory_t g_origCreateDXGIFactory = nullptr;
+CreateDXGIFactory_t g_origCreateDXGIFactory1 = nullptr;
+CreateDXGIFactory2_t g_origCreateDXGIFactory2 = nullptr;
 
 HRESULT WINAPI MyPresent(IDXGISwapChain* sc, UINT syncInterval, UINT presentFlags) {
     const Frame frame{Api::kDxgi, sc, &syncInterval};
@@ -54,6 +70,12 @@ HRESULT WINAPI MyPresent(IDXGISwapChain* sc, UINT syncInterval, UINT presentFlag
     HRESULT hr = (flags & kSkip) ? S_OK : g_origPresent(sc, syncInterval, presentFlags);
     DispatchPost(frame, flags, hr);
     return hr;
+}
+
+HRESULT WINAPI MyResizeBuffers(IDXGISwapChain* sc, UINT cnt, UINT w, UINT h, DXGI_FORMAT fmt,
+                                 UINT presentFlags) {
+    DispatchResize(Api::kDxgi, sc, w, h, (DWORD)fmt);
+    return g_origResizeBuffers(sc, cnt, w, h, fmt, presentFlags);
 }
 
 HRESULT WINAPI MyCreateSwapChain(IDXGIFactory* factory, IUnknown* device, DXGI_SWAP_CHAIN_DESC* desc,
@@ -76,12 +98,12 @@ HRESULT WINAPI MyCreateSwapChainForHwnd(IDXGIFactory2* factory, IUnknown* device
 void HookFactoryOfDevice(ID3D11Device* device) {
     if (!device) return;
     IDXGIDevice* dxgiDevice = nullptr;
-    if (FAILED(device->QueryInterface(__uuidof(IDXGIDevice), (void**)&dxgiDevice)) || !dxgiDevice)
+    if (FAILED(device->QueryInterface(kIID_IDXGIDevice, (void**)&dxgiDevice)) || !dxgiDevice)
         return;
     IDXGIAdapter* adapter = nullptr;
     if (SUCCEEDED(dxgiDevice->GetAdapter(&adapter)) && adapter) {
         IDXGIFactory* factory = nullptr;
-        if (SUCCEEDED(adapter->GetParent(__uuidof(IDXGIFactory), (void**)&factory)) && factory) {
+        if (SUCCEEDED(adapter->GetParent(kIID_IDXGIFactory, (void**)&factory)) && factory) {
             HookDxgiFactory(factory);
             factory->Release();
         }
@@ -108,39 +130,81 @@ HRESULT WINAPI MyD3D11CreateDeviceAndSwapChain(IDXGIAdapter* a, D3D_DRIVER_TYPE 
     return hr;
 }
 
+HRESULT WINAPI MyCreateDXGIFactory(REFIID riid, void** ppv) {
+    HRESULT hr = g_origCreateDXGIFactory(riid, ppv);
+    if (SUCCEEDED(hr) && ppv && *ppv) HookDxgiFactory(*ppv);
+    return hr;
+}
+
+HRESULT WINAPI MyCreateDXGIFactory1(REFIID riid, void** ppv) {
+    HRESULT hr = g_origCreateDXGIFactory1(riid, ppv);
+    if (SUCCEEDED(hr) && ppv && *ppv) HookDxgiFactory(*ppv);
+    return hr;
+}
+
+HRESULT WINAPI MyCreateDXGIFactory2(UINT flags, REFIID riid, void** ppv) {
+    HRESULT hr = g_origCreateDXGIFactory2(flags, riid, ppv);
+    if (SUCCEEDED(hr) && ppv && *ppv) HookDxgiFactory(*ppv);
+    return hr;
+}
+
+template <typename Fn>
+void* WrapProc(void* real, Fn hooked, Fn* origOut) {
+    if (!real || real == (void*)hooked) return real;
+    if (!*origOut) *origOut = (Fn)real;
+    return (void*)hooked;
+}
+
 }  // namespace
 
 void HookDxgiSwapChain(void* swapChain) {
     if (!swapChain) return;
-    if (vtable::HookObject(swapChain, 8, &MyPresent, &g_origPresent))
+    if (vtable::HookObject(swapChain, 8, &MyPresent, &g_origPresent) &&
+        !Config().FrameSyncEnabled()) {
         Log("DXGI: hooked IDXGISwapChain::Present (vtable[8])");
+    }
+    if (vtable::HookObject(swapChain, 13, &MyResizeBuffers, &g_origResizeBuffers) &&
+        !Config().FrameSyncEnabled()) {
+        Log("DXGI: hooked IDXGISwapChain::ResizeBuffers (vtable[13])");
+    }
     DispatchDevice(Api::kDxgi, swapChain);
 }
 
 void HookDxgiFactory(void* factory) {
     if (!factory) return;
     auto* f = (IDXGIFactory*)factory;
-    if (vtable::HookObject(f, 10, &MyCreateSwapChain, &g_origCreateSwapChain))
+    if (vtable::HookObject(f, 10, &MyCreateSwapChain, &g_origCreateSwapChain) &&
+        !Config().FrameSyncEnabled()) {
         Log("DXGI: hooked IDXGIFactory::CreateSwapChain (vtable[10])");
+    }
     IDXGIFactory2* f2 = nullptr;
-    if (SUCCEEDED(f->QueryInterface(__uuidof(IDXGIFactory2), (void**)&f2)) && f2) {
-        if (vtable::HookObject(f2, 15, &MyCreateSwapChainForHwnd, &g_origCreateSwapChainForHwnd))
+    if (SUCCEEDED(f->QueryInterface(kIID_IDXGIFactory2, (void**)&f2)) && f2) {
+        if (vtable::HookObject(f2, 15, &MyCreateSwapChainForHwnd, &g_origCreateSwapChainForHwnd) &&
+            !Config().FrameSyncEnabled()) {
             Log("DXGI: hooked IDXGIFactory2::CreateSwapChainForHwnd (vtable[15])");
+        }
         f2->Release();
     }
 }
 
 void* WrapD3D11CreateDevice(void* real) {
-    if (!real || real == (void*)MyD3D11CreateDevice) return real;
-    if (!g_origD3D11CreateDevice) g_origD3D11CreateDevice = (D3D11CreateDevice_t)real;
-    return (void*)MyD3D11CreateDevice;
+    return WrapProc(real, &MyD3D11CreateDevice, &g_origD3D11CreateDevice);
 }
 
 void* WrapD3D11CreateDeviceAndSwapChain(void* real) {
-    if (!real || real == (void*)MyD3D11CreateDeviceAndSwapChain) return real;
-    if (!g_origD3D11CreateDeviceAndSwapChain)
-        g_origD3D11CreateDeviceAndSwapChain = (D3D11CreateDeviceAndSwapChain_t)real;
-    return (void*)MyD3D11CreateDeviceAndSwapChain;
+    return WrapProc(real, &MyD3D11CreateDeviceAndSwapChain, &g_origD3D11CreateDeviceAndSwapChain);
+}
+
+void* WrapCreateDXGIFactory(void* real) {
+    return WrapProc(real, &MyCreateDXGIFactory, &g_origCreateDXGIFactory);
+}
+
+void* WrapCreateDXGIFactory1(void* real) {
+    return WrapProc(real, &MyCreateDXGIFactory1, &g_origCreateDXGIFactory1);
+}
+
+void* WrapCreateDXGIFactory2(void* real) {
+    return WrapProc(real, &MyCreateDXGIFactory2, &g_origCreateDXGIFactory2);
 }
 
 }  // namespace autoplay::present

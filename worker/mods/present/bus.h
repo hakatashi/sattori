@@ -38,6 +38,8 @@ using PreHandler = void (*)(const Frame& frame, unsigned& flags);
 using PostHandler = void (*)(const Frame& frame, unsigned flags, HRESULT hr);
 // デバイス(D3D8/D3D9)・スワップチェーン(DXGI)ができたとき。
 using DeviceHandler = void (*)(Api api, void* target);
+// スワップチェーンのResizeBuffers等(DXGI)。元呼び出しの前に通知される。
+using ResizeHandler = void (*)(Api api, void* target, UINT width, UINT height, DWORD format);
 
 // 優先度。小さいほど先に呼ばれる(前・後とも同じ順)。
 constexpr int kPriorityFrameSync = 50;
@@ -46,17 +48,20 @@ constexpr int kPriorityLimiter = 100;
 void AddPreHandler(PreHandler handler, int priority);
 void AddPostHandler(PostHandler handler, int priority);
 void AddDeviceHandler(DeviceHandler handler);
+void AddResizeHandler(ResizeHandler handler);
 
 // アダプタを組み込む(冪等)。IATを書き換えるので DLL_PROCESS_ATTACH の最初期に呼ぶこと。
 // exe の IAT に該当の関数が無ければ false。
 bool InstallD3D9();  // d3d9.dll!Direct3DCreate9
 bool InstallD3D8();  // d3d8.dll!Direct3DCreate8
 
-// DXGI(D3D11)。DXライブラリ(th06nc)は D3D11 の関数を GetProcAddress で取得するので、
-// IATではなく core/pe_iat.h の procaddr::Override からこれらを使う。**#388 で初めて使う
-// 予定で、まだどのタイトルにも組み込んでいない(実機で未検証)。**
+// DXGI(D3D11)。DXライブラリ(th06c/th06nc)は D3D11/DXGI の関数を GetProcAddress で取得するので、
+// IATではなく core/pe_iat.h の procaddr::Override からこれらを使う。
 void* WrapD3D11CreateDeviceAndSwapChain(void* real);
 void* WrapD3D11CreateDevice(void* real);
+void* WrapCreateDXGIFactory(void* real);
+void* WrapCreateDXGIFactory1(void* real);
+void* WrapCreateDXGIFactory2(void* real);
 void HookDxgiFactory(void* factory);
 void HookDxgiSwapChain(void* swapChain);
 
@@ -64,5 +69,6 @@ void HookDxgiSwapChain(void* swapChain);
 unsigned DispatchPre(const Frame& frame);
 void DispatchPost(const Frame& frame, unsigned flags, HRESULT hr);
 void DispatchDevice(Api api, void* target);
+void DispatchResize(Api api, void* target, UINT width, UINT height, DWORD format);
 
 }  // namespace autoplay::present

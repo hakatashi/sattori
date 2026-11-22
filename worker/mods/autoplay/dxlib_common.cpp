@@ -1,10 +1,14 @@
 #include "autoplay/dxlib_common.h"
 #include "audio/dsound.h"
+#include "audio/virtual/wasapi_mixer.h"
 #include "audio/wasapi.h"
 #include "clock/speed_hack.h"
+#include "clock/virtual_clock.h"
 #include "core/log.h"
 #include "core/pe_iat.h"
+#include "core/runtime_config.h"
 #include "input/dxlib_input.h"
+#include "present/bus.h"
 #include <wchar.h>
 
 namespace autoplay::dxlib {
@@ -24,14 +28,21 @@ const GUID kCLSID_MMDeviceEnumerator = {0xbcde0395, 0xe52f, 0x467c, {0x8e, 0x3d,
 
 HRESULT WINAPI MyCoCreateInstance(REFCLSID rclsid, LPUNKNOWN outer, DWORD ctx, REFIID riid, LPVOID* ppv) {
     HRESULT hr = g_origCoCreateInstance(rclsid, outer, ctx, riid, ppv);
-    Log("CoCreateInstance: clsid={%08lX-%04X-%04X-...} hr=0x%08lX", (unsigned long)rclsid.Data1,
-        rclsid.Data2, rclsid.Data3, (unsigned long)hr);
-    if (SUCCEEDED(hr) && ppv && *ppv &&
+    const bool fs = Config().FrameSyncEnabled();
+    if (!fs) {
+        Log("CoCreateInstance: clsid={%08lX-%04X-%04X-...} hr=0x%08lX",
+            (unsigned long)rclsid.Data1, rclsid.Data2, rclsid.Data3, (unsigned long)hr);
+    }
+    if (SUCCEEDED(hr) && ppv && *ppv && !fs &&
         (IsEqualGUID(rclsid, kCLSID_DirectSound8) || IsEqualGUID(rclsid, kCLSID_DirectSound))) {
         HookDirectSoundObject(*ppv);
     }
     if (SUCCEEDED(hr) && ppv && *ppv && IsEqualGUID(rclsid, kCLSID_MMDeviceEnumerator)) {
-        HookMMDeviceEnumerator(*ppv);
+        if (audio::wasapi_mixer::Active()) {
+            audio::wasapi_mixer::HookMMDeviceEnumerator(*ppv);
+        } else {
+            HookMMDeviceEnumerator(*ppv);
+        }
     }
     return hr;
 }
@@ -76,6 +87,27 @@ BOOL CALLBACK FindDialogProc(HWND hwnd, LPARAM lparam) {
 void InstallHooks(const Options& options) {
     // 入力(本物の取得に失敗していても差し替える)。
     RegisterInputOverrides(options.hookAsyncKeyState);
+
+    if (Config().FrameSyncEnabled()) {
+        procaddr::Override("QueryPerformanceCounter", virtual_clock::WrapQueryPerformanceCounter);
+        procaddr::Override("timeGetTime", virtual_clock::WrapTimeGetTime);
+        procaddr::Override("GetTickCount", virtual_clock::WrapGetTickCount);
+        procaddr::Override("GetTickCount64", virtual_clock::WrapGetTickCount64);
+        procaddr::Override("Sleep", virtual_clock::WrapSleep);
+        procaddr::Override("WaitForSingleObject", virtual_clock::WrapWaitForSingleObject);
+        procaddr::Override("D3D11CreateDevice", present::WrapD3D11CreateDevice);
+        procaddr::Override("D3D11CreateDeviceAndSwapChain",
+                           present::WrapD3D11CreateDeviceAndSwapChain);
+        procaddr::Override("CreateDXGIFactory", present::WrapCreateDXGIFactory);
+        procaddr::Override("CreateDXGIFactory1", present::WrapCreateDXGIFactory1);
+        procaddr::Override("CreateDXGIFactory2", present::WrapCreateDXGIFactory2);
+        procaddr::Override("CoCreateInstance", WrapCoCreateInstance);
+        procaddr::Install();
+        iat::HookTyped(nullptr, "ole32.dll", "CoCreateInstance", &MyCoCreateInstance,
+                       &g_origCoCreateInstance);
+        return;
+    }
+
     // 倍速録画(Issue #288)。DXライブラリはQPC・timeGetTime・音声APIをGetProcAddressで
     // 動的に取得するため、IATではなくここで差し替える。取得に失敗した(NULL)関数は
     // フック版に差し替えない(procaddr::Override の既定)。

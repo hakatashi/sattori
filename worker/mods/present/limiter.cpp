@@ -1,6 +1,5 @@
 #include "present/limiter.h"
 #include "present/bus.h"
-#include "core/log.h"
 #include "core/runtime_config.h"
 
 namespace autoplay {
@@ -41,31 +40,15 @@ void AfterPresent(const present::Frame&, unsigned, HRESULT) {
     g_haveLastPresent = true;
 }
 
-double SetUp() {
+}  // namespace
+
+double InstallFpsLimiterHandlers() {
     QueryPerformanceFrequency(&g_qpcFreq);
-    const double targetHz = Config().TargetHzOr(60.0);
+    const double targetHz = Config().FrameSyncEnabled() ? 60.0 : Config().TargetHzOr(60.0);
     g_targetIntervalSec = 1.0 / targetHz;
     present::AddPreHandler(BeforePresent, present::kPriorityLimiter);
     present::AddPostHandler(AfterPresent, present::kPriorityLimiter);
     return targetHz;
-}
-
-}  // namespace
-
-bool InstallFpsLimiterHook() {
-    const double targetHz = SetUp();
-    bool ok = present::InstallD3D9();
-    Log("InstallFpsLimiterHook: IAT hook %s (target=%.2f fps)",
-        ok ? "OK" : "FAILED (Direct3DCreate9 not found in IAT)", targetHz);
-    return ok;
-}
-
-bool InstallFpsLimiterHookD3D8() {
-    const double targetHz = SetUp();
-    bool ok = present::InstallD3D8();
-    Log("InstallFpsLimiterHookD3D8: IAT hook %s (target=%.2f fps)",
-        ok ? "OK" : "FAILED (Direct3DCreate8 not found in IAT)", targetHz);
-    return ok;
 }
 
 }  // namespace autoplay

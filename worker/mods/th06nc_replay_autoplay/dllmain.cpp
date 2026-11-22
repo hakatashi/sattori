@@ -54,6 +54,8 @@
 #include "core/time_scale.h"
 #include "input/dxlib_input.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d11_readback.h"
+#include "present/capture/frame_sync.h"
 #include "texture/d3d11_bc7.h"
 
 using namespace autoplay;
@@ -105,6 +107,30 @@ bool NavigateToReplayByFixedDowns() {
     return true;
 }
 
+void StartTh06ncScoreMonitor() {
+    // リプレイずれ判定用のスコア監視(Issue #103)。RVA未特定時は
+    // StartScoreMonitorThread()自体がスレッドを起動しない設計なので、
+    // ここで即returnする実装をわざわざ書く必要はない(score_monitor.cpp参照。
+    // touhou-recorder側の独自実装ではreturnによるDLL_THREAD_DETACH競合を
+    // 避けるためSleepループへ迂回させていたが、共通実装は最初からスレッドを
+    // 作らないため同じ問題は起きない)。ステージ番号・残機・グレイズのRVAは
+    // 未特定のためwidth=0で無効化する(worker/recording/modlog.pyの
+    // GAME_SCORE_MULTIPLIERSにth06nc=1を登録済み)。
+    ScoreMonitorConfig sm;
+    // th06ncとth06cとは内部値/表示値の前後関係が逆で、0x0053D3E8が
+    // 即時に加算される内部スコア、0x0053D3E0がそれを追いかける画面表示用の
+    // 値(touhou-recorder reports/79で実機確認した関係がver 1.0.6でも同じ)。
+    // デシンク判定には内部スコア側を使う。ver 1.0.6より前のexeでは
+    // 0x004F2798/0x004F2790だった——ゲーム更新でexeが再ビルドされると
+    // ずれるので、更新時は`verify-game-update` skillで必ず再確認すること。
+    sm.baseRva = 0x0053D3E8;
+    sm.baseIsPointer = false;
+    sm.scoreOffset = 0;
+    sm.scoreWidth = 4;
+    sm.intervalMs = 1000;
+    StartScoreMonitorThread(sm);
+}
+
 // ---------------------------------------------------------------------------
 // メインシーケンス
 // ---------------------------------------------------------------------------
@@ -124,6 +150,7 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
         return 1;
     }
     Log("入力ポーリング開始を検出");
+    if (frame_sync::Active()) StartTh06ncScoreMonitor();
 
     // th06ncには起動ダイアログが無い。復活していないかの確認だけ行う(1秒)。
     WarnIfStartupDialogPresent(/*watchMs=*/1000);
@@ -138,12 +165,14 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
     // なる(ユーザー提供情報)。余裕を見て5秒待つ。
     // 低速録画(CPU描画の1/2倍速)では、画面遷移もゲーム内時間で遅くなるので待ちを伸ばす
     // (core/time_scale.h。本番ではかつての TH06NC_TIME_SCALE と同じ値になる)。
-    Log("タイトル画面のキー入力受付開始を待ちます(5000ms x MENU_SCALE=%.2f)...", time_scale::Menu());
-    time_scale::MenuSleep(5000);
+    const DWORD titleWaitMs = frame_sync::Active() ? 7000 : 5000;
+    Log("タイトル画面のキー入力受付開始を待ちます(%lums x MENU_SCALE=%.2f)...",
+        (unsigned long)titleWaitMs, time_scale::Menu());
+    time_scale::MenuSleep(titleWaitMs);
 
     LogStep(1, "Enter (デモ再生を抜けてメインメニューを表示)");
     PressVKey(VK_RETURN);
-    time_scale::MenuSleep(500);
+    time_scale::MenuSleep(frame_sync::Active() ? 1200 : 500);
 
     if (!NavigateToReplayByFixedDowns()) {
         Log("ERROR: メインメニューで 'Replay' を選択できませんでした。中断します");
@@ -162,6 +191,7 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
     PressVKey(VK_RETURN);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th06nc");
     return 0;
 }
@@ -175,6 +205,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         InitRuntimeConfig();
         Log("=== th06nc_replay_autoplay DllMain: DLL_PROCESS_ATTACH ===");
 
+        const bool fs = InstallFrameSyncD3D11(64);
         // CPU描画(Xvfb+wined3d+llvmpipe)のときだけBC7テクスチャをRGBA8へ展開する
         // (`D3D11_DECODE_BC7=1`、touhou-recorder reports/96)。DXライブラリはd3d11も動的に取得する。
         // 環境変数が無ければ元の関数をそのまま返すので、GPU描画には影響しない。
@@ -182,33 +213,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         procaddr::Override("D3D11CreateDeviceAndSwapChain", WrapD3D11CreateDeviceAndSwapChainForBc7);
         // 入力・時刻・音声のGetProcAddress横取り(autoplay/dxlib_common.h)。
         dxlib::InstallHooks(dxlib::Options{/*hookAsyncKeyState=*/true});
-        // 倍速録画(Issue #288): QPC偽装とWASAPIのレート偽装・同期マーカーの準備。
-        // FPS_LIMIT_TARGET_HZ未設定(等倍)ならレートは変えない。
-        InstallSpeedHackHook();
-        InstallWasapiHook();
-
-        // リプレイずれ判定用のスコア監視(Issue #103)。RVA未特定時は
-        // StartScoreMonitorThread()自体がスレッドを起動しない設計なので、
-        // ここで即returnする実装をわざわざ書く必要はない(score_monitor.cpp参照。
-        // touhou-recorder側の独自実装ではreturnによるDLL_THREAD_DETACH競合を
-        // 避けるためSleepループへ迂回させていたが、共通実装は最初からスレッドを
-        // 作らないため同じ問題は起きない)。ステージ番号・残機・グレイズのRVAは
-        // 未特定のためwidth=0で無効化する(worker/recording/modlog.pyの
-        // GAME_SCORE_MULTIPLIERSにth06nc=1を登録済み)。
-        {
-            ScoreMonitorConfig sm;
-            // th06ncとth06cとは内部値/表示値の前後関係が逆で、0x0053D3E8が
-            // 即時に加算される内部スコア、0x0053D3E0がそれを追いかける画面表示用の
-            // 値(touhou-recorder reports/79で実機確認した関係がver 1.0.6でも同じ)。
-            // デシンク判定には内部スコア側を使う。ver 1.0.6より前のexeでは
-            // 0x004F2798/0x004F2790だった——ゲーム更新でexeが再ビルドされると
-            // ずれるので、更新時は`verify-game-update` skillで必ず再確認すること。
-            sm.baseRva = 0x0053D3E8;
-            sm.baseIsPointer = false;
-            sm.scoreOffset = 0;
-            sm.scoreWidth = 4;
-            sm.intervalMs = 1000;
-            StartScoreMonitorThread(sm);
+        if (!fs) {
+            // 倍速録画(Issue #288): QPC偽装とWASAPIのレート偽装・同期マーカーの準備。
+            // FPS_LIMIT_TARGET_HZ未設定(等倍)ならレートは変えない。
+            InstallSpeedHackHook();
+            InstallWasapiHook();
+            StartTh06ncScoreMonitor();
         }
 
         CreateThread(nullptr, 0, AutoPlayThread, nullptr, 0, nullptr);

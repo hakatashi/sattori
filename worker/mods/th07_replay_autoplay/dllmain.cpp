@@ -18,6 +18,8 @@
 #include "core/time_scale.h"
 #include "input/dinput.h"
 #include "monitor/score_monitor.h"
+#include "present/capture/d3d8_readback.h"
+#include "present/capture/frame_sync.h"
 
 using namespace autoplay;
 
@@ -65,6 +67,7 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     PressKey(DIK_RETURN);
     time_scale::MenuSleep(700);
 
+    frame_sync::SetUnthrottled(true);
     LogSequenceComplete("th07");
     return 0;
 }
@@ -76,8 +79,10 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         InitRuntimeConfig();
         Log("DLL_PROCESS_ATTACH: installing IAT hook");
         InstallDinputHook();
-        // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
-        InstallSpeedHackHook();
+        if (!InstallFrameSyncD3D8(32)) {
+            // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
+            InstallSpeedHackHook();
+        }
         // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
         // A/V同期マーカー(reports/88)を有効にする。
         InstallDSoundHook();

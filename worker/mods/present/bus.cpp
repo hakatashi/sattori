@@ -32,12 +32,14 @@ struct HandlerList {
 HandlerList<PreHandler> g_pre;
 HandlerList<PostHandler> g_post;
 HandlerList<DeviceHandler> g_device;
+HandlerList<ResizeHandler> g_resize;
 
 }  // namespace
 
 void AddPreHandler(PreHandler handler, int priority) { g_pre.Add(handler, priority); }
 void AddPostHandler(PostHandler handler, int priority) { g_post.Add(handler, priority); }
 void AddDeviceHandler(DeviceHandler handler) { g_device.Add(handler, 0); }
+void AddResizeHandler(ResizeHandler handler) { g_resize.Add(handler, 0); }
 
 unsigned DispatchPre(const Frame& frame) {
     unsigned flags = kThrottle;
@@ -51,6 +53,10 @@ void DispatchPost(const Frame& frame, unsigned flags, HRESULT hr) {
 
 void DispatchDevice(Api api, void* target) {
     for (int i = 0; i < g_device.n; i++) g_device.fn[i](api, target);
+}
+
+void DispatchResize(Api api, void* target, UINT width, UINT height, DWORD format) {
+    for (int i = 0; i < g_resize.n; i++) g_resize.fn[i](api, target, width, height, format);
 }
 
 }  // namespace autoplay::present

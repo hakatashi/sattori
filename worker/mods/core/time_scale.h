@@ -39,8 +39,12 @@ inline unsigned long StartupTimeoutFor(unsigned long baseMs, double targetHz) {
 #ifdef _WIN32
 inline double Menu() { return MenuScaleFor(Config().fpsLimitTargetHz, Config().menuWaitExtraScale); }
 
+// メニュー操作の待ちを差し替えるハンドラ(フレーム同期時はフレーム数基準に切り替え)。
+using MenuSleepHandler = void (*)(unsigned long baseMs);
+void SetMenuSleepHandler(MenuSleepHandler handler);
+
 // メニュー操作の待ち。
-inline void MenuSleep(unsigned long baseMs) { Sleep((DWORD)(baseMs * Menu())); }
+void MenuSleep(unsigned long baseMs);
 
 // 実時間で進む処理(起動・ウィンドウ生成・入力ポーリング開始)の待ちの上限。低速録画でだけ伸ばす。
 inline unsigned long StartupTimeout(unsigned long baseMs) {
