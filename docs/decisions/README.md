@@ -76,8 +76,6 @@
 | [0062](0062-gpu-fallback-region-local-output-and-title-assets.md) | 2026-10-11 | apps/api / infra / packages/shared / worker | GPUフォールバック先(eu-north-1)に出力バケットとタイトル資産のレプリカを置き、リージョン間転送料を消す。出力のリージョンは`JobRecord.outputRegion`、配信は MediaCdn の`/eu-north-1/*`(Issue #313) | 有効 |
 | [0063](0063-spot-capacity-shortage-is-permanent-within-a-job.md) | 2026-11-04 | apps/api / packages/shared / infra / apps/web | Spot在庫の枯渇はジョブの中で永続エラーとして扱い、待たずに次の段へ進む。全段が尽きたら等倍へ落とすか直ちに失敗させる。ステートマシンは変えない(Issue #315) | 有効 |
 | [0064](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md) | 2026-11-05 | packages/shared / apps/api / worker / apps/web | GPUを確保できないth15・th20はCPU低速録画(`c7i.4xlarge`、1/2倍速・th15 Extraは1/3倍速)へ、th06ncは`g6.2xlarge`へ逃がす。低速録画はユーザーが選べず自宅ワーカーへも出さない(Issue #316) | [0081](0081-frame-sync-plan-for-th20-and-th06nc.md)によって置き換え済み（th15は[0078](0078-frame-sync-plan-and-instance-type-verification-policy.md)でフレーム同期へ置き換え済み）。「`options.recordingSpeed`の書き換えで落とす」実装は[0066](0066-recording-fallback-plan-as-config.md)、th06ncの`g6.2xlarge`の段は[0067](0067-th06nc-cpu-slow-motion-and-drop-1080p.md)によって置き換え済み |
-| [0082](0082-framesync-duration-mismatch-is-warning-not-failure.md) | 2026-11-23 | worker / docs | フレーム同期の理論尺ずれは、再生区間が3秒未満のときだけ破棄し、それ以外は(短い側なら`desyncDetected`を立てて)警告配信にする。デシンクで早期終了したth10ジョブが失敗した退行の修正 | 有効 |
-| [0083](0083-remove-cpu-slow-motion-code.md) | 2026-11-23 | packages/shared / apps / worker / docs | CPU実時間(低速)録画専用のコードを削除する。GPUの倍速・等倍の経路と、旧チェックポイント再開の等倍化は残し、削除したコードは`research/archive/`へ移さず git 履歴で足りるとする(Issue #391、Epic #399) | 有効 |
 | [0065](0065-speedup-delivery-frame-rate-by-output-option.md) | 2026-11-07 | worker | 倍速録画の配信版は`fps`フィルタではなく`-r 60 -fps_mode cfr`で60fpsへ揃える。生映像のptsが信用できないため(Issue #322) | 有効 |
 | [0066](0066-recording-fallback-plan-as-config.md) | 2026-11-08 | packages/shared / apps/api / home-worker / apps/web / infra | 録画速度・インスタンス・リージョンはタイトルごとの段の配列(`recordingPlan.ts`)を先頭から試して決め、ユーザーに速度を選ばせない。フォールバックの変更は配列だけで行う(Issue #317) | 有効 |
 | [0067](0067-th06nc-cpu-slow-motion-and-drop-1080p.md) | 2026-11-09 | packages/shared / worker / apps/web | th06ncの最終段を`g6.2xlarge`からCPU描画(BC7展開)の`c7i.2xlarge`・1/2倍速に替え、1080p録画を廃止する。Extraも同じ段で録り、高密度弾幕の描画落ちは受け入れる(Issue #317) | [0081](0081-frame-sync-plan-for-th20-and-th06nc.md)によって置き換え済み(CPU1/2倍速の段はフレーム同期へ。1080p廃止は有効) |
@@ -95,6 +93,10 @@
 | [0079](0079-home-worker-accepts-frame-sync-gpu-titles.md) | 2026-11-22 | packages/shared / home-worker / docs | GPUの段を持つタイトルでも、フレーム同期の段なら自宅ワーカーへオファーする。自宅へ出すかは録画の段だけが決める（0047を置き換え。Issue #390） | 有効 |
 | [0080](0080-frame-sync-plan-for-640x480-titles.md) | 2026-11-22 | packages/shared / apps/web / docs | 640x480の残り9タイトル(th06・th06c・th07・th08・th09・th10・th11・th128・th13)も、th12と同じフレーム同期中心の計画(自宅→2xlarge帯→4xlarge帯→GPU。th13はGPUなし)へ切り替える。実時間専用のCPU候補定数は削除 | 有効 |
 | [0081](0081-frame-sync-plan-for-th20-and-th06nc.md) | 2026-11-23 | packages/shared / home-worker / apps/web / docs | th20・th06ncも自宅→EC2フレーム同期→GPU(最後)の計画にする。実時間のCPU低速段(0064・0067)を削除し、全13タイトルがフレーム同期中心になる(Issue #390の完了) | 有効 |
+| [0082](0082-framesync-duration-mismatch-is-warning-not-failure.md) | 2026-11-23 | worker / docs | フレーム同期の理論尺ずれは、再生区間が3秒未満のときだけ破棄し、それ以外は(短い側なら`desyncDetected`を立てて)警告配信にする。デシンクで早期終了したth10ジョブが失敗した退行の修正 | 有効 |
+| [0083](0083-remove-cpu-slow-motion-code.md) | 2026-11-23 | packages/shared / apps / worker / docs | CPU実時間(低速)録画専用のコードを削除する。GPUの倍速・等倍の経路と、旧チェックポイント再開の等倍化は残し、削除したコードは`research/archive/`へ移さず git 履歴で足りるとする(Issue #391、Epic #399) | 有効 |
+| [0084](0084-mod-integration-test-defaults-to-frame-sync.md) | 2026-11-23 | worker / docs | MOD統合テストの既定をフレーム同期にし、決定性を使う検証項目(最終状態の完全一致・被弾のゲーム内時刻・仮想ミキサの整合・出力動画の形式等)を増やす。実時間は`--capture-mode realtime`で残す | 有効 |
+| [0085](0085-th14-frame-sync-plan-without-gpu.md) | 2026-11-23 | packages/shared / worker | th14の録画の段は、GPUの段を持たないフレーム同期の3段（自宅→4xlarge帯→2xlarge帯）にする | 有効 |
 
 ## 書き方
 
@@ -114,5 +116,3 @@
 
 覆された決定とその理由が残っていること自体が、同じ検討を繰り返さないための情報である
 （「昔なぜそうしなかったか」は再検討時に最も価値が高い）。
-| [0084](0084-mod-integration-test-defaults-to-frame-sync.md) | 2026-11-23 | worker / docs | MOD統合テストの既定をフレーム同期にし、決定性を使う検証項目(最終状態の完全一致・被弾のゲーム内時刻・仮想ミキサの整合・出力動画の形式等)を増やす。実時間は`--capture-mode realtime`で残す | 有効 |
-| [0085](0085-th14-frame-sync-plan-without-gpu.md) | 2026-11-23 | packages/shared / worker | th14の録画の段は、GPUの段を持たないフレーム同期の3段（自宅→4xlarge帯→2xlarge帯）にする | 有効 |
