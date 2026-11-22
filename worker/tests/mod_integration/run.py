@@ -16,10 +16,16 @@
 変更した後、実機検証の前段の速い足がかりとして手動で実行する。`build-mods` skillで
 再ビルドしてから使うこと(`worker/mods/*/build/`のビルド成果物をそのまま参照する)。
 
+**既定はフレーム同期キャプチャ(`CAPTURE_MODE=frame_sync`、本番の主力の録画経路)**。フレーム同期では
+ゲームがフレーム単位で決定的に動くので、実時間の録画より多くの項目を厳密に検証できる
+(`checks.py`の先頭・`worker/docs/mod-integration-test.md`)。`--capture-mode realtime`で従来の
+実時間の録画(x11grab・PulseAudio)の検証もできる(実時間の経路のMODの退行検知用)。
+
 使い方:
-    python3 worker/tests/mod_integration/run.py               # 対象タイトル全部
+    python3 worker/tests/mod_integration/run.py               # 対象タイトル全部(フレーム同期)
     python3 worker/tests/mod_integration/run.py --game th06   # th06のみ
     python3 worker/tests/mod_integration/run.py --keep-output # 失敗時に出力を残す
+    python3 worker/tests/mod_integration/run.py --capture-mode realtime   # 実時間の経路
 
 事前条件:
 - `worker/games/<game>/`・`worker/prefixes/<game>-wined3d-gl/`にゲーム資産・WINEPREFIXが
@@ -33,6 +39,7 @@ import argparse
 from dataclasses import dataclass
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -41,12 +48,18 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import numpy as np
+
 WORKER_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "mod-integration"
 RECORD_TIMEOUT_SECONDS = 300  # フル尺が2分強のリプレイなので、余裕を見て5分で打ち切る
 
 sys.path.insert(0, str(WORKER_ROOT))
-from recording.modlog import SCORE_MONITOR_RE, GRAZE_GARBAGE_MAX  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import checks  # noqa: E402
+from recording.modlog import SCORE_MONITOR_RE, GRAZE_GARBAGE_MAX, find_frame_sync_replay_start_frame  # noqa: E402
+
+CAPTURE_MODES = ("frame_sync", "realtime")
 
 
 @dataclass
@@ -72,6 +85,17 @@ HIT_TIMING_TOLERANCE_SECONDS = 3.0
 # record_thNN.py側のdisplayを変更したらここも合わせること)。th08とth10は
 # record_thNN.py側で偶然どちらも:98を使っているが、このスクリプトはタイトルを
 # 逐次実行するため同時に使われることはなく問題ない。
+# --- フレーム同期(既定)の基準値(checks.py)。2026-11-23、HakataMatrixで実機録画して採取 ---
+# capture_size: MODログの`capture start`の取り込みサイズ(th06ncは720p、th20は1280x960)。
+# expected_play_seconds: 再生区間(リプレイ再生開始〜終了検知)。リプレイのframeCountの理論尺とは
+#   タイトルごとに系統的にずれる(framesync.pyのDURATION_TOLERANCE_*の注)ので、理論尺ではなく実測。
+# expected_final_state: 記録スコアに到達した時点の(ステージ,残機,グレイズ)。決定的なので完全一致を要求する。
+#   th09はスコア未監視、th06c/th06ncは残機・グレイズ未特定、th128は残機がゴミ値になるので省いてある。
+# expected_hit_game_seconds: 被弾した時点の、リプレイ再生開始からのゲーム内の秒(実時間ではない)。
+#   th06c/th06ncは残機未特定で無い。
+# max_refill_timeouts: 仮想ミキサの補充待ちタイムアウトの許容回数(既定0)。th20はBGMの周回境界で
+#   起きる仕様で音欠けは無い(touhou-recorder reports/110)。
+# --- 以下は実時間(--capture-mode realtime)向け ---
 # expected_hit_offsets_seconds は、残機(lives)のRVAが判明しているタイトルにのみ
 # 存在するキー(未特定のth06c/th06ncには無い、docs/mods.md §3)。この検証リプレイを
 # 1度実機録画し、ScoreMonitorログ上で残機が減少した時点の、最初のサンプルからの
@@ -84,18 +108,26 @@ TITLES = {
         "expected_duration_seconds": 6924 / 60,
         "display": ":96",
         "expected_hit_offsets_seconds": [84.1, 121.1],
+        "capture_size": (640, 480),
+        "expected_play_seconds": 119.2,
+        "expected_final_state": (7, 0, 250),
+        "expected_hit_game_seconds": [74.1, 110.7],
     },
     "th06c": {
         "replay": "th6_09.rpy",
         "expected_score": 13_004_650,
         "expected_duration_seconds": 7668 / 60,
         "display": ":102",
+        "capture_size": (640, 480),
+        "expected_play_seconds": 129.9,
     },
     "th06nc": {
         "replay": "th6_31.rpy",
         "expected_score": 25_890_400,
         "expected_duration_seconds": 7601 / 60,
         "display": ":103",
+        "capture_size": (1280, 720),
+        "expected_play_seconds": 132.7,
     },
     "th07": {
         "replay": "th7_12.rpy",
@@ -103,6 +135,10 @@ TITLES = {
         "expected_duration_seconds": 7292 / 60,
         "display": ":97",
         "expected_hit_offsets_seconds": [109.1, 115.1],
+        "capture_size": (640, 480),
+        "expected_play_seconds": 122.1,
+        "expected_final_state": (0, 0, 463),
+        "expected_hit_game_seconds": [110.2, 115.2],
     },
     "th08": {
         "replay": "th8_06.rpy",
@@ -110,6 +146,10 @@ TITLES = {
         "expected_duration_seconds": 8373 / 60,
         "display": ":98",
         "expected_hit_offsets_seconds": [127.1, 133.1],
+        "capture_size": (640, 480),
+        "expected_play_seconds": 142.4,
+        "expected_final_state": (0, 0, 1391),
+        "expected_hit_game_seconds": [127.1, 132.7],
     },
     "th09": {
         "replay": "th9_25.rpy",
@@ -117,6 +157,9 @@ TITLES = {
         "expected_duration_seconds": 6566 / 60,
         "display": ":101",
         "expected_hit_offsets_seconds": [88.1, 97.1],
+        "capture_size": (640, 480),
+        "expected_play_seconds": 106.0,
+        "expected_hit_game_seconds": [92.1, 101.4],
     },
     "th10": {
         "replay": "th10_01.rpy",
@@ -124,6 +167,10 @@ TITLES = {
         "expected_duration_seconds": 7361 / 60,
         "display": ":98",
         "expected_hit_offsets_seconds": [123.1, 129.1, 135.1],
+        "capture_size": (640, 480),
+        "expected_play_seconds": 126.6,
+        "expected_final_state": (7, -1, 0),
+        "expected_hit_game_seconds": [111.9, 117.9, 124.2],
     },
     "th11": {
         "replay": "th11_06.rpy",
@@ -131,6 +178,10 @@ TITLES = {
         "expected_duration_seconds": 7344 / 60,
         "display": ":99",
         "expected_hit_offsets_seconds": [123.1, 129.1, 134.1],
+        "capture_size": (640, 480),
+        "expected_play_seconds": 124.7,
+        "expected_final_state": (7, -1, 1166),
+        "expected_hit_game_seconds": [113.2, 118.3, 123.4],
     },
     "th12": {
         "replay": "th12_02.rpy",
@@ -138,6 +189,10 @@ TITLES = {
         "expected_duration_seconds": 7875 / 60,
         "display": ":100",
         "expected_hit_offsets_seconds": [129.1, 138.1, 143.1],
+        "capture_size": (640, 480),
+        "expected_play_seconds": 134.7,
+        "expected_final_state": (7, -1, 228),
+        "expected_hit_game_seconds": [118.4, 127.1, 132.4],
     },
     "th13": {
         "replay": "th13_03.rpy",
@@ -145,6 +200,10 @@ TITLES = {
         "expected_duration_seconds": 5579 / 60,
         "display": ":105",
         "expected_hit_offsets_seconds": [99.1, 104.1, 109.1],
+        "capture_size": (640, 480),
+        "expected_play_seconds": 96.7,
+        "expected_final_state": (7, -1, 751),
+        "expected_hit_game_seconds": [83.1, 88.8, 94.1],
     },
     "th20": {
         "replay": "th20_08.rpy",
@@ -152,6 +211,11 @@ TITLES = {
         "expected_duration_seconds": 6722 / 60,
         "display": ":95",
         "expected_hit_offsets_seconds": [122.1, 127.1, 133.2],
+        "capture_size": (1280, 960),
+        "expected_play_seconds": 115.4,
+        "expected_final_state": (7, -1, 504),
+        "expected_hit_game_seconds": [103.3, 108.4, 113.6],
+        "max_refill_timeouts": 20,
     },
     "th128": {
         "replay": "th128_10.rpy",
@@ -159,6 +223,9 @@ TITLES = {
         "expected_duration_seconds": 9690 / 60,
         "display": ":102",
         "expected_hit_offsets_seconds": [142.1, 149.2, 157.2, 164.2, 169.2],
+        "capture_size": (640, 480),
+        "expected_play_seconds": 164.7,
+        "expected_hit_game_seconds": [135.8, 142.3, 150.3, 157.2, 162.5],
     },
 }
 
@@ -268,7 +335,7 @@ def check_home_worker_idle():
     sys.exit(1)
 
 
-def cleanup_stale_display(display, log_prefix):
+def cleanup_stale_display(display, log_prefix, quiet=False):
     """`display`(例: ":96")に残っている前回試行のXvfbを検知し、あれば強制終了する。
 
     このスクリプトは`timeout --kill-after=`で打ち切るため、前回の試行がタイムアウトで
@@ -286,14 +353,93 @@ def cleanup_stale_display(display, log_prefix):
     pids = [pid for pid in result.stdout.split() if pid]
     if not pids:
         return
-    print(
-        f"{log_prefix} WARNING: display {display} に前回試行の残留Xvfbを検出したため終了します"
-        f"(pid={','.join(pids)})",
-    )
+    if not quiet:
+        print(
+            f"{log_prefix} WARNING: display {display} に前回試行の残留Xvfbを検出したため終了します"
+            f"(pid={','.join(pids)})",
+        )
     subprocess.run(["kill", "-9", *pids], check=False)
 
 
-def run_one(game, keep_output):
+def probe_output(path):
+    """出力mp4のffprobe結果(`checks.check_video_info()`の入力)。"""
+    r = subprocess.run(
+        ["ffprobe", "-v", "error", "-count_packets", "-show_entries",
+         "stream=codec_type,width,height,r_frame_rate,duration,nb_read_packets", "-of", "json", str(path)],
+        capture_output=True, text=True, check=False,
+    )
+    info = {}
+    try:
+        streams = json.loads(r.stdout)["streams"]
+    except (ValueError, KeyError):
+        return info
+    for st in streams:
+        entry = {
+            "width": st.get("width"), "height": st.get("height"),
+            "r_frame_rate": st.get("r_frame_rate"),
+            "duration": float(st["duration"]) if st.get("duration") else None,
+            "nb_frames": int(st["nb_read_packets"]) if st.get("nb_read_packets") else None,
+        }
+        info.setdefault(st.get("codec_type"), entry)
+    return info
+
+
+def probe_max_volume(path):
+    """`volumedetect`のmax_volume(dB)。無音/取得できなければNone。"""
+    r = subprocess.run(
+        ["ffmpeg", "-nostdin", "-i", str(path), "-vn", "-af", "volumedetect", "-f", "null", "-"],
+        capture_output=True, text=True, check=False,
+    )
+    m = re.search(r"max_volume: (-?[0-9.]+) dB", r.stderr)
+    return float(m.group(1)) if m else None
+
+
+def probe_frame_stddevs(path, duration, ratios=(0.25, 0.5, 0.75)):
+    """動画の各位置のフレームを160x120 grayで取り出し、輝度の標準偏差を返す(取り出せない位置は飛ばす)。"""
+    stddevs = []
+    for ratio in ratios:
+        r = subprocess.run(
+            ["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{duration * ratio:.2f}", "-i", str(path),
+             "-frames:v", "1", "-vf", "scale=160:120,format=gray", "-f", "rawvideo", "-"],
+            capture_output=True, check=False,
+        )
+        if len(r.stdout) == 160 * 120:
+            stddevs.append(float(np.frombuffer(r.stdout, dtype=np.uint8).std()))
+    return stddevs
+
+
+def check_frame_sync(game, cfg, run_log, output_path):
+    """フレーム同期の検証項目(`checks.py`)をすべて実行し、違反の説明のリストを返す。
+
+    観測値は常に標準出力へ書く(基準値を採り直すときはここを見て`TITLES`を直す)。"""
+    problems = []
+    mod_log = checks.read_text(instance_log_path(game))
+    replay_start = find_frame_sync_replay_start_frame(instance_log_path(game))
+    play = checks.PLAY_SEC_RE.search(run_log)
+    final_state = checks.read_final_state(mod_log, game, cfg["expected_score"])
+    hits = checks.read_game_hit_times(mod_log, game, replay_start)
+    print(f"[{game}] 観測値: capture_size={checks.read_capture_size(mod_log)} "
+          f"play_sec={play.group(1) if play else None} final_state={final_state} hit_times={hits} "
+          f"replay_start_frame={replay_start}")
+
+    problems += checks.check_frame_counts(run_log)
+    problems += checks.check_mod_log(mod_log, cfg.get("max_refill_timeouts", 0))
+    problems += checks.check_capture_size(mod_log, cfg.get("capture_size"))
+    problems += checks.check_play_duration(run_log, cfg.get("expected_play_seconds"))
+    problems += checks.check_final_state(final_state, cfg.get("expected_final_state"))
+    problems += checks.check_hit_times(hits, cfg.get("expected_hit_game_seconds"))
+
+    info = probe_output(output_path)
+    stopped = checks.read_capture_stopped(mod_log)
+    problems += checks.check_video_info(info, cfg.get("capture_size"), stopped[0] if stopped else None)
+    problems += checks.check_audible(probe_max_volume(output_path))
+    duration = (info.get("video") or {}).get("duration")
+    if duration:
+        problems += checks.check_frames_not_blank(probe_frame_stddevs(output_path, duration))
+    return problems
+
+
+def run_one(game, keep_output, capture_mode="frame_sync"):
     cfg = TITLES[game]
     cleanup_stale_display(cfg["display"], f"[{game}]")
     replay_path = FIXTURES_DIR / game / cfg["replay"]
@@ -319,6 +465,7 @@ def run_one(game, keep_output):
         output_path = tmp_root / "repro.mp4"
         desync_result = tmp_root / "desync.json"
         timeout_result = tmp_root / "timeout.json"
+        cut_result = tmp_root / "cut.json"
 
         cmd = [
             "timeout", "--kill-after=30s", str(RECORD_TIMEOUT_SECONDS + 30),
@@ -330,15 +477,20 @@ def run_one(game, keep_output):
             "--expected-duration-seconds", str(cfg["expected_duration_seconds"]),
             "--desync-result-path", str(desync_result),
             "--timeout-result-path", str(timeout_result),
+            "--cut-result-path", str(cut_result),
             "--max-attempts", "1",
         ]
         if cfg["expected_score"] is not None:
             cmd += ["--expected-score", str(cfg["expected_score"])]
-        print(f"[{game}] 録画開始(worker/games/{game}, worker/prefixes/{game}-wined3d-gl を使用)...")
+        print(f"[{game}] 録画開始({capture_mode}、worker/games/{game}, worker/prefixes/{game}-wined3d-gl を使用)...")
         t0 = time.time()
         run_log = tmp_root / "run.log"
+        env = {k: v for k, v in os.environ.items() if k != "CAPTURE_MODE"}
+        if capture_mode == "frame_sync":
+            env["CAPTURE_MODE"] = "frame_sync"
         with open(run_log, "w") as f:
-            proc = subprocess.run(cmd, cwd=WORKER_ROOT, stdout=f, stderr=subprocess.STDOUT, check=False)
+            proc = subprocess.run(
+                cmd, cwd=WORKER_ROOT, env=env, stdout=f, stderr=subprocess.STDOUT, check=False)
         elapsed = time.time() - t0
         print(f"[{game}] 終了(exit={proc.returncode}, {elapsed:.0f}s)")
 
@@ -367,9 +519,19 @@ def run_one(game, keep_output):
             failure_reasons.append("リプレイ終了を検知できずタイムアウトで打ち切られました")
             ok = False
 
-        if ok and check_hit_timing(game, cfg):
+        if ok and capture_mode == "realtime" and check_hit_timing(game, cfg):
             failure_reasons.append("被弾タイミングが基準値と一致しませんでした")
             ok = False
+
+        if ok and capture_mode == "frame_sync":
+            problems = check_frame_sync(game, cfg, log_content, output_path)
+            for problem in problems:
+                print(f"[{game}] NG: {problem}")
+            if problems:
+                failure_reasons.extend(problems)
+                ok = False
+            else:
+                print(f"[{game}] OK: フレーム同期の検証項目はすべて基準を満たしました")
 
         if keep_output or not ok:
             dest = Path(tempfile.gettempdir()) / f"sattori-mod-integration-{game}-result"
@@ -386,6 +548,8 @@ def run_one(game, keep_output):
         )
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
+        # record_thNN.pyはXvfbを残して終わるので、次のタイトルや後続の自宅ワーカーの邪魔にならないよう掃除する。
+        cleanup_stale_display(cfg["display"], f"[{game}]", quiet=True)
 
 
 def write_junit_xml(output_path: Path, results: dict[str, TestResult], total_duration: float):
@@ -426,6 +590,10 @@ def write_junit_xml(output_path: Path, results: dict[str, TestResult], total_dur
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--game", nargs="*", choices=sorted(TITLES), default=sorted(TITLES))
+    parser.add_argument(
+        "--capture-mode", choices=CAPTURE_MODES, default="frame_sync",
+        help="録画経路(既定: frame_sync。realtimeは従来の実時間の録画)",
+    )
     parser.add_argument("--keep-output", action="store_true", help="成功時も録画結果・ログを/tmpに残す")
     parser.add_argument("--junit-xml", type=Path, help="JUnit XML レポートの出力先ファイルパス")
     args = parser.parse_args()
@@ -433,7 +601,7 @@ def main():
     check_home_worker_idle()
 
     t_start = time.time()
-    results = {game: run_one(game, args.keep_output) for game in args.game}
+    results = {game: run_one(game, args.keep_output, args.capture_mode) for game in args.game}
     total_elapsed = time.time() - t_start
 
     print("\n=== 結果 ===")
