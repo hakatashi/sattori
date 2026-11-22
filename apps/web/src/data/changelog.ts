@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-23",
+    ja: "東方輝針城 (th14) の録画に対応",
+    en: "Added support for recording Double Dealing Character (th14)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/80",
+  },
+  {
+    date: "2026-11-23",
     ja: "新方式の録画で、リプレイずれによりリプレイの再生が途中で終了した場合に録画が失敗扱いになっていた問題を修正",
     en: "Fixed an issue where, with the new recording method, the recording was treated as failed when the replay playback ended partway through due to a replay desync",
   },

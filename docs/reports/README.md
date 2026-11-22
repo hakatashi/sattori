@@ -78,6 +78,7 @@
   何を決めたかは `docs/decisions/`。同ガイドライン §2）。
 
 ## touhou-recorder の `reports/NN` とは別物
+| [2026-11-23](2026-11-23-th14-frame-sync-ec2-verification.md) | th14（1280x960）のフレーム同期録画のEC2実機検証（Issue #80）。実験ジョブでExtra・Lunatic全クリアを`c7i.4xlarge`・`c7i.2xlarge`で各1本 | 4本すべて完走、スコア一致、理論尺比-0.23〜+0.54%。段の効率値を実測へ |
 
 各所に出てくる `reports/NN`（連番）は PoC リポジトリ **touhou-recorder** のもので、
 **こちらへは移設しない**。混同を避けるため、あちらは連番、こちらは日付ベースの命名と

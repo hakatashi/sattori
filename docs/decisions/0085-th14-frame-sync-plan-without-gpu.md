@@ -30,5 +30,5 @@ GPUの段（`gpu:*`）は持たない。
 ## 影響範囲
 
 `recordingPlan.ts`・同テスト・`worker/docs/titles/th14.md`・`docs/known-limitations.md`。
-段の`estimatedRealtimeFactor`（`TH14_FACTORS`）は**暫定値**で、EC2のフレーム同期での実測を待っている（実験ジョブ、
-`docs/runbooks/experiment-workflow.md`）。測ったら`recordingPlan.ts`の値を置き換える。
+段の`estimatedRealtimeFactor`（`TH14_FACTORS`）は実験ジョブの実測（[`docs/reports/2026-11-23-th14-frame-sync-ec2-verification.md`](../reports/2026-11-23-th14-frame-sync-ec2-verification.md)）。
+自宅の値は実測せず、同じ1280x960のth15の値に揃えた。

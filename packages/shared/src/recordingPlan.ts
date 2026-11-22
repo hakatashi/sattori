@@ -183,7 +183,8 @@ interface FrameSyncFactors {
 // 実時間効率は、EC2は実験ジョブでの実測（上限解除後の平均速度を切り捨て。th12・th15は
 // docs/reports/2026-11-22-th12-th15-frame-sync-ec2-verification.md、それ以外の640x480は
 // docs/reports/2026-11-22-th06-to-th13-frame-sync-ec2-verification.md、th20・th06ncは
-// docs/reports/2026-11-23-th20-th06nc-frame-sync-ec2-verification.md）、自宅はこのマシンの2並列の実測
+// docs/reports/2026-11-23-th20-th06nc-frame-sync-ec2-verification.md、th14は
+// docs/reports/2026-11-23-th14-frame-sync-ec2-verification.md）、自宅はこのマシンの2並列の実測
 // （docs/reports/2026-11-22-worker-frame-sync-full-length-verification.md）。
 const TH12_FACTORS: FrameSyncFactors = { home: 2.0, twoXl: 2.2, fourXl: 3.1 };
 const TH06_FACTORS: FrameSyncFactors = { home: 3.1, twoXl: 3.9, fourXl: 5.2 };
@@ -196,7 +197,7 @@ const TH11_FACTORS: FrameSyncFactors = { home: 1.9, twoXl: 2.3, fourXl: 3.5 };
 const TH128_FACTORS: FrameSyncFactors = { home: 1.7, twoXl: 2.0, fourXl: 2.8 };
 const TH13_FACTORS: FrameSyncFactors = { home: 1.3, twoXl: 1.9, fourXl: 2.7 };
 const TH06NC_FACTORS: FrameSyncFactors = { home: 0.9, twoXl: 1.2, fourXl: 1.7 };
-const TH14_FACTORS: FrameSyncFactors = { home: 0.9, twoXl: 0.9, fourXl: 1.4 }; // 暫定値（実測で置き換える）
+const TH14_FACTORS: FrameSyncFactors = { home: 0.6, twoXl: 0.75, fourXl: 1.1 };
 const TH15_FACTORS: FrameSyncFactors = { home: 0.6, twoXl: 0.95, fourXl: 1.7 };
 const TH20_FACTORS: FrameSyncFactors = { home: 0.6, twoXl: 0.95, fourXl: 1.5 };
 
