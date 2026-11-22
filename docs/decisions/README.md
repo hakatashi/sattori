@@ -115,3 +115,4 @@
 覆された決定とその理由が残っていること自体が、同じ検討を繰り返さないための情報である
 （「昔なぜそうしなかったか」は再検討時に最も価値が高い）。
 | [0084](0084-mod-integration-test-defaults-to-frame-sync.md) | 2026-11-23 | worker / docs | MOD統合テストの既定をフレーム同期にし、決定性を使う検証項目(最終状態の完全一致・被弾のゲーム内時刻・仮想ミキサの整合・出力動画の形式等)を増やす。実時間は`--capture-mode realtime`で残す | 有効 |
+| [0085](0085-th14-frame-sync-plan-without-gpu.md) | 2026-11-23 | packages/shared / worker | th14の録画の段は、GPUの段を持たないフレーム同期の3段（自宅→4xlarge帯→2xlarge帯）にする | 有効 |
