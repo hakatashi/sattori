@@ -20,6 +20,7 @@ export const changelogEntries: ChangelogEntry[] = [
     ja: "東方輝針城 (th14) の録画に対応",
     en: "Added support for recording Double Dealing Character (th14)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/80",
+    important: true,
   },
   {
     date: "2026-11-23",
