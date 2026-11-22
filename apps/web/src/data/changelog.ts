@@ -17,7 +17,7 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-22",
-    ja: "東方星蓮船 (th12)・東方紺珠伝 (th15) の録画方式で実験的に新方式を導入",
+    ja: "東方星蓮船 (th12)・東方紺珠伝 (th15) の録画で実験的に新方式を導入",
     en: "Introduced an experimental new recording method for Undefined Fantastic Object (th12) and Legacy of Lunatic Kingdom (th15)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/390",
   },
