@@ -3,14 +3,10 @@
 version: 2
 updates:
   # 1. Node.js (pnpm workspace monorepo)
+  # ルートの pnpm-workspace.yaml / pnpm-lock.yaml を基準に全ワークスペースを横断更新するため "/" のみを指定する。
+  # サブディレクトリも並べると、個別更新時にルート pnpm-lock.yaml が更新されず --frozen-lockfile が失敗し、PR も重複する。
   - package-ecosystem: "npm"
-    directories:
-      - "/"
-      - "/apps/*"
-      - "/packages/*"
-      - "/infra"
-      - "/home-worker"
-      - "/worker"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
