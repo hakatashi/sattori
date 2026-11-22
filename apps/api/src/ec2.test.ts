@@ -261,7 +261,7 @@ function tierOf(
 describe("getCandidateInstanceTypes", () => {
   it("段の候補をそのまま返す", () => {
     expect(getCandidateInstanceTypes(stepOf("th15", "gpu:eu-south-2"))).toEqual(["g6f.2xlarge"]);
-    expect(getCandidateInstanceTypes(stepOf("th11", "cpu:eu-south-2"))).toEqual([
+    expect(getCandidateInstanceTypes(stepOf("th11", "cpu-fs-2xl:eu-south-2"))).toEqual([
       "c7i.2xlarge",
       "c7a.2xlarge",
       "m7i.2xlarge",
@@ -275,7 +275,7 @@ describe("getCandidateInstanceTypes", () => {
   });
 
   it("CPUの段はmaxVcpuを渡されても一切変わらない(GPUリース制約が漏れない)", () => {
-    const step = stepOf("th11", "cpu:eu-south-2");
+    const step = stepOf("th11", "cpu-fs-2xl:eu-south-2");
     expect(getCandidateInstanceTypes(step, { maxVcpu: 4 })).toEqual(getCandidateInstanceTypes(step));
   });
 
@@ -288,9 +288,9 @@ describe("getCandidateInstanceTypes", () => {
 
 describe("launchTierFor", () => {
   it("一次リージョンのCPUの段はCPU系Launch Template・一次リージョンのサブネット", async () => {
-    const tier = tierOf("th07", "cpu:eu-south-2");
+    const tier = tierOf("th07", "cpu-fs-2xl:eu-south-2");
     expect(tier).toMatchObject({
-      id: "cpu:eu-south-2",
+      id: "cpu-fs-2xl:eu-south-2",
       region: "eu-south-2",
       gpu: false,
       launchTemplate: { LaunchTemplateId: "lt-xxxx" },
@@ -321,7 +321,7 @@ describe("launchTierFor", () => {
   });
 
   it("フォールバック先のリージョンでもCPUの段は解決しない（Launch Templateが無い）", () => {
-    const step: Ec2RecordingStep = { ...stepOf("th08", "cpu:eu-south-2"), region: "eu-north-1" };
+    const step: Ec2RecordingStep = { ...stepOf("th08", "cpu-fs-2xl:eu-south-2"), region: "eu-north-1" };
     expect(launchTierFor(fallbackConfig, step)).toBeNull();
   });
 
@@ -359,7 +359,7 @@ describe("launchRecordingInstance", () => {
       SpotPriceHistory: [{ SpotPrice: "0.0612" }],
     });
 
-    const instance = await launchRecordingInstance(config, job, "task-token-abc", tierOf("th07", "cpu:eu-south-2"));
+    const instance = await launchRecordingInstance(config, job, "task-token-abc", tierOf("th07", "cpu-fs-2xl:eu-south-2"));
 
     expect(instance).toEqual({
       instanceId: "i-0123456789abcdef0",
@@ -390,14 +390,13 @@ describe("launchRecordingInstance", () => {
     // サブネット(AZ) × 候補インスタンスタイプの全組み合わせをOverridesに渡す
     // （単一AZ・単一インスタンスタイプでのSpot枯渇耐性、Issue #29）
     const overrides = fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]?.Overrides ?? [];
-    expect(overrides).toHaveLength(8);
+    expect(overrides).toHaveLength(6);
     expect(overrides).toEqual(
       expect.arrayContaining([
-        { SubnetId: "subnet-aaaa", InstanceType: "c7i.xlarge" },
-        { SubnetId: "subnet-bbbb", InstanceType: "c7i.xlarge" },
-        { SubnetId: "subnet-aaaa", InstanceType: "c7a.xlarge" },
-        { SubnetId: "subnet-bbbb", InstanceType: "c7i-flex.xlarge" },
-        { SubnetId: "subnet-aaaa", InstanceType: "m7i.xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "c7i.2xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "c7i.2xlarge" },
+        { SubnetId: "subnet-aaaa", InstanceType: "c7a.2xlarge" },
+        { SubnetId: "subnet-bbbb", InstanceType: "m7i.2xlarge" },
       ]),
     );
     expect(fleetCall?.args[0].input.LaunchTemplateConfigs?.[0]).toMatchObject({
@@ -417,7 +416,7 @@ describe("launchRecordingInstance", () => {
       config,
       { ...job, game: "th11" },
       "task-token-abc",
-      tierOf("th11", "cpu:eu-south-2"),
+      tierOf("th11", "cpu-fs-2xl:eu-south-2"),
     );
     expect(instance.instanceType).toBeNull();
     expect(instance.availabilityZone).toBeNull();
@@ -531,7 +530,7 @@ describe("launchRecordingInstance", () => {
     });
 
     await expect(
-      launchRecordingInstance(config, job, "task-token-abc", tierOf("th07", "cpu:eu-south-2")),
+      launchRecordingInstance(config, job, "task-token-abc", tierOf("th07", "cpu-fs-2xl:eu-south-2")),
     ).rejects.toThrow(/InsufficientCapacity/);
     errorSpy.mockRestore();
   });
@@ -581,7 +580,7 @@ describe("launchRecordingInstance", () => {
       config,
       job,
       "task-token-abc",
-      tierOf("th07", "cpu:eu-south-2"),
+      tierOf("th07", "cpu-fs-2xl:eu-south-2"),
     ).catch((e: unknown) => e);
     expect((err as FleetLaunchError).capacityExhausted).toBe(false);
 
@@ -608,7 +607,7 @@ describe("launchRecordingInstance", () => {
       .resolvesOnce({ Instances: [], Errors: [{ ErrorCode: "UnfulfillableCapacity", ErrorMessage: "nope" }] })
       .resolves({ Instances: [{ InstanceIds: ["i-ok"] }] });
 
-    await launchRecordingInstance(config, job, "t", tierOf("th07", "cpu:eu-south-2")).catch(() => {});
+    await launchRecordingInstance(config, job, "t", tierOf("th07", "cpu-fs-2xl:eu-south-2")).catch(() => {});
     await launchRecordingInstance(config, job, "t", tierOf("th07", "gpu:eu-south-2"));
 
     expect(
@@ -628,7 +627,7 @@ describe("launchRecordingInstance", () => {
     ec2Mock.on(CreateFleetCommand).resolves({ Instances: [{ InstanceIds: ["i-ok"] }] });
     ec2Mock.on(DeleteLaunchTemplateVersionsCommand).rejects(new Error("throttled"));
 
-    const instance = await launchRecordingInstance(config, job, "t", tierOf("th07", "cpu:eu-south-2"));
+    const instance = await launchRecordingInstance(config, job, "t", tierOf("th07", "cpu-fs-2xl:eu-south-2"));
 
     expect(instance.instanceId).toBe("i-ok");
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("launch_template_version_delete_failed"));

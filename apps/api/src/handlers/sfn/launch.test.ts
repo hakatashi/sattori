@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CreateFleetCommand,
   type CreateFleetCommandInput,
@@ -17,7 +17,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import type { JobRecord, WorkerHeartbeat } from "@sattori/shared";
-import { useFrameSyncPlan } from "../../testSupport/frameSyncPlan.js";
+import { useFrameSyncPlan, useLegacyGpuFirstPlans } from "../../testSupport/frameSyncPlan.js";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -47,6 +47,16 @@ const REQUIRED_ENV: Record<string, string> = {
 
 const ec2Mock = mockClient(EC2Client);
 const ddbMock = mockClient(DynamoDBDocumentClient);
+
+// th07・th08は旧計画（GPU先頭→自宅→CPU実時間）へ差し替えて、GPUの段が先頭にある計画の汎用的な挙動を確かめる
+// （本物の計画はフレーム同期へ切り替え済み、Issue #390）。
+let restoreLegacyPlans: () => void;
+beforeAll(() => {
+  restoreLegacyPlans = useLegacyGpuFirstPlans();
+});
+afterAll(() => {
+  restoreLegacyPlans();
+});
 
 /** th07のGPUの段（Issue #317）。CPU経路のテストではこれを使い切った状態から始める。 */
 const GPU_STEPS = ["gpu:eu-south-2", "gpu:eu-north-1"];
