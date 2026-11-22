@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "turbo": "^2.11.10",
+    "turbo": "^2.11.11",
     "typescript": "^7.0.2"
   },
   "pnpm": {
