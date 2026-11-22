@@ -291,12 +291,6 @@ export function UploadForm() {
 
   return (
     <section className={styles.card}>
-      {/* サービス全体の一時的なお知らせ(現在はGPUインスタンス枯渇からの復旧)。不要になったら削除する。 */}
-      <div className={clsx(styles.notice, styles.siteNotice)} role="note">
-        <p className={styles.siteNoticeText}>
-          {t("uploadForm.gpuOutageNotice")}
-        </p>
-      </div>
       <p className={styles.supportedTitlesLabel}>
         {t("uploadForm.supportedTitlesLabel", {
           count: SUPPORTED_GAME_IDS.length,
