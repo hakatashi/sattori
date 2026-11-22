@@ -196,21 +196,18 @@ describe("estimateJobCost", () => {
       estimateJobCost(makeJob({ spotPricePerHour: null, instanceType: null, ...overrides }), at);
 
     // `launching`（インスタンスタイプ記録前）や管理画面からの再実行で通る経路。
-    // 最初の段はGPU（フレーム同期へ切り替え済みのth12・th15を除く）。
-    for (const game of ["th07", "th11", "th20", "th06nc"] as const) {
+    // 最初の段はGPU（th20・th06nc。それ以外はフレーム同期へ切り替え済み、Issue #390）。
+    for (const game of ["th20", "th06nc"] as const) {
       expect(estimate({ game }).spotPriceSource, game).toBe("fallback-game");
       expect(estimate({ game }).spotPricePerHour, game).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
     }
-    // フレーム同期のタイトルは自宅の段の次のEC2の段（th12は2xlarge帯、th15は4xlarge帯）で見積もる（Issue #390）。
+    // フレーム同期のタイトルは自宅の段の次のEC2の段（640x480は2xlarge帯、th15は4xlarge帯）で見積もる（Issue #390）。
+    for (const game of ["th07", "th11", "th13"] as const) {
+      expect(estimate({ game }).spotPricePerHour, game).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
+    }
     expect(estimate({ game: "th12" }).spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
     expect(estimate({ game: "th15" }).spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
     // GPUの段を使い切った後。自宅ワーカーの段の次のCPUの段で見積もる。
-    expect(estimate({ game: "th07", capacityExhaustedTargets: gpuExhausted }).spotPricePerHour).toBe(
-      FALLBACK_SPOT_PRICE_USD_PER_HOUR.xlarge,
-    );
-    expect(estimate({ game: "th11", capacityExhaustedTargets: gpuExhausted }).spotPricePerHour).toBe(
-      FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"],
-    );
     expect(estimate({ game: "th12", capacityExhaustedTargets: gpuExhausted }).spotPricePerHour).toBe(
       FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"],
     );

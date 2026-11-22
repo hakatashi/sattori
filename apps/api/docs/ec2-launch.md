@@ -14,14 +14,10 @@ UserData を変える前に読むこと。[`apps/api/README.md`](../README.md) �
 
 | 段 | 定数（`recordingPlan.ts`） | 候補インスタンスタイプ |
 | --- | --- | --- |
-| th06/06c/07/08/09/10のCPU（等倍） | `CPU_XLARGE_INSTANCE_TYPES` | `c7i.xlarge` / `c7a.xlarge` / `c7i-flex.xlarge` / `m7i.xlarge` |
-| th11/128のCPU（等倍） | `CPU_2XLARGE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge` |
-| フレーム同期の`.2xlarge`帯（th12・th15、段の`id`は`cpu-fs-2xl:<region>`） | `FRAME_SYNC_2XLARGE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge`（運用実績あり。フレーム同期はタイプが品質に影響しないので、足すときの検証は簡単な速度確認だけ、[`decisions/0078`](../../../docs/decisions/0078-frame-sync-plan-and-instance-type-verification-policy.md)） |
-| フレーム同期の`.4xlarge`帯（th12・th15、`cpu-fs-4xl:<region>`） | `FRAME_SYNC_4XLARGE_INSTANCE_TYPES` | `c7i.4xlarge` |
+| フレーム同期の`.2xlarge`帯（th06nc・th20以外の全タイトル、段の`id`は`cpu-fs-2xl:<region>`） | `FRAME_SYNC_2XLARGE_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge`（運用実績あり。フレーム同期はタイプが品質に影響しないので、足すときの検証は簡単な速度確認だけ、[`decisions/0078`](../../../docs/decisions/0078-frame-sync-plan-and-instance-type-verification-policy.md)） |
+| フレーム同期の`.4xlarge`帯（th06nc・th20以外の全タイトル、`cpu-fs-4xl:<region>`） | `FRAME_SYNC_4XLARGE_INSTANCE_TYPES` | `c7i.4xlarge` |
 | 全タイトルのGPUの段（倍速・th20の等倍） | `GPU_INSTANCE_TYPES` | `g6f.2xlarge`のみ（Issue #241・#82・#288、[`decisions/0058`](../../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。GPUリースのvCPU量で`getCandidateInstanceTypes(step, { maxVcpu })`が絞る |
 | th06ncのCPU低速録画（BC7展開） | `TH06NC_CPU_INSTANCE_TYPES` | `c7i.2xlarge`のみ（[`decisions/0067`](../../../docs/decisions/0067-th06nc-cpu-slow-motion-and-drop-1080p.md)。かつての最後の段`g6.2xlarge`は外した） |
-| th13のCPU（等倍） | `TH13_NATIVE_INSTANCE_TYPES` | `c7i.4xlarge`のみ（[`decisions/0070`](../../../docs/decisions/0070-th13-native-on-4xlarge-and-half-speed-on-2xlarge.md)） |
-| th13のCPU低速録画（1/2倍速、段の`id`は`cpu-slow:<region>`） | `TH13_SLOW_MOTION_INSTANCE_TYPES` | `c7i.2xlarge` / `c7a.2xlarge` / `m7i.2xlarge`（同上。`c7i`以外は[`0042`](../../../docs/decisions/0042-2xlarge-instance-type-group-precedent.md)のグループ） |
 | th20のCPU低速録画（th15はフレーム同期へ移行済み） | `CPU_SLOW_MOTION_INSTANCE_TYPES` | `c7i.4xlarge`のみ（[`decisions/0064`](../../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)） |
 
 > **候補を足す・変える前に

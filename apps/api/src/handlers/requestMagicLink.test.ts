@@ -345,10 +345,11 @@ describe("POST /magic-links", () => {
       const jobPut = ddbMock
         .commandCalls(PutCommand)
         .find((call) => call.args[0].input.Item?.status === "pending");
-      // th07の最初の段はGPUの3倍速（`recordingPlan.ts`）。古いフロントエンドのキャッシュが送る
-      // 1080pの指定も無視する。
+      // th07の最初の段は自宅ワーカーのフレーム同期（等倍、`recordingPlan.ts`）。古いフロントエンドの
+      // キャッシュが送る1080pの指定も無視する。
       expect(jobPut?.args[0].input.Item?.options).toMatchObject({
-        recordingSpeed: 3,
+        recordingSpeed: 1,
+        captureMode: "frameSync",
         th06ncHighResolution: false,
       });
     },

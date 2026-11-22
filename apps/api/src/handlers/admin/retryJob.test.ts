@@ -90,8 +90,8 @@ describe("buildRetryJob", () => {
       watermark: false,
       th10BugfixMarisaB: false,
       th06ncHighResolution: false,
-      recordingSpeed: 2,
-      captureMode: "realtime",
+      recordingSpeed: 1,
+      captureMode: "frameSync",
     });
     expect(retried.email).toBe("user@example.com");
     expect(retried.language).toBe("en");
@@ -139,8 +139,10 @@ describe("buildRetryJob", () => {
   });
 
   it("段の状態を引き継がず、速度を最初の段の速度へ戻して再実行する(Issue #317)", () => {
+    // th06ncは最初の段がGPUの2倍速（th11などはフレーム同期の等倍）。
     const fellBackJob: JobRecord = {
       ...failedJob,
+      game: "th06nc",
       options: { ...failedJob.options, recordingSpeed: 1 },
       recordingStepId: "cpu:eu-south-2",
       // 段の導入前のフォールバックの記録も捨てる。
@@ -150,7 +152,6 @@ describe("buildRetryJob", () => {
 
     const retried = buildRetryJob(fellBackJob, "job-2", new Date("2026-08-01T00:00:00.000Z"));
 
-    // th11の最初の段はGPUの2倍速。
     expect(retried.options.recordingSpeed).toBe(2);
     expect("recordingStepId" in retried).toBe(false);
     expect("requestedRecordingSpeed" in retried).toBe(false);

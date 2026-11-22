@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   DescribeInstancesCommand,
@@ -9,7 +9,7 @@ import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand, UpdateCommand
 import { mockClient } from "aws-sdk-client-mock";
 import { GPU_QUOTA_STEP_SKIP_ATTEMPT, type JobRecord } from "@sattori/shared";
 import { MAX_ATTEMPTS, MAX_ATTEMPTS_DETERMINISTIC } from "../../retryPolicy.js";
-import { useFrameSyncPlan } from "../../testSupport/frameSyncPlan.js";
+import { useFrameSyncPlan, useLegacyGpuFirstPlans } from "../../testSupport/frameSyncPlan.js";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -39,6 +39,16 @@ const REQUIRED_ENV: Record<string, string> = {
 
 const ec2Mock = mockClient(EC2Client);
 const ddbMock = mockClient(DynamoDBDocumentClient);
+
+// th07・th08は旧計画（GPU先頭→自宅→CPU実時間）へ差し替えて、GPUの段が先頭にある計画の汎用的な挙動を確かめる
+// （本物の計画はフレーム同期へ切り替え済み、Issue #390）。
+let restoreLegacyPlans: () => void;
+beforeAll(() => {
+  restoreLegacyPlans = useLegacyGpuFirstPlans();
+});
+afterAll(() => {
+  restoreLegacyPlans();
+});
 
 /** GPUの段を使い切ったth07（CPUの段で動いている、Issue #317）。 */
 const baseJob: JobRecord = createJobRecord({
