@@ -22,11 +22,12 @@ import type { RecordingStep } from "./recordingPlan.js";
 
 /** 段を「id 速度 候補」の1行に縮めて、表と突き合わせやすくする。 */
 function describeStep(step: RecordingStep): string {
+  const speed = step.captureMode === "frameSync" ? "fs" : `x${Number(step.speed.toFixed(3))}`;
   if (step.kind === "home") {
-    return `home x${step.speed}`;
+    return `home ${speed}`;
   }
   const extra = step.speedByDifficulty ? ` ${JSON.stringify(step.speedByDifficulty)}` : "";
-  return `${step.id} x${Number(step.speed.toFixed(3))} ${step.instanceTypes.join(",")}${extra}`;
+  return `${step.id} ${speed} ${step.instanceTypes.join(",")}${extra}`;
 }
 
 describe("RECORDING_PLANS", () => {
@@ -47,12 +48,29 @@ describe("RECORDING_PLANS", () => {
     }
   });
 
-  it("今の段はすべて実時間（realtime）録画で、frameSyncの段は速度1固定（Issue #387）", () => {
+  it("frameSyncの段は速度1固定で、フレーム同期へ切り替え済みのタイトルは先頭が自宅（Issue #387・#390）", () => {
+    const frameSyncTitles: string[] = [];
     for (const [game, steps] of Object.entries(RECORDING_PLANS)) {
       for (const step of steps!) {
-        expect(step.captureMode, `${game} ${step.id}`).toBe("realtime");
         if (step.captureMode === "frameSync") {
-          expect(step.speed).toBe(1);
+          expect(step.speed, `${game} ${step.id}`).toBe(1);
+        }
+      }
+      if (steps!.some((step) => step.captureMode === "frameSync")) {
+        frameSyncTitles.push(game);
+        expect(steps![0]!.id, game).toBe("home");
+        expect(steps![0]!.captureMode, game).toBe("frameSync");
+      }
+    }
+    // 切り替え済み（Issue #390。残りのタイトルは順次）。
+    expect(frameSyncTitles.sort()).toEqual(["th12", "th15"]);
+  });
+
+  it("frameSyncのEC2の段は実測した実時間効率（estimatedRealtimeFactor）を持つ", () => {
+    for (const [game, steps] of Object.entries(RECORDING_PLANS)) {
+      for (const step of steps!) {
+        if (step.captureMode === "frameSync") {
+          expect(step.estimatedRealtimeFactor, `${game} ${step.id}`).toBeGreaterThan(0);
         }
       }
     }
@@ -93,7 +111,7 @@ describe("RECORDING_PLANS", () => {
       ],
     ],
     [
-      ["th11", "th12", "th128"],
+      ["th11", "th128"],
       [
         "gpu:eu-south-2 x2 g6f.2xlarge",
         "gpu:eu-north-1 x2 g6f.2xlarge",
@@ -102,11 +120,25 @@ describe("RECORDING_PLANS", () => {
       ],
     ],
     [
-      ["th15"],
+      // Issue #390・0078: 自宅 → .2xlarge帯 → c7i.4xlarge（どちらもフレーム同期）→ GPU（実時間2倍速）。
+      ["th12"],
       [
+        "home fs",
+        "cpu-fs-2xl:eu-south-2 fs c7i.2xlarge,c7a.2xlarge,m7i.2xlarge",
+        "cpu-fs-4xl:eu-south-2 fs c7i.4xlarge",
         "gpu:eu-south-2 x2 g6f.2xlarge",
         "gpu:eu-north-1 x2 g6f.2xlarge",
-        'cpu:eu-south-2 x0.5 c7i.4xlarge {"Extra":0.3333333333333333}',
+      ],
+    ],
+    [
+      // 1280x960のタイトルは4xlarge帯が先、GPUの段は実時間の1倍速。
+      ["th15"],
+      [
+        "home fs",
+        "cpu-fs-4xl:eu-south-2 fs c7i.4xlarge",
+        "cpu-fs-2xl:eu-south-2 fs c7i.2xlarge,c7a.2xlarge,m7i.2xlarge",
+        "gpu:eu-south-2 x1 g6f.2xlarge",
+        "gpu:eu-north-1 x1 g6f.2xlarge",
       ],
     ],
     [
@@ -136,7 +168,17 @@ describe("RECORDING_PLANS", () => {
 });
 
 describe("recordingSpeedForStep", () => {
-  const th15Cpu = recordingPlanFor("th15")[2]!;
+  // th15のCPU低速録画は廃止したので、難易度ごとの上書き（`speedByDifficulty`）の仕組みだけを確かめる。
+  const th15Cpu: RecordingStep = {
+    id: "cpu:eu-south-2",
+    kind: "ec2",
+    platform: "cpu",
+    region: PRIMARY_RECORDING_REGION,
+    instanceTypes: ["c7i.4xlarge"],
+    captureMode: "realtime",
+    speed: 1 / 2,
+    speedByDifficulty: { Extra: 1 / 3 },
+  };
 
   it("難易度の上書きがあればそれを使う", () => {
     expect(recordingSpeedForStep(th15Cpu, { replayInfo: { difficulty: "Extra" } })).toBe(1 / 3);
@@ -227,9 +269,9 @@ describe("initialRecordingSpeed", () => {
 });
 
 describe("HOME_WORKER_GAME_IDS", () => {
-  it("GPU以外で録れないタイトルと低速録画のタイトルを含まない", () => {
+  it("自宅の段を持たないタイトル（th06nc・th20）を含まず、GPUの段を持つth15も含む（0079）", () => {
     expect(HOME_WORKER_GAME_IDS).not.toContain("th06nc");
-    expect(HOME_WORKER_GAME_IDS).not.toContain("th15");
+    expect(HOME_WORKER_GAME_IDS).toContain("th15");
     expect(HOME_WORKER_GAME_IDS).not.toContain("th20");
     expect(HOME_WORKER_GAME_IDS).toContain("th08");
     expect(HOME_WORKER_GAME_IDS).toContain("th13");
@@ -335,5 +377,29 @@ describe("GPUの段が最後にある計画（Issue #387）", () => {
     plans.th12 = FRAME_SYNC_PLAN;
     expect(initialCaptureMode({ game: "th12" })).toBe("frameSync");
     expect(initialRecordingSpeed({ game: "th12" })).toBe(1);
+  });
+});
+
+describe("th12・th15のフレーム同期の計画（Issue #390）", () => {
+  it("th15の2xlarge段だけ、推定尺が約55分を超えるジョブは飛ばす（th12は飛ばさない）", () => {
+    expect(durationSkippedStepIds({ game: "th15", estimatedDurationSeconds: 3301 })).toEqual([
+      "cpu-fs-2xl:eu-south-2",
+    ]);
+    expect(durationSkippedStepIds({ game: "th15", estimatedDurationSeconds: 3300 })).toEqual([]);
+    expect(durationSkippedStepIds({ game: "th12", estimatedDurationSeconds: 4000 })).toEqual([]);
+  });
+
+  it("最初の段は自宅ワーカーのフレーム同期で、GPUの段は最後（後ろのGPU以外の段が無いので飛ばせない）", () => {
+    for (const game of ["th12", "th15"] as const) {
+      expect(currentRecordingStep({ game })).toMatchObject({ id: "home", captureMode: "frameSync" });
+      expect(initialCaptureMode({ game })).toBe("frameSync");
+      expect(initialRecordingSpeed({ game })).toBe(1);
+      expect(skippableGpuStepIds({ game })).toEqual([]);
+    }
+  });
+
+  it("th15のGPUの段は実時間の1倍速、th12は2倍速", () => {
+    expect(recordingPlanFor("th15").filter(isGpuStep).map((step) => step.speed)).toEqual([1, 1]);
+    expect(recordingPlanFor("th12").filter(isGpuStep).map((step) => step.speed)).toEqual([2, 2]);
   });
 });

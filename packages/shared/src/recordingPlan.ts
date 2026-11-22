@@ -124,6 +124,23 @@ export const CPU_2XLARGE_INSTANCE_TYPES = [
 ] as const;
 
 /**
+ * フレーム同期（`captureMode: "frameSync"`）の`.2xlarge`帯の候補。フレーム同期ではインスタンスタイプの違いが
+ * 録画の品質に影響せず**速度だけが変わる**ので（Epic #399のユーザー判断、`docs/decisions/0078`）、新しい
+ * タイプを足すときの実機検証は要らない（必要なら簡単な速度検証だけ）。c7i/c7a/m7iの`.2xlarge`は運用実績が
+ * ある（`docs/decisions/0042`）。タイプごとに独立したSpotプールを持つので、1タイプだけだと枯渇時に起動できない。
+ */
+export const FRAME_SYNC_2XLARGE_INSTANCE_TYPES = [
+  "c7i.2xlarge", // 8vCPU。docs/reports/2026-11-22-th12-th15-frame-sync-ec2-verification.md で実測
+  "c7a.2xlarge", // 運用実績あり（0042）
+  "m7i.2xlarge", // 運用実績あり（0042）
+] as const;
+
+/** フレーム同期の`.4xlarge`帯の候補。`c7i.4xlarge`はth13・th15・th20での運用実績がある。 */
+export const FRAME_SYNC_4XLARGE_INSTANCE_TYPES = [
+  "c7i.4xlarge", // 16vCPU/32GiB。docs/reports/2026-11-22-th12-th15-frame-sync-ec2-verification.md で実測
+] as const;
+
+/**
  * th13の等倍の候補（Issue #79）。**1タイプしか挙げていないのは意図的**で、`.4xlarge`帯で検証したのは
  * `c7i.4xlarge`だけ（`docs/decisions/0042`のグループ化は`.2xlarge`帯に限る）。落ちはExtraで4.3%と
  * 数値上は基準外だが、視聴して許容範囲と判断した（touhou-recorder reports/100、`docs/decisions/0070`）。
@@ -223,6 +240,25 @@ function cpuStep(
   };
 }
 
+/** 自宅ワーカーへのオファー（フレーム同期）。 */
+function homeFrameSyncStep(limits: RecordingStepLimits = {}): HomeRecordingStep {
+  return { id: "home", kind: "home", captureMode: "frameSync", speed: 1, ...limits };
+}
+
+/** フレーム同期のCPUの段（`.2xlarge`帯・`.4xlarge`帯）。段の`id`は帯ごとに固定（既存ジョブの記録と互換にする）。 */
+function frameSyncCpuStep(tier: "2xl" | "4xl", limits: RecordingStepLimits = {}): Ec2RecordingStep {
+  return {
+    id: `cpu-fs-${tier}:${PRIMARY_RECORDING_REGION}`,
+    kind: "ec2",
+    platform: "cpu",
+    region: PRIMARY_RECORDING_REGION,
+    instanceTypes: tier === "2xl" ? FRAME_SYNC_2XLARGE_INSTANCE_TYPES : FRAME_SYNC_4XLARGE_INSTANCE_TYPES,
+    captureMode: "frameSync",
+    speed: 1,
+    ...limits,
+  };
+}
+
 /**
  * GPUの2倍速（th07は3倍速）で録り、GPUが無ければ等倍で自宅ワーカー→CPUへ落ちるタイトル。
  * 倍速は全タイトルで実用品質（touhou-recorder reports/84〜90）。th07は3倍速でも落ちが少ない。
@@ -232,10 +268,28 @@ function speedupPlan(speed: RecordingSpeed, cpuTypes: readonly string[]): Record
 }
 
 /**
+ * 1280x960のタイトル（th15・th20）の`.2xlarge`帯のフレーム同期の段を飛ばす推定尺（秒）。th15を2xlargeで録ると総所要時間は
+ * 尺の約2.2倍（2割遅ければ約2.5倍）になり、尺が約58〜68分を超えるとStep Functionsの150分に届くための保険
+ * （Epic #399の点検では本番の過去ジョブ631件で該当0件）。
+ */
+export const FRAME_SYNC_1280X960_2XL_MAX_ESTIMATED_SECONDS = 55 * 60;
+
+// フレーム同期の実時間効率（尺÷録画フェーズの実時間）。EC2は実験ジョブでの実測（上限解除後の平均速度を切り捨て、
+// docs/reports/2026-11-22-th12-th15-frame-sync-ec2-verification.md）、自宅はこのマシンの2並列の実測
+// （docs/reports/2026-11-22-worker-frame-sync-full-length-verification.md、th12 1.97倍・th15 0.59倍）。
+const TH12_HOME = 2.0;
+const TH12_2XL = 2.2;
+const TH12_4XL = 3.1;
+const TH15_HOME = 0.6;
+const TH15_4XL = 1.7;
+const TH15_2XL = 0.95;
+
+/**
  * タイトルごとの段（先頭から順に試す）。録画非対応タイトルは持たない（`recordingPlanFor()`）。
  *
- * - th15: GPU描画（wined3d+OpenGL）でExtraの高負荷区間の処理落ちが解消する（reports/82）。
- *   GPUが無ければCPU低速録画。Extraは1/2倍速でも30Hzを維持できないので1/3倍速（reports/91）。
+ * - th12・th15（Issue #390、`docs/decisions/0078`）: 自宅→CPU（フレーム同期）2段→GPU（実時間、最後の段）。
+ *   th12（640x480）は`.2xlarge`帯が先、th15（1280x960）はCPU負荷が高いので`.4xlarge`帯が先。
+ *   フレーム同期の段は速度が落ちるだけで品質は変わらない。
  * - th20: 2倍速はゲーム本体の単一スレッド性能が足りず落ちが等倍の16倍になるので等倍
  *   （reports/89）。GPUが無ければCPU低速録画（reports/91）。
  * - th06nc: D3D11描画。GPUが無ければ、MODでBC7テクスチャを展開したCPU描画の1/2倍速（reports/96・97、
@@ -252,9 +306,22 @@ export const RECORDING_PLANS: Readonly<Partial<Record<GameId, readonly Recording
   th09: speedupPlan(2, CPU_XLARGE_INSTANCE_TYPES),
   th10: speedupPlan(2, CPU_XLARGE_INSTANCE_TYPES),
   th11: speedupPlan(2, CPU_2XLARGE_INSTANCE_TYPES),
-  th12: speedupPlan(2, CPU_2XLARGE_INSTANCE_TYPES),
+  th12: [
+    homeFrameSyncStep({ estimatedRealtimeFactor: TH12_HOME }),
+    frameSyncCpuStep("2xl", { estimatedRealtimeFactor: TH12_2XL }),
+    frameSyncCpuStep("4xl", { estimatedRealtimeFactor: TH12_4XL }),
+    ...gpuSteps(2),
+  ],
   th128: speedupPlan(2, CPU_2XLARGE_INSTANCE_TYPES),
-  th15: [...gpuSteps(2), cpuStep(CPU_SLOW_MOTION_INSTANCE_TYPES, 1 / 2, { Extra: 1 / 3 })],
+  th15: [
+    homeFrameSyncStep({ estimatedRealtimeFactor: TH15_HOME }),
+    frameSyncCpuStep("4xl", { estimatedRealtimeFactor: TH15_4XL }),
+    frameSyncCpuStep("2xl", {
+      maxEstimatedDurationSeconds: FRAME_SYNC_1280X960_2XL_MAX_ESTIMATED_SECONDS,
+      estimatedRealtimeFactor: TH15_2XL,
+    }),
+    ...gpuSteps(1),
+  ],
   th20: [...gpuSteps(1), cpuStep(CPU_SLOW_MOTION_INSTANCE_TYPES, 1 / 2)],
   th06nc: [...gpuSteps(2), cpuStep(TH06NC_CPU_INSTANCE_TYPES, 1 / 2)],
   th13: [

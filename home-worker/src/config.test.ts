@@ -20,12 +20,13 @@ describe("loadConfig", () => {
   it("既定値は録画の段に自宅ワーカーを持つタイトルと控えめな並列度、能力はすべて宣言する", () => {
     const config = loadConfig(env());
 
-    // GPU必須・低速録画のタイトル（th06nc・th15・th20）は段に自宅ワーカーが無いので
-    // 既定から除外される（多層防御、`recordingPlan.ts`と対、Issue #241・#317）。
+    // 段に自宅ワーカーが無いタイトル（th06nc・th20）は既定から除外される（多層防御、`recordingPlan.ts`と対、
+    // Issue #241・#317）。フレーム同期の自宅の段を持つth15はGPU描画が望ましくても含む（`decisions/0079`）。
     expect(config.supportedGames).toEqual(HOME_WORKER_GAME_IDS);
-    for (const game of ["th06nc", "th15", "th20"] as const) {
+    for (const game of ["th06nc", "th20"] as const) {
       expect(config.supportedGames).not.toContain(game);
     }
+    expect(config.supportedGames).toContain("th15");
     expect(config.supportedGames).toContain("th07");
     expect(config.maxConcurrency).toBe(2);
   });

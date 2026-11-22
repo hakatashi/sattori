@@ -419,13 +419,13 @@ describe("UploadForm の録画完了の目安（Issue #317）", () => {
     expect(screen.queryByText(/1080pで録画する/)).toBeNull();
   });
 
-  it("最初の段（th15はGPUの2倍速）で録れたときの目安を表示する", async () => {
+  it("最初の段（th15は自宅のフレーム同期、実時間効率0.6）で録れたときの目安を表示する", async () => {
     mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH15_REPLAY_INFO });
     renderUploadForm();
     selectFile("th15_01.rpy");
 
-    // 20分のリプレイ: 180 + 1200×1.05÷2 + 1200×0.08 = 906秒 ≒ 15分。
-    await waitFor(() => expect(screen.getByText(/録画完了までの目安: 約15分/)).toBeTruthy());
+    // 20分のリプレイ: 180 + 1200÷0.6 + 1200×0.22 = 2444秒 ≒ 41分。
+    await waitFor(() => expect(screen.getByText(/録画完了までの目安: 約41分/)).toBeTruthy());
   });
 
   it("リプレイの尺が分からなければ目安を出さない", async () => {

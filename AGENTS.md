@@ -82,10 +82,13 @@ eu-south-2のSpot枯渇時に`eu-north-1`で起動する**（`AWS_REGION`はeu-s
   [`decisions/0004`](docs/decisions/0004-job-id-as-authorization-secret.md)）。
   **管理画面（`/admin`）の認証は別系統**で、SSM の共有トークンを Lambda Authorizer が検証する
   （[`decisions/0005`](docs/decisions/0005-admin-auth-ssm-shared-token.md)）。
-- **インスタンスタイプ・録画パイプラインの変更は必ず実機検証を経ること**。「同スペック帯・同価格帯
-  だから安全」という推測は繰り返し裏切られている。裏付けは touhou-recorder のレポートか
-  [`docs/reports/`](docs/reports/README.md) に必ず残すこと。
-  唯一の例外は`c7i`/`c7a`/`m7i`の`.2xlarge`帯（[`decisions/0042`](docs/decisions/0042-2xlarge-instance-type-group-precedent.md)）。
+- **録画パイプラインの変更と、新しい作品タイトルの追加は、クラウドでの実機検証を必ず経ること**
+  （裏付けは [`docs/reports/`](docs/reports/README.md) に残す）。ただし**フレーム同期の段
+  （`captureMode: "frameSync"`）のインスタンスタイプは、品質に影響せず速度だけが変わるので、綿密な実機検証を
+  しない**（足すときは必要なら簡単な速度検証だけ。`.2xlarge`帯の`c7i`/`c7a`/`m7i`と`c7i.4xlarge`は運用実績があり
+  検証不要。[`decisions/0078`](docs/decisions/0078-frame-sync-plan-and-instance-type-verification-policy.md)）。
+  **実時間（`realtime`）の段のインスタンスタイプは従来どおり実機検証が要る**: 「同スペック帯・同価格帯だから
+  安全」という推測は繰り返し裏切られている（例外は[`0042`](docs/decisions/0042-2xlarge-instance-type-group-precedent.md)）。
 - **重複フレーム率の自動チェックは録画開始15〜45秒の30秒スポットしか見ておらず**（Issue #93）、
   背景が常時動くタイトルでは処理落ちを過小評価しうる。**品質評価ではリプレイのframeCountとの
   理論尺比較も必ず併用すること**（`docs/known-limitations.md` §3）。

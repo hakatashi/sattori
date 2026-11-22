@@ -1,6 +1,6 @@
 # 0047. GPU描画必須タイトルは自宅ワーカーへ常にオファーしない
 
-- **状態**: 有効
+- **状態**: [`0079`](0079-home-worker-accepts-frame-sync-gpu-titles.md) によって置き換え済み（フレーム同期の段なら、GPUの段を持つタイトルも自宅へオファーする。自宅へ出すかは録画の段だけが決める）
 - **決定日**: 2026-09-12
 - **対象**: apps/api / home-worker
 - **関連**: Issue #241、`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`、

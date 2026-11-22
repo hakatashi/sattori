@@ -119,3 +119,15 @@ describe("recordingScaleForJob（倍速録画、Issue #288）", () => {
     expect(speedup.converting).toBe(native.converting);
   });
 });
+
+describe("recordingScaleForJob（フレーム同期、Issue #390）", () => {
+  it("フレーム同期の段の実時間効率（尺÷録画の実時間）の逆数", () => {
+    expect(recordingScaleForJob({ recordingSpeed: 1, captureMode: "frameSync", estimatedRealtimeFactor: 2 })).toBeCloseTo(0.5);
+    expect(recordingScaleForJob({ recordingSpeed: 1, captureMode: "frameSync", estimatedRealtimeFactor: 0.6 })).toBeCloseTo(1 / 0.6);
+  });
+
+  it("実測値が無い・実時間の段なら従来の倍率の見積もり", () => {
+    expect(recordingScaleForJob({ recordingSpeed: 1, captureMode: "frameSync" })).toBe(1);
+    expect(recordingScaleForJob({ recordingSpeed: 2, captureMode: "realtime", estimatedRealtimeFactor: 5 })).toBeCloseTo(0.525);
+  });
+});

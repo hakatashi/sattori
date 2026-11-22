@@ -54,9 +54,11 @@ CPUの段ではExtraの高密度弾幕で描画が間引かれ、FpsMonitor・�
 ならない**（マジックバイトが同じ`T6RP`）。本番相当のフル尺E2E検証・RVAの一部が未了。詳細は
 [`known-limitations-gpu-recording.md`](known-limitations-gpu-recording.md) §2。
 
-### th15（東方紺珠伝）は録画対応済み。GPUを優先し、確保できなければCPU低速で録画する
+### th15（東方紺珠伝）は録画対応済み。フレーム同期（自宅→4xlarge帯→2xlarge帯）を優先し、GPUは最後の段
 
-GPU描画は原理的には必須でないが、Extraの処理落ちを避けるためGPUを優先する。入力ポーリングは
+2026-11-22（Issue #390）からフレーム同期のCPUの段が先頭になった
+（[`decisions/0078`](decisions/0078-frame-sync-plan-and-instance-type-verification-policy.md)）。以下は
+それ以前の記述で、GPUの段（実時間の1倍速）にだけ当てはまる。GPU描画は原理的には必須でないが、Extraの処理落ちを避けるためGPUを優先していた。入力ポーリングは
 GetDeviceState。このマシンではGPU描画経路を検証できない。詳細は
 [`known-limitations-gpu-recording.md`](known-limitations-gpu-recording.md) §3。
 
@@ -234,12 +236,13 @@ Spot枯渇による起動失敗）が実害化したため撤回した
 2並列とも完走することは確認済み（詳細は
 [`reports/2026-08-09-home-worker-parallel-recording.md`](reports/2026-08-09-home-worker-parallel-recording.md)）。
 
-**th06nc・th15・th20（GPU描画必須タイトル、Issue #241・#82）は自宅ワーカーへは常にオファー
-されない**（GPU非搭載が前提のため。`apps/api/src/workerRouting.ts`の
-`offerToHomeWorker: false`、[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。
-th15・th20の低速録画も同様（#179が未解決で、自宅でのCPU低速も未検証、[`decisions/0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。
-自宅マシンにGPUを搭載する予定がある場合でも、現状の実装は明示的な許可リストを持たない
-ため、対応させるには別途改修が要る。
+**自宅ワーカーへオファーされるのは、録画の段に自宅の段（`kind: "home"`）を持つタイトルだけ**
+（`recordingPlan.ts`、[`decisions/0079`](decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)）。
+フレーム同期（Epic #399）の段へ切り替えたタイトル（現在th12・th15）が対象で、th15のようにGPU描画が望ましい
+タイトルも、フレーム同期なら自宅のCPU描画で品質を落とさず録れる（遅いだけ）。**th06nc・th20は、計画の切り替え
+（Issue #390の残り）までオファーされない**（GPU描画必須のth06ncは実時間方式では自宅で成立しない、
+[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。th20の低速録画の2並列ハング（#179）は、
+フレーム同期の2並列で再現しないかをth20の切り替えのときに確かめる。
 
 ### 未検証の経路
 
@@ -255,6 +258,11 @@ NAT 配下のデーモンには通知が届かないため、取り消しの捕�
 メールが飛ぶ、という最悪の結果はこちらで止める設計になっている（`home-worker/README.md` §3）。
 
 ### 録画品質は並列度そのものよりCPU温度とホストの他負荷に依存する
+
+**これはフレーム同期の段には当てはまらない**（Issue #390）。フレーム同期はゲームの時計を仮想化するので、
+CPU温度・ホストの他負荷・並列度は**録画の速度にだけ**効き、画質（取りこぼし）には出ない。自宅ワーカーが
+フレーム同期の段（th12・th15）で録る限り、温度で処理落ちを心配する必要は無い（遅くなるだけ）。以下の実測は
+実時間方式（フレーム同期への切り替え前）の話で、まだ実時間の段で録るタイトルに当てはまる。
 
 開発マシン（Ryzen 7 5700X、8コア16スレッド）での実測
 （[`reports/2026-08-09-home-worker-parallel-recording.md`](reports/2026-08-09-home-worker-parallel-recording.md)）:

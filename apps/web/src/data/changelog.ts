@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-11-22",
+    ja: "東方星蓮船 (th12)・東方紺珠伝 (th15) の録画方式を改善し、サーバーが混雑していても処理落ちのない録画ができるようになりました。追加ワーカーでも録画できるようになり、東方紺珠伝 (th15) は録画サーバーの空き待ちが起きにくくなります",
+    en: "Improved the recording method for Undefined Fantastic Object (th12) and Legacy of Lunatic Kingdom (th15) so that recordings no longer suffer from dropped frames, even when servers are busy. Recording is now also available on additional workers, and Legacy of Lunatic Kingdom (th15) is less likely to wait for a recording server",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/390",
+    important: true,
+  },
+  {
     date: "2026-11-12",
     ja: "東方風神録 (th10)・東方地霊殿 (th11)・東方星蓮船 (th12)・妖精大戦争 (th128)・東方神霊廟 (th13) で、会話文やスペルカード名の文字の縁がギザギザになっていた問題を修正",
     en: "Fixed jagged edges on dialogue and spell card names in Mountain of Faith (th10), Subterranean Animism (th11), Undefined Fantastic Object (th12), Fairy Wars (th128) and Ten Desires (th13)",

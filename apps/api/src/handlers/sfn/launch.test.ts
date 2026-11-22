@@ -359,7 +359,7 @@ describe("sfn/launch handler（自宅ワーカーへのオファー、Issue #49�
 
 describe("sfn/launch handler（GPU vCPU容量リース、Issue #270）", () => {
   const gpuJob: JobRecord = createJobRecord({
-    game: "th15",
+    game: "th08",
     status: "queued",
     createdAt: "2026-07-17T00:00:00.000Z",
     updatedAt: "2026-07-17T00:00:00.000Z",
@@ -681,8 +681,6 @@ describe("sfn/launch handler（録画の段、Issue #315・#317）", () => {
 
   it.each([
     ["th20", "Lunatic", "30"],
-    ["th15", "Hard", "30"],
-    ["th15", "Extra", "20"],
   ] as const)(
     "%s(%s)はGPUの段を使い切ったら自宅へオファーせずc7i.4xlargeの低速録画で起動する（Issue #316）",
     async (game, difficulty, targetHz) => {

@@ -45,7 +45,7 @@ const cpuJob: JobRecord = createJobRecord({
   status: "queued",
   capacityExhaustedTargets: ["gpu:eu-south-2", "gpu:eu-north-1"],
 });
-const gpuJob: JobRecord = createJobRecord({ game: "th15", status: "queued", jobId: "job-1" });
+const gpuJob: JobRecord = createJobRecord({ game: "th08", status: "queued", jobId: "job-1" });
 
 /**
  * `GpuQueueIndex`のQuery結果1件ぶん。`gpuQueuedAtOffsetSec`は現在時刻からの相対
@@ -439,8 +439,8 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       expect(fallbackUpdates()).toHaveLength(0);
     });
 
-    it("th15も30分以上待ったらGPUの段を飛ばす（次はCPU低速録画の段、Issue #316）", async () => {
-      ddbMock.on(GetCommand).resolves({ Item: { ...gpuJob, game: "th15" } });
+    it("th20も30分以上待ったらGPUの段を飛ばす（次はCPU低速録画の段、Issue #316）", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: { ...gpuJob, game: "th20" } });
       waitedFor(31);
       ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
         Items: [waitingEntry("job-0", -60), waitingEntry("job-1", 0)],

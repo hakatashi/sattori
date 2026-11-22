@@ -112,7 +112,11 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
   上限を超える段を除いた最初の段。`nextEc2Step()`: そこから自宅の段を飛ばした次のEC2の段（GPUリースの判定に使う）。
   `skippableGpuStepIds()`: GPU枠の長時間待ち・クォータ超過で飛ばすGPUの段（後ろにGPU以外の段があるときだけ）。
 - `recordingSpeedForStep(step, job)`・`initialRecordingSpeed(job)`: 段の速度（難易度の上書きを解決）。
-- `HOME_WORKER_GAME_IDS`: 段に自宅ワーカーを持つタイトル。
+- `HOME_WORKER_GAME_IDS`: 段に自宅ワーカーを持つタイトル（GPU描画が要るかでは決めない、[`0079`](../../docs/decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)）。
+- フレーム同期の段の候補は`FRAME_SYNC_2XLARGE_INSTANCE_TYPES`・`FRAME_SYNC_4XLARGE_INSTANCE_TYPES`、組み立ては
+  `homeFrameSyncStep()`・`frameSyncCpuStep()`。フレーム同期のインスタンスタイプは品質に影響せず速度だけが変わるので、
+  足すときの実機検証は簡略（[`0078`](../../docs/decisions/0078-frame-sync-plan-and-instance-type-verification-policy.md)）。
+  フレーム同期の段は`estimatedRealtimeFactor`（尺÷録画の実時間）をETA用に持つ。
 - 倍率は起動側が`FPS_LIMIT_TARGET_HZ`（60×倍率）と`GPU_WORKER=1`の環境変数で渡す。ワーカー
   コンテナ側は自分がどこで動いているか・倍率の由来を知らず、環境変数の有無だけを見る
   （`apps/api/src/workerEnv.ts`、

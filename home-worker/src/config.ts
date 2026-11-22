@@ -182,9 +182,10 @@ export function splitShellArgs(raw: string): string[] {
  * 黙って出来上がるのを起動時に落とせる利点もある。
  *
  * 録画の段に自宅ワーカーを持たないタイトル（`HOME_WORKER_GAME_IDS`の外、Issue #241・#317）は
- * 明示的に拒否する。段（`recordingPlan.ts`）に無いので本来オファー自体が来ないが、GPU必須・
- * 低速録画のタイトルを自宅マシンへ誤って`HOME_WORKER_SUPPORTED_GAMES`で明示指定してしまう事故を
- * 防ぐ多層防御として、起動時に`ConfigError`で落とす（`docs/decisions/0047`）。
+ * 明示的に拒否する。段（`recordingPlan.ts`）に無いので本来オファー自体が来ないが、自宅で録れない
+ * タイトル（実時間方式でGPU描画が要るもの等）を自宅マシンへ誤って`HOME_WORKER_SUPPORTED_GAMES`で
+ * 明示指定してしまう事故を防ぐ多層防御として、起動時に`ConfigError`で落とす（フレーム同期の自宅の段を
+ * 持つタイトルはGPU描画が要っても受け付ける、`docs/decisions/0079`）。
  */
 function parseGames(values: string[]): GameId[] {
   return values.map((value) => {

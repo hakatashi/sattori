@@ -21,7 +21,10 @@
   ワーカー（`worker/`）を通す。
 - 検証の切り替えは**起動側から渡す環境変数**（`captureMode` のような段の属性、`apps/api/src/workerEnv.ts`）で
   表す。**ワーカーの中に「実験か本番か」「自宅かEC2か」の分岐を作らない**（AGENTS.md §3）。
-- インスタンスタイプ・録画パイプラインの変更は実機検証を経ること（AGENTS.md §3）。裏付けは
+- 録画パイプラインの変更・新しい作品タイトルの追加は、クラウドでの実機検証を経ること（AGENTS.md §3）。
+  **フレーム同期の段のインスタンスタイプは品質に影響せず速度だけが変わる**ので、足すときは綿密な検証をせず、
+  必要なら実験ジョブで簡単な速度検証だけする。`.2xlarge`帯の`c7i`/`c7a`/`m7i`と`c7i.4xlarge`は運用実績があり検証不要
+  （[`0078`](../decisions/0078-frame-sync-plan-and-instance-type-verification-policy.md)）。実時間の段は従来どおり。裏付けは
   [`docs/reports/`](../reports/README.md) に残す。
 - **手作業でEC2・SG・キーペア・ECRを作らない**。クラウドでの検証は §2 の実験ジョブに寄せる。TR の
   `research/touhou-recorder/cloud/`（terraform）と `docs/aws-resources.md` は記録であって、使わない。
