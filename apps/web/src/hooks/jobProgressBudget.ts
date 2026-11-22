@@ -99,7 +99,13 @@ export function computePhaseBudgets(
  * 倍速録画なら約1.05/N(`recordingWallClockSeconds()`、ロード区間など
  * 実時間で進む部分のぶん理想値の1/Nより少し長い)。
  */
-export function recordingScaleForJob(job: Pick<GetJobResponse, "recordingSpeed">): number {
+export function recordingScaleForJob(
+  job: Pick<GetJobResponse, "recordingSpeed" | "captureMode" | "estimatedRealtimeFactor">,
+): number {
+  // フレーム同期（Issue #390）は倍率が無く、段の実測した実時間効率で伸縮する。
+  if (job.captureMode === "frameSync" && job.estimatedRealtimeFactor !== undefined && job.estimatedRealtimeFactor > 0) {
+    return 1 / job.estimatedRealtimeFactor;
+  }
   return recordingWallClockSeconds(1, job.recordingSpeed);
 }
 

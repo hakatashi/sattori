@@ -1,6 +1,6 @@
 # 0042. `c7i`/`c7a`/`m7i`の`.2xlarge`帯を実機検証済みグループとして扱う
 
-- **状態**: 有効
+- **状態**: 有効（実時間方式の段に限る。フレーム同期の段のインスタンスタイプは、そもそも品質に影響しないので実機検証を省く、[`0078`](0078-frame-sync-plan-and-instance-type-verification-policy.md)）
 - **決定日**: 2026-09-01
 - **対象**: apps/api
 - **関連**: Issue #76、[`0016`](0016-ec2-fleet-instance-type-diversification.md)、

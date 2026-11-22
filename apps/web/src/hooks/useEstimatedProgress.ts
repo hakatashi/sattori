@@ -11,7 +11,9 @@ import { MIN_CONVERTING_RATE, MIN_UPLOAD_BYTES_PER_SECOND, recordingScaleForJob 
  * なるかは事前に分からないため、実測データが集まるまでの初期値として保守的な下限寄りの値を使う。
  */
 /** 録画中、実時間1秒あたりに進むコンテンツ秒数(倍速録画は約N/1.05)。 */
-function recordingRate(job: Pick<GetJobResponse, "recordingSpeed">): number {
+function recordingRate(
+  job: Pick<GetJobResponse, "recordingSpeed" | "captureMode" | "estimatedRealtimeFactor">,
+): number {
   return 1 / recordingScaleForJob(job);
 }
 const DEFAULT_CONVERTING_RATE = 4;

@@ -549,8 +549,8 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
       expect(fallbackUpdates()).toHaveLength(0);
     });
 
-    it("th15もGPUの段を飛ばしてリトライする（次はCPU低速録画の段、Issue #316）", async () => {
-      ddbMock.on(GetCommand).resolves({ Item: { ...speedupJob, game: "th15" } });
+    it("th20もGPUの段を飛ばしてリトライする（次はCPU低速録画の段、Issue #316）", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: { ...speedupJob, game: "th20" } });
       ddbMock.on(UpdateCommand).resolves({});
 
       const { handler } = await import("./handleFailure.js");

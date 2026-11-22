@@ -63,7 +63,12 @@ function estimatedCompletionMinutes(
     return null;
   }
   const speed = recordingSpeedForStep(first, { replayInfo: { difficulty: difficulty ?? null } });
-  const seconds = estimateRecordingCompletionSeconds(durationSeconds, speed, isGpuStep(first));
+  const seconds = estimateRecordingCompletionSeconds(
+    durationSeconds,
+    speed,
+    isGpuStep(first),
+    first.captureMode === "frameSync" ? first.estimatedRealtimeFactor : undefined,
+  );
   return Math.max(1, Math.round(seconds / 60));
 }
 

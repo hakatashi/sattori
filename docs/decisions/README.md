@@ -53,12 +53,12 @@
 | [0039](0039-end-template-freeze-timeout.md) | 2026-08-30 | worker | end_template方式のタイトルにも画面が5分静止したら強制打ち切りする早期検知を追加する | 有効 |
 | [0040](0040-home-worker-title-assets-cache.md) | 2026-08-30 | worker / home-worker | 自宅ワーカーのタイトル資産はETagキー付き世代ディレクトリでキャッシュする | 有効 |
 | [0041](0041-worker-recording-package-split.md) | 2026-08-31 | worker | 録画パイプラインを`recording/`パッケージへ分割し、`record_thNN.py`はタイトル固有値だけのシムにする | 有効 |
-| [0042](0042-2xlarge-instance-type-group-precedent.md) | 2026-09-01 | apps/api | `c7i`/`c7a`/`m7i`の`.2xlarge`帯を実機検証済みグループとして扱い、新規タイトルは1タイプの検証で残り2タイプも候補に加えてよい | 有効 |
+| [0042](0042-2xlarge-instance-type-group-precedent.md) | 2026-09-01 | apps/api | `c7i`/`c7a`/`m7i`の`.2xlarge`帯を実機検証済みグループとして扱い、新規タイトルは1タイプの検証で残り2タイプも候補に加えてよい | 実時間方式の段に限り有効（フレーム同期の段は[0078](0078-frame-sync-plan-and-instance-type-verification-policy.md)） |
 | [0043](0043-remove-fps-runaway-detection.md) | 2026-09-08 | worker | fps暴走検知(`scan_fps_runaway()`)を削除する。真陽性の実績が無く、th08の会話イベント・th09のステージ間演出で誤検知した実績のみだったため | 有効 |
 | [0044](0044-th06c-steam-drm-stub-and-64bit-title.md) | 2026-09-10 | worker | th06cのSteamworks API初期化要求は最小限のスタブDLLで回避し、64bit専用の録画経路(`GameConfig.for_game()`のoverridesでinjectorを差し替え)を別途用意する | 有効 |
 | [0045](0045-ec2-slow-motion-for-th20.md) | 2026-09-11 | packages/shared / apps/api / apps/web / docs | EC2環境でのth20低速録画を有効化し、対応タイトルをコード内定数で管理する | [0058](0058-speedup-recording-on-gpu-instances.md) によって置き換え済み |
 | [0046](0046-gpu-ec2-instance-and-fixed-ami.md) | 2026-09-12 | infra / apps/api / worker | GPU描画必須タイトル向けにg6f.xlargeを新規導入し、AMIは事前構築したカスタムAMIを固定参照する | 起動候補(g6f.xlarge)は[0058](0058-speedup-recording-on-gpu-instances.md)によって一部置き換え済み |
-| [0047](0047-no-gpu-titles-for-home-worker.md) | 2026-09-12 | apps/api / home-worker | GPU描画必須タイトルは自宅ワーカーへ常にオファーしない | 有効 |
+| [0047](0047-no-gpu-titles-for-home-worker.md) | 2026-09-12 | apps/api / home-worker | GPU描画必須タイトルは自宅ワーカーへ常にオファーしない | [0079](0079-home-worker-accepts-frame-sync-gpu-titles.md)によって置き換え済み |
 | [0048](0048-separate-ecr-repo-for-gpu-workers.md) | 2026-09-12 | infra / worker / apps/api | GPU描画必須タイトル専用の別ECRリポジトリ（worker-gpu）を新設する | 有効 |
 | [0049](0049-mod-integration-test-local-only.md) | 2026-09-14 | worker | MODの実機注入統合テストを追加するが、ゲーム資産のライセンス・実行コストのためCIには組み込まず`worker/games/`がある環境限定のローカル実行に限定する | 有効 |
 | [0050](0050-th15-gpu-instance-despite-not-strictly-required.md) | 2026-09-17 | worker / apps/api / packages/shared | th15はGPU描画が原理的に必須ではないが、Extraステージの処理落ち対策としてth06ncと同じGPU系インスタンス(g6f系)に固定する | 「固定」は[0064](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)によって置き換え済み(GPUを優先し、確保できなければCPU低速へ) |
@@ -75,7 +75,7 @@
 | [0061](0061-gpu-capacity-fallback-to-eu-north-1.md) | 2026-10-11 | apps/api / infra / packages/shared / worker / apps/web | GPUジョブはeu-south-2のSpot在庫枯渇時だけeu-north-1で起動する。データ面は移さず、価格では振り分けない。0001の単一リージョン原則の例外(Issue #296) | 「データ面は移さない」は[0062](0062-gpu-fallback-region-local-output-and-title-assets.md)によって一部置き換え済み。「リトライで毎回eu-south-2から試す」は[0063](0063-spot-capacity-shortage-is-permanent-within-a-job.md)によって置き換え済み |
 | [0062](0062-gpu-fallback-region-local-output-and-title-assets.md) | 2026-10-11 | apps/api / infra / packages/shared / worker | GPUフォールバック先(eu-north-1)に出力バケットとタイトル資産のレプリカを置き、リージョン間転送料を消す。出力のリージョンは`JobRecord.outputRegion`、配信は MediaCdn の`/eu-north-1/*`(Issue #313) | 有効 |
 | [0063](0063-spot-capacity-shortage-is-permanent-within-a-job.md) | 2026-11-04 | apps/api / packages/shared / infra / apps/web | Spot在庫の枯渇はジョブの中で永続エラーとして扱い、待たずに次の段へ進む。全段が尽きたら等倍へ落とすか直ちに失敗させる。ステートマシンは変えない(Issue #315) | 有効 |
-| [0064](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md) | 2026-11-05 | packages/shared / apps/api / worker / apps/web | GPUを確保できないth15・th20はCPU低速録画(`c7i.4xlarge`、1/2倍速・th15 Extraは1/3倍速)へ、th06ncは`g6.2xlarge`へ逃がす。低速録画はユーザーが選べず自宅ワーカーへも出さない(Issue #316) | th15・th20の経路は有効。「`options.recordingSpeed`の書き換えで落とす」実装は[0066](0066-recording-fallback-plan-as-config.md)、th06ncの`g6.2xlarge`の段は[0067](0067-th06nc-cpu-slow-motion-and-drop-1080p.md)によって置き換え済み |
+| [0064](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md) | 2026-11-05 | packages/shared / apps/api / worker / apps/web | GPUを確保できないth15・th20はCPU低速録画(`c7i.4xlarge`、1/2倍速・th15 Extraは1/3倍速)へ、th06ncは`g6.2xlarge`へ逃がす。低速録画はユーザーが選べず自宅ワーカーへも出さない(Issue #316) | th20の経路は有効（th15は[0078](0078-frame-sync-plan-and-instance-type-verification-policy.md)でフレーム同期へ置き換え済み）。「`options.recordingSpeed`の書き換えで落とす」実装は[0066](0066-recording-fallback-plan-as-config.md)、th06ncの`g6.2xlarge`の段は[0067](0067-th06nc-cpu-slow-motion-and-drop-1080p.md)によって置き換え済み |
 | [0065](0065-speedup-delivery-frame-rate-by-output-option.md) | 2026-11-07 | worker | 倍速録画の配信版は`fps`フィルタではなく`-r 60 -fps_mode cfr`で60fpsへ揃える。生映像のptsが信用できないため(Issue #322) | 有効 |
 | [0066](0066-recording-fallback-plan-as-config.md) | 2026-11-08 | packages/shared / apps/api / home-worker / apps/web / infra | 録画速度・インスタンス・リージョンはタイトルごとの段の配列(`recordingPlan.ts`)を先頭から試して決め、ユーザーに速度を選ばせない。フォールバックの変更は配列だけで行う(Issue #317) | 有効 |
 | [0067](0067-th06nc-cpu-slow-motion-and-drop-1080p.md) | 2026-11-09 | packages/shared / worker / apps/web | th06ncの最終段を`g6.2xlarge`からCPU描画(BC7展開)の`c7i.2xlarge`・1/2倍速に替え、1080p録画を廃止する。Extraも同じ段で録り、高密度弾幕の描画落ちは受け入れる(Issue #317) | 有効 |
@@ -89,6 +89,8 @@
 | [0075](0075-experiment-jobs-and-experimental-ecr.md) | 2026-11-21 | packages/shared / apps/api / infra / docs | クラウドでの技術検証は、段を明示した「実験ジョブ」（管理API）と検証用ECRリポジトリ（CDK管理）で本番パイプラインに乗せ、手作業のEC2・terraformでの検証はやめる（Issue #397、Epic #399） | 有効 |
 | [0076](0076-mod-core-and-present-bus.md) | 2026-11-21 | worker / docs | MODを共通基盤(`core/`)と機能別のディレクトリへ再編し、Presentをイベントバスにする。メニュー待ちは`60/FPS_LIMIT_TARGET_HZ`の1系統、起動待ちは低速録画でだけ伸ばし、`TH06NC_TIME_SCALE`は廃止(Issue #393、Epic #399) | 有効 |
 | [0077](0077-worker-frame-sync-recording-path.md) | 2026-11-22 | worker | ワーカーにフレーム同期キャプチャの録画経路(`CAPTURE_MODE=frame_sync`、`recording/framesync.py`)を足す。経路の分岐は`CAPTURE_MODE`だけで、ワーカーの中ではリトライせず、重複フレーム率の代わりに三者照合と理論尺(短い側-30%・長い側+10%)で判定する(Issue #389、Epic #399) | 有効 |
+| [0078](0078-frame-sync-plan-and-instance-type-verification-policy.md) | 2026-11-22 | packages/shared / apps/api / apps/web / docs | th12・th15の録画の段をフレーム同期（自宅→2xlarge/4xlarge帯→GPU）中心にする。フレーム同期のインスタンスタイプは品質に影響しないので綿密な実機検証をせず（速度のみ）、新しい作品タイトルの追加と実時間の段のタイプは従来どおり実機検証する(Issue #390、Epic #399) | 有効 |
+| [0079](0079-home-worker-accepts-frame-sync-gpu-titles.md) | 2026-11-22 | packages/shared / home-worker / docs | GPUの段を持つタイトルでも、フレーム同期の段なら自宅ワーカーへオファーする。自宅へ出すかは録画の段だけが決める（0047を置き換え。Issue #390） | 有効 |
 
 ## 書き方
 

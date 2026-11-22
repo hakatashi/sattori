@@ -2,13 +2,26 @@ import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import {
   calculateDownloadExpiresAt,
   type GetJobResponse,
+  type JobRecord,
   captureModeOf,
+  recordingPlanOf,
   recordingSpeedOf,
 } from "@sattori/shared";
 import { loadConfig, mediaCdnOf } from "../config.js";
 import { buildCdnUrl, buildVideoDownloadUrl } from "../downloads.js";
 import { error, json } from "../http.js";
 import { getJob } from "../jobs.js";
+
+/** 割り当て済みのフレーム同期の段が持つ実時間効率（ETA用）。段が未割り当て・実測値が無ければ空。 */
+function frameSyncRealtimeFactor(job: JobRecord): { estimatedRealtimeFactor?: number } {
+  if (captureModeOf(job.options) !== "frameSync") {
+    return {};
+  }
+  const step = recordingPlanOf(job).find((candidate) => candidate.id === job.recordingStepId);
+  return step?.estimatedRealtimeFactor !== undefined
+    ? { estimatedRealtimeFactor: step.estimatedRealtimeFactor }
+    : {};
+}
 
 /**
  * GET /jobs/{jobId}
@@ -95,6 +108,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     // 録画の段（Issue #317）の速度。`Launch`が割り当てる段の速度を書くので、常に実際の速度になる。
     recordingSpeed: recordingSpeedOf(job.options),
     captureMode: captureModeOf(job.options),
+    ...frameSyncRealtimeFactor(job),
     // `errorCode`と同じ理由（Issue #103追加より前の旧ジョブでは属性自体が無く
     // `undefined`になりうる）で`?? null`を通す。
     desyncDetected: job.desyncDetected ?? null,

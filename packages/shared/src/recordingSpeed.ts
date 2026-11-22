@@ -130,11 +130,17 @@ export function estimateRecordingCompletionSeconds(
   contentSeconds: number,
   speed: RecordingSpeed,
   gpu: boolean,
+  /** フレーム同期の段の実時間効率（`RecordingStepLimits.estimatedRealtimeFactor`）。あれば倍率`speed`の代わりに使う。 */
+  frameSyncRealtimeFactor?: number,
 ): number {
   const profile = gpu ? COMPLETION_ESTIMATE.gpu : COMPLETION_ESTIMATE.cpu;
+  const recording =
+    frameSyncRealtimeFactor !== undefined && frameSyncRealtimeFactor > 0
+      ? contentSeconds / frameSyncRealtimeFactor
+      : recordingWallClockSeconds(contentSeconds, speed);
   return (
     profile.overheadSeconds +
-    recordingWallClockSeconds(contentSeconds, speed) +
+    recording +
     contentSeconds * profile.convertRatio
   );
 }

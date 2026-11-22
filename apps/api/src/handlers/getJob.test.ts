@@ -379,6 +379,32 @@ describe("GET /jobs/{jobId}", () => {
     expect(parseBody(legacy as APIGatewayProxyStructuredResultV2).recordingSpeed).toBe(1);
   });
 
+  it("フレーム同期の段を割り当てたジョブは、その段の実時間効率を返す（Issue #390）", async () => {
+    const { handler } = await import("./getJob.js");
+    const fetchBody = async (item: Record<string, unknown>) => {
+      ddbMock.on(GetCommand).resolves({ Item: item });
+      return parseBody((await handler(makeEvent("job-1"), {} as never, () => {})) as APIGatewayProxyStructuredResultV2);
+    };
+    const th12 = { ...doneJob, game: "th12", status: "recording" };
+    const assigned = await fetchBody({
+      ...th12,
+      options: { watermark: true, recordingSpeed: 1, captureMode: "frameSync" },
+      recordingStepId: "cpu-fs-2xl:eu-south-2",
+    });
+    expect(assigned.captureMode).toBe("frameSync");
+    expect(assigned.estimatedRealtimeFactor).toBeGreaterThan(0);
+
+    // 段が未割り当て（キュー中）・実時間の段では返さない。
+    const queued = await fetchBody({ ...th12, options: { watermark: true, recordingSpeed: 1, captureMode: "frameSync" } });
+    expect(queued).not.toHaveProperty("estimatedRealtimeFactor");
+    const realtime = await fetchBody({
+      ...th12,
+      options: { watermark: true, recordingSpeed: 2, captureMode: "realtime" },
+      recordingStepId: "gpu:eu-south-2",
+    });
+    expect(realtime).not.toHaveProperty("estimatedRealtimeFactor");
+  });
+
   it("旧レコードのフォールバックの記録は返さず、実際の速度だけを返す(Issue #317)", async () => {
     ddbMock.on(GetCommand).resolves({
       Item: {

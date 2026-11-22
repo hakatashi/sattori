@@ -161,6 +161,12 @@ export interface GetJobResponse {
    */
   captureMode?: CaptureMode;
   /**
+   * `captureMode`が`frameSync`のときの、割り当てた段の実時間効率（尺÷録画の実時間。1なら尺と同じ時間で
+   * 録れる）。段（`RecordingStepLimits.estimatedRealtimeFactor`）の実測値で、フロントの進捗バー・残り時間の
+   * 録画フェーズの伸縮に使う（Issue #390）。段が未割り当て・`realtime`・実測値が無いときは省く。
+   */
+  estimatedRealtimeFactor?: number;
+  /**
    * リプレイずれ（デシンク）の疑い（Issue #103、`JobRecord.desyncDetected`をそのまま
    * 転記）。`true`のときページBは「録画終了時のスコアが記録されたスコアと一致
    * しませんでした。リプレイずれが発生した可能性があります」という注意書きを出す
