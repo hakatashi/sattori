@@ -81,7 +81,7 @@
 | [0067](0067-th06nc-cpu-slow-motion-and-drop-1080p.md) | 2026-11-09 | packages/shared / worker / apps/web | th06ncの最終段を`g6.2xlarge`からCPU描画(BC7展開)の`c7i.2xlarge`・1/2倍速に替え、1080p録画を廃止する。Extraも同じ段で録り、高密度弾幕の描画落ちは受け入れる(Issue #317) | 有効 |
 | [0068](0068-supply-chain-cooldown-and-dependabot.md) | 2026-11-11 | 全パッケージ | 依存パッケージ更新はDependabotとリリース後クールダウン(5〜7日)・完全ピン留め(`requirements-docker.txt`・Actions SHA固定)でサプライチェーン汚染を防ぐ(Issue #338) | 有効 |
 | [0069](0069-automated-dependabot-merge-deploy-with-gvisor-sandbox.md) | 2026-11-11 | 全パッケージ | Dependabot PRのAI自動処理はgVisor隔離検査(Phase A)とホスト本番デプロイ・E2E検証(Phase B)の二段階に分離する(Issue #341) | 有効 |
-| [0070](0070-th13-native-on-4xlarge-and-half-speed-on-2xlarge.md) | 2026-11-12 | packages/shared / worker | th13は自宅ワーカー→`c7i.4xlarge`の等倍(数値上は基準外だが視聴で許容)→`.2xlarge`帯の1/2倍速で録り、未検証のGPUの段は持たない(Issue #79) | 有効 |
+| [0070](0070-th13-native-on-4xlarge-and-half-speed-on-2xlarge.md) | 2026-11-12 | packages/shared / worker | th13は自宅ワーカー→`c7i.4xlarge`の等倍(数値上は基準外だが視聴で許容)→`.2xlarge`帯の1/2倍速で録り、未検証のGPUの段は持たない(Issue #79) | [0080](0080-frame-sync-plan-for-640x480-titles.md)によって置き換え済み |
 | [0071](0071-d3dx-text-downscale-filter-in-mod.md) | 2026-11-12 | worker | th10〜th13の文字のジャギーは、MODでD3DXLoadSurfaceFromMemoryの縮小フィルタ(テント)を補って直す。既定で有効、診断機能は取り込まない | 有効 |
 | [0072](0072-web-cdn-edge-cache-ignores-origin-no-cache.md) | 2026-11-12 | infra | `WebCdn`はminTTL 1日の専用CachePolicyでHTMLをエッジにキャッシュし、オリジンの`no-cache`による毎回のS3再検証(TTFB約1秒)を避ける。鮮度はデプロイ時の無効化で保つ(Issue #376) | 有効 |
 | [0073](0073-gpu-lease-for-next-ec2-step-and-capture-mode.md) | 2026-11-21 | packages/shared / apps/api | 録画の段に`captureMode`（realtime / frameSync）と`maxEstimatedDurationSeconds`を足し、GPUのvCPUリースは「次のEC2の段」で判定してGPUの段が配列の最後にあっても動くようにする（Issue #387、Epic #399） | 有効（[0056](0056-gpu-vcpu-lease-and-queue.md)の「次の段がGPUのとき」の判定を改訂） |
@@ -91,6 +91,7 @@
 | [0077](0077-worker-frame-sync-recording-path.md) | 2026-11-22 | worker | ワーカーにフレーム同期キャプチャの録画経路(`CAPTURE_MODE=frame_sync`、`recording/framesync.py`)を足す。経路の分岐は`CAPTURE_MODE`だけで、ワーカーの中ではリトライせず、重複フレーム率の代わりに三者照合と理論尺(短い側-30%・長い側+10%)で判定する(Issue #389、Epic #399) | 有効 |
 | [0078](0078-frame-sync-plan-and-instance-type-verification-policy.md) | 2026-11-22 | packages/shared / apps/api / apps/web / docs | th12・th15の録画の段をフレーム同期（自宅→2xlarge/4xlarge帯→GPU）中心にする。フレーム同期のインスタンスタイプは品質に影響しないので綿密な実機検証をせず（速度のみ）、新しい作品タイトルの追加と実時間の段のタイプは従来どおり実機検証する(Issue #390、Epic #399) | 有効 |
 | [0079](0079-home-worker-accepts-frame-sync-gpu-titles.md) | 2026-11-22 | packages/shared / home-worker / docs | GPUの段を持つタイトルでも、フレーム同期の段なら自宅ワーカーへオファーする。自宅へ出すかは録画の段だけが決める（0047を置き換え。Issue #390） | 有効 |
+| [0080](0080-frame-sync-plan-for-640x480-titles.md) | 2026-11-22 | packages/shared / apps/web / docs | 640x480の残り9タイトル(th06・th06c・th07・th08・th09・th10・th11・th128・th13)も、th12と同じフレーム同期中心の計画(自宅→2xlarge帯→4xlarge帯→GPU。th13はGPUなし)へ切り替える。実時間専用のCPU候補定数は削除 | 有効 |
 
 ## 書き方
 

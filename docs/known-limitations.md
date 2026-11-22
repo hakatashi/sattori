@@ -62,13 +62,13 @@ CPUの段ではExtraの高密度弾幕で描画が間引かれ、FpsMonitor・�
 GetDeviceState。このマシンではGPU描画経路を検証できない。詳細は
 [`known-limitations-gpu-recording.md`](known-limitations-gpu-recording.md) §3。
 
-### th13（東方神霊廟）は録画対応済み。EC2の等倍は数値上の基準を満たさず、GPUの倍速は未検証
+### th13（東方神霊廟）は録画対応済み。フレーム同期で録り、GPUの倍速は未検証
 
-ver1.00cの非Steam版で録る（Steam版はDRMで起動しない）。自宅ワーカー機の等倍は落ち0.6%で問題ないが、
-EC2の等倍（`c7i.4xlarge`）はExtraで落ち4.3%・理論尺比+1.8%と数値上は基準外で、視聴で許容範囲と判断して
-採用した。等倍の段も枯渇したら`.2xlarge`帯の1/2倍速（落ちなし）で録る。GPUの在庫が無くGPU描画・倍速は
-一度も検証できていないので、段に入れていない
-（[`decisions/0070`](decisions/0070-th13-native-on-4xlarge-and-half-speed-on-2xlarge.md)、
+ver1.00cの非Steam版で録る（Steam版はDRMで起動しない）。2026-11-22（Issue #390）からフレーム同期
+（自宅→`.2xlarge`帯→`c7i.4xlarge`）で録る。以前の実時間方式でEC2の等倍に出ていた落ち（Extraで4.3%）は
+フレーム同期では起きない（[`decisions/0080`](decisions/0080-frame-sync-plan-for-640x480-titles.md)）。
+GPUの在庫が無くGPU描画・倍速は一度も検証できていない（#374）ので、GPUの段は入れていない
+（旧計画は[`decisions/0070`](decisions/0070-th13-native-on-4xlarge-and-half-speed-on-2xlarge.md)、
 [`worker/docs/titles/th13.md`](../worker/docs/titles/th13.md)）。
 
 ### th09はリプレイずれの事後検知が機能しない
@@ -238,7 +238,7 @@ Spot枯渇による起動失敗）が実害化したため撤回した
 
 **自宅ワーカーへオファーされるのは、録画の段に自宅の段（`kind: "home"`）を持つタイトルだけ**
 （`recordingPlan.ts`、[`decisions/0079`](decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)）。
-フレーム同期（Epic #399）の段へ切り替えたタイトル（現在th12・th15）が対象で、th15のようにGPU描画が望ましい
+フレーム同期（Epic #399）の段へ切り替えたタイトル（現在th06nc・th20以外の全タイトル）が対象で、th15のようにGPU描画が望ましい
 タイトルも、フレーム同期なら自宅のCPU描画で品質を落とさず録れる（遅いだけ）。**th06nc・th20は、計画の切り替え
 （Issue #390の残り）までオファーされない**（GPU描画必須のth06ncは実時間方式では自宅で成立しない、
 [`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。th20の低速録画の2並列ハング（#179）は、
@@ -261,7 +261,7 @@ NAT 配下のデーモンには通知が届かないため、取り消しの捕�
 
 **これはフレーム同期の段には当てはまらない**（Issue #390）。フレーム同期はゲームの時計を仮想化するので、
 CPU温度・ホストの他負荷・並列度は**録画の速度にだけ**効き、画質（取りこぼし）には出ない。自宅ワーカーが
-フレーム同期の段（th12・th15）で録る限り、温度で処理落ちを心配する必要は無い（遅くなるだけ）。以下の実測は
+フレーム同期の段（th06nc・th20以外）で録る限り、温度で処理落ちを心配する必要は無い（遅くなるだけ）。以下の実測は
 実時間方式（フレーム同期への切り替え前）の話で、まだ実時間の段で録るタイトルに当てはまる。
 
 開発マシン（Ryzen 7 5700X、8コア16スレッド）での実測

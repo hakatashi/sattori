@@ -199,7 +199,7 @@ claim が解除され、EC2 でリトライされる。
 （`packages/shared/src/recordingPlan.ts`、[`decisions/0079`](../docs/decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)）。
 倍速録画（2倍速以上）は GPU インスタンス（`g6f.2xlarge`）でしか録画せず、GPU 非搭載の自宅マシンへは来ない
 （[`0058`](../docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。実時間方式でGPU描画が必須の th06nc・th20 も、
-フレーム同期の計画へ切り替えるまでは自宅の段が無い。**フレーム同期の自宅の段（現状 th12・th15）は、CPU描画で
+フレーム同期の計画へ切り替えるまでは自宅の段が無い。**フレーム同期の自宅の段（th06nc・th20以外の全タイトル）は、CPU描画で
 遅くなるだけで品質は変わらない**ので、th15 のようなGPU描画が望ましいタイトルも自宅で録る。
 フレーム同期の録画は `CAPTURE_MODE=frame_sync` で走り、並列度・温度・ホストの負荷は速度にしか効かない。
 旧来の判断（[`0047`](../docs/decisions/0047-no-gpu-titles-for-home-worker.md)）は置き換え済み。

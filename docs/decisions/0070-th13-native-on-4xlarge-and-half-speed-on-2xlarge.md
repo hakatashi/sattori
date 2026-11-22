@@ -1,6 +1,6 @@
 # 0070. th13は自宅ワーカー→`c7i.4xlarge`の等倍→`.2xlarge`帯の1/2倍速で録り、GPUの段を持たない
 
-- **状態**: 有効
+- **状態**: [`0080`](0080-frame-sync-plan-for-640x480-titles.md)によって置き換え済み（段の構成。EC2の等倍の品質判断の経緯は有効）
 - **決定日**: 2026-11-12
 - **対象**: packages/shared / worker
 - **関連**: Issue #79、touhou-recorder reports/100、[`0042`](0042-2xlarge-instance-type-group-precedent.md)・

@@ -62,8 +62,20 @@ describe("RECORDING_PLANS", () => {
         expect(steps![0]!.captureMode, game).toBe("frameSync");
       }
     }
-    // 切り替え済み（Issue #390。残りのタイトルは順次）。
-    expect(frameSyncTitles.sort()).toEqual(["th12", "th15"]);
+    // 切り替え済み（Issue #390。th06nc・th20は順次）。
+    expect(frameSyncTitles.sort()).toEqual([
+      "th06",
+      "th06c",
+      "th07",
+      "th08",
+      "th09",
+      "th10",
+      "th11",
+      "th12",
+      "th128",
+      "th13",
+      "th15",
+    ]);
   });
 
   it("frameSyncのEC2の段は実測した実時間効率（estimatedRealtimeFactor）を持つ", () => {
@@ -93,41 +105,24 @@ describe("RECORDING_PLANS", () => {
   // 速度の選択UIを廃止したとき、「おすすめ」を選んだときの経路をそのまま引き継いだ）。
   it.each<[GameId[], string[]]>([
     [
-      ["th06", "th06c", "th08", "th09", "th10"],
-      [
-        "gpu:eu-south-2 x2 g6f.2xlarge",
-        "gpu:eu-north-1 x2 g6f.2xlarge",
-        "home x1",
-        "cpu:eu-south-2 x1 c7i.xlarge,c7a.xlarge,c7i-flex.xlarge,m7i.xlarge",
-      ],
-    ],
-    [
-      ["th07"],
-      [
-        "gpu:eu-south-2 x3 g6f.2xlarge",
-        "gpu:eu-north-1 x3 g6f.2xlarge",
-        "home x1",
-        "cpu:eu-south-2 x1 c7i.xlarge,c7a.xlarge,c7i-flex.xlarge,m7i.xlarge",
-      ],
-    ],
-    [
-      ["th11", "th128"],
-      [
-        "gpu:eu-south-2 x2 g6f.2xlarge",
-        "gpu:eu-north-1 x2 g6f.2xlarge",
-        "home x1",
-        "cpu:eu-south-2 x1 c7i.2xlarge,c7a.2xlarge,m7i.2xlarge",
-      ],
-    ],
-    [
-      // Issue #390・0078: 自宅 → .2xlarge帯 → c7i.4xlarge（どちらもフレーム同期）→ GPU（実時間2倍速）。
-      ["th12"],
+      // Issue #390・0078: 自宅 → .2xlarge帯 → c7i.4xlarge（どちらもフレーム同期）→ GPU（実時間2倍速。th07は3倍速）。
+      ["th06", "th06c", "th08", "th09", "th10", "th11", "th12", "th128"],
       [
         "home fs",
         "cpu-fs-2xl:eu-south-2 fs c7i.2xlarge,c7a.2xlarge,m7i.2xlarge",
         "cpu-fs-4xl:eu-south-2 fs c7i.4xlarge",
         "gpu:eu-south-2 x2 g6f.2xlarge",
         "gpu:eu-north-1 x2 g6f.2xlarge",
+      ],
+    ],
+    [
+      ["th07"],
+      [
+        "home fs",
+        "cpu-fs-2xl:eu-south-2 fs c7i.2xlarge,c7a.2xlarge,m7i.2xlarge",
+        "cpu-fs-4xl:eu-south-2 fs c7i.4xlarge",
+        "gpu:eu-south-2 x3 g6f.2xlarge",
+        "gpu:eu-north-1 x3 g6f.2xlarge",
       ],
     ],
     [
@@ -152,12 +147,11 @@ describe("RECORDING_PLANS", () => {
     ],
     [
       ["th13"],
-      // Issue #79・touhou-recorder reports/100: GPUの段は持たない（未検証）。等倍は`c7i.4xlarge`、
-      // その次に`.2xlarge`帯の1/2倍速（0070）。
+      // GPUの段は持たない（GPUでの倍速は未検証、Issue #374）。
       [
-        "home x1",
-        "cpu:eu-south-2 x1 c7i.4xlarge",
-        "cpu-slow:eu-south-2 x0.5 c7i.2xlarge,c7a.2xlarge,m7i.2xlarge",
+        "home fs",
+        "cpu-fs-2xl:eu-south-2 fs c7i.2xlarge,c7a.2xlarge,m7i.2xlarge",
+        "cpu-fs-4xl:eu-south-2 fs c7i.4xlarge",
       ],
     ],
   ])("%j の段", (games, expected) => {
@@ -193,9 +187,9 @@ describe("recordingSpeedForStep", () => {
 
 describe("currentRecordingStep / remainingRecordingSteps", () => {
   it("使い切った段を飛ばす", () => {
-    const job = { game: "th08" as const, capacityExhaustedTargets: ["gpu:eu-south-2", "gpu:eu-north-1"] };
-    expect(currentRecordingStep(job)?.id).toBe("home");
-    expect(remainingRecordingSteps(job).map((step) => step.id)).toEqual(["home", "cpu:eu-south-2"]);
+    const job = { game: "th20" as const, capacityExhaustedTargets: ["gpu:eu-south-2", "gpu:eu-north-1"] };
+    expect(currentRecordingStep(job)?.id).toBe("cpu:eu-south-2");
+    expect(remainingRecordingSteps(job).map((step) => step.id)).toEqual(["cpu:eu-south-2"]);
   });
 
   it("除外条件の真の段を飛ばす", () => {
@@ -215,17 +209,12 @@ describe("currentRecordingStep / remainingRecordingSteps", () => {
   });
 });
 
-describe("CPUの段を2つ持つタイトル（th13）", () => {
-  it("等倍の段を使い切ったら1/2倍速の段へ進む（自宅ワーカーの段は記録されず毎回オファーされる）", () => {
-    const job = { game: "th13" as const, capacityExhaustedTargets: ["cpu:eu-south-2"] };
-    const remaining = remainingRecordingSteps(job);
-    expect(remaining.map((step) => step.id)).toEqual(["home", "cpu-slow:eu-south-2"]);
-    expect(recordingSpeedForStep(remaining[1]!, job)).toBe(1 / 2);
-  });
-
-  it("最初の段は自宅ワーカーの等倍", () => {
-    expect(currentRecordingStep({ game: "th13" })?.id).toBe("home");
+describe("GPUの段を持たないタイトル（th13）", () => {
+  it("最初の段は自宅ワーカーのフレーム同期で、2xlarge帯→4xlarge帯へ進む", () => {
+    expect(currentRecordingStep({ game: "th13" })).toMatchObject({ id: "home", captureMode: "frameSync" });
     expect(initialRecordingSpeed({ game: "th13" })).toBe(1);
+    const job = { game: "th13" as const, capacityExhaustedTargets: ["cpu-fs-2xl:eu-south-2"] };
+    expect(remainingRecordingSteps(job).map((step) => step.id)).toEqual(["home", "cpu-fs-4xl:eu-south-2"]);
   });
 
   it("GPUの段が無いので飛ばすものも無い", () => {
@@ -235,7 +224,7 @@ describe("CPUの段を2つ持つタイトル（th13）", () => {
 
 describe("skippableGpuStepIds", () => {
   it("GPU以外の段が後ろにあれば、残っているGPUの段を返す", () => {
-    expect(skippableGpuStepIds({ game: "th08" })).toEqual(["gpu:eu-south-2", "gpu:eu-north-1"]);
+    expect(skippableGpuStepIds({ game: "th20" })).toEqual(["gpu:eu-south-2", "gpu:eu-north-1"]);
     expect(skippableGpuStepIds({ game: "th20", capacityExhaustedTargets: ["gpu:eu-south-2"] })).toEqual([
       "gpu:eu-north-1",
     ]);
@@ -251,16 +240,16 @@ describe("skippableGpuStepIds", () => {
 
   it("既にGPU以外の段にいれば飛ばすものは無い", () => {
     expect(
-      skippableGpuStepIds({ game: "th08", capacityExhaustedTargets: ["gpu:eu-south-2", "gpu:eu-north-1"] }),
+      skippableGpuStepIds({ game: "th20", capacityExhaustedTargets: ["gpu:eu-south-2", "gpu:eu-north-1"] }),
     ).toEqual([]);
   });
 });
 
 describe("initialRecordingSpeed", () => {
   it("最初の段の速度", () => {
-    expect(initialRecordingSpeed({ game: "th08" })).toBe(2);
-    expect(initialRecordingSpeed({ game: "th07" })).toBe(3);
+    expect(initialRecordingSpeed({ game: "th08" })).toBe(1); // 先頭は自宅のフレーム同期
     expect(initialRecordingSpeed({ game: "th20" })).toBe(1);
+    expect(initialRecordingSpeed({ game: "th06nc" })).toBe(2);
   });
 
   it("録画非対応タイトルは等倍", () => {
