@@ -165,7 +165,7 @@ describe("estimateJobCost", () => {
 
   it("インスタンスタイプ未記録なら最後の段（recordingStepId）の帯で推定する（Issue #316・#317）", () => {
     const estimate = estimateJobCost(
-      makeJob({ game: "th20", spotPricePerHour: null, instanceType: null, recordingStepId: "cpu:eu-south-2" }),
+      makeJob({ game: "th20", spotPricePerHour: null, instanceType: null, recordingStepId: "cpu-fs-4xl:eu-south-2" }),
       new Date("2026-08-02T00:00:00.000Z"),
     );
     expect(estimate.spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
@@ -196,17 +196,15 @@ describe("estimateJobCost", () => {
       estimateJobCost(makeJob({ spotPricePerHour: null, instanceType: null, ...overrides }), at);
 
     // `launching`（インスタンスタイプ記録前）や管理画面からの再実行で通る経路。
-    // 最初の段はGPU（th20・th06nc。それ以外はフレーム同期へ切り替え済み、Issue #390）。
-    for (const game of ["th20", "th06nc"] as const) {
-      expect(estimate({ game }).spotPriceSource, game).toBe("fallback-game");
-      expect(estimate({ game }).spotPricePerHour, game).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR.gpu);
-    }
-    // フレーム同期のタイトルは自宅の段の次のEC2の段（640x480は2xlarge帯、th15は4xlarge帯）で見積もる（Issue #390）。
-    for (const game of ["th07", "th11", "th13"] as const) {
+    // 全タイトルがフレーム同期へ切り替え済み（Issue #390）。自宅の段の次のEC2の段（640x480とth06ncは2xlarge帯、
+    // th15・th20は4xlarge帯）で見積もる。
+    for (const game of ["th07", "th11", "th13", "th06nc"] as const) {
       expect(estimate({ game }).spotPricePerHour, game).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
     }
     expect(estimate({ game: "th12" }).spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"]);
-    expect(estimate({ game: "th15" }).spotPricePerHour).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
+    for (const game of ["th15", "th20"] as const) {
+      expect(estimate({ game }).spotPricePerHour, game).toBe(FALLBACK_SPOT_PRICE_USD_PER_HOUR["4xlarge"]);
+    }
     // GPUの段を使い切った後。自宅ワーカーの段の次のCPUの段で見積もる。
     expect(estimate({ game: "th12", capacityExhaustedTargets: gpuExhausted }).spotPricePerHour).toBe(
       FALLBACK_SPOT_PRICE_USD_PER_HOUR["2xlarge"],

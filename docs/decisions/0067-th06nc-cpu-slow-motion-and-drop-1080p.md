@@ -1,6 +1,6 @@
 # 0067. th06ncの最終段をg6.2xlargeからCPU描画（BC7展開）の1/2倍速に替え、1080pを廃止する
 
-- **状態**: 有効
+- **状態**: [`0081`](0081-frame-sync-plan-for-th20-and-th06nc.md) によって置き換え済み（実時間のCPU1/2倍速の段はフレーム同期の段に置き換えた。1080p廃止は有効）
 - **決定日**: 2026-11-09
 - **対象**: packages/shared / worker / apps/web
 - **関連**: Issue #317、#316、[`0064`](0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)・

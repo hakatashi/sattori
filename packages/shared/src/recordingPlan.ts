@@ -117,29 +117,12 @@ export const FRAME_SYNC_4XLARGE_INSTANCE_TYPES = [
 ] as const;
 
 /**
- * CPU低速録画（th15・th20、Issue #316）の候補。**1タイプしか挙げていないのは意図的**で、
- * 他のタイプはこの構成で検証していない。`.2xlarge`帯は落ちが約3倍になる（reports/91）。
- */
-export const CPU_SLOW_MOTION_INSTANCE_TYPES = [
-  "c7i.4xlarge", // 16vCPU/32GiB。reports/91実測で配信版の落ち0.5〜0.8%
-] as const;
-
-/**
  * GPUの段の候補（`docs/decisions/0046`）。**`g6f.2xlarge`（NVIDIA L4の1/4スライス、8vCPU）のみ**。
  * 倍速録画は8vCPUでしか検証されておらず、4vCPUの`g6f.xlarge`ではゲーム本体とキャプチャ・
  * エンコードがCPUを奪い合い2倍速を維持できない（touhou-recorder reports/85、Issue #288）。
  */
 export const GPU_INSTANCE_TYPES = [
   "g6f.2xlarge", // reports/81・89実測
-] as const;
-
-/**
- * th06ncのCPU低速録画の候補（BC7展開によるCPU描画、touhou-recorder reports/96・97）。**1タイプしか挙げて
- * いないのは意図的**で、`c7i.xlarge`は落ち11.2%でゲーム進行も遅れ、`c7i.4xlarge`はExtraでは良いが
- * Lunaticの終盤で`.2xlarge`より悪く単価が2倍（reports/97）。th15・th20の`c7i.4xlarge`とは別の判断。
- */
-export const TH06NC_CPU_INSTANCE_TYPES = [
-  "c7i.2xlarge", // 8vCPU。reports/97実測で720p 1/2倍速のLunatic全6面の落ち1.3%（Extraは7.6%）
 ] as const;
 
 /** 一次・フォールバック先リージョンのGPUの段（`g6f.2xlarge`）。 */
@@ -164,24 +147,6 @@ function gpuSteps(speed: RecordingSpeed): Ec2RecordingStep[] {
       speed,
     },
   ];
-}
-
-/** 実時間のCPUの段（th20・th06nc。段の`id`は既存ジョブの記録と互換）。 */
-function cpuStep(
-  instanceTypes: readonly string[],
-  speed: RecordingSpeed,
-  speedByDifficulty?: Readonly<Record<string, RecordingSpeed>>,
-): Ec2RecordingStep {
-  return {
-    id: `cpu:${PRIMARY_RECORDING_REGION}`,
-    kind: "ec2",
-    platform: "cpu",
-    region: PRIMARY_RECORDING_REGION,
-    instanceTypes,
-    captureMode: "realtime",
-    speed,
-    ...(speedByDifficulty ? { speedByDifficulty } : {}),
-  };
 }
 
 /** 自宅ワーカーへのオファー（フレーム同期）。 */
@@ -219,7 +184,8 @@ interface FrameSyncFactors {
 
 // 実時間効率は、EC2は実験ジョブでの実測（上限解除後の平均速度を切り捨て。th12・th15は
 // docs/reports/2026-11-22-th12-th15-frame-sync-ec2-verification.md、それ以外の640x480は
-// docs/reports/2026-11-22-th06-to-th13-frame-sync-ec2-verification.md）、自宅はこのマシンの2並列の実測
+// docs/reports/2026-11-22-th06-to-th13-frame-sync-ec2-verification.md、th20・th06ncは
+// docs/reports/2026-11-23-th20-th06nc-frame-sync-ec2-verification.md）、自宅はこのマシンの2並列の実測
 // （docs/reports/2026-11-22-worker-frame-sync-full-length-verification.md）。
 const TH12_FACTORS: FrameSyncFactors = { home: 2.0, twoXl: 2.2, fourXl: 3.1 };
 const TH06_FACTORS: FrameSyncFactors = { home: 3.1, twoXl: 3.9, fourXl: 5.2 };
@@ -231,16 +197,16 @@ const TH10_FACTORS: FrameSyncFactors = { home: 2.7, twoXl: 3.3, fourXl: 4.7 };
 const TH11_FACTORS: FrameSyncFactors = { home: 1.9, twoXl: 2.3, fourXl: 3.5 };
 const TH128_FACTORS: FrameSyncFactors = { home: 1.7, twoXl: 2.0, fourXl: 2.8 };
 const TH13_FACTORS: FrameSyncFactors = { home: 1.3, twoXl: 1.9, fourXl: 2.7 };
-const TH15_HOME = 0.6;
-const TH15_4XL = 1.7;
-const TH15_2XL = 0.95;
+const TH06NC_FACTORS: FrameSyncFactors = { home: 0.9, twoXl: 1.2, fourXl: 1.7 };
+const TH15_FACTORS: FrameSyncFactors = { home: 0.6, twoXl: 0.95, fourXl: 1.7 };
+const TH20_FACTORS: FrameSyncFactors = { home: 0.6, twoXl: 0.95, fourXl: 1.5 };
 
 /**
- * 640x480のタイトルの計画: 自宅 → `.2xlarge`帯 → `c7i.4xlarge`（どちらもフレーム同期）→ GPU（実時間、最後の段）。
- * `.2xlarge`帯のほうが実測の推定コストが安いので先（th12・th06〜th13で確認）。`gpuSpeed`を省くとGPUの段を持たない
- * （th13: GPUでの倍速が未検証、Issue #374）。
+ * 640x480のタイトルと th06nc（720p）の計画: 自宅 → `.2xlarge`帯 → `c7i.4xlarge`（どちらもフレーム同期）→ GPU（実時間、
+ * 最後の段）。`.2xlarge`帯のほうが実測の推定コストが安いので先（th12・th06〜th13・th06ncで確認）。`gpuSpeed`を省くと
+ * GPUの段を持たない（th13: GPUでの倍速が未検証、Issue #374）。
  */
-function frameSync640Plan(factors: FrameSyncFactors, gpuSpeed?: RecordingSpeed): RecordingStep[] {
+function frameSyncLowResPlan(factors: FrameSyncFactors, gpuSpeed?: RecordingSpeed): RecordingStep[] {
   return [
     homeFrameSyncStep({ estimatedRealtimeFactor: factors.home }),
     frameSyncCpuStep("2xl", { estimatedRealtimeFactor: factors.twoXl }),
@@ -250,40 +216,46 @@ function frameSync640Plan(factors: FrameSyncFactors, gpuSpeed?: RecordingSpeed):
 }
 
 /**
+ * 1280x960のタイトル（th15・th20）の計画: 自宅 → `c7i.4xlarge` → `.2xlarge`帯（推定尺が長いと飛ばす。いずれもフレーム
+ * 同期）→ GPU（実時間1倍速、最後の段）。CPU負荷が高く、`.4xlarge`のほうが速度が単価の比より速いので`.4xlarge`が先。
+ */
+function frameSync1280Plan(factors: FrameSyncFactors): RecordingStep[] {
+  return [
+    homeFrameSyncStep({ estimatedRealtimeFactor: factors.home }),
+    frameSyncCpuStep("4xl", { estimatedRealtimeFactor: factors.fourXl }),
+    frameSyncCpuStep("2xl", {
+      maxEstimatedDurationSeconds: FRAME_SYNC_1280X960_2XL_MAX_ESTIMATED_SECONDS,
+      estimatedRealtimeFactor: factors.twoXl,
+    }),
+    ...gpuSteps(1),
+  ];
+}
+
+/**
  * タイトルごとの段（先頭から順に試す）。録画非対応タイトルは持たない（`recordingPlanFor()`）。
  *
  * - th06・th06c・th07・th08・th09・th10・th11・th12・th128・th13（640x480、Issue #390、`docs/decisions/0078`）:
  *   自宅→`.2xlarge`帯→`c7i.4xlarge`（どちらもフレーム同期）→GPU（実時間、最後の段。th07は3倍速、th13は無し、
  *   他は2倍速）。フレーム同期の段は速度が落ちるだけで品質は変わらない。
- * - th15（1280x960）: CPU負荷が高いので`.4xlarge`帯が先。GPUの段は実時間の1倍速。
- * - th20: 2倍速はゲーム本体の単一スレッド性能が足りず落ちが等倍の16倍になるので等倍
- *   （reports/89）。GPUが無ければCPU低速録画（reports/91）。
- * - th06nc: D3D11描画。GPUが無ければ、MODでBC7テクスチャを展開したCPU描画の1/2倍速（reports/96・97、
- *   `docs/decisions/0067`）。Extraの高密度弾幕では描画が間引かれる（`docs/known-limitations.md`）。
- *   かつての最終段`g6.2xlarge`（`gpu-full:eu-south-2`、0064）はこの段に置き換えた。
+ * - th06nc（720p、D3D11描画。MODがBC7テクスチャを展開するCPU描画）: 640x480と同じ形（`.2xlarge`帯が先）。GPUの段は
+ *   実時間の2倍速。かつての実時間のCPU1/2倍速・`g6.2xlarge`の段は置き換えた（`docs/decisions/0081`）。
+ * - th15・th20（1280x960）: CPU負荷が高いので`.4xlarge`帯が先。GPUの段は実時間の1倍速。th20の実時間CPU低速録画は
+ *   置き換えた（`docs/decisions/0081`）。
  */
 export const RECORDING_PLANS: Readonly<Partial<Record<GameId, readonly RecordingStep[]>>> = {
-  th06: frameSync640Plan(TH06_FACTORS, 2),
-  th06c: frameSync640Plan(TH06C_FACTORS, 2),
-  th07: frameSync640Plan(TH07_FACTORS, 3),
-  th08: frameSync640Plan(TH08_FACTORS, 2),
-  th09: frameSync640Plan(TH09_FACTORS, 2),
-  th10: frameSync640Plan(TH10_FACTORS, 2),
-  th11: frameSync640Plan(TH11_FACTORS, 2),
-  th12: frameSync640Plan(TH12_FACTORS, 2),
-  th128: frameSync640Plan(TH128_FACTORS, 2),
-  th13: frameSync640Plan(TH13_FACTORS),
-  th15: [
-    homeFrameSyncStep({ estimatedRealtimeFactor: TH15_HOME }),
-    frameSyncCpuStep("4xl", { estimatedRealtimeFactor: TH15_4XL }),
-    frameSyncCpuStep("2xl", {
-      maxEstimatedDurationSeconds: FRAME_SYNC_1280X960_2XL_MAX_ESTIMATED_SECONDS,
-      estimatedRealtimeFactor: TH15_2XL,
-    }),
-    ...gpuSteps(1),
-  ],
-  th20: [...gpuSteps(1), cpuStep(CPU_SLOW_MOTION_INSTANCE_TYPES, 1 / 2)],
-  th06nc: [...gpuSteps(2), cpuStep(TH06NC_CPU_INSTANCE_TYPES, 1 / 2)],
+  th06: frameSyncLowResPlan(TH06_FACTORS, 2),
+  th06c: frameSyncLowResPlan(TH06C_FACTORS, 2),
+  th07: frameSyncLowResPlan(TH07_FACTORS, 3),
+  th08: frameSyncLowResPlan(TH08_FACTORS, 2),
+  th09: frameSyncLowResPlan(TH09_FACTORS, 2),
+  th10: frameSyncLowResPlan(TH10_FACTORS, 2),
+  th11: frameSyncLowResPlan(TH11_FACTORS, 2),
+  th12: frameSyncLowResPlan(TH12_FACTORS, 2),
+  th128: frameSyncLowResPlan(TH128_FACTORS, 2),
+  th13: frameSyncLowResPlan(TH13_FACTORS),
+  th15: frameSync1280Plan(TH15_FACTORS),
+  th20: frameSync1280Plan(TH20_FACTORS),
+  th06nc: frameSyncLowResPlan(TH06NC_FACTORS, 2),
 };
 
 /** タイトルの段。録画非対応タイトルは空配列（ジョブは作られない）。 */

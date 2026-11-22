@@ -131,7 +131,7 @@ claim が解除され、EC2 でリトライされる。
 | `HOME_WORKER_ROLE_ARN` | (なし) | CfnOutput `HomeWorkerRoleArn`。**本番では必ず指定する**（未指定だと環境の認証情報をそのままコンテナへ渡す） |
 | `HOME_WORKER_ID` | `home-1` | ワーカー識別子。複数台にするなら一意にすること |
 | `HOME_WORKER_MAX_CONCURRENCY` | `2` | 同時録画数の上限。**上げる前に「実機検証の記録」を読むこと** — 2並列でもCPU温度が上限に張り付くため、安全な並列度は冷却状態とホストの他負荷に依存する |
-| `HOME_WORKER_SUPPORTED_GAMES` | 録画の段に自宅の段を持つタイトル全部（`HOME_WORKER_GAME_IDS`。現状th06/06c/07/08/09/10/11/12/13/128/15） | 引き受けるタイトル。自宅マシンの都合で一部だけ受け持ちたい場合に上書きする。**段に自宅の段が無いタイトル（th06nc・th20。実時間方式でGPU描画が必須、Issue #241・#82・#288）は指定できない**（指定すると`ConfigError`で起動失敗する）。フレーム同期の自宅の段を持つタイトル（th12・th15）はGPU描画が要っても指定できる（[`decisions/0079`](../docs/decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)） |
+| `HOME_WORKER_SUPPORTED_GAMES` | 録画の段に自宅の段を持つタイトル全部（`HOME_WORKER_GAME_IDS`。現状は全13タイトル） | 引き受けるタイトル。自宅マシンの都合で一部だけ受け持ちたい場合に上書きする。**段に自宅の段が無いタイトル（th06nc・th20。実時間方式でGPU描画が必須、Issue #241・#82・#288）は指定できない**（指定すると`ConfigError`で起動失敗する）。フレーム同期の自宅の段を持つタイトル（th12・th15）はGPU描画が要っても指定できる（[`decisions/0079`](../docs/decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)） |
 | `HOME_WORKER_LOAD_THRESHOLD` | `0.7` | 1コアあたりのロードアベレージがこれを超えている間は新規 claim を止める |
 | `HOME_WORKER_POLL_INTERVAL_SEC` | `3` | オファー探索の間隔 |
 | `HOME_WORKER_DOCKER_CPUS` | (なし) | `docker run --cpus` |
@@ -199,8 +199,8 @@ claim が解除され、EC2 でリトライされる。
 （`packages/shared/src/recordingPlan.ts`、[`decisions/0079`](../docs/decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)）。
 倍速録画（2倍速以上）は GPU インスタンス（`g6f.2xlarge`）でしか録画せず、GPU 非搭載の自宅マシンへは来ない
 （[`0058`](../docs/decisions/0058-speedup-recording-on-gpu-instances.md)）。実時間方式でGPU描画が必須の th06nc・th20 も、
-フレーム同期の計画へ切り替えるまでは自宅の段が無い。**フレーム同期の自宅の段（th06nc・th20以外の全タイトル）は、CPU描画で
-遅くなるだけで品質は変わらない**ので、th15 のようなGPU描画が望ましいタイトルも自宅で録る。
+2026-11-23（[`0081`](../docs/decisions/0081-frame-sync-plan-for-th20-and-th06nc.md)）にフレーム同期の自宅の段を置いた。**フレーム同期の
+自宅の段（全タイトル）は、CPU描画で遅くなるだけで品質は変わらない**ので、th15・th20・th06nc のようなGPU描画が望ましいタイトルも自宅で録る。
 フレーム同期の録画は `CAPTURE_MODE=frame_sync` で走り、並列度・温度・ホストの負荷は速度にしか効かない。
 旧来の判断（[`0047`](../docs/decisions/0047-no-gpu-titles-for-home-worker.md)）は置き換え済み。
 

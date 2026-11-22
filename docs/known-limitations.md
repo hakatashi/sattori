@@ -42,14 +42,17 @@ VsyncPatchで修正するかどうかは、記録リプレイと再生時で設�
 
 録画速度はタイトルごとの録画の段が決め、ユーザーは選べない（Issue #317、[`decisions/0066`](decisions/0066-recording-fallback-plan-as-config.md)）。
 3倍速以上はキャプチャが律速して落ちフレームが増え、実時間で進む区間は等倍へ戻すと伸びる。
-GPUを確保できなければ次の段（等倍・CPU低速）で録り、CPU低速録画の品質は
-GPU録画より落ちる。リプレイが始まらなかった録画が`done`になりうる。詳細は
+GPUの段は全タイトルで最後の段（フレーム同期のCPUの段を使い切ったときだけ来る、
+[`decisions/0081`](decisions/0081-frame-sync-plan-for-th20-and-th06nc.md)）。実時間のCPU低速録画は廃止した。
+リプレイが始まらなかった録画が`done`になりうる。詳細は
 [`known-limitations-gpu-recording.md`](known-limitations-gpu-recording.md) §1。
 
-### th06nc（東方紅魔郷: New Classic）は録画対応済み。GPUが無ければCPUの1/2倍速で、Extraは描画が落ちうる
+### th06nc（東方紅魔郷: New Classic）は録画対応済み。フレーム同期（自宅→2xlarge帯→4xlarge帯）を優先し、GPUは最後の段
 
-通常はGPU描画、GPUを確保できなければCPU描画（BC7展開）の1/2倍速で録り、自宅ワーカーへは常にオファーされない。
-CPUの段ではExtraの高密度弾幕で描画が間引かれ、FpsMonitor・判定重複率では検知できない。1080p録画は廃止した
+2026-11-23（Issue #390）から、自宅ワーカー→`.2xlarge`帯→`.4xlarge`帯（いずれもフレーム同期、MODがBC7を展開するCPU描画）
+→GPU（実時間2倍速）の順（[`decisions/0081`](decisions/0081-frame-sync-plan-for-th20-and-th06nc.md)）。フレーム同期では、
+実時間のCPU段で出ていたExtraの描画の間引きは起きない（遅くなるだけ）。実時間のGPUの段では、従来どおり
+FpsMonitor・判定重複率に頼れない点に注意。1080p録画は廃止した
 （[`decisions/0067`](decisions/0067-th06nc-cpu-slow-motion-and-drop-1080p.md)）。**th06nc を th06 として受け付けては
 ならない**（マジックバイトが同じ`T6RP`）。本番相当のフル尺E2E検証・RVAの一部が未了。詳細は
 [`known-limitations-gpu-recording.md`](known-limitations-gpu-recording.md) §2。
@@ -238,11 +241,10 @@ Spot枯渇による起動失敗）が実害化したため撤回した
 
 **自宅ワーカーへオファーされるのは、録画の段に自宅の段（`kind: "home"`）を持つタイトルだけ**
 （`recordingPlan.ts`、[`decisions/0079`](decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)）。
-フレーム同期（Epic #399）の段へ切り替えたタイトル（現在th06nc・th20以外の全タイトル）が対象で、th15のようにGPU描画が望ましい
-タイトルも、フレーム同期なら自宅のCPU描画で品質を落とさず録れる（遅いだけ）。**th06nc・th20は、計画の切り替え
-（Issue #390の残り）までオファーされない**（GPU描画必須のth06ncは実時間方式では自宅で成立しない、
-[`decisions/0047`](decisions/0047-no-gpu-titles-for-home-worker.md)）。th20の低速録画の2並列ハング（#179）は、
-フレーム同期の2並列で再現しないかをth20の切り替えのときに確かめる。
+全13タイトルがフレーム同期（Epic #399）の自宅の段を持つ。th06nc・th15・th20のようにGPU描画が望ましいタイトルも、
+フレーム同期なら自宅のCPU描画で品質を落とさず録れる（遅いだけ。th20は0.6倍速前後、th06ncは0.9倍速前後）。
+th20の低速録画の2並列ハング（#179）は実時間のCPU低速録画の話で、フレーム同期のth20は#389で2並列を完走した。
+本番の自宅経由の再現確認は未了（[`decisions/0081`](decisions/0081-frame-sync-plan-for-th20-and-th06nc.md)）。
 
 ### 未検証の経路
 
@@ -261,7 +263,7 @@ NAT 配下のデーモンには通知が届かないため、取り消しの捕�
 
 **これはフレーム同期の段には当てはまらない**（Issue #390）。フレーム同期はゲームの時計を仮想化するので、
 CPU温度・ホストの他負荷・並列度は**録画の速度にだけ**効き、画質（取りこぼし）には出ない。自宅ワーカーが
-フレーム同期の段（th06nc・th20以外）で録る限り、温度で処理落ちを心配する必要は無い（遅くなるだけ）。以下の実測は
+フレーム同期の段で録る限り、温度で処理落ちを心配する必要は無い（遅くなるだけ）。以下の実測は
 実時間方式（フレーム同期への切り替え前）の話で、まだ実時間の段で録るタイトルに当てはまる。
 
 開発マシン（Ryzen 7 5700X、8コア16スレッド）での実測
@@ -328,8 +330,8 @@ GPU（g6f.2xlarge）は eu-south-2 で長期的に枯渇しており、容量不
   引き上げたと回答したが、適用されているのは On-Demand 枠のほうだった疑い）。訂正されるまで、
   フォールバック先で同時に動かせるのは g6f.2xlarge 1台だけ。
 - eu-north-1 にも余裕は無い（1a は取れず 1b 頼み、[`reports/2026-10-11`](reports/2026-10-11-gpu-capacity-eu-south-2-vs-eu-north-1.md)）。
-  **両リージョンとも枯渇すれば、th15・th20・th06ncはCPU低速へ進み、それも
-  無ければ待たずに`capacity_exhausted`で失敗する**
+  **GPUの段は全タイトルで最後の段なので、両リージョンとも枯渇し、
+  先のCPUの段も使い切っていれば、待たずに`capacity_exhausted`で失敗する**
   （[`decisions/0063`](decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)・[`0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。回復までの
   実績は中央値約13時間で、ユーザーが時間をあけて再投入するしかない。CPU系ジョブも全段の枯渇で
   同じように失敗するが、2026-09-20〜11-04のログでは発生していない。
@@ -365,7 +367,7 @@ IP 単位のレート制限・reCAPTCHA 等の追加 bot ゲートは、**メー
 常に効いてくるため `AGENTS.md` §3 にも要約を置いてある。
 
 - リージョンや候補インスタンスタイプを変える場合は**単価定数も併せて見直すこと**。
-  GPU系（`g6f.2xlarge`、th06nc・th15と倍速録画、Issue #241・#82・#288）はCPU系とは全く異なる価格帯
+  GPU系（`g6f.2xlarge`、全タイトルの最後の段・倍速録画、Issue #241・#82・#288）はCPU系とは全く異なる価格帯
   （`gpu`、暫定値$0.08/h。`g6.2xlarge`は`gpuFull`、$0.40/h）を別枠で持つ（`FALLBACK_SPOT_PRICE_USD_PER_HOUR`）。
 - 自宅ワーカー（Issue #49）が処理したジョブは EC2/EBS/IPv4 の課金が発生しないため 0 で
   計上する（自宅の電気代・回線費は AWS の請求に現れず按分する意味も無いので一切計上しない）。
