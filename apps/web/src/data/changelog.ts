@@ -17,6 +17,11 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-23",
+    ja: "新方式の録画で、リプレイずれによりリプレイの再生が途中で終了した場合に録画が失敗扱いになっていた問題を修正",
+    en: "Fixed an issue where, with the new recording method, the recording was treated as failed when the replay playback ended partway through due to a replay desync",
+  },
+  {
+    date: "2026-11-23",
     ja: "全タイトルを新方式の録画に切り替え。新方式では録画時に処理落ち・フレーム落ちが一切発生せず、録画時間も従来より大幅に短くなります (なお、サーバーの混雑状況により従来方式の録画が適用されることがあります)",
     en: "Switched all titles to the new recording method. With the new method, no slowdowns or dropped frames occur during recording, and recording takes significantly less time than before (note that the conventional method may still be applied depending on server congestion)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/390",

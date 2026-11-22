@@ -15,7 +15,8 @@
   - **重複フレーム率による合否判定はしない**。取りこぼしが原理的に起きず、mpdecimateが拾うのは
     ゲームが同じ絵を2回Presentした場面(会話・暗転)だけになる。代わりに次の2つで判定する。
       1. 三者照合: MODが書いたフレーム数 == 動画のフレーム数 == 音声のフレーム数(`check_frame_counts()`)
-      2. 理論尺との比較: リプレイのframeCountから求めた尺とのずれ(`check_expected_duration()`)
+      2. 理論尺との比較: リプレイのframeCountから求めた尺とのずれ(`check_expected_duration()`)。
+         許容を超えても再生区間が3秒以上なら失敗にせずデシンク警告で配信する(docs/decisions/0082)
   - **ワーカーの中ではリトライしない**。決定的なので、同じ条件でやり直しても結果は変わらない。
     失敗はそのままStep Functionsの判断に任せる(`record_frame_sync()`は1回だけ試す)。
   - **ハング検知は実時間**: サブ出力が`STALL_TIMEOUT_SEC`実時間のあいだ増えなければ打ち切る。
@@ -819,6 +820,7 @@ def record_frame_sync(config, replay_path, output_path, *, progress_dir=None,
             DIAG_FRAME_MISMATCH if result["counts"] is not None and not result["counts"].ok
             else "setup_error",
         )
+    duration_desync = False
     if result["detected"]:
         # 理論尺との比較。終了を検知できなかった(timeout)録画は尺が短くて当然なので対象外。
         ok, error_ratio = check_expected_duration(result["play_sec"], expected_duration_seconds)
@@ -828,9 +830,16 @@ def record_frame_sync(config, replay_path, output_path, *, progress_dir=None,
                 f"(許容-{DURATION_TOLERANCE_SHORTER_RATIO * 100:.0f}%〜+{DURATION_TOLERANCE_LONGER_RATIO * 100:.0f}%"
                 f"、または{DURATION_TOLERANCE_MIN_SEC:.0f}秒)")
         if not ok:
-            return discard(
-                f"録画の尺が理論尺から{error_ratio * 100:+.1f}%ずれています", DIAG_DURATION_MISMATCH)
-
+            # 再生区間がほぼ無い録画はリプレイが再生されなかったとみなして破棄する(別の段で再試行する)。
+            # それ以外の尺のずれは、途中までは再生できたリプレイずれ(デシンク)による早期終了などで、
+            # 回復不能で価値のある途中までの動画を捨てないよう、警告として配信する(`desyncDetected`を立てる)。
+            if result["play_sec"] is not None and result["play_sec"] < DURATION_TOLERANCE_MIN_SEC:
+                return discard(
+                    f"リプレイがほとんど再生されませんでした(再生区間{result['play_sec']:.1f}秒)",
+                    DIAG_DURATION_MISMATCH)
+            log(f"WARNING: 録画の尺が理論尺から{error_ratio * 100:+.1f}%ずれています。"
+                "リプレイずれ(デシンク)の可能性がありますが、録画は配信します")
+            duration_desync = error_ratio < 0
     # スコア監視のあるタイトルで、期待スコアが0より大きいのに最後まで0だった録画は、メニュー操作の
     # 取りこぼし等でリプレイが始まらなかったとみなして破棄する(Issue #324)。
     scores = read_verified_scores(config.log_path, config.game_id)
@@ -845,6 +854,8 @@ def record_frame_sync(config, replay_path, output_path, *, progress_dir=None,
             "リプレイ終盤が録画されていない可能性があります")
     log("正常な録画を確認しました")
     desync_detected = check_replay_desync(config, expected_score, log=log, scores=scores)
+    if duration_desync:
+        desync_detected = True
     write_desync_result(desync_result_path, desync_detected)
     write_timeout_result(timeout_result_path, timed_out)
     write_cut_result(cut_result_path, result.get("cut"))
