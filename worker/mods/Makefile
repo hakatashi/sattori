@@ -63,7 +63,7 @@ BASE32 := core dinput window_wait speed_hack dsound score
 #   <t>_ARCH: 32 / 64、<t>_MODS: 使うモジュール、<t>_STATIC: 1 なら -static、<t>_LIBS: 追加のライブラリ
 #   出力は <t>_replay_autoplay/build/<t>_hook.dll(タイトル資産の配置と同じ。変えないこと)。
 # ---------------------------------------------------------------------------
-TITLES := th06 th06c th06nc th07 th08 th09 th10 th11 th12 th13 th15 th20 th128
+TITLES := th06 th06c th06nc th07 th08 th09 th10 th11 th12 th13 th14 th15 th20 th128
 
 # th06: vpatch＋fps表示補正のtimeGetTime版(touhou-recorder reports/90)
 th06_ARCH := 32
@@ -96,6 +96,10 @@ th12_MODS := $(BASE32) present d3dx_filter code_patch frame_sync_d3d9
 # th13: th128と同じ構成(VsyncPatchは使わない、touhou-recorder reports/100)
 th13_ARCH := 32
 th13_MODS := $(BASE32) present d3dx_filter frame_sync_d3d9
+# th14: th15と同じ構成(1280x960。GetDeviceState方式、-static、touhou-recorder reports/103)
+th14_ARCH   := 32
+th14_MODS   := $(BASE32) present fps_display frame_sync_d3d9
+th14_STATIC := 1
 # th15: GetDeviceState方式・Presentの上限・fps表示補正(ViaCaller)、-static(touhou-recorder reports/82)
 th15_ARCH   := 32
 th15_MODS   := $(BASE32) present fps_display frame_sync_d3d9

@@ -20,6 +20,7 @@ WINEPREFIX の作成は同 §3、アップロード後のレプリカ複製の�
 - [11. th20（東方錦上京）](#11-th20東方錦上京)
 - [12. th128（妖精大戦争）](#12-th128妖精大戦争)
 - [13. th13（東方神霊廟）](#13-th13東方神霊廟)
+- [14. th14（東方輝針城）](#14-th14東方輝針城)
 
 ## 1. th06（東方紅魔郷）
 
@@ -319,4 +320,33 @@ tar -czf /tmp/th13-assets.tar.gz \
   mods/th13_replay_autoplay/build/th13_hook.dll
 aws s3 cp /tmp/th13-assets.tar.gz \
   "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th13/assets.tar.gz"
+```
+
+## 14. th14（東方輝針城）
+
+`games/th14`・`prefixes/th14-wined3d-gl` は `touhou-recorder` の同名ディレクトリから `rsync` でコピーする
+（**ver1.00bの非Steam版**。Steam版`games/th14_steam`は使わない）。
+
+1. **cfg（`th14.cfg`）は、オフセット0x39が0（起動時に毎回訊ねない）のものを `games/th14/` 直下に必ず同梱する**
+   （`xxd -s 0x39 -l 1 games/th14/th14.cfg`で確認）。1のままだと起動時に解像度選択ダイアログが出て止まる。
+   `%APPDATA%`へは`prepare_instance()`が毎回配置する。
+2. **プレフィックスの`%APPDATA%/ShanghaiAlice/th14/`からスコアファイル（`scoreth14.dat`）と`replay/`を消してから
+   固める**。MODはExtra未解放の前提でDown x3を押すので、Extraを解放したスコアファイルが入るとReplayに着地しない
+   （`worker/docs/titles/th14.md`）。
+3. 公式アップデータ（`th14_update100b.exe`）・`th14.cfg.orig`は同梱しない。
+
+```bash
+rsync -a --exclude='replay/' --exclude='th14_update100b.exe' --exclude='th14.cfg.orig' \
+  ../../touhou-recorder/games/th14/ games/th14/
+rsync -a ../../touhou-recorder/prefixes/th14-wined3d-gl/ prefixes/th14-wined3d-gl/
+rm -rf prefixes/th14-wined3d-gl/drive_c/users/*/AppData/Roaming/ShanghaiAlice/th14/{replay,scoreth14.dat}
+
+tar -czf /tmp/th14-assets.tar.gz \
+  "${TAR_EXCLUDES[@]}" --exclude='scoreth14.dat' \
+  games/th14 \
+  prefixes/th14-wined3d-gl \
+  mods/common/build/injector.exe \
+  mods/th14_replay_autoplay/build/th14_hook.dll
+aws s3 cp /tmp/th14-assets.tar.gz \
+  "s3://${SATTORI_TITLE_ASSETS_BUCKET}/titles/th14/assets.tar.gz"
 ```

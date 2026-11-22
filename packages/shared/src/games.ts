@@ -266,13 +266,15 @@ export const GAME_TITLES: Record<GameId, GameTitleInfo> = {
  * th13（東方神霊廟。ver1.00cの非Steam版——Steam版はDRMで起動できない。%APPDATA%配下の
  * cfg/replay・DIK経由の入力注入・VsyncPatch不要、touhou-recorder reports/100、Issue #79）
  * を追加した。
+ * th14（東方輝針城。ver1.00bの非Steam版。th15と同じ1280x960・DIK経由の入力注入、フレーム同期で
+ * 録画、touhou-recorder reports/103・110、Issue #80）を追加した。
  * th06とはリプレイのバージョンが非互換（`packages/replay-parser`がバージョン語で判別）
  * なため別`GameId`として扱う。
- * PoC（touhou-recorder）で E2E 実証済みなのはこの13本のみで、他タイトルは
+ * PoC（touhou-recorder）で E2E 実証済みなのはこの14本のみで、他タイトルは
  * MOD 移植（録画対応）が未着手（AGENTS.md 参照）。
  */
 export const SUPPORTED_GAME_IDS: readonly GameId[] = [
-  "th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th13", "th15", "th20",
+  "th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th13", "th14", "th15", "th20",
   "th128",
 ];
 

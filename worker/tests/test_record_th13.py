@@ -48,7 +48,7 @@ def test_build_config_uses_a_display_number_not_shared_with_other_titles():
     """同一ホストで並列録画しても映像が混ざらないよう、タイトルごとに固定する。"""
     import importlib
 
-    others = ("th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th15",
+    others = ("th06", "th06c", "th06nc", "th07", "th08", "th09", "th10", "th11", "th12", "th14", "th15",
               "th20", "th128")
     displays = {
         importlib.import_module(f"record_{game}").build_config("sattori_job_test").display

@@ -17,9 +17,10 @@ describe("shared", () => {
     expect(isSupportedGame("th08")).toBe(true);
     expect(isSupportedGame("th11")).toBe(true);
     expect(isSupportedGame("th12")).toBe(true);
-    // th13はIssue #79で録画対応。th14はパーサー的には認識できるが録画には未対応(MOD移植が未着手)。
+    // th13・th14はIssue #79・#80で録画対応。th143はパーサー的には認識できるが録画には未対応(MOD移植が未着手)。
     expect(isSupportedGame("th13")).toBe(true);
-    expect(isSupportedGame("th14")).toBe(false);
+    expect(isSupportedGame("th14")).toBe(true);
+    expect(isSupportedGame("th143")).toBe(false);
   });
 
   it("GAME_TITLESの全タイトルにenglishHyphenatedNameが存在し、ソフトハイフンを除去するとenglishNameと一致する", () => {

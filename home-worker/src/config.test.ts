@@ -31,8 +31,8 @@ describe("loadConfig", () => {
   });
 
   it("段に自宅ワーカーが無いタイトルをHOME_WORKER_SUPPORTED_GAMESで明示指定するとエラー", () => {
-    // 録画対応の全13タイトルが自宅の段を持つので、段を持たない録画非対応のタイトル（th14）で多層防御を確かめる。
-    expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th14" }))).toThrow(ConfigError);
+    // 録画対応の全14タイトルが自宅の段を持つので、段を持たない録画非対応のタイトル（th143）で多層防御を確かめる。
+    expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th143" }))).toThrow(ConfigError);
   });
 
   it("タイトルはカンマ区切りで上書きできる", () => {

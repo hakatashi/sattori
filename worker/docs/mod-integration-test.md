@@ -16,7 +16,7 @@ touhou-recorderのreports/)に進む前の速い足がかりとして、決ま�
 Wine/Xvfb/PulseAudioをそのまま使う)。
 
 ```bash
-python3 tests/mod_integration/run.py                          # 対象タイトル全部(現状13本、フレーム同期)
+python3 tests/mod_integration/run.py                          # 対象タイトル全部(現状14本、フレーム同期)
 python3 tests/mod_integration/run.py --game th06
 python3 tests/mod_integration/run.py --capture-mode realtime  # 従来の実時間の録画(x11grab・PulseAudio)
 ```

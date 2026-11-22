@@ -22,7 +22,7 @@ Sattori の「まだできていないこと」「できているが条件付き
 
 ## 1. 対応タイトルの拡大
 
-現在の対応タイトルは th06・th06c・th06nc・th07・th08・th09・th10・th11・th12・th13・th15・th20・th128 の13本。
+現在の対応タイトルは th06・th06c・th06nc・th07・th08・th09・th10・th11・th12・th13・th14・th15・th20・th128 の14本。
 
 リプレイパーサー自体は th06〜th20 の大半に対応済みで、**残作業は録画対応**
 （Wine 上での MOD 移植・実機検証）である。タイトルごとの状況は
@@ -73,6 +73,13 @@ ver1.00cの非Steam版で録る（Steam版はDRMで起動しない）。2026-11-
 GPUの在庫が無くGPU描画・倍速は一度も検証できていない（#374）ので、GPUの段は入れていない
 （旧計画は[`decisions/0070`](decisions/0070-th13-native-on-4xlarge-and-half-speed-on-2xlarge.md)、
 [`worker/docs/titles/th13.md`](../worker/docs/titles/th13.md)）。
+
+### th14（東方輝針城）は録画対応済み。フレーム同期のみでGPUの段は持たない
+
+ver1.00bの非Steam版で録る。th15・th20と同じ1280x960なので、計画は自宅→`c7i.4xlarge`→`.2xlarge`帯（推定尺が長いと飛ばす）。
+GPUインスタンスでの録画（実時間の倍速）は在庫の枯渇で一度も検証できていないので、GPUの段は入れていない
+（[`decisions/0085`](decisions/0085-th14-frame-sync-plan-without-gpu.md)、[`worker/docs/titles/th14.md`](../worker/docs/titles/th14.md)）。
+CPU描画の実時間の等倍は落ち4〜6%で使えない（touhou-recorder reports/103）ので、全段フレーム同期である。
 
 ### th09はリプレイずれの事後検知が機能しない
 
@@ -243,7 +250,7 @@ Spot枯渇による起動失敗）が実害化したため撤回した
 
 **自宅ワーカーへオファーされるのは、録画の段に自宅の段（`kind: "home"`）を持つタイトルだけ**
 （`recordingPlan.ts`、[`decisions/0079`](decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)）。
-全13タイトルがフレーム同期（Epic #399）の自宅の段を持つ。th06nc・th15・th20のようにGPU描画が望ましいタイトルも、
+全14タイトルがフレーム同期（Epic #399）の自宅の段を持つ。th06nc・th15・th20のようにGPU描画が望ましいタイトルも、
 フレーム同期なら自宅のCPU描画で品質を落とさず録れる（遅いだけ。th20は0.6倍速前後、th06ncは0.9倍速前後）。
 th20の低速録画の2並列ハング（#179）は実時間のCPU低速録画の話で、フレーム同期のth20は#389で2並列を完走した。
 本番の自宅経由の再現確認は未了（[`decisions/0081`](decisions/0081-frame-sync-plan-for-th20-and-th06nc.md)）。

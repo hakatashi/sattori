@@ -24,6 +24,7 @@
 | th11 東方地霊殿 | [th11.md](th11.md) | 入力は GetKeyboardState 経由・終了検知は画面静止のみ |
 | th12 東方星蓮船 | [th12.md](th12.md) | 入力はth10方式・メニュー構造はth11方式のハイブリッド・ウィンドウ最小化バグ対策必須 |
 | th13 東方神霊廟 | [th13.md](th13.md) | ver1.00c非Steam版のみ・メニューはDown x3(Extra未解放前提)・フレーム同期 |
+| th14 東方輝針城 | [th14.md](th14.md) | ver1.00b非Steam版のみ・メニューはDown x3・`th14.cfg`のオフセット0x39を0に(解像度ダイアログで止まる)・フレーム同期のみ(GPUの段なし) |
 | th15 東方紺珠伝 | [th15.md](th15.md) | **GPU優先**（g6f系、DXVK不使用・wined3d+OpenGL）、CPUの段はフレーム同期・入力はth10方式（GetDeviceState） |
 | th20 東方錦上京 | [th20.md](th20.md) | cfg は `%APPDATA%`・Present フック必須・thprac 必須 |
 | th128 妖精大戦争 | [th128.md](th128.md) | thprac 必須(無いとリプレイ選択直後にフリーズ)・終了検知は画面静止のみ |
