@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-23",
+    ja: "東方花映塚 (th09) で、リプレイずれの警告が常に表示されていた問題を修正",
+    en: "Fixed an issue where the replay desync warning was always shown for Phantasmagoria of Flower View (th09)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/433",
+  },
+  {
+    date: "2026-11-23",
     ja: "東方輝針城 (th14) の録画に対応",
     en: "Added support for recording Double Dealing Character (th14)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/80",

@@ -301,6 +301,10 @@ def check_replay_desync(config, expected_score, log=print, scores=None):
     """
     if expected_score is None:
         return None
+    # スコア監視の無いタイトル(th09)はMODが`score=0`固定のログを出すため、照合すると
+    # 常に不一致(true)になってしまう。検証不能(None)として扱う。
+    if config.game_id not in GAME_SCORE_MULTIPLIERS:
+        return None
     if scores is None:
         scores = read_verified_scores(config.log_path, config.game_id)
     if not scores:

@@ -103,6 +103,16 @@ def test_check_replay_desync_skips_when_log_unreadable(tmp_path):
     assert modlog.check_replay_desync(config, 481237400, log=lambda msg: None) is None
 
 
+def test_check_replay_desync_is_unverifiable_for_title_without_score_monitor(tmp_path):
+    # th09はスコアRVA未特定でMODが`score=0`固定のログを出す。照合すると常に不一致(true)に
+    # なる不具合の回帰テスト。検証不能(None)でなければならない。
+    config = make_config(game_id="th09", instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write("ScoreMonitor: score=0 stage=0 lives=4 graze=0 epoch_ms=1\n")
+
+    assert modlog.check_replay_desync(config, 481237400, log=lambda msg: None) is None
+
+
 def test_check_replay_desync_returns_false_on_match(tmp_path):
     config = make_config(instance_dir=str(tmp_path))
     with open(config.log_path, "w") as f:
