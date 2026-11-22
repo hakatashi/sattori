@@ -36,6 +36,7 @@ from .process import attach_thprac, find_live_game_pid, kill_wine_and_wait
 from .timing import (
     audio_capture_rate_hz,
     duplicate_rate_threshold_for_raw,
+    frame_sync_mode,
     is_speedup,
     recording_time_scale,
     scaled_confirmation_count,
@@ -202,6 +203,18 @@ class _EndDetection:
     template_mask: object
     template_mad_threshold: float
     still_mask: object
+
+
+def build_end_detection(config, end_template, width, height):
+    """`width`x`height`の画面に対する終了検知の参照画像とマスクを組み立てる
+    (実時間の録画・フレーム同期キャプチャで共通)。"""
+    return _EndDetection(
+        template=end_template,
+        still_mask=build_still_mask(config.still_detect_exclude_rect, width, height),
+        template_mask=build_end_template_mask(config.end_template_rect, width, height),
+        template_mad_threshold=(
+            config.end_template_mad_threshold or END_TEMPLATE_MAD_THRESHOLD),
+    )
 
 
 def _abort_capture(capture):
@@ -684,13 +697,7 @@ def _start_video_capture(config, env, game_pid, end_template, output_path, *, ti
                 "WARNING: 録画直前にウィンドウIDを取り直せなかったため、座標基準で取り込みます"
                 f"(x={x} y={y})。録画中にウィンドウが動くと映像がずれる可能性があります"
             )
-    detection = _EndDetection(
-        template=end_template,
-        still_mask=build_still_mask(config.still_detect_exclude_rect, w, h),
-        template_mask=build_end_template_mask(config.end_template_rect, w, h),
-        template_mad_threshold=(
-            config.end_template_mad_threshold or END_TEMPLATE_MAD_THRESHOLD),
-    )
+    detection = build_end_detection(config, end_template, w, h)
     log("録画を開始します")
 
     base, _ext = os.path.splitext(output_path)
@@ -887,6 +894,21 @@ def record_with_retry(config, replay_path, output_path, *,
     cut_result_path は採用した試行の配信版カット範囲(Issue #266、`recording/cut.py`)の
     書き出し先。
     """
+    if frame_sync_mode():
+        # フレーム同期キャプチャ(Issue #389)。経路の分岐はCAPTURE_MODEだけで決め、タイトルや
+        # 割り当て先では分けない。**ワーカーの中ではリトライしない**(決定的なので同じ条件で
+        # やり直しても結果は変わらない。失敗はStep Functionsの判断に任せる、`recording/framesync.py`)。
+        from . import framesync
+        # 音声はMOD内の仮想デバイスがファイルへ書くのでPulseAudioからは録らないが、Wineの出力先が
+        # 無いと初期化で警告・遅延が出るので、実時間の経路と同じジョブ専用sinkは作っておく。
+        with pulse.job_sink(config.pulse_sink, rate=None, log=log):
+            return framesync.record_frame_sync(
+                config, replay_path, output_path,
+                progress_dir=progress_dir, expected_duration_seconds=expected_duration_seconds,
+                diagnostics_dir=diagnostics_dir, expected_score=expected_score,
+                desync_result_path=desync_result_path, timeout_result_path=timeout_result_path,
+                cut_result_path=cut_result_path, log=log,
+            )
     # 倍速録画ではゲームの音声出力レートに合わせた高レートのsinkを作る(`pulse.create_null_sink()`)。
     sink_rate = audio_capture_rate_hz(recording_time_scale(config.build_env()))
     with pulse.job_sink(config.pulse_sink, rate=sink_rate, log=log):

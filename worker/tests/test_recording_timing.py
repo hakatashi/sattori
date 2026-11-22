@@ -105,3 +105,23 @@ def test_scaled_poll_count_keeps_the_required_duration_in_game_time():
 
 def test_scaled_poll_count_rounds_up_so_the_condition_never_loosens():
     assert timing.scaled_poll_count(3, 0.75) == 3  # 2.25 -> 3
+
+
+# --- フレーム同期キャプチャ(Issue #389) -------------------------------------
+
+
+def test_frame_sync_mode_is_decided_only_by_capture_mode():
+    assert not timing.frame_sync_mode({})
+    assert not timing.frame_sync_mode({"CAPTURE_MODE": "realtime"})
+    assert timing.frame_sync_mode({"CAPTURE_MODE": "frame_sync"})
+    # GPUワーカーかどうか・倍率は経路の分岐に関与しない
+    assert timing.frame_sync_mode({"CAPTURE_MODE": "frame_sync", "GPU_WORKER": "1"})
+
+
+def test_frame_sync_always_records_at_time_scale_one():
+    """生動画のチェックポイントのメタデータ`sattori-time-scale`に1.0が書かれ、互換が保たれる。"""
+    env = {"CAPTURE_MODE": "frame_sync", "FPS_LIMIT_TARGET_HZ": "120"}
+    assert timing.recording_time_scale(env) == 1.0
+    assert timing.recording_time_scale({"CAPTURE_MODE": "frame_sync"}) == 1.0
+    # CAPTURE_MODEが無ければ従来どおり
+    assert timing.recording_time_scale({"FPS_LIMIT_TARGET_HZ": "120"}) == pytest.approx(0.5)

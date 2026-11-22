@@ -108,3 +108,14 @@ def test_sync_marker_sequence_matches_mod_golden():
     assert "".join("+" if s else "-" for s in signs[:64]) == golden["first64"]
     assert sum(signs) == int(golden["positives"])
     assert f"{fnv:016x}" == golden["fnv1a64"]
+
+
+def test_frame_sync_lines_are_read_by_the_framesync_helpers(tmp_path):
+    """`recording/framesync.py`が使う`modlog`の読み取りが、MODの書式(ゴールデン)を読める(Issue #389)。"""
+    log = str(_write_log(tmp_path, GOLDEN_LINES))
+    assert modlog.FRAME_SYNC_CAPTURE_START_LOG in _golden("FrameSync: capture start")
+    assert modlog.FRAME_SYNC_CAPTURE_STOPPED_LOG in _golden("FrameSync: capture stopped")
+    assert modlog.read_frame_sync_capture_start(log) == (640, 480, "bgr0")
+    assert modlog.read_frame_sync_unthrottled_frame(log) == 420
+    assert modlog.read_frame_sync_frames_written(log) == 3600
+    assert modlog.read_frame_sync_capture_start(str(tmp_path / "missing.log")) is None

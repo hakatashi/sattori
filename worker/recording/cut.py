@@ -15,12 +15,15 @@
 どちらも壁時計時刻(epoch秒)で得られるので、映像の先頭フレームの壁時計時刻
 (`-copyts`で保持したstart_time、`recording/__init__.py`)を基準に動画の時間軸へ換算する。
 決められなかった側はNoneにし、変換側はそちらをカットしない(録画自体は失敗させない)。
+
+フレーム同期キャプチャ(`recording/framesync.py`)は壁時計時刻を使えない(動画の時間はフレーム番号が
+決める)ので、開始・終了とも**フレーム番号(動画の秒)**で決める(`compute_frame_sync_cut_range()`)。
 """
 import subprocess
 
 from . import sync_marker
 from .ffmpeg import ffprobe_start_time
-from .modlog import find_replay_start_epoch
+from .modlog import find_frame_sync_replay_start_frame, find_replay_start_epoch
 
 # リプレイの再生を確定するキーを押す何秒前から残すか(ゲーム内時間=等倍の動画上の秒数)。
 REPLAY_START_LEAD_SEC = 1.0
@@ -96,4 +99,33 @@ def compute_cut_range(config, video_target, output_path, env, *, time_scale, con
 
     log(f"配信版のカット範囲(録画の時間軸): start={cut['startSec']} end={cut['endSec']} "
         f"(映像の先頭フレーム={v_start:.3f} 映像のオフセット={v_offset:.3f}s)")
+    return cut
+
+
+def compute_frame_sync_cut_range(config, content_end_sec, *, log=print):
+    """フレーム同期キャプチャ(`recording/framesync.py`)の配信版カット範囲(`compute_cut_range()`の同等品)。
+
+    動画はMODが書いたフレームだけでできており、先頭が0秒・壁時計の概念も無い。そのため
+    **開始・終了ともフレーム番号(動画の時間)で決める**。
+
+    - **開始**: MODのログから求めたリプレイ再生確定のフレーム(`modlog.find_frame_sync_replay_start_frame()`)の
+      `REPLAY_START_LEAD_SEC`秒前。同期マーカーは鳴らさない(仮想音声は映像と決定論的に一致する)ので
+      その配慮は要らない。決められなければNone(カットせず先頭から)。
+    - **終了**: `content_end_sec`(終了検知の連続一致が始まった動画上の秒、`framesync._monitor_until_end()`)。
+    """
+    cut = {"startSec": None, "endSec": None}
+    start_frame = find_frame_sync_replay_start_frame(config.log_path)
+    if start_frame is None:
+        log("WARNING: MODログからリプレイ再生確定のフレームを求められないため、配信版の先頭は映像の先頭からにします")
+    else:
+        cut["startSec"] = max(0.0, start_frame / 60.0 - REPLAY_START_LEAD_SEC)
+    if content_end_sec is not None:
+        start_sec = cut["startSec"] or 0.0
+        if content_end_sec - start_sec < MIN_CUT_DURATION_SEC:
+            log(f"WARNING: カット終了位置({content_end_sec:.3f}s)が開始位置({start_sec:.3f}s)に近すぎるため、"
+                "末尾はカットしません")
+        else:
+            cut["endSec"] = content_end_sec
+    log(f"配信版のカット範囲(フレーム同期、動画の時間軸): start={cut['startSec']} end={cut['endSec']} "
+        f"(リプレイ再生確定のフレーム={start_frame})")
     return cut

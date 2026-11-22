@@ -150,6 +150,78 @@ def find_replay_start_epoch(log_path, reference_epoch=None):
     return _nearest_epoch(start_sod, offset, reference_epoch)
 
 
+# ---------------------------------------------------------------------------
+# フレーム同期キャプチャ(Issue #389、`recording/framesync.py`)が読む行
+# ---------------------------------------------------------------------------
+# 書式は `mods/core/log_contract.h`(`kFrameSync*Fmt`)。変えるときは両側を直すこと。
+FRAME_SYNC_CAPTURE_START_LOG = "FrameSync: capture start"
+FRAME_SYNC_CAPTURE_STOPPED_LOG = "FrameSync: capture stopped"
+FRAME_SYNC_CAPTURE_START_RE = re.compile(
+    r"FrameSync: capture start width=(\d+) height=(\d+) d3dfmt=\d+ pix_fmt=(\w+)")
+FRAME_SYNC_CAPTURE_STOPPED_RE = re.compile(r"FrameSync: capture stopped frames_written=(\d+)")
+FRAME_SYNC_UNTHROTTLED_RE = re.compile(r"FrameSync: unthrottled=1 at frame=(\d+)")
+# メニュー操作の区間はゲームが実時間60Hzで進む(MODのメニュー待ち、`mods/core/time_scale.h`)ので、
+# MODログの時刻の差(実時間)にこれを掛ければフレーム数になる。
+FRAME_SYNC_MENU_FRAME_RATE_HZ = 60.0
+
+
+def read_log_text(log_path):
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def read_frame_sync_capture_start(log_path):
+    """`FrameSync: capture start`の行から(幅, 高さ, ffmpegのpix_fmt)を読む。無ければNone。"""
+    m = FRAME_SYNC_CAPTURE_START_RE.search(read_log_text(log_path))
+    return (int(m.group(1)), int(m.group(2)), m.group(3)) if m else None
+
+
+def read_frame_sync_frames_written(log_path):
+    """`FrameSync: capture stopped`の行からMODが書き出したフレーム数を読む。無ければNone。"""
+    m = FRAME_SYNC_CAPTURE_STOPPED_RE.search(read_log_text(log_path))
+    return int(m.group(1)) if m else None
+
+
+def read_frame_sync_unthrottled_frame(log_path):
+    """メニュー操作が終わり、リプレイの再生を始める(上限を解除する)ときのフレーム番号。無ければNone。"""
+    m = FRAME_SYNC_UNTHROTTLED_RE.search(read_log_text(log_path))
+    return int(m.group(1)) if m else None
+
+
+def find_frame_sync_replay_start_frame(log_path):
+    """リプレイの再生を確定するキーを押した時点のフレーム番号(動画の先頭が0)。分からなければNone。
+
+    `find_replay_start_epoch()`のフレーム同期版。フレーム同期の録画は動画の時間(フレーム番号)が
+    基準で壁時計時刻を使えないため、**上限を解除した行のフレーム番号**(`FrameSync: unthrottled=1
+    at frame=N`)から、その行と`sequence complete`より前の最後のStep行との**実時間の差**
+    (MODログの行頭時刻)を、メニュー区間のフレームレート(60Hz)で遡って求める。メニュー区間は
+    実時間60Hzで進むので誤差は数フレームで、配信版の開始位置(その1秒手前)には影響しない。
+    """
+    last_step_sod = None
+    unthrottled_sod = None
+    unthrottled_frame = None
+    for line in read_log_text(log_path).splitlines():
+        time_match = _LOG_LINE_TIME_RE.match(line)
+        if not time_match:
+            continue
+        if SEQUENCE_COMPLETE_LOG in line:
+            break
+        if MENU_STEP_LOG_RE.search(line):
+            last_step_sod = _seconds_of_day(time_match)
+        unthrottled = FRAME_SYNC_UNTHROTTLED_RE.search(line)
+        if unthrottled and unthrottled_frame is None:
+            unthrottled_frame = int(unthrottled.group(1))
+            unthrottled_sod = _seconds_of_day(time_match)
+    if last_step_sod is None or unthrottled_frame is None:
+        return None
+    # 日付をまたいだ場合(23:59→00:00)のため、差は1日を法とする。
+    elapsed = (unthrottled_sod - last_step_sod) % _SECONDS_PER_DAY
+    return max(0, unthrottled_frame - round(elapsed * FRAME_SYNC_MENU_FRAME_RATE_HZ))
+
+
 def read_verified_scores(log_path, game_id):
     """MODのScoreMonitorログから、ゴミ値を除いた画面表示相当スコアを記録順の
     リストで読み取る(有効なサンプルが1つも無ければ空リスト)。

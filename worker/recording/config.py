@@ -7,7 +7,14 @@ import dataclasses
 import os
 from dataclasses import dataclass, field
 
-from .timing import NATIVE_FRAME_RATE_HZ, gpu_worker, is_speedup, recording_time_scale, speedup_multiplier
+from .timing import (
+    NATIVE_FRAME_RATE_HZ,
+    frame_sync_mode,
+    gpu_worker,
+    is_speedup,
+    recording_time_scale,
+    speedup_multiplier,
+)
 
 # `worker/` ディレクトリの絶対パス。**このモジュールから見て1つ上**であることに注意
 # (`recording/config.py` にあるため)。games/・prefixes/・mods/・assets/ はいずれも
@@ -285,7 +292,14 @@ def with_runtime_overrides(config, env=None, log=print):
         log("GPUワーカーのため、GPU描画(Xorg+nvidia)で録画します")
         changes.update(gpu_display=True, poll_side_stream=True)
     time_scale = recording_time_scale(env)
-    if is_speedup(time_scale) and any(d.lower().startswith("vpatch_") for d in config.extra_dlls):
+    has_vpatch = any(d.lower().startswith("vpatch_") for d in config.extra_dlls)
+    if frame_sync_mode(env) and has_vpatch:
+        # フレーム同期キャプチャ(Issue #389)も`CalcFPS`を0にする(GameFPSは60のまま)。
+        # CalcFPS=1だとvpatchが画面上のfps表示を実時間で計算し、可変速で進むフレーム同期では
+        # 数百fpsと表示される。0ならゲーム本来の計算に戻り、MODの仮想時計が効いて60fpsと表示される
+        # (touhou-recorder reports/90・105)。
+        changes["vpatch_ini_overrides"] = config.vpatch_ini_overrides + (("Option", "CalcFPS", "0"),)
+    elif is_speedup(time_scale) and has_vpatch:
         game_fps = round(NATIVE_FRAME_RATE_HZ * speedup_multiplier(time_scale))
         changes["vpatch_ini_overrides"] = config.vpatch_ini_overrides + (
             ("Option", "GameFPS", str(game_fps)),

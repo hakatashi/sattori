@@ -7,7 +7,7 @@
 
 ## 1. 責務
 
-責務ごとに11モジュールへ分割してある(§2。分割の経緯は
+責務ごとに11モジュール(と、フレーム同期の経路の`framesync.py`)へ分割してある(§2。分割の経緯は
 [`0041`](../../docs/decisions/0041-worker-recording-package-split.md))。
 Xvfb起動・クロップ座標の確定([`0012`](../../docs/decisions/0012-crop-geometry-after-window-stabilizes.md))・録画・
 終了検知([`0011`](../../docs/decisions/0011-replay-end-template-matching.md))・
@@ -38,6 +38,7 @@ fps暴走検知(MODのGetDeviceState呼び出し頻度による早期打ち切�
 | `modlog.py` | MOD が書き出すログの読み取り(マーカー待ち・スコア照合) |
 | `vision.py` | 画面キャプチャと画素比較。**画素比較の閾値はここ**(ポーリング回数は `pipeline.py`) |
 | `ffmpeg.py` | 録画・結合・重複フレーム率計測の ffmpeg/ffprobe 呼び出し |
+| `framesync.py` | **フレーム同期キャプチャの録画経路**(`CAPTURE_MODE=frame_sync`、Issue #389)。FIFOの作成・ffmpegの起動(本出力と終了検知用のサブ出力・進捗用プレビュー)・動画の時間での終了検知・三者照合(MODの書き出し=動画=音声のフレーム数)・理論尺との比較・音声のmux。**実時間の経路と別のファイルで、`pipeline.record_with_retry()`の冒頭の分岐だけが入口**。ワーカーの中ではリトライしない([`0077`](../../docs/decisions/0077-worker-frame-sync-recording-path.md)) |
 | `artifacts.py` | 進捗・デシンク検証結果・タイムアウト有無のファイル書き出し(別プロセスへの受け渡し) |
 | `pipeline.py` | 1回の録画試行(`attempt_recording()`)と自動リトライ(`record_with_retry()`)。**ポーリングの回数・秒数はここ** |
 | `cli.py` | `record_thNN.py` が共有する CLI(引数定義・ロガー) |
