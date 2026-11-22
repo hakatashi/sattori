@@ -17,9 +17,10 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-23",
-    ja: "東方錦上京 (th20)・東方紅魔郷: New Classic (th06nc) の録画でも実験的に新方式を導入。サーバーが混雑していても処理落ちのない録画ができるようになります",
-    en: "Introduced the experimental new recording method for Fossilized Wonders (th20) and Embodiment of Scarlet Devil: New Classic (th06nc) as well. Recordings no longer suffer from dropped frames, even when servers are busy",
+    ja: "全タイトルを新方式の録画に切り替え。新方式では録画時に処理落ち・フレーム落ちが一切発生せず、録画時間も従来より大幅に短くなります (なお、サーバーの混雑状況により従来方式の録画が適用されることがあります)",
+    en: "Switched all titles to the new recording method. With the new method, no slowdowns or dropped frames occur during recording, and recording takes significantly less time than before (note that the conventional method may still be applied depending on server congestion)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/390",
+    important: true,
   },
   {
     date: "2026-11-22",
