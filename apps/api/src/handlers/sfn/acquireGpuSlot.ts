@@ -244,7 +244,7 @@ export const handler = async (event: AcquireGpuSlotEvent): Promise<AcquireGpuSlo
     if (reserve !== null) {
       const expectedFinishAt = computeExpectedFinishAt(
         job.estimatedDurationSeconds,
-        recordingSpeedForStep(step, job),
+        recordingSpeedForStep(step),
         now,
       );
       const result = await acquireGpuSlot(

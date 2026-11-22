@@ -45,14 +45,10 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th09_replay_autoplay: AutoPlayThread started ===");
 
     DWORD pid = GetCurrentProcessId();
-    // 起動待ちの上限は低速録画でだけ伸ばす(core/time_scale.h の StartupTimeout)。
-    // 低速録画時はD3D8のPresent間引き(present/limiter、Sleep+ビジーウェイト)がCPUを占有し、
-    // タイトル画面ロード完了までの実時間が通常より延びることを実機確認した(30fps設定で
-    // ホスト高負荷時に30秒を超えることがあった、touhou-recorder reports/68)。
-    // 倍速録画では縮めない: ゲームの起動・ウィンドウ生成は実時間で進むため、2倍速で15秒に
-    // 縮めたところ本番E2Eで起動待ちがタイムアウトした(Issue #288)。Issue #393 でこの扱いを
-    // 全タイトルの起動待ちに広げた。
-    const DWORD startupTimeoutMs = time_scale::StartupTimeout(30000);
+    // 起動待ちの上限。倍速録画でも縮めない: ゲームの起動・ウィンドウ生成は実時間で進むため、
+    // 2倍速で15秒に縮めたところ本番E2Eで起動待ちがタイムアウトした(Issue #288)。
+    // (かつては低速録画でだけ伸ばしていた。低速録画の廃止で伸ばす経路も削除した、Issue #391)
+    const DWORD startupTimeoutMs = 30000;
     HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/startupTimeoutMs);
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
@@ -105,8 +101,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
             // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
             InstallSpeedHackHook();
             // Presentの上限(present/limiter)。th09はDirect3D8エンジンのため、D3D8のアダプタを使う。
-            // **ユーザー向けにはth09の低速録画は未サポート**(recordingPlan.tsのth09の段に低速録画の
-            // 段が無い)。倍速録画ではPresentの上限を60×倍率へ引き上げる。FPS_LIMIT_TARGET_HZ未設定時は
+            // 倍速録画ではPresentの上限を60×倍率へ引き上げる。FPS_LIMIT_TARGET_HZ未設定時は
             // 60fpsの上限。
             InstallFpsLimiterHookD3D8();
             // 低速録画時の画面上fpsカウンター表示補正(touhou-recorder reports/69)。

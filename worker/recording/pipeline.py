@@ -35,13 +35,11 @@ from .modlog import check_replay_desync, is_score_zero, read_verified_scores, wa
 from .process import attach_thprac, find_live_game_pid, kill_wine_and_wait
 from .timing import (
     audio_capture_rate_hz,
-    duplicate_rate_threshold_for_raw,
     frame_sync_mode,
     is_speedup,
     recording_time_scale,
     scaled_confirmation_count,
     scaled_poll_count,
-    scaled_timeout_sec,
     speedup_multiplier,
 )
 from .vision import (
@@ -423,11 +421,10 @@ def _monitor_until_end(config, env, geometry, detection, *, time_scale,
     end_template_mad_threshold = detection.template_mad_threshold
     still_mask = detection.still_mask
 
-    # MODのメニュー自動操作(mods/core/time_scale.h の MenuSleep)は低速録画では同じ比率で実時間が伸びるので、
-    # タイムアウトも伸ばす(1/3倍速のth15は約24秒かかる)。倍速録画では縮めない
-    # (th06c/th06ncのメニュー操作は実時間のSleepで待つため、`scaled_timeout_sec()`)。
+    # MODのメニュー自動操作の完了を待つ。倍速録画でも縮めない(th06c/th06ncのメニュー操作は
+    # 実時間のSleepで待つため)。
     sequence_complete_time = wait_for_log_marker(
-        config.log_path, "sequence complete", timeout=scaled_timeout_sec(20, time_scale),
+        config.log_path, "sequence complete", timeout=20,
         poll_interval=0.1,
         log_all=True, seen_lines=seen_lines, log=log,
     )
@@ -728,7 +725,7 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
     診断用証跡として`diagnostics_dir`へ書き出す(Issue #159、`save_diagnostics_snapshot()`)。
     """
     env = config.build_env()
-    # 録画速度(倍速録画 Issue #288・低速録画 Issue #316)のスケール係数。等倍なら1.0で、
+    # 録画速度(倍速録画 Issue #288)のスケール係数。等倍なら1.0で、
     # 時間依存パラメータはすべて従来値のままになる(実際のスケーリングは `_monitor_until_end()`)。
     time_scale = recording_time_scale(env)
     if is_speedup(time_scale):
@@ -737,11 +734,6 @@ def attempt_recording(config, replay_path, output_path, progress_dir, expected_d
             f"(FPS_LIMIT_TARGET_HZ={env.get('FPS_LIMIT_TARGET_HZ')} "
             f"SPEED_HACK_MULTIPLIER={env.get('SPEED_HACK_MULTIPLIER')}。実時間はゲーム内時間の"
             f"{time_scale:.2f}倍。変換時に等倍へ戻します)"
-        )
-    elif time_scale != 1.0:
-        log(
-            f"低速録画モード: FPS_LIMIT_TARGET_HZ={env.get('FPS_LIMIT_TARGET_HZ')} "
-            f"(実時間はゲーム内時間の{time_scale:.2f}倍。変換時に等倍へ戻します)"
         )
     # GPU描画(Xorg+nvidia)で録画する場合はNVENCで映像をエンコードする。GPUワーカーで動く
     # タイトル(th06nc・th15と`with_runtime_overrides()`)が該当。
@@ -959,9 +951,8 @@ def _record_with_retry(config, replay_path, output_path, *,
             log(f"WARNING: 試行{attempt}中にWineがクラッシュしたため、この試行を破棄してリトライします")
             continue
 
-        # 判定対象は等倍へ戻す前の生データなので、低速録画では閾値を換算する。
         time_scale = result.get("time_scale", 1.0)
-        threshold = duplicate_rate_threshold_for_raw(max_duplicate_rate, time_scale)
+        threshold = max_duplicate_rate
         # total_record_secではなくcontent_end_secを使う。短いリプレイでは終了検知の
         # 確認待ちで録画に付加される静止画面(選択画面等)が固定30秒窓の大半を占め、
         # 閾値超過と誤判定する(本番のth06ncジョブで確認、Issue #250・#304)。

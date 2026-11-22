@@ -58,11 +58,6 @@ function formatExpiresAt(isoString: string, locale: string): string {
   );
 }
 
-/** 録画速度の表記（2倍速は「2」、1/2倍速は「1/2」）。 */
-function formatRecordingSpeed(speed: number): string {
-  return speed < 1 ? `1/${Math.round(1 / speed)}` : String(speed);
-}
-
 export function JobProgress({ jobId }: Props) {
   const { job, loadError } = useJobPolling(jobId);
   return <JobProgressView job={job} loadError={loadError} />;
@@ -136,7 +131,7 @@ export function JobProgressView({ job, loadError }: ViewProps) {
             */}
             {job.recordingSpeed !== 1 && !done && (
               <span className={styles.speedupHint}>
-                {t("jobProgress.recordingSpeedHint", { speed: formatRecordingSpeed(job.recordingSpeed) })}
+                {t("jobProgress.recordingSpeedHint", { speed: job.recordingSpeed })}
               </span>
             )}
             {overall.retrySuspected && (

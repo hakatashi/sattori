@@ -100,7 +100,7 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 （[`docs/decisions/0066`](../../docs/decisions/0066-recording-fallback-plan-as-config.md)）。
 
 - `RecordingStep`: `kind: "home"`（自宅ワーカーへのオファー）か`kind: "ec2"`（`platform`・`region`・
-  `instanceTypes`・`speed`、任意で`speedByDifficulty`）。候補インスタンスタイプの定数もここにある。
+  `instanceTypes`・`speed`）。候補インスタンスタイプの定数もここにある。
 - 全段が`captureMode`（`"realtime"`＝従来の実時間録画、`"frameSync"`＝フレーム同期、`speed`は1固定）を持つ。
   任意で`maxEstimatedDurationSeconds`（推定尺がこれを超えるジョブはその段を飛ばす）・`estimatedRealtimeFactor`
   （フロントのETA用）。[`0073`](../../docs/decisions/0073-gpu-lease-for-next-ec2-step-and-capture-mode.md)。
@@ -110,7 +110,7 @@ Issue #60。後述「コスト推定」）、`workerKind`/`assignedWorkerId`ほ�
 - `currentRecordingStep(job, excluded?)`: 使い切った段（`capacityExhaustedTargets`）・除外条件の段・推定尺が
   上限を超える段を除いた最初の段。`nextEc2Step()`: そこから自宅の段を飛ばした次のEC2の段（GPUリースの判定に使う）。
   `skippableGpuStepIds()`: GPU枠の長時間待ち・クォータ超過で飛ばすGPUの段（後ろにGPU以外の段があるときだけ）。
-- `recordingSpeedForStep(step, job)`・`initialRecordingSpeed(job)`: 段の速度（難易度の上書きを解決）。
+- `recordingSpeedForStep(step)`・`initialRecordingSpeed(job)`: 段の速度。
 - `HOME_WORKER_GAME_IDS`: 段に自宅ワーカーを持つタイトル（GPU描画が要るかでは決めない、[`0079`](../../docs/decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)）。
 - フレーム同期の段の候補は`FRAME_SYNC_2XLARGE_INSTANCE_TYPES`・`FRAME_SYNC_4XLARGE_INSTANCE_TYPES`、組み立ては
   `homeFrameSyncStep()`・`frameSyncCpuStep()`。フレーム同期のインスタンスタイプは品質に影響せず速度だけが変わるので、

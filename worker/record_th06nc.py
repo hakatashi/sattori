@@ -12,8 +12,8 @@ GPUワーカー(`GPU_WORKER=1`)では`gpu_display=True`でXorg+NVIDIA GRIDドラ
 
 CPUワーカーでは他タイトルと同じXvfb+wined3d+llvmpipeで描画する。そのままでは9fpsしか出ないが、
 主因はBC7圧縮テクスチャのソフトウェアデコードで、MODがロード時にRGBA8へ展開すれば
-(`D3D11_DECODE_BC7=1`)60fpsに届く(touhou-recorder reports/96)。等倍はキャプチャ側で落ちるため、
-1/2倍速の低速録画でだけ使う(reports/97)。
+(`D3D11_DECODE_BC7=1`)60fpsに届く(touhou-recorder reports/96)。等倍の実時間録画はキャプチャ側で落ちる。
+かつては1/2倍速の低速録画で使っていたが廃止した(Issue #391)。現在はフレーム同期の段で使う。
 """
 import os
 
@@ -48,11 +48,7 @@ def _scale_rect(rects, from_wh, to_wh):
 
 
 def _cpu_rendering_env():
-    """CPU描画(Xvfb+wined3d+llvmpipe)用にゲームへ渡す環境変数(touhou-recorder reports/96・97)。
-
-    低速録画でのメニュー操作の待ちの伸長は、MODが`FPS_LIMIT_TARGET_HZ`から導く
-    (`mods/core/time_scale.h`。かつてここで渡していた`TH06NC_TIME_SCALE`は廃止した、Issue #393)。
-    """
+    """CPU描画(Xvfb+wined3d+llvmpipe)用にゲームへ渡す環境変数(touhou-recorder reports/96・97)。"""
     env = [
         # MODがBC7テクスチャをロード時にRGBA8へ展開する(mods/texture/d3d11_bc7.cpp)。
         ("D3D11_DECODE_BC7", "1"),
@@ -98,9 +94,6 @@ def build_config(pulse_sink):
         dxvk_dll_overrides="d3d11,dxgi,d3d10core=n" if gpu else "d3d11,dxgi,d3d10core=b",
         crtc_mode=spec["crtc_mode"] if gpu else None,
         extra_env=() if gpu else _cpu_rendering_env(),
-        # DXライブラリは時間基準でゲームを進め、fps_limiterを持たないので、低速録画も
-        # QPC偽装で減速する(reports/97)。
-        slow_motion_speed_hack=True,
         # ウィンドウ+装飾が720p/1080pどちらでも収まる仮想画面サイズ
         # (touhou-recorder reports/81で実機使用)。
         xvfb_screen="2200x1400x24",

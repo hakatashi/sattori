@@ -29,7 +29,6 @@ def test_build_config_defaults_to_720p(monkeypatch):
     assert config.dxvk_dll_overrides == "d3d11,dxgi,d3d10core=n"
     assert config.poll_side_stream is True
     assert config.extra_env == ()
-    assert config.slow_motion_speed_hack is True
     # 720p既定ではCRTCモードの明示変更は不要(Xorgのデフォルトモードのままでよい、
     # touhou-recorder reports/81 §9.9.1)。
     assert config.crtc_mode is None
@@ -79,16 +78,3 @@ def test_build_config_renders_on_the_cpu_without_a_gpu_worker(monkeypatch):
     assert env["D3D11_DECODE_BC7"] == "1"
     assert int(env["LP_NUM_THREADS"]) >= 1
     assert "TH06NC_TIME_SCALE" not in env
-
-
-def test_build_config_leaves_menu_wait_scaling_to_the_mod_for_slow_motion(monkeypatch):
-    # 低速録画のメニュー待ちの伸長はMODがFPS_LIMIT_TARGET_HZから導く(mods/core/time_scale.h、
-    # Issue #393)。かつてのTH06NC_TIME_SCALEのように別の値を渡すと、出所が2つになる。
-    monkeypatch.delenv("GPU_WORKER", raising=False)
-    monkeypatch.setenv("FPS_LIMIT_TARGET_HZ", "30")
-
-    config = record_th06nc.build_config("sattori_job_test")
-
-    assert "TH06NC_TIME_SCALE" not in dict(config.extra_env)
-    assert config.build_env()["FPS_LIMIT_TARGET_HZ"] == "30"
-    assert config.build_env()["SPEED_HACK_MULTIPLIER"] == "0.5"

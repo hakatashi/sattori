@@ -55,14 +55,13 @@ function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
  */
 function estimatedCompletionMinutes(
   game: GameId,
-  difficulty: string | null | undefined,
   durationSeconds: number | null | undefined,
 ): number | null {
   const first = recordingPlanFor(game)[0];
   if (durationSeconds === null || durationSeconds === undefined || first === undefined) {
     return null;
   }
-  const speed = recordingSpeedForStep(first, { replayInfo: { difficulty: difficulty ?? null } });
+  const speed = recordingSpeedForStep(first);
   const seconds = estimateRecordingCompletionSeconds(
     durationSeconds,
     speed,
@@ -114,7 +113,7 @@ export function UploadForm() {
   // 録画速度はユーザーが選ばない（Issue #317）。目安の時間だけを出す。
   const estimatedMinutes =
     game !== null
-      ? estimatedCompletionMinutes(game, preview?.difficulty, preview?.estimatedDurationSeconds)
+      ? estimatedCompletionMinutes(game, preview?.estimatedDurationSeconds)
       : null;
 
   function selectFile(selected: File | null) {

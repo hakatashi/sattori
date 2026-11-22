@@ -16,7 +16,7 @@ function ec2Request(overrides: Record<string, unknown> = {}) {
       region: "eu-south-2",
       instanceTypes: ["c7i.4xlarge"],
       captureMode: "realtime",
-      speed: 1 / 2,
+      speed: 2,
     },
     ...overrides,
   };
@@ -36,7 +36,7 @@ describe("parseExperimentRequest", () => {
           platform: "cpu",
           instanceTypes: ["c7i.4xlarge"],
           captureMode: "realtime",
-          speed: 1 / 2,
+          speed: 2,
         },
       },
     });
@@ -137,7 +137,7 @@ describe("buildExperimentJob", () => {
   it("queuedで作り、メールを持たず、段が計画を置き換える", () => {
     expect(job.status).toBe("queued");
     expect(job.email).toBeNull();
-    expect(job.options.recordingSpeed).toBe(1 / 2);
+    expect(job.options.recordingSpeed).toBe(2);
     // th15の本番の段（GPU→CPU）ではなく、指定した1段だけ。
     expect(remainingRecordingSteps(job).map((step) => step.id)).toEqual(["experiment:cpu:eu-south-2"]);
     expect(remainingRecordingSteps({ ...job, capacityExhaustedTargets: ["experiment:cpu:eu-south-2"] })).toEqual(
@@ -166,14 +166,14 @@ describe("toExperimentResult", () => {
       desyncDetected: false,
       timedOut: false,
       recordingStepId: "experiment:cpu:eu-south-2",
-      options: { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 1 / 2, captureMode: "realtime" },
+      options: { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false, recordingSpeed: 2, captureMode: "realtime" },
     });
     const result = toExperimentResult(job, new Date("2026-11-21T01:00:00.000Z"));
     expect(result).toMatchObject({
       note: "n",
       workerImageTag: null,
       stepId: "experiment:cpu:eu-south-2",
-      speed: 1 / 2,
+      speed: 2,
       wallClockSeconds: 1200,
       wallClockToDurationRatio: 2,
       desyncDetected: false,

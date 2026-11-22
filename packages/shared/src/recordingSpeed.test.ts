@@ -29,8 +29,6 @@ describe("recordingTargetHz", () => {
   it("60×倍率", () => {
     expect(recordingTargetHz(2)).toBe(120);
     expect(recordingTargetHz(4)).toBe(240);
-    expect(recordingTargetHz(1 / 2)).toBe(30);
-    expect(recordingTargetHz(1 / 3)).toBe(20);
   });
 });
 
@@ -57,14 +55,10 @@ describe("recordingWallClockSeconds / estimateRecordingCompletionSeconds", () =>
   });
 });
 
-describe("低速録画（Issue #316）", () => {
-  it("ジョブレコードの低速の値を正規化で失わない", () => {
-    expect(normalizeRecordingSpeed(1 / 2)).toBe(1 / 2);
-    expect(normalizeRecordingSpeed(1 / 3)).toBe(1 / 3);
-  });
-
-  it("実時間の見積もりが実測(reports/91)に合う", () => {
-    expect(recordingWallClockSeconds(100, 1 / 2)).toBeCloseTo(206);
-    expect(recordingWallClockSeconds(100, 1 / 3)).toBeCloseTo(309);
+describe("低速録画（廃止、Issue #391）", () => {
+  it("古いジョブレコードの低速の値は等倍へ丸める", () => {
+    expect(normalizeRecordingSpeed(1 / 2)).toBe(1);
+    expect(normalizeRecordingSpeed(1 / 3)).toBe(1);
+    expect(recordingSpeedOf({ recordingSpeed: 1 / 2 })).toBe(1);
   });
 });

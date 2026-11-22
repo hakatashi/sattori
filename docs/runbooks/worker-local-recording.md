@@ -54,7 +54,7 @@ kill_wine_and_wait` のように名前で import しているため、**monkeypa
 使うこと**(本番と全く同じワーカーイメージ・全く同じ環境をDocker越しに使うため、
 コード変更で挙動が本番と乖離する心配が無く、`--rm`により後始末も確実)。
 
-ゲーム資産を配置済みなら S3/DynamoDB 無しで録画本体だけを試せる(低速録画の例は
+ゲーム資産を配置済みなら S3/DynamoDB 無しで録画本体だけを試せる(倍速録画の例は
 `worker/docs/recording-speed.md`)。配信用変換だけなら ffmpeg/ffprobe があれば動く。
 
 ```bash
@@ -68,8 +68,8 @@ python3 -c "from convert import convert_for_delivery; convert_for_delivery('/tmp
 干渉しない)。分離できているかは `pactl list sink-inputs` で各ゲームの接続先を見る
 ([`reports/2026-08-08-parallel-audio-isolation.md`](../reports/2026-08-08-parallel-audio-isolation.md))。
 
-**手動検証時はOSレベルの強制終了ラッパーを併用すること。** 既知の未修正バグ(th20の低速録画
-2並列がハングするIssue #179、その他未知のタイトル固有バグ)により、ゲームプロセスがGPU待ち等の
+**手動検証時はOSレベルの強制終了ラッパーを併用すること。** 既知の未修正バグ(th20の実時間低速録画
+2並列がハングしたIssue #179、その他未知のタイトル固有バグ)により、ゲームプロセスがGPU待ち等の
 D state(カーネルレベルで割り込み不可能)に陥り録画処理自体が完全にハングする可能性がある。
 `kill_wine_and_wait()`はこのケースをタイムアウト検知しWINEPREFIX配下の残存プロセスをSIGKILLする
 フォールバックを持つが(Issue #186)、内部のリトライ/クリーンアップが機能しない未知の経路まで

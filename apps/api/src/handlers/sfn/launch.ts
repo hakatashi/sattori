@@ -188,7 +188,7 @@ async function assignWorker(
  * （判断は`HandleFailure`に任せる）。
  */
 async function enterStep(config: ApiConfig, job: JobRecord, step: RecordingStep): Promise<JobRecord> {
-  const recordingSpeed = recordingSpeedForStep(step, job);
+  const recordingSpeed = recordingSpeedForStep(step);
   const written = await setRecordingStep(
     config.jobsTable,
     job.jobId,

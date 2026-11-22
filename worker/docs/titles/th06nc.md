@@ -49,7 +49,7 @@ amdgpu固有の可能性が高い）があり、**本番はAWSのNVIDIA GPUイ�
   食い違うとXorg/DXVKが起動しない可能性が高い。AMI更新時は必ずworker-gpuイメージの
   動作確認をセットで行うこと（`build-gpu-worker-ami` skill）。
 
-## CPU描画（BC7展開、1/2倍速の低速録画）
+## CPU描画（BC7展開。かつては1/2倍速の低速録画、現在はフレーム同期）
 
 GPUワーカー（`GPU_WORKER=1`）以外では、他タイトルと同じXvfb+wined3d+llvmpipeで描画する
 （`record_th06nc.py`の`gpu_display=gpu_worker()`）。上の9fpsの主因は描画コール数ではなく、
@@ -64,11 +64,10 @@ RGBA8へ展開すると、8スレッドで60fpsに届く。
   （使えるvCPU数）、`WINEDLLOVERRIDES="d3d11,dxgi,d3d10core=b"`。プレフィックスのsystem32には
   DXVKを置いてあるので、ビルトイン（wined3d）を明示する。DXVKはXvfb上ではRandRの0Hzで
   `dxgi.dll`がゼロ除算して落ちる（reports/96 §1.1）。
-- **等倍はキャプチャ側で落ちる**ので、1/2倍速の低速録画（`FPS_LIMIT_TARGET_HZ=30`）でだけ使う。
-  th06ncはfps_limiterを持たず、DXライブラリが時間基準でゲームを進めるので、低速録画でも
-  QPC偽装（`SPEED_HACK_MULTIPLIER=0.5`）で減速する（`GameConfig.slow_motion_speed_hack`）。
-  メニュー操作の`Sleep()`はMODが`FPS_LIMIT_TARGET_HZ`から導く倍率（1/2倍速なら2、`mods/core/time_scale.h`）で伸ばす（かつての`TH06NC_TIME_SCALE`は廃止、[`0076`](../../../docs/decisions/0076-mod-core-and-present-bus.md)）。
-- 品質: `c7i.2xlarge`の720p 1/2倍速で、通常ステージはGPU等倍と区別できない（Lunatic全6面で
+- **実時間の等倍はキャプチャ側で落ちる**。かつては1/2倍速の低速録画（`FPS_LIMIT_TARGET_HZ=30`、QPC偽装で減速）で
+  使っていたが、低速録画は廃止した（Issue #391）。現在はフレーム同期の段で使う
+  （[`0081`](../../../docs/decisions/0081-frame-sync-plan-for-th20-and-th06nc.md)）。
+- 品質（廃止した低速録画での実測）: `c7i.2xlarge`の720p 1/2倍速で、通常ステージはGPU等倍と区別できない（Lunatic全6面で
   落ち1.3%）。**Extraのパチュリー戦の高密度弾幕では描画が実時間約15Hzへ間引かれる**（落ち25〜36%の区間が
   約90秒）。FpsMonitorは入力ポーリング回数を数えているので、この描画落ちを示さない
   （reports/97 §3）。品質判定は配信版のユニークフレームで行うこと。

@@ -140,7 +140,7 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
     // 確認できるまでは Log()・CreateThread()・USER32のウィンドウ列挙の
     // いずれも呼んではならない(ファイル冒頭のコメント参照)。
     // (Config() はDllMainで読み終えた値を返すだけでロックを取らない)
-    DWORD deadline = GetTickCount() + time_scale::StartupTimeout(120000);
+    DWORD deadline = GetTickCount() + 120000;
     while (g_pollCount == 0 && GetTickCount() < deadline) Sleep(50);
 
     // ここから先はロックを取っても安全。
@@ -156,15 +156,13 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
     WarnIfStartupDialogPresent(/*watchMs=*/1000);
 
     if (!WaitForStableWindow(GetCurrentProcessId(), /*stableMs=*/800,
-                             /*timeoutMs=*/time_scale::StartupTimeout(60000), WindowFilter::kDxlib)) {
+                             /*timeoutMs=*/60000, WindowFilter::kDxlib)) {
         Log("ERROR: ゲームウィンドウが出現しませんでした。中断します");
         return 1;
     }
 
     // th06ncはタイトル画面が表示されてから4秒ほどでキー入力を受け付けるように
     // なる(ユーザー提供情報)。余裕を見て5秒待つ。
-    // 低速録画(CPU描画の1/2倍速)では、画面遷移もゲーム内時間で遅くなるので待ちを伸ばす
-    // (core/time_scale.h。本番ではかつての TH06NC_TIME_SCALE と同じ値になる)。
     const DWORD titleWaitMs = frame_sync::Active() ? 7000 : 5000;
     Log("タイトル画面のキー入力受付開始を待ちます(%lums x MENU_SCALE=%.2f)...",
         (unsigned long)titleWaitMs, time_scale::Menu());
