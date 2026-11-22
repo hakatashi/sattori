@@ -17,10 +17,9 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-22",
-    ja: "東方星蓮船 (th12)・東方紺珠伝 (th15) の録画方式を改善し、サーバーが混雑していても処理落ちのない録画ができるようになりました。追加ワーカーでも録画できるようになり、東方紺珠伝 (th15) は録画サーバーの空き待ちが起きにくくなります",
-    en: "Improved the recording method for Undefined Fantastic Object (th12) and Legacy of Lunatic Kingdom (th15) so that recordings no longer suffer from dropped frames, even when servers are busy. Recording is now also available on additional workers, and Legacy of Lunatic Kingdom (th15) is less likely to wait for a recording server",
+    ja: "東方星蓮船 (th12)・東方紺珠伝 (th15) の録画方式で実験的に新方式を導入",
+    en: "Introduced an experimental new recording method for Undefined Fantastic Object (th12) and Legacy of Lunatic Kingdom (th15)",
     issueUrl: "https://github.com/hakatashi/sattori-dev/issues/390",
-    important: true,
   },
   {
     date: "2026-11-12",
