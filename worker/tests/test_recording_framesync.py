@@ -596,8 +596,24 @@ def test_frame_count_mismatch_fails_without_retry(verdict):
     assert verdict["snapshots"] == [framesync.DIAG_FRAME_MISMATCH]
 
 
-def test_duration_mismatch_fails_without_retry(verdict):
+def test_shorter_duration_mismatch_is_delivered_with_a_desync_warning(verdict):
+    # 途中までは再生できたリプレイずれによる早期終了は、失敗にせず警告として配信する
     verdict["result"]["play_sec"] = 400.0  # 理論尺600秒から-33%(短い側の許容30%を超える)
+    path = str(verdict["tmp"] / "desync.json")
+    assert _verdict(verdict, desync_result_path=path) is True
+    assert verdict["snapshots"] == []
+    assert json.load(open(path)) == {"desyncDetected": True}
+
+
+def test_longer_duration_mismatch_is_delivered_without_a_desync_flag(verdict):
+    verdict["result"]["play_sec"] = 600.0 * 1.2
+    path = str(verdict["tmp"] / "desync.json")
+    assert _verdict(verdict, desync_result_path=path) is True
+    assert json.load(open(path)) == {"desyncDetected": False}
+
+
+def test_almost_nothing_played_fails_without_retry(verdict):
+    verdict["result"]["play_sec"] = 1.0
     assert _verdict(verdict) is False
     assert verdict["calls"] == 1
     assert verdict["snapshots"] == [framesync.DIAG_DURATION_MISMATCH]
