@@ -9,6 +9,12 @@ description: 東方タイトルのゲームデータ・WINEPREFIX・MOD をま�
 WINEPREFIX・MOD の DLL）を取得して展開する。アーカイブ構成と展開の仕組みは
 `worker/docs/title-assets.md` を参照。
 
+## 原本について
+
+タイトル資産の原本は、このリポジトリの `worker/games/`・`worker/prefixes/`（gitignore 済み）である。
+旧 `touhou-recorder` プロジェクトは終了しており、そのゲーム資産は原本ではない。差し替え・作り直しは
+`worker`配下を直接更新し、それを元にアーカイブを作る。
+
 ## 0. 環境値の解決
 
 バケット名はリポジトリにコミットしていない（`cdk deploy` が生成する名前）。
@@ -116,12 +122,12 @@ xvfb-run -a ./setup_wineprefix.sh "$(pwd)/prefixes/th06c-wined3d-gl" \
   "$(pwd)/games/assets/msgothic.ttc" "$(pwd)/games/assets/msmincho.ttc"
 
 # クラッシュ時にwinedbgのGUIがXvfb上に居座りウィンドウ検出を狂わせるのを防ぐ
-# (touhou-recorder reports/74)。
+# (旧touhou-recorder reports/74)。
 WINEPREFIX="$(pwd)/prefixes/th06c-wined3d-gl" wine reg add \
   'HKCU\Software\Wine\WineDbg' /v ShowCrashDialog /t REG_DWORD /d 0 /f
 ```
 
-**このスクリプトが再現するのは touhou-recorder のレポートで実際に文書化・検証された範囲
+**このスクリプトが再現するのは旧touhou-recorderのレポート（`research/touhou-recorder/`）で実際に文書化・検証された範囲
 （プレフィックス初期化 + フォント修正）だけ**なので、それ以外に WINEPREFIX へ手作業で加えた
 変更があった場合は再現されない可能性がある。日本語ロケール（`LANG`/`LC_ALL`）はここでは
 扱わない（`recording.config.GameConfig.build_env()` が起動時に毎回設定する。理由は
@@ -157,9 +163,9 @@ for dll in d3d11 dxgi d3d10core; do
 done
 ```
 
-**DXVKのバージョンはtouhou-recorderでの実機検証時に使用したものと同じにすること**
-（バージョン間の互換性は未検証）。DXVKの入手元・ライセンスはtouhou-recorder側の
-記録を確認する。
+**DXVKのバージョンは、既存の`worker/prefixes/th06nc-wined3d-gl`に配置済みのもの（旧
+touhou-recorderでの実機検証時に使用したもの）と同じにすること**（バージョン間の互換性は
+未検証）。作り直す前に、`research/touhou-recorder/`のレポートでバージョンを確認しておく。
 
 ## 関連
 

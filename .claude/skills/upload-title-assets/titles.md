@@ -2,7 +2,13 @@
 
 `upload-title-assets` skill（[`SKILL.md`](SKILL.md)）§2 のタイトル別コマンド。**対象タイトルの節
 だけを開いて実行すること**。どの節も `cd worker` してから実行し、`source scripts/sattori-env.sh`
-を済ませておく前提。`tar` の注意点（`-h` 禁止・セーブデータの除外）は `SKILL.md` §1、
+を済ませておく前提。
+
+**原本は、このリポジトリの `worker/games/` と `worker/prefixes/`（gitignore 済みのローカル
+ディレクトリ）である**。旧 `touhou-recorder` プロジェクトは終了しており、そこのゲーム資産は
+もう原本ではない（コピー元として参照しないこと）。各節は `worker/games`・`worker/prefixes`
+にすでに正しい内容が揃っている前提で、アーカイブ化とアップロードだけを行う。ゲームデータを
+差し替える場合は、`worker/games/<title>` を直接更新してからアップロードする。`tar` の注意点（`-h` 禁止・セーブデータの除外）は `SKILL.md` §1、
 WINEPREFIX の作成は同 §3、アップロード後のレプリカ複製の確認は同 §2 の末尾にある。
 
 ## 目次
@@ -45,8 +51,7 @@ aws s3 cp /tmp/th06-assets.tar.gz \
 
 ## 2. th06c（東方紅魔郷: Classic）
 
-`games/th06c`は`touhou-recorder`の`games/th06c`から`rsync`でコピーする(Steam版、
-`worker/docs/titles/th06c.md`参照)。他タイトルと異なり同梱物が2点ある。
+`worker/games/th06c`が原本（Steam版、`worker/docs/titles/th06c.md`参照）。他タイトルと異なり同梱物が2点ある。
 
 1. **正規の`steam_api64.dll`をSteamworks APIスタブで上書きすること**。スタブが無いと
    Xvfb環境でSteamクライアント常駐を要求され`exit(255)`で即終了する
@@ -75,8 +80,7 @@ aws s3 cp /tmp/th06c-assets.tar.gz \
 
 ## 3. th06nc（東方紅魔郷: New Classic、GPU描画必須）
 
-`games/th06nc`は`touhou-recorder`の`games/th06nc`から`rsync`でコピーする(Steam版、
-`worker/docs/titles/th06nc.md`参照)。th06cと同様の同梱物に加え、GPU描画・解像度切替
+`worker/games/th06nc`が原本（Steam版、`worker/docs/titles/th06nc.md`参照）。th06cと同様の同梱物に加え、GPU描画・解像度切替
 専用の同梱物がある。
 
 1. **正規の`steam_api64.dll`をth06nc用Steamworks APIスタブで上書きすること**
@@ -139,7 +143,7 @@ aws s3 cp /tmp/th08-assets.tar.gz \
 
 ## 6. th09（東方花映塚）
 
-`games/th09` は `touhou-recorder` の `games/th09` から `rsync` でコピーする。
+`worker/games/th09` が原本。
 VsyncPatch本体（`vpatch.exe` / `vpatch.ini` / `vpatch_th09.dll`）は同梱してよいが、
 `record_th09.py`は`extra_dlls`で注入しない（録画では常に無効。不具合発生時のみ
 手動で使う位置づけ、`worker/docs/titles/th09.md`参照）。
@@ -157,7 +161,7 @@ aws s3 cp /tmp/th09-assets.tar.gz \
 
 ## 7. th10（東方風神録）
 
-`games/th10` は `touhou-recorder` の `games/th10` から `rsync` でコピーする。
+`worker/games/th10` が原本。
 VsyncPatch本体（`vpatch.exe` / `vpatch.ini` / `vpatch_th10.dll`）を `games/th10` 直下に
 同梱すること（th06と同じ`extra_dlls`の仕組みで注入される）。同梱する`vpatch.ini`の
 `BugFixTh10Power3`の値自体はどちらでもよい —— `record_th10.py`が録画直前に
@@ -176,7 +180,7 @@ aws s3 cp /tmp/th10-assets.tar.gz \
 
 ## 8. th11（東方地霊殿）
 
-`games/th11` は `touhou-recorder` の `games/th11` から `rsync` でコピーする
+`worker/games/th11` が原本
 （`log.txt`（前回プレイのランタイムログ）・`unins000.dat` / `unins000.exe`
 （アンインストーラー）は動作に不要なため除外）。
 
@@ -196,7 +200,7 @@ aws s3 cp /tmp/th11-assets.tar.gz \
 
 ## 9. th12（東方星蓮船）
 
-`games/th12` は `touhou-recorder` の `games/th12` から `rsync` でコピーする。
+`worker/games/th12` が原本。
 VsyncPatch本体（`vpatch.exe` / `vpatch.ini` / `vpatch_th12.dll`）を `games/th12` 直下に
 同梱すること（th10と同じ`extra_dlls`の仕組みで注入される）。**th12はVsyncPatchを常時
 有効化する固定仕様**（th10の`BugFixTh10Power3`のような切替オプションは無い、
@@ -216,14 +220,13 @@ aws s3 cp /tmp/th12-assets.tar.gz \
 
 ## 10. th15（東方紺珠伝、GPU描画必須）
 
-`games/th15`・`prefixes/th15-wined3d-gl` は `touhou-recorder` の同名ディレクトリから
-`rsync` でコピーする（`worker/docs/titles/th15.md`参照）。
+`worker/games/th15`・`worker/prefixes/th15-wined3d-gl` が原本（`worker/docs/titles/th15.md`参照）。
 
 1. **cfg（`th15.cfg`、ウィンドウモードのもの）を `games/th15/` 直下に必ず同梱する**。
    ワーカーがこれを WINEPREFIX 内の `%APPDATA%/ShanghaiAlice/th15/` へコピーする元になる。
    無いと初回起動時の解像度選択ダイアログで止まり録画に失敗する（th20と同じ理由）。
 2. thprac は**同梱不要**（デシンク対策としての実機での必要性が確認されていない、
-   touhou-recorder reports/82）。
+   旧touhou-recorder reports/82）。
 3. **th06ncと異なりDXVK関連ファイルは不要**。th15はwined3d（OpenGL）のままGPUを使う
    （`worker/docs/titles/th15.md`「GPU描画は必須ではないが」節参照）ため、
    WINEPREFIXは標準の`th15-wined3d-gl`（32bit、th06/07/08等と同じ作り方）でよく、
@@ -242,16 +245,14 @@ aws s3 cp /tmp/th15-assets.tar.gz \
 
 ## 11. th20（東方錦上京）
 
-`games/th20`・`prefixes/th20-wined3d-gl` は `touhou-recorder` の同名ディレクトリから
-`rsync` でコピーする（`log.txt` は不要なため除外）。同梱必須のものが2つある。
+`worker/games/th20`・`worker/prefixes/th20-wined3d-gl` が原本（`log.txt` は不要なため除外）。同梱必須のものが2つある。
 
 1. **cfg（`th20.cfg`、ウィンドウモードのもの）を `games/th20/` 直下に必ず同梱する**。
    ワーカーがこれを WINEPREFIX 内の `%APPDATA%/ShanghaiAlice/th20/` へコピーする元になる。
    無いと初回起動時の解像度選択ダイアログで止まり録画に失敗する
-   （touhou-recorder reports/44）。
+   （旧touhou-recorder reports/44）。
 2. **thprac 本体（`thprac.v2.3.0.3.exe`）を `games/th20/` 直下に同梱する**
-   （デシンク対策、touhou-recorder reports/50・Issue #105）。`touhou-recorder` の
-   `games/th20/` からコピーする。`.pdb`（15MB、デバッグシンボル）は実行時に不要なので
+   （デシンク対策、旧touhou-recorder reports/50・Issue #105）。原本は `worker/games/th20/`。`.pdb`（15MB、デバッグシンボル）は実行時に不要なので
    入れないこと。**無い場合は `attach_thprac()` が警告を出して thprac 無しで録画を
    続行するため、録画は成功するがデシンクが再発する**（= 気づきにくい）。
    thprac を更新した場合は `record_th20.py` の `thprac_exe` のファイル名も併せて更新する。
@@ -274,8 +275,7 @@ aws s3 cp /tmp/th20-assets.tar.gz \
 
 ## 12. th128（妖精大戦争）
 
-`games/th128`・`prefixes/th128-wined3d-gl` は `touhou-recorder` の同名ディレクトリから
-`rsync` でコピーする。同梱必須のものが2つある。
+`worker/games/th128`・`worker/prefixes/th128-wined3d-gl` が原本。同梱必須のものが2つある。
 
 1. **cfg（`th128.cfg`、ウィンドウモードのもの）を `games/th128/` 直下に必ず同梱する**
    （th20と同じ理由、`worker/docs/titles/th128.md`参照）。
@@ -296,24 +296,20 @@ aws s3 cp /tmp/th128-assets.tar.gz \
 
 ## 13. th13（東方神霊廟）
 
-`games/th13`・`prefixes/th13-wined3d-gl` は `touhou-recorder` の同名ディレクトリから `rsync` で
-コピーする（**ver1.00cの非Steam版**。Steam版`games/th13_steam`はDRMで起動しないので使わない）。
+`worker/games/th13`・`worker/prefixes/th13-wined3d-gl` が原本（**ver1.00cの非Steam版**。Steam版`games/th13_steam`はDRMで起動しないので使わない）。
 
 1. **cfg（`th13.cfg`、ウィンドウモードのもの）を `games/th13/` 直下に必ず同梱する**
    （`%APPDATA%`へは`prepare_instance()`が毎回配置する、th128と同じ）。
-2. **プレフィックスの`%APPDATA%/ShanghaiAlice/th13/`からスコアファイル（`scoreth13.dat`）と
-   `replay/`を消してから固める**。MODはExtra未解放の前提でDown x3を押すので、Extraを解放した
+2. **プレフィックスの`%APPDATA%/ShanghaiAlice/th13/`にスコアファイル（`scoreth13.dat`）と
+   `replay/`を残さない**（下のtarで除外する。原本に残っているなら消しておく）。MODはExtra未解放の前提でDown x3を押すので、Extraを解放した
    スコアファイルが入るとReplayに着地しない（`worker/docs/titles/th13.md`）。
 3. VsyncPatch（`vpatch*`）・公式アップデータ（`th13_ver100c_update.exe`）は使わないので同梱しない。
 
 ```bash
-rsync -a --exclude='replay/' --exclude='th13_ver100c_update.exe' --exclude='vpatch*' \
-  ../../touhou-recorder/games/th13/ games/th13/
-rsync -a ../../touhou-recorder/prefixes/th13-wined3d-gl/ prefixes/th13-wined3d-gl/
-rm -rf prefixes/th13-wined3d-gl/drive_c/users/*/AppData/Roaming/ShanghaiAlice/th13/{replay,scoreth13.dat}
-
 tar -czf /tmp/th13-assets.tar.gz \
   "${TAR_EXCLUDES[@]}" --exclude='scoreth13.dat' \
+  --exclude='prefixes/th13-wined3d-gl/drive_c/users/*/AppData/Roaming/ShanghaiAlice/th13/replay' \
+  --exclude='th13_ver100c_update.exe' --exclude='vpatch*' \
   games/th13 \
   prefixes/th13-wined3d-gl \
   mods/common/build/injector.exe \
@@ -324,25 +320,21 @@ aws s3 cp /tmp/th13-assets.tar.gz \
 
 ## 14. th14（東方輝針城）
 
-`games/th14`・`prefixes/th14-wined3d-gl` は `touhou-recorder` の同名ディレクトリから `rsync` でコピーする
-（**ver1.00bの非Steam版**。Steam版`games/th14_steam`は使わない）。
+`worker/games/th14`・`worker/prefixes/th14-wined3d-gl` が原本（**ver1.00bの非Steam版**。Steam版`games/th14_steam`は使わない）。
 
 1. **cfg（`th14.cfg`）は、オフセット0x39が0（起動時に毎回訊ねない）のものを `games/th14/` 直下に必ず同梱する**
    （`xxd -s 0x39 -l 1 games/th14/th14.cfg`で確認）。1のままだと起動時に解像度選択ダイアログが出て止まる。
    `%APPDATA%`へは`prepare_instance()`が毎回配置する。
-2. **プレフィックスの`%APPDATA%/ShanghaiAlice/th14/`からスコアファイル（`scoreth14.dat`）と`replay/`を消してから
-   固める**。MODはExtra未解放の前提でDown x3を押すので、Extraを解放したスコアファイルが入るとReplayに着地しない
+2. **プレフィックスの`%APPDATA%/ShanghaiAlice/th14/`にスコアファイル（`scoreth14.dat`）と`replay/`を残さない**
+   （下のtarで除外する。原本に残っているなら消しておく）。MODはExtra未解放の前提でDown x3を押すので、Extraを解放したスコアファイルが入るとReplayに着地しない
    （`worker/docs/titles/th14.md`）。
 3. 公式アップデータ（`th14_update100b.exe`）・`th14.cfg.orig`は同梱しない。
 
 ```bash
-rsync -a --exclude='replay/' --exclude='th14_update100b.exe' --exclude='th14.cfg.orig' \
-  ../../touhou-recorder/games/th14/ games/th14/
-rsync -a ../../touhou-recorder/prefixes/th14-wined3d-gl/ prefixes/th14-wined3d-gl/
-rm -rf prefixes/th14-wined3d-gl/drive_c/users/*/AppData/Roaming/ShanghaiAlice/th14/{replay,scoreth14.dat}
-
 tar -czf /tmp/th14-assets.tar.gz \
   "${TAR_EXCLUDES[@]}" --exclude='scoreth14.dat' \
+  --exclude='prefixes/th14-wined3d-gl/drive_c/users/*/AppData/Roaming/ShanghaiAlice/th14/replay' \
+  --exclude='th14_update100b.exe' --exclude='th14.cfg.orig' \
   games/th14 \
   prefixes/th14-wined3d-gl \
   mods/common/build/injector.exe \
