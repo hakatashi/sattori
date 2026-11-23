@@ -559,8 +559,8 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
       expect(fallbackUpdates()).toHaveLength(0);
     });
 
-    it("th20もGPUの段を飛ばしてリトライする（次はCPU低速録画の段、Issue #316）", async () => {
-      ddbMock.on(GetCommand).resolves({ Item: { ...speedupJob, game: "th20" } });
+    it("th08もGPUの段を飛ばしてリトライする（次は自宅・CPUの段、Issue #316）", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: { ...speedupJob, game: "th08" } });
       ddbMock.on(UpdateCommand).resolves({});
 
       const { handler } = await import("./handleFailure.js");
@@ -576,7 +576,7 @@ describe("sfn/handleFailure handler（GPU vCPU容量リースの返却、Issue #
 
     it("後ろのGPU以外の段を使い切っていれば飛ばさず従来どおりcapacity_exhaustedで失敗させる", async () => {
       ddbMock.on(GetCommand).resolves({
-        Item: { ...speedupJob, game: "th06nc", capacityExhaustedTargets: ["cpu:eu-south-2"] },
+        Item: { ...speedupJob, game: "th08", capacityExhaustedTargets: ["home", "cpu:eu-south-2"] },
       });
       ddbMock.on(UpdateCommand).resolves({});
 

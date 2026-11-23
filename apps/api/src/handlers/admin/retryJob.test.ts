@@ -7,6 +7,7 @@ import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import type { AdminRetryJobResponse, JobRecord } from "@sattori/shared";
 import { buildRetryJob } from "./retryJob.js";
+import { useLegacyGpuFirstPlans } from "../../testSupport/frameSyncPlan.js";
 import { createJobRecord } from "../../testSupport/jobRecord.js";
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -139,23 +140,28 @@ describe("buildRetryJob", () => {
   });
 
   it("段の状態を引き継がず、速度を最初の段の速度へ戻して再実行する(Issue #317)", () => {
-    // th06ncは最初の段がGPUの2倍速（th11などはフレーム同期の等倍）。
-    const fellBackJob: JobRecord = {
-      ...failedJob,
-      game: "th06nc",
-      options: { ...failedJob.options, recordingSpeed: 1 },
-      recordingStepId: "cpu:eu-south-2",
-      // 段の導入前のフォールバックの記録も捨てる。
-      requestedRecordingSpeed: 3,
-      speedupFallbackReason: "gpu_queue_wait",
-    };
+    // 本物の計画は全タイトルがフレーム同期（等倍）なので、最初の段がGPUの3倍速の旧計画へ差し替えて確かめる。
+    const restoreLegacyPlans = useLegacyGpuFirstPlans();
+    try {
+      const fellBackJob: JobRecord = {
+        ...failedJob,
+        game: "th07",
+        options: { ...failedJob.options, recordingSpeed: 1 },
+        recordingStepId: "cpu:eu-south-2",
+        // 段の導入前のフォールバックの記録も捨てる。
+        requestedRecordingSpeed: 3,
+        speedupFallbackReason: "gpu_queue_wait",
+      };
 
-    const retried = buildRetryJob(fellBackJob, "job-2", new Date("2026-08-01T00:00:00.000Z"));
+      const retried = buildRetryJob(fellBackJob, "job-2", new Date("2026-08-01T00:00:00.000Z"));
 
-    expect(retried.options.recordingSpeed).toBe(2);
-    expect("recordingStepId" in retried).toBe(false);
-    expect("requestedRecordingSpeed" in retried).toBe(false);
-    expect("speedupFallbackReason" in retried).toBe(false);
+      expect(retried.options.recordingSpeed).toBe(3);
+      expect("recordingStepId" in retried).toBe(false);
+      expect("requestedRecordingSpeed" in retried).toBe(false);
+      expect("speedupFallbackReason" in retried).toBe(false);
+    } finally {
+      restoreLegacyPlans();
+    }
   });
 });
 

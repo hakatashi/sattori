@@ -449,8 +449,8 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       expect(fallbackUpdates()).toHaveLength(0);
     });
 
-    it("th20も30分以上待ったらGPUの段を飛ばす（次はCPU低速録画の段、Issue #316）", async () => {
-      ddbMock.on(GetCommand).resolves({ Item: { ...gpuJob, game: "th20" } });
+    it("th08も30分以上待ったらGPUの段を飛ばす（次は自宅・CPUの段、Issue #316）", async () => {
+      ddbMock.on(GetCommand).resolves({ Item: { ...gpuJob, game: "th08" } });
       waitedFor(31);
       ddbMock.on(QueryCommand, { IndexName: "GpuQueueIndex" }).resolves({
         Items: [waitingEntry("job-0", -60), waitingEntry("job-1", 0)],
@@ -468,9 +468,9 @@ describe("sfn/acquireGpuSlot handler（Issue #270）", () => {
       ddbMock.on(GetCommand).resolves({
         Item: {
           ...gpuJob,
-          game: "th06nc",
+          game: "th08",
           options: { ...gpuJob.options, recordingSpeed: 2 },
-          capacityExhaustedTargets: ["cpu:eu-south-2"],
+          capacityExhaustedTargets: ["home", "cpu:eu-south-2"],
         },
       });
       waitedFor(31);

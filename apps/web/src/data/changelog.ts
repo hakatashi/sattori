@@ -16,6 +16,13 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-11-23",
+    ja: "全タイトルを新方式の録画に切り替え。新方式では録画時に処理落ち・フレーム落ちが一切発生せず、録画時間も従来より大幅に短くなります (なお、サーバーの混雑状況により従来方式の録画が適用されることがあります)",
+    en: "Switched all titles to the new recording method. With the new method, no slowdowns or dropped frames occur during recording, and recording takes significantly less time than before (note that the conventional method may still be applied depending on server congestion)",
+    issueUrl: "https://github.com/hakatashi/sattori-dev/issues/390",
+    important: true,
+  },
+  {
     date: "2026-11-22",
     ja: "東方紅魔郷 (th06)・東方紅魔郷: Classic (th06c)・東方妖々夢 (th07)・東方永夜抄 (th08)・東方花映塚 (th09)・東方風神録 (th10)・東方地霊殿 (th11)・妖精大戦争 (th128)・東方神霊廟 (th13) の録画でも実験的に新方式を導入",
     en: "Introduced the experimental new recording method for Embodiment of Scarlet Devil (th06), Embodiment of Scarlet Devil: Classic (th06c), Perfect Cherry Blossom (th07), Imperishable Night (th08), Phantasmagoria of Flower View (th09), Mountain of Faith (th10), Subterranean Animism (th11), Fairy Wars (th128) and Ten Desires (th13) as well",

@@ -20,22 +20,19 @@ describe("loadConfig", () => {
   it("既定値は録画の段に自宅ワーカーを持つタイトルと控えめな並列度、能力はすべて宣言する", () => {
     const config = loadConfig(env());
 
-    // 段に自宅ワーカーが無いタイトル（th06nc・th20）は既定から除外される（多層防御、`recordingPlan.ts`と対、
-    // Issue #241・#317）。フレーム同期の自宅の段を持つth15はGPU描画が望ましくても含む（`decisions/0079`）。
+    // 既定は段が決める（`recordingPlan.ts`と対）。フレーム同期の自宅の段を持つタイトルは、GPU描画が望ましくても
+    // 含む（`decisions/0079`・`0081`）。
     expect(config.supportedGames).toEqual(HOME_WORKER_GAME_IDS);
-    for (const game of ["th06nc", "th20"] as const) {
-      expect(config.supportedGames).not.toContain(game);
+    for (const game of ["th06nc", "th15", "th20"] as const) {
+      expect(config.supportedGames).toContain(game);
     }
-    expect(config.supportedGames).toContain("th15");
     expect(config.supportedGames).toContain("th07");
     expect(config.maxConcurrency).toBe(2);
   });
 
-  it("段に自宅ワーカーが無いタイトル(th06nc等)をHOME_WORKER_SUPPORTED_GAMESで明示指定するとエラー", () => {
-    expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th06nc" }))).toThrow(ConfigError);
-    expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th07,th20" }))).toThrow(
-      ConfigError,
-    );
+  it("段に自宅ワーカーが無いタイトルをHOME_WORKER_SUPPORTED_GAMESで明示指定するとエラー", () => {
+    // 録画対応の全13タイトルが自宅の段を持つので、段を持たない録画非対応のタイトル（th14）で多層防御を確かめる。
+    expect(() => loadConfig(env({ HOME_WORKER_SUPPORTED_GAMES: "th14" }))).toThrow(ConfigError);
   });
 
   it("タイトルはカンマ区切りで上書きできる", () => {
