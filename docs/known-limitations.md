@@ -185,8 +185,7 @@ touhou-recorder reports/57・62）。
 無く、実機でのメモリ全域スキャンを尽くしてもスコアのRVAを特定できなかったため
 （touhou-recorder reports/68）、`ScoreMonitorConfig.scoreWidth=0`でスコア読み取り自体を
 無効化し、P1残機（life）のみを監視している（[`worker/docs/titles/th09.md`](../worker/docs/titles/th09.md)）。
-th09のジョブは`JobRecord.desyncDetected`が常にfalseになる（デシンクが実際に起きて
-いなくても検知できないだけで、安全側のfalseになる）。
+th09のジョブは`JobRecord.desyncDetected`が常にnull（検証不能）になる。
 
 ### タイムアウト打ち切りは警告付き配信に留まる(Issue #161)
 
