@@ -17,3 +17,4 @@
 
 - [`mod-probes/`](mod-probes/README.md) — MOD のステージ・スコア探索用プローブ（Issue #392）
 - [`desync-false-positive-probes/`](desync-false-positive-probes/README.md) — リプレイずれ誤検知の調査用のメモリ観測・th20 のコード書き換え（2026-11-24）
+- [`spell-practice-list-template-probes/`](spell-practice-list-template-probes/README.md) — スペルプラクティス耐久リプレイがリプレイ一覧へ戻る件の終了検知の検証（2026-11-24）
