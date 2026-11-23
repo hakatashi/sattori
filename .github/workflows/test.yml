@@ -69,7 +69,7 @@ jobs:
 
       - name: Upload test results to BuildPulse
         if: always() && github.repository == 'hakatashi/sattori'
-        uses: BuildPulseLLC/test-reporter-action@02b5aaf7cf2e448dfffe2b92969d3d6ffbef42fb # v3.2.0
+        uses: BuildPulseLLC/test-reporter-action@b8c9314676993e290727ac3002f6e57cce8a2b19 # v3.4.0
         with:
           api-token: ${{ secrets.BUILDPULSE_API_TOKEN }}
           path: reports
