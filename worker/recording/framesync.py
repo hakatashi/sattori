@@ -103,6 +103,10 @@ FFMPEG_DRAIN_TIMEOUT_SEC = 300.0
 
 # 録画の上限。実時間の経路のように`TIMEOUT_SEC * time_scale`を経由せず固定にする(モジュール docstring)。
 RECORDING_TIMEOUT_SEC = MAX_WALL_CLOCK_TIMEOUT_SEC
+# 録画するリプレイ尺(動画の秒、メニュー区間を除く)の上限。フレーム同期は実時間より速く進みうる
+# ため、実時間の上限(120分)だけだと動画が5時間に達する(終了を検知できないth13のスペル耐久
+# リプレイの本番ジョブ)。リプレイとして不自然に長い録画を早く打ち切る。
+MAX_REPLAY_VIDEO_SEC = 2 * 60 * 60
 
 # 仮想音声デバイスが書くPCMの形式(`mods/audio/virtual/`)。
 AUDIO_RATE_HZ = 44100
@@ -399,7 +403,7 @@ def _check_wine_crash(wine_log_path, offset, log):
 def _monitor_until_end(config, detection, video_proc, paths, start_number, *,
                        progress_dir, expected_duration_seconds, log,
                        timeout_sec=RECORDING_TIMEOUT_SEC, stall_timeout_sec=STALL_TIMEOUT_SEC,
-                       clock=time.time, sleep=time.sleep):
+                       max_video_sec=MAX_REPLAY_VIDEO_SEC, clock=time.time, sleep=time.sleep):
     """リプレイ終了(または異常)を検知するまで、サブ出力を**動画の時間で**一定間隔に調べる。
 
     実時間の経路の`pipeline._monitor_until_end()`のフレーム同期版。違いは時間の数え方で、
@@ -431,6 +435,10 @@ def _monitor_until_end(config, detection, video_proc, paths, start_number, *,
         now = clock()
         if now - real_start > timeout_sec:
             log(f"TIMEOUT: 実時間{timeout_sec:.0f}秒経過したため強制停止します")
+            result.timed_out = True
+            return result
+        if progress_seconds(_poll_frame_count(paths["poll"]), start_number) > max_video_sec:
+            log(f"TIMEOUT: リプレイの録画尺が{max_video_sec:.0f}秒を超えたため強制停止します")
             result.timed_out = True
             return result
         if video_proc.poll() is not None:
