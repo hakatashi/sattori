@@ -1,0 +1,78 @@
+{
+  "game": "th20",
+  "gameTitle": "東方錦上京 ～ Fossilized Wonders.",
+  "formatVersion": null,
+  "player": "koyi",
+  "recordedAt": 1795501114,
+  "date": "26/11/24 15:18",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 11,
+    "date": 24,
+    "hours": 15,
+    "minutes": 18,
+    "seconds": null
+  },
+  "character": "ReimuYellow",
+  "characterNameJa": "霊夢 黄1",
+  "characterNameEn": "Reimu Yellow",
+  "difficulty": "Lunatic",
+  "stage": "Stage 3 (Spell Practice No. 40)",
+  "score": 12140,
+  "cleared": false,
+  "loadout": [
+    {
+      "slot": "main",
+      "index": 4,
+      "name": "Yellow"
+    },
+    {
+      "slot": "diffusion",
+      "index": 0,
+      "name": "Red"
+    },
+    {
+      "slot": "focus",
+      "index": 0,
+      "name": "Red"
+    },
+    {
+      "slot": "support",
+      "index": 4,
+      "name": "Yellow"
+    }
+  ],
+  "splits": [
+    {
+      "stage": 3,
+      "score": 0,
+      "power": "4.00",
+      "piv": 0,
+      "lives": {
+        "count": 0,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "graze": 0,
+      "additional": {
+        "stones": {
+          "red": 0,
+          "blue": 0,
+          "yellow": 0,
+          "green": 0
+        },
+        "stonesTotal": 0,
+        "misses": 0,
+        "spellCardNumber": 40
+      },
+      "frameCount": 2204
+    }
+  ],
+  "frameCount": 2204
+}

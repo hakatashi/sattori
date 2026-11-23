@@ -1,0 +1,50 @@
+{
+  "game": "th13",
+  "gameTitle": "東方神霊廟 ～ Ten Desires.",
+  "formatVersion": 144,
+  "player": "koyi",
+  "date": "26/11/24 15:53",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 11,
+    "date": 24,
+    "hours": 15,
+    "minutes": 53,
+    "seconds": null
+  },
+  "recordedAt": 1795503236,
+  "character": "Reimu",
+  "characterNameJa": "霊夢",
+  "characterNameEn": "Reimu",
+  "difficulty": "Lunatic",
+  "stage": "Stage 5 (Spell Practice No. 62)",
+  "score": 5370600,
+  "cleared": false,
+  "loadout": null,
+  "splits": [
+    {
+      "stage": 5,
+      "score": 0,
+      "power": "4.00",
+      "piv": 20000,
+      "lives": {
+        "count": 0,
+        "pieces": 0,
+        "maxPieces": null
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 0,
+      "additional": {
+        "trance": 0,
+        "tranceMax": 600
+      },
+      "frameCount": 1592
+    }
+  ],
+  "frameCount": 1592
+}
