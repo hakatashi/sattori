@@ -45,13 +45,13 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th128_replay_autoplay: AutoPlayThread started ===");
 
     DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/time_scale::StartupTimeout(30000));
+    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
         return 1;
     }
 
-    if (!WaitForHookActive(/*timeoutMs=*/time_scale::StartupTimeout(30000))) {
+    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
         Log("ERROR: GetDeviceState hook was never called, aborting sequence");
         return 1;
     }

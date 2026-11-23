@@ -25,22 +25,14 @@ TEST(TimeWarpMillisSurvivesWraparound) {
     CHECK_EQ(time_warp::Millis(5000u, 6001u, 0.5), (uint32_t)5500u);  // 切り捨て
 }
 
-TEST(MenuScaleIsSixtyOverTargetHz) {
+TEST(MenuScaleShrinksOnlyForSpeedup) {
     CHECK(time_scale::MenuScaleFor(0.0) == 1.0);    // 未設定 = 等倍
     CHECK(time_scale::MenuScaleFor(60.0) == 1.0);
     CHECK(time_scale::MenuScaleFor(120.0) == 0.5);  // 2倍速。旧 MenuSleep の 1/SPEED_HACK_MULTIPLIER と同じ
     CHECK(time_scale::MenuScaleFor(180.0) == 1.0 / 3.0);
-    CHECK(time_scale::MenuScaleFor(30.0) == 2.0);   // 1/2倍速。旧 ScaledSleep・TH06NC_TIME_SCALE と同じ
-    CHECK(time_scale::MenuScaleFor(20.0) == 3.0);
+    CHECK(time_scale::MenuScaleFor(30.0) == 1.0);   // 低速録画は廃止した(Issue #391)。伸ばさない
     CHECK(time_scale::MenuScaleFor(0.0, 7.0) == 7.0);  // 手動の検証用の追加倍率
-    CHECK(time_scale::MenuScaleFor(30.0, 7.0) == 14.0);
-}
-
-TEST(StartupTimeoutOnlyGrows) {
-    CHECK_EQ(time_scale::StartupTimeoutFor(30000, 0.0), 30000UL);
-    CHECK_EQ(time_scale::StartupTimeoutFor(30000, 120.0), 30000UL);  // 倍速でも縮めない
-    CHECK_EQ(time_scale::StartupTimeoutFor(30000, 30.0), 60000UL);
-    CHECK_EQ(time_scale::StartupTimeoutFor(30000, 20.0), 90000UL);
+    CHECK(time_scale::MenuScaleFor(120.0, 2.0) == 1.0);
 }
 
 namespace {

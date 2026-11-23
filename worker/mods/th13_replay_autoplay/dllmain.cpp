@@ -38,13 +38,13 @@ static DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th13_replay_autoplay: AutoPlayThread started ===");
 
     DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/time_scale::StartupTimeout(30000));
+    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
     if (!hwnd) {
         Log("ERROR: game window never appeared, aborting sequence");
         return 1;
     }
 
-    if (!WaitForHookActive(/*timeoutMs=*/time_scale::StartupTimeout(30000))) {
+    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
         Log("ERROR: GetDeviceState hook was never called, aborting sequence");
         return 1;
     }
@@ -90,10 +90,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
         InstallD3DXFilterHook();
         if (!InstallFrameSyncD3D9(1024)) {
-            // QPC偽装。等倍では何もしない。低速録画ではワーカーがSPEED_HACK_MULTIPLIER<1を渡す
-            // (record_th13.pyのslow_motion_speed_hack)。ゲーム自身のフレーム待ちと画面右下の
-            // fps表示がQPC基準なので、Presentの上限と揃えて減速すると表示も「60.0fps」のままになる
-            // (reports/100の1/2倍速の録画で確認、worker/docs/titles/th13.md)。
+            // QPC偽装。等倍では何もしない(倍速録画ではワーカーがSPEED_HACK_MULTIPLIERを渡す)。
             InstallSpeedHackHook();
             // VsyncPatchを使わないので、等倍でもPresentを60fpsに制限する(th10・th128と同じ。
             // FPS_LIMIT_TARGET_HZがあればそちらを優先する)。

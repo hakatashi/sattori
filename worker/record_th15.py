@@ -14,8 +14,7 @@ OpenGL、DXVKではない)を使うことでこれが解消することを実機
 **DXVKは使わない**(`dxvk_dll_overrides`は指定しない。th15のVulkan実装がDXVKの要求機能を
 満たさず起動できないことを実機確認済み、reports/82)。
 
-GPUを確保できないときはCPUインスタンスの低速録画へ落ちる(Issue #316、reports/91)。起動側が
-`GPU_WORKER=1`を渡さないので、Xvfb+wined3d+llvmpipeで描画する。
+CPUの段(フレーム同期)では起動側が`GPU_WORKER=1`を渡さないので、Xvfb+wined3d+llvmpipeで描画する。
 """
 from recording import cli
 from recording.config import GameConfig

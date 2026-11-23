@@ -1,12 +1,12 @@
-# 録画速度（倍速録画 Issue #288・低速録画 Issue #316）
+# 録画速度（倍速録画 Issue #288）
 
-倍速・低速録画でパイプラインの各段（MOD・キャプチャ・監視・変換）が何を変えるかと、
+倍速録画でパイプラインの各段（MOD・キャプチャ・監視・変換）が何を変えるかと、
 速度に関わらず効く同期マーカーによるA/V同期補正の参照仕様。録画速度・A/V同期・
 `recording/timing.py` を触る前に読むこと。[`worker/README.md`](../README.md) §5 から分けた。
 
-ゲームを2〜4倍速で走らせて録画し、後処理(`convert.py`)で等倍へ戻す。GPUを確保できないth15・th20は
-`c7i.4xlarge`のCPU描画で1/2倍速(th15 Extraは1/3倍速)で録り、同じ変換で等倍へ戻す
-([`decisions/0064`](../../docs/decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md))。有効・無効は起動側が渡す `FPS_LIMIT_TARGET_HZ` の有無だけで
+ゲームを2〜4倍速で走らせて録画し、後処理(`convert.py`)で等倍へ戻す。かつてのCPUの実時間低速録画
+(1/2・1/3倍速、Issue #316)は廃止した([`decisions/0083`](../../docs/decisions/0083-remove-cpu-slow-motion-code.md)。
+実装は削除前のコミットで読める)。有効・無効は起動側が渡す `FPS_LIMIT_TARGET_HZ` の有無だけで
 決まる(未設定なら全タイトル従来どおり等倍)。ワーカー自身は自分が EC2 にいるのか自宅に
 いるのかを知らない。
 

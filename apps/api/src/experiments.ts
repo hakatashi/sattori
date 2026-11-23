@@ -91,7 +91,7 @@ export function parseExperimentRequest(
   }
   let speed = stepReq.speed ?? NATIVE_RECORDING_SPEED;
   if (!isRecordingSpeed(speed)) {
-    return fail("step.speed が不正です（1・2・3・4・1/2・1/3のいずれか）");
+    return fail("step.speed が不正です（1・2・3・4のいずれか）");
   }
   if (stepReq.captureMode === "frameSync") {
     if (speed !== NATIVE_RECORDING_SPEED) {

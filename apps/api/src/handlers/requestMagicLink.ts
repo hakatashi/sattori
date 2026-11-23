@@ -156,7 +156,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   // 録画速度はユーザーが選ばない（Issue #317）。最初の段（`recordingPlan.ts`）の速度を入れておき、
   // 実際に割り当てた段の速度は`Launch`が書き直す。古いフロントエンドのキャッシュが
   // `options.recordingSpeed`を送ってきても拒否せず無視する。
-  const recordingSpeed = initialRecordingSpeed({ game, replayInfo });
+  const recordingSpeed = initialRecordingSpeed({ game });
 
   const now = new Date();
   const jobId = randomUUID();

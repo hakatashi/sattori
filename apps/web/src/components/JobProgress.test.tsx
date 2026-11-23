@@ -107,13 +107,6 @@ describe("JobProgressView の録画速度の表示（Issue #288・#317）", () =
     expect(screen.getByText(/2倍速で録画しています/)).toBeTruthy();
   });
 
-  it("低速録画も速度として表示し、フォールバックしたことには触れない", () => {
-    render(<JobProgressView job={buildRecordingJob({ recordingSpeed: 1 / 2 })} loadError={null} />);
-
-    expect(screen.getByText(/1\/2倍速で録画しています/)).toBeTruthy();
-    expect(screen.queryByText(/切り替えました/)).toBeNull();
-  });
-
   it("等倍なら表示しない", () => {
     render(<JobProgressView job={buildRecordingJob({ recordingSpeed: 1 })} loadError={null} />);
     expect(screen.queryByText(/倍速で録画しています/)).toBeNull();

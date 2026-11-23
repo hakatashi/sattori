@@ -4,9 +4,9 @@ GPU インスタンスで録画するもの（倍速録画、およびフレー�
 未実装事項の詳細。これらの録画経路や GPU 容量不足時のフォールバックを触る前に読むこと。
 [`known-limitations.md`](known-limitations.md) §1 から分けた（索引はあちらに残してある）。
 
-> **2026-11-23（[`decisions/0081`](decisions/0081-frame-sync-plan-for-th20-and-th06nc.md)）から、全タイトルがフレーム同期のCPUの段
-> （自宅→EC2）を先に試し、GPUは最後の段になった。以下のCPU低速録画（th15・th20・th06nc）と「GPUが無ければ次の段」の記述は、置き換える前の実時間方式の
-> 記録（歴史）として残してある。**
+> **2026-11-23（[`decisions/0081`(decisions/0081-frame-sync-plan-for-th20-and-th06nc.md)）から、全タイトルがフレーム同期のCPUの段
+> （自宅→EC2）を先に試し、GPUは最後の段になった。CPU低速録画のコードは Issue #391 で削除した。§2・§3 の「GPUが無ければCPU低速」の記述は、置き換える前の
+> 実時間方式の記録（歴史）として残してある。**
 
 ## 目次
 
@@ -39,18 +39,10 @@ touhou-recorder reports/84〜90（us-west-2のg6f.2xlarge、ホスト直接実�
   [`decisions/0063`](decisions/0063-spot-capacity-shortage-is-permanent-within-a-job.md)・[`0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)・[`0066`](decisions/0066-recording-fallback-plan-as-config.md)・[`0067`](decisions/0067-th06nc-cpu-slow-motion-and-drop-1080p.md)）。
   通常のタイトルは等倍へ、th15・th20・th06ncはCPU低速録画へ進む。段の閾値（待ち30分・クォータ超過などの
   3回目）は本番の実測に基づかない初期値。
-- **CPU低速録画の品質はGPU録画より落ちる**（[`decisions/0064`](decisions/0064-cpu-slow-motion-and-g6-fallback-on-gpu-shortage.md)）。ボムやスペルカード終了時に
-  一時的なコマ落ちがあり、高負荷のあとはBGMが映像より先行する（th20で約0.5秒、touhou-recorder
-  reports/91 §6）。実時間は尺の約2倍（th15 Extraは約3倍）。本番E2Eは各条件1本で、Spotの実際の中断は未確認
-  （[`reports/2026-11-05`](reports/2026-11-05-cpu-slow-motion-production-e2e.md)）。
-  `c7i.4xlarge`の1タイプしか候補が無く、Spot中断は録画からやり直し（reports/91 §7）。尺60分級のリプレイは
-  ルートボリューム（30GiB）に近づく（[`reports/2026-11-05`](reports/2026-11-05-cpu-slow-motion-worker-local.md)）。
-- **th06ncのCPU低速録画（BC7展開、`c7i.2xlarge`）は、Extraの高密度弾幕で描画が落ちる**
-  （[`decisions/0067`](decisions/0067-th06nc-cpu-slow-motion-and-drop-1080p.md)）。touhou-recorder reports/97では、
-  パチュリー戦（配信版75〜165秒）で描画が実時間約15Hzへ間引かれ、その区間の落ちが25〜36%（Extra全体で7.6%）。
-  ゲームの進行は正しく、コマ落ちとして見える。**th06ncのFpsMonitorは入力ポーリング回数を数えているので、この
-  描画落ちを示さず、パイプラインの判定重複率でも検知できない**（reports/97 §3）。品質は配信版のユニークフレームで
-  見ること。CPU等倍・`c7i.xlarge`は不採用。
+- **CPU低速録画（th15・th20・th06nc）は廃止した**（Issue #391、[`decisions/0083`](decisions/0083-remove-cpu-slow-motion-code.md)）。
+  かつての品質上の制約（ボム・スペルカード終了時のコマ落ち、BGMの先行、th06ncのExtraのパチュリー戦での描画落ち）は
+  実時間のCPU低速録画に固有のもので、フレーム同期の段には当てはまらない。実測は`docs/reports/2026-11-05-cpu-slow-motion-*`と
+  touhou-recorder reports/91・97に残してある。
 - **リプレイが始まらなかった録画が`done`になりうる**。メニュー操作を取りこぼしても、背景の動く画面なら重複率で弾けず、
   画面静止で終了と判定される（th15 20Hzで実例）。スコアは`desyncDetected`に出るだけで、リトライしない。
 

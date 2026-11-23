@@ -14,7 +14,6 @@ import {
   PRIMARY_RECORDING_REGION,
   RECORDING_PLANS,
   recordingPlanFor,
-  recordingSpeedForStep,
   remainingRecordingSteps,
   skippableGpuStepIds,
 } from "./recordingPlan.js";
@@ -26,11 +25,18 @@ function describeStep(step: RecordingStep): string {
   if (step.kind === "home") {
     return `home ${speed}`;
   }
-  const extra = step.speedByDifficulty ? ` ${JSON.stringify(step.speedByDifficulty)}` : "";
-  return `${step.id} ${speed} ${step.instanceTypes.join(",")}${extra}`;
+  return `${step.id} ${speed} ${step.instanceTypes.join(",")}`;
 }
 
 describe("RECORDING_PLANS", () => {
+  it("1未満の倍率（低速録画）の段は無い（Issue #391）", () => {
+    for (const [game, steps] of Object.entries(RECORDING_PLANS)) {
+      for (const step of steps ?? []) {
+        expect(step.speed, `${game} ${step.id}`).toBeGreaterThanOrEqual(1);
+      }
+    }
+  });
+
   it("録画対応タイトルすべてに段がある", () => {
     for (const game of SUPPORTED_GAME_IDS) {
       expect(recordingPlanFor(game).length, game).toBeGreaterThan(0);
@@ -151,30 +157,6 @@ describe("RECORDING_PLANS", () => {
     for (const game of games) {
       expect(recordingPlanFor(game).map(describeStep), game).toEqual(expected);
     }
-  });
-});
-
-describe("recordingSpeedForStep", () => {
-  // th15のCPU低速録画は廃止したので、難易度ごとの上書き（`speedByDifficulty`）の仕組みだけを確かめる。
-  const th15Cpu: RecordingStep = {
-    id: "cpu:eu-south-2",
-    kind: "ec2",
-    platform: "cpu",
-    region: PRIMARY_RECORDING_REGION,
-    instanceTypes: ["c7i.4xlarge"],
-    captureMode: "realtime",
-    speed: 1 / 2,
-    speedByDifficulty: { Extra: 1 / 3 },
-  };
-
-  it("難易度の上書きがあればそれを使う", () => {
-    expect(recordingSpeedForStep(th15Cpu, { replayInfo: { difficulty: "Extra" } })).toBe(1 / 3);
-  });
-
-  it("難易度が一致しない・読めなければ段の速度", () => {
-    expect(recordingSpeedForStep(th15Cpu, { replayInfo: { difficulty: "Lunatic" } })).toBe(1 / 2);
-    expect(recordingSpeedForStep(th15Cpu, { replayInfo: { difficulty: null } })).toBe(1 / 2);
-    expect(recordingSpeedForStep(th15Cpu, {})).toBe(1 / 2);
   });
 });
 

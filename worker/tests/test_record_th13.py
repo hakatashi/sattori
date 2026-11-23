@@ -36,14 +36,6 @@ def test_build_config_excludes_the_post_replay_menu_rect():
     assert config.still_detect_exclude_rect == (48, 220, 207, 432)
 
 
-def test_slow_motion_also_slows_down_qpc(monkeypatch):
-    # 1/2倍速はPresent上限とQPC偽装の両方で減速する構成で検証した(reports/100)。
-    monkeypatch.setenv("FPS_LIMIT_TARGET_HZ", "30")
-    config = record_th13.build_config("sattori_job_test")
-
-    assert config.build_env()["SPEED_HACK_MULTIPLIER"] == "0.5"
-
-
 def test_native_speed_does_not_set_speed_hack(monkeypatch):
     monkeypatch.delenv("FPS_LIMIT_TARGET_HZ", raising=False)
     monkeypatch.delenv("SPEED_HACK_MULTIPLIER", raising=False)

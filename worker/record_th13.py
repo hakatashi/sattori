@@ -25,10 +25,6 @@ def build_config(pulse_sink):
         # 終了検知は画面静止検知のみ(end_template_pathは意図的に用意しない)。リプレイ
         # 終了後のメニューの明滅をこの矩形で静止判定から除外する(reports/100)。
         still_detect_exclude_rect=(48, 220, 48 + 159, 220 + 212),
-        # 低速録画ではPresentの上限に加えてQPC偽装でも減速する。ゲームのフレーム待ちと
-        # 画面右下のfps表示がQPC基準なので、揃えて減速すると表示が「60.0fps」のままになる
-        # (reports/100の1/2倍速はこの構成で検証した)。
-        slow_motion_speed_hack=True,
     )
 
 

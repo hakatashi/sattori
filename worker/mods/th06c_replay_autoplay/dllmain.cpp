@@ -159,19 +159,19 @@ bool NavigateToReplay() {
 
 DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th06c_replay_autoplay: AutoPlayThread started ===");
-    if (!DismissStartupDialog(/*timeoutMs=*/time_scale::StartupTimeout(60000))) {
+    if (!DismissStartupDialog(/*timeoutMs=*/60000)) {
         Log("ERROR: 起動ダイアログを閉じられませんでした。中断します");
         return 1;
     }
 
     if (!WaitForStableWindow(GetCurrentProcessId(), /*stableMs=*/800,
-                             /*timeoutMs=*/time_scale::StartupTimeout(60000), WindowFilter::kDxlib)) {
+                             /*timeoutMs=*/60000, WindowFilter::kDxlib)) {
         Log("ERROR: ゲームウィンドウが出現しませんでした。中断します");
         return 1;
     }
 
     Log("入力ポーリングの開始を待ちます...");
-    DWORD deadline = GetTickCount() + time_scale::StartupTimeout(60000);
+    DWORD deadline = GetTickCount() + 60000;
     while (g_pollCount == 0 && GetTickCount() < deadline) Sleep(50);
     if (g_pollCount == 0) {
         Log("ERROR: 入力ポーリングが一度も観測されませんでした");

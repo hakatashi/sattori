@@ -42,7 +42,7 @@
 | `core/log.*` | MODログ(`thNN_autoplay.log`)。契約行は `LogStep()`・`LogSequenceComplete()` で出す |
 | `core/log_contract.h` | **ワーカーが正規表現・部分一致で読む行の書式**(`Step N:`・`sequence complete`・`WaitForStableWindow: stable`・`ScoreMonitor: ...`・`SYNC_MARKER played ...`・`FrameSync: capture start / unthrottled / capture stopped`・行頭の時刻)。変えるときは読む側(`recording/modlog.py`・`sync_marker.py`・`pipeline.py`)も直す。両側のテストが同じゴールデンを読む(§9) |
 | `core/runtime_config.*` | **MODが読む環境変数はここでだけ読む**(DllMainで1回)。通常録画用(`FPS_LIMIT_TARGET_HZ`・`SPEED_HACK_MULTIPLIER`・`SYNC_MARKER_TRIGGER`・`D3D11_DECODE_BC7`・`D3DX_AREA_FILTER`・検証専用の `MENU_WAIT_EXTRA_SCALE`)を `RuntimeConfig:` へ出し、`FRAME_SYNC_PIPE` 設定時は追加で 9 種のフレーム同期変数(`FRAME_SYNC_PIPE`・`FRAME_SYNC_STOP`・`FRAME_SYNC_AUDIO`・`FRAME_SYNC_STEP_DIV`・`FRAME_SYNC_SKIP_PRESENT`・`FRAME_SYNC_PIPELINE`・`FRAME_SYNC_THROTTLE_WHILE_THREADS`・`FRAME_SYNC_THREAD_MAX_MS`・`FRAME_SYNC_AUDIO_REFILL_WAIT_MS`)を `RuntimeConfig(FrameSync):` で出す |
-| `core/time_scale.*` | メニュー操作の待ち(`MenuSleep`、通常時は `60/FPS_LIMIT_TARGET_HZ` 倍、フレーム同期時は `SetMenuSleepHandler` で Present 基準へ切り替え)と、実時間で進む起動待ちの上限(`StartupTimeout`、低速録画でだけ伸ばす)。**タイトル側で待ちの倍率を計算しないこと** |
+| `core/time_scale.*` | メニュー操作の待ち(`MenuSleep`、通常時は `60/FPS_LIMIT_TARGET_HZ` 倍、フレーム同期時は `SetMenuSleepHandler` で Present 基準へ切り替え)(倍速録画で縮める方向にだけ効く。起動待ちのタイムアウトは各タイトルの定数のまま)。**タイトル側で待ちの倍率を計算しないこと** |
 | `core/pe_iat.*` | IATの書き換え(名前・序数・DLL名の前方一致、複数DLLへの冪等な適用)と、`GetProcAddress` の横取りの登録表(`procaddr::Override`) |
 | `core/vtable_hook.h` | COMの vtable の書き換え。**冪等**(すでにフック済みなら何もしない。Wineは同じ型のオブジェクトで vtable を共有するので、二重にパッチすると無限再帰になる) |
 | `core/code_patch.*` | バイト照合つきのコードの書き換え(th12 の fps 表示のコードケーブ) |

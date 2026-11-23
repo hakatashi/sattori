@@ -31,7 +31,7 @@ def test_build_config_reads_cfg_and_replay_from_the_appdata_profile():
 
 
 def test_build_config_uses_xvfb_without_gpu_worker(monkeypatch):
-    # GPUを確保できないときのCPU低速録画(Issue #316)。起動側がGPU_WORKERを渡さない。
+    # CPUの段(フレーム同期)。起動側がGPU_WORKERを渡さない。
     monkeypatch.delenv("GPU_WORKER", raising=False)
     config = record_th15.build_config("sattori_job_test")
 

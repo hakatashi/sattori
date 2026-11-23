@@ -22,20 +22,18 @@ import type { GameId } from "./games.js";
  * **2倍速以上は必ずGPUの段で録画する**。CPU描画（Xvfb+llvmpipe）では2倍速を維持できない
  * （touhou-recorder reports/89）。
  *
- * ## 低速録画（Issue #316）
+ * ## 低速録画は廃止した（Issue #391）
  *
- * GPUを確保できないタイトル（th15・th20）のCPUの段だけが使う（`docs/decisions/0064`）。
+ * かつてCPUの段（th15・th20・th06nc）が1/2・1/3倍速の低速録画を使っていた（`docs/decisions/0064`）が、
+ * CPUの段はすべてフレーム同期（`recordingPlan.ts`）へ移ったので型・定数ごと削除した。
+ * 低速の実装は、削除前のコミット（`git log -S SLOW_MOTION_RECORDING_SPEEDS`）で読める。
+ * 古いジョブレコードの`recordingSpeed`が1未満でも、`normalizeRecordingSpeed()`が等倍へ丸める。
  */
 
 /** 等倍・倍速録画の倍率。 */
 export const RECORDING_SPEEDS = [1, 2, 3, 4] as const;
 
-/** CPUの段の低速録画の倍率（30Hz・20Hz）。 */
-export const SLOW_MOTION_RECORDING_SPEEDS = [1 / 2, 1 / 3] as const;
-
-export type RecordingSpeed =
-  | (typeof RECORDING_SPEEDS)[number]
-  | (typeof SLOW_MOTION_RECORDING_SPEEDS)[number];
+export type RecordingSpeed = (typeof RECORDING_SPEEDS)[number];
 
 /** 等倍。`RecordingOptions.recordingSpeed` が無い（このフィールド導入前の）ジョブもこれとみなす。 */
 export const NATIVE_RECORDING_SPEED: RecordingSpeed = 1;
@@ -44,14 +42,10 @@ export const NATIVE_RECORDING_SPEED: RecordingSpeed = 1;
 export const NATIVE_GAME_FRAME_RATE_HZ = 60;
 
 export function isRecordingSpeed(value: unknown): value is RecordingSpeed {
-  return (
-    typeof value === "number" &&
-    ((RECORDING_SPEEDS as readonly number[]).includes(value) ||
-      (SLOW_MOTION_RECORDING_SPEEDS as readonly number[]).includes(value))
-  );
+  return typeof value === "number" && (RECORDING_SPEEDS as readonly number[]).includes(value);
 }
 
-/** ジョブレコードの値を録画速度へ正規化する（低速を含む）。不正値は等倍。 */
+/** ジョブレコードの値を録画速度へ正規化する。不正値（廃止した低速録画の値を含む）は等倍。 */
 export function normalizeRecordingSpeed(value: unknown): RecordingSpeed {
   return isRecordingSpeed(value) ? value : NATIVE_RECORDING_SPEED;
 }
@@ -66,12 +60,7 @@ export function isSpeedupRecording(speed: RecordingSpeed): boolean {
   return speed > NATIVE_RECORDING_SPEED;
 }
 
-/** 低速録画（等倍未満）か。 */
-export function isSlowMotionRecording(speed: RecordingSpeed): boolean {
-  return speed < NATIVE_RECORDING_SPEED;
-}
-
-/** ワーカーへ渡す `FPS_LIMIT_TARGET_HZ`（60×倍率。1/3倍速の丸め誤差を落とすため整数へ丸める）。 */
+/** ワーカーへ渡す `FPS_LIMIT_TARGET_HZ`（60×倍率）。 */
 export function recordingTargetHz(speed: RecordingSpeed): number {
   return Math.round(NATIVE_GAME_FRAME_RATE_HZ * speed);
 }
@@ -84,12 +73,6 @@ export function recordingTargetHz(speed: RecordingSpeed): number {
 export const SPEEDUP_WALL_CLOCK_EFFICIENCY = 1.05;
 
 /**
- * CPU低速録画の実時間効率。`c7i.4xlarge`の実測で1/2倍速が尺の×2.03〜2.08、1/3倍速が×3.09
- * （touhou-recorder reports/91）。
- */
-export const SLOW_MOTION_WALL_CLOCK_EFFICIENCY = 1.03;
-
-/**
  * 録画フェーズの実時間（秒）を、リプレイの尺（等倍の秒数）から見積もる。
  * 等倍ならそのまま、それ以外は `尺 × 効率 / 倍率`。
  */
@@ -97,10 +80,7 @@ export function recordingWallClockSeconds(contentSeconds: number, speed: Recordi
   if (speed === NATIVE_RECORDING_SPEED) {
     return contentSeconds;
   }
-  const efficiency = isSpeedupRecording(speed)
-    ? SPEEDUP_WALL_CLOCK_EFFICIENCY
-    : SLOW_MOTION_WALL_CLOCK_EFFICIENCY;
-  return (contentSeconds * efficiency) / speed;
+  return (contentSeconds * SPEEDUP_WALL_CLOCK_EFFICIENCY) / speed;
 }
 
 /**

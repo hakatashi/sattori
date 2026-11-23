@@ -95,7 +95,7 @@
 | `EXPECTED_DURATION_SECONDS` | リプレイの推定再生時間(進捗率算出の参考値、省略可) |
 | `EXPECTED_SCORE` | リプレイファイルの記録スコア(画面表示値)。リプレイずれの事後検証(Issue #103、
   [`docs/mods.md`](docs/mods.md)の`score_monitor`)に使う。`replayInfo.score`が取得できていなければ省略される |
-| `FPS_LIMIT_TARGET_HZ` | 録画速度(§5)の目標fps。**省略時は等倍**(既定60)。倍速録画では`60×倍率`(2倍速なら`120`)、低速録画では`30`・`20`。MODへ渡す`SPEED_HACK_MULTIPLIER`(倍率)と`SYNC_MARKER_TRIGGER`(同期マーカー)はワーカーがここから導出するので、起動側は渡さない |
+| `FPS_LIMIT_TARGET_HZ` | 録画速度(§5)の目標fps。**省略時は等倍**(既定60)。倍速録画では`60×倍率`(2倍速なら`120`)。60未満(廃止した低速録画の値)は等倍として扱う。MODへ渡す`SPEED_HACK_MULTIPLIER`(倍率)と`SYNC_MARKER_TRIGGER`(同期マーカー)はワーカーがここから導出するので、起動側は渡さない |
 | `CAPTURE_MODE` | `frame_sync`ならフレーム同期キャプチャ(`recording/framesync.py`、Issue #389)で録画する。**経路の分岐はこの値だけ**(タイトル・自宅/EC2・GPUの有無では分けない)。MODがゲームのPresentごとにバックバッファをFIFOへ書き、音声も仮想ミキサがPCMで書くので、`FPS_LIMIT_TARGET_HZ`・`GPU_WORKER`とは併用しない(渡されても`FPS_LIMIT_TARGET_HZ`は使わず`time_scale`は常に1.0)。未設定・それ以外の値は従来の実時間の経路。起動側が録画の段の`captureMode`から渡す(`apps/api/src/workerEnv.ts`)。**この経路はワーカーの中でリトライせず、重複フレーム率の判定を使わない**([`decisions/0077`](../docs/decisions/0077-worker-frame-sync-recording-path.md)) |
 | `GPU_WORKER` | `1`ならGPU(NVIDIA)搭載ワーカー。GPU描画が必須でないタイトルもGPU描画(Xorg+nvidia)で録画し、録画・変換とも映像をNVENCでエンコードする(§5)。GPU系インスタンスで起動する場合だけ起動側が渡す |
 | `THPRAC_ATTACH_TIMEOUT_SEC` / `_CONFIRM_SEC` / `_ATTEMPTS` | th20 の thprac アタッチの予算([`titles/th20.md`](docs/titles/th20.md)) |
@@ -118,9 +118,9 @@
 タイトル固有の分岐は無い)。**変換の中身・1本/2本の対応表・S3キーごとの中身と保持は
 [`docs/output-files.md`](docs/output-files.md)。**
 
-## 5. 録画速度(倍速録画 Issue #288・低速録画 Issue #316)
+## 5. 録画速度(倍速録画 Issue #288)
 ゲームを2〜4倍速で走らせて録画し、後処理(`convert.py`)で等倍へ戻す(GPUワーカー専用)。
-GPUを確保できないth15・th20は`c7i.4xlarge`のCPU描画で低速録画し、同じ変換で等倍へ戻す。
+CPUの実時間低速録画(Issue #316)は廃止した(Issue #391、[`decisions/0083`](../docs/decisions/0083-remove-cpu-slow-motion-code.md))。
 有効・無効は起動側が渡す `FPS_LIMIT_TARGET_HZ` の有無だけで決まる。**倍速時に各段が変える
 こと・同期マーカーによるA/V同期補正は [`docs/recording-speed.md`](docs/recording-speed.md)。**
 

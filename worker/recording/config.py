@@ -144,11 +144,6 @@ class GameConfig:
     # ゲームプロセスへ追加で渡す環境変数((名前, 値)のタプル)。th06ncのCPU描画で
     # MODのBC7展開(`D3D11_DECODE_BC7`)やllvmpipeのスレッド数を渡すのに使う。
     extra_env: tuple[tuple[str, str], ...] = ()
-    # 低速録画(FPS_LIMIT_TARGET_HZ<60)でもMODのQPC偽装(`SPEED_HACK_MULTIPLIER`<1)で減速するか。
-    # Present上限(present/limiter)で減速するタイトル(th15・th20)は二重に遅くなるのでFalse。
-    # th06ncはDXライブラリが時間基準でゲームを進め、fps_limiterを持たないのでTrueにする
-    # (touhou-recorder reports/96・97)。
-    slow_motion_speed_hack: bool = False
     # GPU使用時、Xorg起動後にxrandrで明示的に切り替えるCRTCモード(例: "1920x1080")。
     # Noneならxrandrでの変更は行わない(Xorg起動時の既定モードのまま)。
     # Xorg+nvidia環境では「仮想画面サイズ」と「CRTCの実モード」が別概念で、th06ncは
@@ -254,8 +249,6 @@ class GameConfig:
         time_scale = recording_time_scale(env)
         if is_speedup(time_scale):
             env["SPEED_HACK_MULTIPLIER"] = f"{speedup_multiplier(time_scale):g}"
-        elif self.slow_motion_speed_hack and time_scale > 1.0:
-            env["SPEED_HACK_MULTIPLIER"] = f"{1.0 / time_scale:g}"
         else:
             env.pop("SPEED_HACK_MULTIPLIER", None)
         for name, value in self.extra_env:

@@ -88,8 +88,6 @@ export type Ec2RecordingStep = {
   platform: "gpu" | "cpu";
   region: string;
   instanceTypes: readonly string[];
-  /** 難易度ごとの速度の上書き（`replayInfo.difficulty`が一致したときだけ使う。`realtime`の段のみ）。 */
-  speedByDifficulty?: Readonly<Record<string, RecordingSpeed>>;
 } & StepCapture &
   RecordingStepLimits;
 
@@ -238,7 +236,7 @@ function frameSync1280Plan(factors: FrameSyncFactors): RecordingStep[] {
  *   自宅→`.2xlarge`帯→`c7i.4xlarge`（どちらもフレーム同期）→GPU（実時間、最後の段。th07は3倍速、th13は無し、
  *   他は2倍速）。フレーム同期の段は速度が落ちるだけで品質は変わらない。
  * - th06nc（720p、D3D11描画。MODがBC7テクスチャを展開するCPU描画）: 640x480と同じ形（`.2xlarge`帯が先）。GPUの段は
- *   実時間の2倍速。かつての実時間のCPU1/2倍速・`g6.2xlarge`の段は置き換えた（`docs/decisions/0081`）。
+ *   実時間の2倍速。かつての実時間のCPU1/2倍速・`g6.2xlarge`の段は廃止した（#391）（`docs/decisions/0081`）。
  * - th15・th20（1280x960）: CPU負荷が高いので`.4xlarge`帯が先。GPUの段は実時間の1倍速。th20の実時間CPU低速録画は
  *   置き換えた（`docs/decisions/0081`）。
  */
@@ -280,18 +278,8 @@ export function isGpuStep(step: RecordingStep): boolean {
   return step.kind === "ec2" && step.platform === "gpu";
 }
 
-/** その段で録るときの録画速度（難易度の上書きを解決する）。 */
-export function recordingSpeedForStep(
-  step: RecordingStep,
-  job: { replayInfo?: { difficulty: string | null } | null },
-): RecordingSpeed {
-  if (step.kind === "ec2" && step.speedByDifficulty) {
-    const difficulty = job.replayInfo?.difficulty;
-    const override = difficulty ? step.speedByDifficulty[difficulty] : undefined;
-    if (override !== undefined) {
-      return override;
-    }
-  }
+/** その段で録るときの録画速度。 */
+export function recordingSpeedForStep(step: RecordingStep): RecordingSpeed {
   return step.speed;
 }
 
@@ -394,10 +382,9 @@ export function skippableGpuStepIds(job: RecordingStepState, excluded?: Recordin
 export function initialRecordingSpeed(job: {
   game: GameId;
   experiment?: { step: RecordingStep };
-  replayInfo?: { difficulty: string | null } | null;
 }): RecordingSpeed {
   const first = recordingPlanOf(job)[0];
-  return first ? recordingSpeedForStep(first, job) : NATIVE_RECORDING_SPEED;
+  return first ? recordingSpeedForStep(first) : NATIVE_RECORDING_SPEED;
 }
 
 /** ジョブの録画オプションから録画方式を読む（欠損・不正値は`realtime`）。 */
