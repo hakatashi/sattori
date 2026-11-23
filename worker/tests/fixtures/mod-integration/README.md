@@ -45,7 +45,16 @@ th10・th11・th12・th13・th20・th128)を網羅済み。新タイトルの録
 (`threp -j <path>`で確認できるリプレイの記録スコア。th09のようにリプレイへスコアが
 記録されないタイトルは`None`)を登録すること。
 
+## 検証項目と基準値
+
+既定のフレーム同期の検証項目と基準値の扱いは[`worker/docs/mod-integration-test.md`](../../../docs/mod-integration-test.md)・
+[`0084`](../../../../docs/decisions/0084-mod-integration-test-defaults-to-frame-sync.md)。リプレイを差し替えたら
+`run.py`の`TITLES`の基準値を採り直すこと。
+
 ## デシンク検知はまれに偽陽性を出す(既知の性質)
+
+(以下は実時間の録画での観測。フレーム同期では2026-11-23の2回の全タイトル録画でth07も含め全て一致した。)
+
 
 `check_replay_desync()`(`recording/modlog.py`)はMODのスコア監視ログ(1秒間隔ポーリング)と
 記録スコアを突き合わせる方式で、`docs/known-limitations.md` §3にある通りそもそも
