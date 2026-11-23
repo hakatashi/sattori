@@ -779,7 +779,7 @@ def _mux(paths, output_path, env, log):
 # ---------------------------------------------------------------------------
 def record_frame_sync(config, replay_path, output_path, *, progress_dir=None,
                       expected_duration_seconds=None, diagnostics_dir=None, expected_score=None,
-                      desync_result_path=None, timeout_result_path=None, cut_result_path=None,
+                      final_stage_score=None, desync_result_path=None, timeout_result_path=None, cut_result_path=None,
                       log=print):
     """フレーム同期キャプチャで録画し、合否を判定する。成功ならTrue。**リトライしない**。
 
@@ -853,7 +853,8 @@ def record_frame_sync(config, replay_path, output_path, *, progress_dir=None,
         log("WARNING: リプレイ終了を検知できないままタイムアウトで打ち切られました。"
             "リプレイ終盤が録画されていない可能性があります")
     log("正常な録画を確認しました")
-    desync_detected = check_replay_desync(config, expected_score, log=log, scores=scores)
+    desync_detected = check_replay_desync(
+        config, expected_score, log=log, scores=scores, final_stage_score=final_stage_score)
     if duration_desync:
         desync_detected = True
     write_desync_result(desync_result_path, desync_detected)

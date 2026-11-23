@@ -106,11 +106,14 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         // life(float、破片管理)。フル尺録画でリプレイ記録スコアとの完全一致を
         // 実機確認済み(touhou-recorder
         // reports/53_phase53_score_monitor_all_titles.md)。
+        // スコア欄は+0x08(真値、スペルカード取得で記録スコアへ一度に跳ねる)。+0x00は表示用の
+        // 追っかけ値で、数フレームかけて真値に近づく途中でリプレイが終わって構造体が解放され、
+        // 記録スコアに届かないことがある(docs/reports/2026-11-24-desync-false-positive-investigation.md §4.1)。
         {
             ScoreMonitorConfig sm;
             sm.baseRva = 0x120f510;
             sm.baseIsPointer = true;
-            sm.scoreOffset = 0x00;
+            sm.scoreOffset = 0x08;
             sm.scoreWidth = 4;
             sm.livesOffset = 0x74;
             sm.livesWidth = 4;

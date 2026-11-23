@@ -42,6 +42,11 @@ def build_parser():
              "(Issue #103)に使う。未指定なら検証をスキップする",
     )
     parser.add_argument(
+        "--final-stage-score", type=int, default=None,
+        help="リプレイの最終ステージのステージ記録に残るスコア(画面表示値)。ヘッダのスコアとこれの"
+             "どちらかに一致すればずれ無しとみなす(`check_replay_desync()`)。未指定ならヘッダのみ",
+    )
+    parser.add_argument(
         "--desync-result-path", default=None,
         help="リプレイずれ検証の結果(JSON)の書き出し先。未指定なら書き出さない",
     )
@@ -92,7 +97,8 @@ def run(game_id, build_config):
         progress_dir=args.progress_dir, expected_duration_seconds=args.expected_duration_seconds,
         diagnostics_dir=args.diagnostics_dir,
         max_attempts=args.max_attempts, max_duplicate_rate=args.max_duplicate_rate,
-        expected_score=args.expected_score, desync_result_path=args.desync_result_path,
+        expected_score=args.expected_score, final_stage_score=args.final_stage_score,
+        desync_result_path=args.desync_result_path,
         timeout_result_path=args.timeout_result_path,
         cut_result_path=args.cut_result_path,
         log=log,

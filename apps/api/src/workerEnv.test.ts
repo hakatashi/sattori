@@ -141,6 +141,17 @@ describe("buildWorkerEnv", () => {
     expect(env.EXPECTED_SCORE).toBe("481237400");
   });
 
+  it("replayInfo.finalStageScore があれば EXPECTED_FINAL_STAGE_SCORE を付け、無ければ付けない", () => {
+    const opts = { spotInterruptionWatch: false, dataRegion: config.ec2.region, gpuWorker: false };
+    const withFinal = { ...job, replayInfo: { score: 45621640, finalStageScore: 45621660 } } as unknown as JobRecord;
+    expect(buildWorkerEnv(config, withFinal, "task-token", opts).EXPECTED_FINAL_STAGE_SCORE).toBe("45621660");
+
+    const legacy = { ...job, replayInfo: { score: 45621640 } } as unknown as JobRecord;
+    expect(buildWorkerEnv(config, legacy, "task-token", opts).EXPECTED_FINAL_STAGE_SCORE).toBeUndefined();
+    const nullFinal = { ...job, replayInfo: { score: 45621640, finalStageScore: null } } as unknown as JobRecord;
+    expect(buildWorkerEnv(config, nullFinal, "task-token", opts).EXPECTED_FINAL_STAGE_SCORE).toBeUndefined();
+  });
+
   it("1080pオプションが残った旧レコードでも TH06NC_RESOLUTION を付けない（Issue #317で廃止）", () => {
     const jobWithHighRes = {
       ...job,

@@ -32,9 +32,22 @@ describe("fromParsedReplay", () => {
       difficulty: "Extra",
       stage: null,
       score: 303766040,
+      finalStageScore: null,
       cleared: true,
       estimatedDurationSeconds: 847,
     });
+  });
+
+  it("takes finalStageScore from the last split, converting th07's internal unit to display value", () => {
+    const split = (score: number) => ({ stage: 6, score }) as ParsedReplay["splits"][number];
+    // th07のステージ記録は内部値(表示値の1/10)。
+    expect(fromParsedReplay(baseParsedReplay({ splits: [split(100), split(21916904)] })).finalStageScore).toBe(
+      219169040,
+    );
+    // th06系のステージ記録は表示値(ヘッダと20点食い違う実例、th06 3731b273)。
+    expect(
+      fromParsedReplay(baseParsedReplay({ game: "th06", splits: [split(8868290), split(45621660)] })).finalStageScore,
+    ).toBe(45621660);
   });
 
   it("falls back to an empty string when player is null", () => {

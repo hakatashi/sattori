@@ -95,6 +95,11 @@ export function buildWorkerEnv(
     // （`worker/recording/modlog.py` の `check_replay_desync()`）。
     env.EXPECTED_SCORE = String(job.replayInfo.score);
   }
+  if (job.replayInfo?.finalStageScore !== undefined && job.replayInfo?.finalStageScore !== null) {
+    // 最終ステージのステージ記録のスコア。ヘッダのスコアと食い違うリプレイ（th06系）で、
+    // どちらかに一致すればずれ無しとみなす（`check_replay_desync()`）。
+    env.EXPECTED_FINAL_STAGE_SCORE = String(job.replayInfo.finalStageScore);
+  }
   const recordingSpeed = recordingSpeedOf(job.options);
   if (captureModeOf(job.options) === "frameSync") {
     // フレーム同期キャプチャ（Epic #399、Issue #387）。倍率という概念が無く、`FPS_LIMIT_TARGET_HZ`とは

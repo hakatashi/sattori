@@ -97,6 +97,7 @@
 | [0083](0083-remove-cpu-slow-motion-code.md) | 2026-11-23 | packages/shared / apps / worker / docs | CPU実時間(低速)録画専用のコードを削除する。GPUの倍速・等倍の経路と、旧チェックポイント再開の等倍化は残し、削除したコードは`research/archive/`へ移さず git 履歴で足りるとする(Issue #391、Epic #399) | 有効 |
 | [0084](0084-mod-integration-test-defaults-to-frame-sync.md) | 2026-11-23 | worker / docs | MOD統合テストの既定をフレーム同期にし、決定性を使う検証項目(最終状態の完全一致・被弾のゲーム内時刻・仮想ミキサの整合・出力動画の形式等)を増やす。実時間は`--capture-mode realtime`で残す | 有効 |
 | [0085](0085-th14-frame-sync-plan-without-gpu.md) | 2026-11-23 | packages/shared / worker | th14の録画の段は、GPUの段を持たないフレーム同期の3段（自宅→4xlarge帯→2xlarge帯）にする | 有効 |
+| [0086](0086-desync-check-tolerates-known-false-positives.md) | 2026-11-24 | worker / apps/api / packages/shared | リプレイずれ検知は、原因が分かった偽陽性（th08の表示用スコア・最終ステージ記録・最終値の微小な不足）だけを狭く許容する | 有効 |
 
 ## 書き方
 

@@ -55,6 +55,14 @@ GAME_SCORE_MULTIPLIERS = {
 # 外れたサンプルは機械的に除外する。
 GRAZE_GARBAGE_MAX = 1_000_000
 
+# 最終値が記録スコアをわずかに下回るだけなら、ずれ無しとみなす許容(記録スコアに対する割合)。
+# th07/th11/th13は最終ステージだけ、ゲーム側の記録・再生の差で再生の最終値が決定的に
+# 記録より少し低くなる(偽陽性7本は-0.0000〜-0.22%、真陽性で最も差が小さいのは-20.8%。
+# docs/reports/2026-11-24-desync-false-positive-investigation.md §4.3・§5 P3)。
+# **下回る側にしか許容を設けない**: 上回る側には真陽性(th20 cf96dc25 +0.26%)がある。
+# 偽陽性7本からの当てはめで母集団の分布は不明なので、広げる前に報告書の§6を読むこと。
+DESYNC_SHORTFALL_TOLERANCE = 0.003
+
 
 def wait_for_log_marker(log_path, marker, timeout, poll_interval=0.1, log_all=False, seen_lines=None, log=print):
     if seen_lines is None:
@@ -277,7 +285,7 @@ def is_score_zero(config, expected_score, scores=None):
     return max(scores) == 0
 
 
-def check_replay_desync(config, expected_score, log=print, scores=None):
+def check_replay_desync(config, expected_score, log=print, scores=None, final_stage_score=None):
     """録画中に記録されたゲーム内スコアの推移と、リプレイファイルに記録された
     最終スコアを突き合わせ、リプレイずれ(デシンク)が疑われるかを判定する
     (Issue #103)。
@@ -296,6 +304,11 @@ def check_replay_desync(config, expected_score, log=print, scores=None):
     reports/54_phase54_th07_ver100b_reverification.md、旧: 末尾サンプルのみを
     見る実装ではこの末尾ゴミ値パターンを誤って不一致と判定していた)。
 
+    次のどちらかでも一致とみなす(偽陽性の対策、同報告書 §5)。
+    - P2: 最終ステージのステージ記録のスコア(`final_stage_score`)と完全一致するサンプルがある
+      (th06系はヘッダのスコアと最終ステージの記録が食い違うリプレイがある)。
+    - P3: 最大値が記録スコアを下回り、その差が記録スコアの`DESYNC_SHORTFALL_TOLERANCE`以内。
+
     戻り値: True=不一致(リプレイずれの疑い)、False=一致、None=検証できなかった
     (期待スコア未取得、またはMODのログから有効なスコアが読み取れなかった)。
     """
@@ -312,6 +325,16 @@ def check_replay_desync(config, expected_score, log=print, scores=None):
         return None
     if expected_score in scores:
         log(f"リプレイずれ検証: 記録スコア({expected_score})と一致するサンプルを確認しました")
+        return False
+    if final_stage_score is not None and final_stage_score in scores:
+        log(f"リプレイずれ検証: 最終ステージの記録スコア({final_stage_score})と一致するサンプルを確認しました")
+        return False
+    shortfall = expected_score - max(scores)
+    if 0 < shortfall <= expected_score * DESYNC_SHORTFALL_TOLERANCE:
+        log(
+            f"リプレイずれ検証: 最大値({max(scores)})が記録スコア({expected_score})をわずかに下回るだけ"
+            f"(差{shortfall}、許容{DESYNC_SHORTFALL_TOLERANCE:.1%})のため、ずれ無しとみなします"
+        )
         return False
     log(
         f"WARNING: リプレイずれの可能性があります。記録スコア({expected_score})と一致する"

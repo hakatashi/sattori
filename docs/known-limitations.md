@@ -181,6 +181,11 @@ MODログには、グレイズも同時に壊れるゴミ値と、グレイズ�
 （`worker/mods/th10_replay_autoplay/dllmain.cpp`・`worker/mods/th12_replay_autoplay/dllmain.cpp`、
 touhou-recorder reports/57・62）。
 
+なお、原因が特定できた偽陽性だけは一致とみなす（最終ステージのステージ記録のスコアとの一致、最大値が記録を
+0.3%以内で下回るだけの場合。[`decisions/0086`](decisions/0086-desync-check-tolerates-known-false-positives.md)）。
+**th20で記録者がthpracの「PIVオーバーフロー抑制」を使っていたリプレイは、まだ偽陽性になる**
+（[報告書](reports/2026-11-24-desync-false-positive-investigation.md) §4.2・§5 P4）。
+
 **th09だけはこの事後検知が機能しない**。thprac(`thprac_th09.cpp`)にスコア表示/編集UIが
 無く、実機でのメモリ全域スキャンを尽くしてもスコアのRVAを特定できなかったため
 （touhou-recorder reports/68）、`ScoreMonitorConfig.scoreWidth=0`でスコア読み取り自体を

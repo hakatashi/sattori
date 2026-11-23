@@ -145,6 +145,47 @@ def test_check_replay_desync_matches_even_if_a_later_sample_is_garbage(tmp_path)
     assert modlog.check_replay_desync(config, 303766040, log=lambda msg: None) is False
 
 
+def test_check_replay_desync_accepts_final_stage_record_score(tmp_path):
+    # P2: th06 3731b273はヘッダ(45,621,640)と最終ステージの記録(45,621,660)が20点食い違い、
+    # MODは後者と一致した。どちらかに一致すればずれ無し。
+    config = make_config(game_id="th06", instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write("ScoreMonitor: score=45621660 stage=5 lives=0 graze=100 epoch_ms=1\n")
+
+    assert modlog.check_replay_desync(config, 45621640, log=lambda msg: None) is True
+    assert modlog.check_replay_desync(
+        config, 45621640, final_stage_score=45621660, log=lambda msg: None) is False
+    assert modlog.check_replay_desync(
+        config, 45621640, final_stage_score=45621670, log=lambda msg: None) is True
+
+
+def test_check_replay_desync_tolerates_slight_shortfall(tmp_path):
+    # P3: th07 1d710c21(記録279,960,530・再生の最終値279,353,540、-0.217%)は許容内。
+    config = make_config(game_id="th07", instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write("ScoreMonitor: score=27935354 stage=6 lives=0 graze=100 epoch_ms=1\n")
+
+    assert modlog.check_replay_desync(config, 279960530, log=lambda msg: None) is False
+
+
+def test_check_replay_desync_rejects_shortfall_beyond_tolerance(tmp_path):
+    # 真陽性で最も差が小さい th08 e20bccc6は-20.8%。許容(0.3%)を超える下回りはずれ。
+    config = make_config(game_id="th07", instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write("ScoreMonitor: score=27900000 stage=6 lives=0 graze=100 epoch_ms=1\n")
+
+    assert modlog.check_replay_desync(config, 279960530, log=lambda msg: None) is True
+
+
+def test_check_replay_desync_never_tolerates_overshoot(tmp_path):
+    # 上回る側は許容しない(真陽性のth20 cf96dc25は+0.26%)。
+    config = make_config(game_id="th20", instance_dir=str(tmp_path))
+    with open(config.log_path, "w") as f:
+        f.write("ScoreMonitor: score=100000001 stage=6 lives=0 graze=100 epoch_ms=1\n")
+
+    assert modlog.check_replay_desync(config, 1000000000 - 1, log=lambda msg: None) is True
+
+
 def test_is_score_zero_returns_true_when_all_scores_are_zero_and_expected_score_positive(tmp_path):
     config = make_config(instance_dir=str(tmp_path))
     with open(config.log_path, "w") as f:
