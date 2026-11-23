@@ -15,7 +15,7 @@
   `+0x00`は表示用の追っかけ値で、記録スコアに届く前にリプレイが終わって構造体が解放されうる。
 - **P2 最終ステージのステージ記録のスコアとの一致も認める**。th06 3731b273のように、リプレイ内で
   ヘッダのスコアと最終ステージの記録が食い違うものがある。`ReplayInfo.finalStageScore`
-  （`packages/shared/src/replay.ts`、th07のステージ記録は内部値なので×10）→ `EXPECTED_FINAL_STAGE_SCORE`
+  （`packages/shared/src/replay.ts`、th07のステージ記録の単位換算（×10）はreplay-parser側で済んでいる）→ `EXPECTED_FINAL_STAGE_SCORE`
   （`apps/api/src/workerEnv.ts`）→ `--final-stage-score` → `check_replay_desync(final_stage_score=)`。
 - **P3 最大値が記録を下回り、差が記録の0.3%以内なら一致とみなす**（`modlog.DESYNC_SHORTFALL_TOLERANCE`）。
   th07・th11・th13の最終ステージで、ゲーム側の記録・再生の差により再生の最終値が決定的にわずかに低くなる。

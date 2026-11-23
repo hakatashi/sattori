@@ -74,7 +74,7 @@ export function fromParsedReplay(parsed: ParsedReplay): ReplayInfo {
     difficulty: parsed.difficulty,
     stage: parsed.stage,
     score: parsed.score,
-    finalStageScore: finalSplit?.score == null ? null : finalSplit.score * (SPLIT_SCORE_MULTIPLIERS[parsed.game] ?? 1),
+    finalStageScore: finalSplit?.score == null ? null : finalSplit.score,
     cleared: parsed.cleared,
     estimatedDurationSeconds: parsed.frameCount === null ? null : Math.round(parsed.frameCount / 60),
   };

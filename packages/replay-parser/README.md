@@ -376,7 +376,7 @@ Per-stage breakdown records in `ParsedReplay.splits`:
 | Field | Type | Description |
 | --- | --- | --- |
 | `stage` | `number \| null` | Stage number (1-based index). Snapshot taken at the start of the stage. |
-| `score` | `number \| null` | Accumulated score at the start of this stage/segment. |
+| `score` | `number \| null` | Accumulated score at the start of this stage/segment, in the same on-screen unit as `ParsedReplay.score` (th07's internal 1/10 unit is already scaled). |
 | `power` | `string \| null` | Power value as string (format varies by game, e.g. `"0"`, `"128"`, `"1.00"`, `"4.00"`). |
 | `piv` | `number \| null` | Point of Item Value (PIV) or game-specific score metric (`null` for th06). |
 | `lives` | [`ReplayResourceCount`](#replayresourcecount) \| `null` | Lives count and fragment info. |
