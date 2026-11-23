@@ -37,6 +37,7 @@
 
 #include "audio/wasapi.h"
 #include "autoplay/dxlib_common.h"
+#include "autoplay/menu_script.h"
 #include "autoplay/window_wait.h"
 #include "clock/speed_hack.h"
 #include "core/log.h"
@@ -157,6 +158,33 @@ bool NavigateToReplay() {
 // メインシーケンス
 // ---------------------------------------------------------------------------
 
+void PressMenuKey(Key key) {
+    switch (key) {
+        case Key::kDown: PressVKey(VK_DOWN); break;
+        case Key::kRight: PressVKey(VK_RIGHT); break;
+        case Key::kReturn: PressVKey(VK_RETURN); break;
+    }
+}
+
+// Step 2(Replay へカーソルを動かす)。`Step 2:` 行は NavigateToReplay が出す。
+bool NavigateStep(int /*step*/) {
+    if (!NavigateToReplay()) {
+        Log("ERROR: メインメニューで 'Replay' を選択できませんでした。中断します");
+        return false;
+    }
+    return true;
+}
+
+// メニュー操作(Step 1〜5)。待ちは autoplay/menu_script が MenuSleep で行う。
+const MenuStep kMenu[] = {
+    {.key = Key::kReturn, .waitMs = 500, .waitMsFrameSync = 1200,
+     .label = "Enter (デモ再生を抜けてメインメニューを表示)"},
+    {.custom = NavigateStep},
+    {.key = Key::kReturn, .waitMs = 2000, .label = "Enter ('Replay' を確定、リプレイ一覧へ)"},
+    {.key = Key::kReturn, .waitMs = 1000, .label = "Enter (1番目のリプレイファイルを選択)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (リプレイ再生開始)"},
+};
+
 DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("=== th06c_replay_autoplay: AutoPlayThread started ===");
     if (!DismissStartupDialog(/*timeoutMs=*/60000)) {
@@ -182,30 +210,7 @@ DWORD WINAPI AutoPlayThread(LPVOID) {
     Log("タイトルロゴのアニメーション用に2000ms待機します...");
     time_scale::MenuSleep(2000);
 
-    LogStep(1, "Enter (デモ再生を抜けてメインメニューを表示)");
-    PressVKey(VK_RETURN);
-    time_scale::MenuSleep(frame_sync::Active() ? 1200 : 500);
-
-    if (!NavigateToReplay()) {
-        Log("ERROR: メインメニューで 'Replay' を選択できませんでした。中断します");
-        return 1;
-    }
-
-    LogStep(3, "Enter ('Replay' を確定、リプレイ一覧へ)");
-    PressVKey(VK_RETURN);
-    time_scale::MenuSleep(2000);
-
-    LogStep(4, "Enter (1番目のリプレイファイルを選択)");
-    PressVKey(VK_RETURN);
-    time_scale::MenuSleep(1000);
-
-    LogStep(5, "Enter (リプレイ再生開始)");
-    PressVKey(VK_RETURN);
-    time_scale::MenuSleep(700);
-
-    frame_sync::SetUnthrottled(true);
-    LogSequenceComplete("th06c");
-    return 0;
+    return RunMenuScript("th06c", kMenu, /*firstStep=*/1, PressMenuKey) ? 0 : 1;
 }
 
 }  // namespace

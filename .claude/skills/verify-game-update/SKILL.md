@@ -150,7 +150,7 @@ docker run --rm --name sattori-verify-th06nc \
 2. 再生終了後もプロセスが生きている間サンプリングを続け、内部値の候補がリプレイの
    記録スコアへぴったり到達することを確認する(記録スコアそのものを保持するアドレスは
    リプレイファイル由来の静的な値なので、再生中から一定値のままのものは除外する)。
-3. `worker/mods/<game>_replay_autoplay/dllmain.cpp` の `sm.baseRva` を直し、
+3. `worker/mods/<game>_replay_autoplay/dllmain.cpp` の `TitleSpec` の `.scoreMonitor`(`baseRva`)を直し、
    `build-mods` skill で再ビルドして、§3を修正版MODでもう一度通す。hook DLLは
    タイトル資産に同梱されるので、**ワーカーイメージの再デプロイは不要**(§4の
    資産アップロードで反映される)。

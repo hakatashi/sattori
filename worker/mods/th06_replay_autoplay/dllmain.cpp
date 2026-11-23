@@ -22,118 +22,60 @@
 // See docs/touhou_menu_automation.md for the technical background
 // (DirectInput GetDeviceState vtable hook), shared with the th07/th08 MODs.
 
-#include <windows.h>
-#include "audio/dsound.h"
-#include "autoplay/window_wait.h"
+#include "autoplay/title_main.h"
 #include "clock/fps_display.h"
-#include "clock/speed_hack.h"
-#include "core/log.h"
-#include "core/runtime_config.h"
-#include "core/time_scale.h"
-#include "input/dinput.h"
-#include "monitor/score_monitor.h"
 #include "present/capture/d3d8_readback.h"
-#include "present/capture/frame_sync.h"
 
 using namespace autoplay;
 
-// DirectInput scan codes.
-static const BYTE DIK_DOWN = 0xD0;
-static const BYTE DIK_RETURN = 0x1C;
+namespace {
 
-static DWORD WINAPI AutoPlayThread(LPVOID) {
-    Log("=== th06_replay_autoplay: AutoPlayThread started ===");
+const MenuStep kMenu[] = {
+    {.key = Key::kReturn, .waitMs = 500, .label = "Enter (dismiss attract-mode demo, show main menu)"},
+    {.key = Key::kDown, .repeat = 2, .waitMs = 250, .label = "Down x2 (select 'Replay' on main menu)"},
+    {.key = Key::kReturn, .waitMs = 2000, .label = "Enter (confirm 'Replay', enter replay list)"},
+    {.key = Key::kReturn, .waitMs = 1000, .label = "Enter (select 1st replay file)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (start replay playback)"},
+};
 
-    DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
-    if (!hwnd) {
-        Log("ERROR: game window never appeared, aborting sequence");
-        return 1;
-    }
+const TitleSpec kSpec = {
+    .name = "th06",
+    .titleWaitMs = 2000,
+    .menu = kMenu,
+    .installFrameSync = InstallFrameSyncD3D8,
+    .frameSyncStepDiv = 1024,
+    // 画面上fpsカウンター表示の倍速録画補正(reports/90)。th06のfps計算
+    // (RVA 0x23f3f〜、書式"%.02ffps")はWINMM.dll!timeGetTimeで経過時間を測る
+    // (0x23f5d=初回のみ基準時刻、0x23f68=毎フレーム現在時刻、500ms毎に更新)。
+    // clock/speed_hackはQPCしか偽装しないため、補正しないと2倍速(vpatch GameFPS=120)で
+    // 「120.00fps」と表示される。両呼び出しの戻り先RVAを対象にする。
+    // なおvpatch.iniのCalcFPS=1だとvpatch自身がfpsを計算・表示するため、倍速録画時は
+    // recording/instance.pyがCalcFPS=0に書き換える。
+    .realtimeExtra = [] {
+        static const ULONG_PTR kFpsTimeRvas[] = {0x00023f63, 0x00023f6e};
+        InstallFpsDisplayCorrectionHookTimeGetTime(kFpsTimeRvas, 2);
+    },
+    // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
+    // (thprac_th06.cpp)の`GAME_MANAGER = (GameManager*)0x69bca0`(絶対VA、
+    // ImageBase=0x400000前提、RVA=0x29bca0)由来。GameManager構造体はポインタ
+    // 間接参照不要で直接この位置にある。score(uint32, +0x04)は画面表示値と
+    // 等倍(th07/th11/th20と異なりth06は10倍換算不要)。livesRemaining(int8,
+    // +0x181a)は1バイトのみである点に注意。フル尺録画でリプレイ記録スコアとの
+    // 完全一致を実機確認済み(touhou-recorder
+    // reports/53_phase53_score_monitor_all_titles.md)。
+    .scoreMonitor = {
+        .baseRva = 0x29bca0,
+        .scoreOffset = 0x04,
+        .scoreWidth = 4,
+        .stageOffset = 0x1a34,
+        .stageWidth = 4,
+        .livesOffset = 0x181a,
+        .livesWidth = 1,
+        .grazeOffset = 0x18,  // grazeInTotal(累積グレイズ)
+        .grazeWidth = 4,
+    },
+};
 
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
-        Log("ERROR: GetDeviceState hook was never called, aborting sequence");
-        return 1;
-    }
+}  // namespace
 
-    Log("Buffering 2000ms for title logo animation...");
-    time_scale::MenuSleep(2000);
-
-    LogStep(1, "Enter (dismiss attract-mode demo, show main menu)");
-    PressKey(DIK_RETURN);
-    time_scale::MenuSleep(500);
-
-    LogStep(2, "Down x2 (select 'Replay' on main menu)");
-    for (int i = 0; i < 2; i++) {
-        PressKey(DIK_DOWN);
-        time_scale::MenuSleep(250);
-    }
-
-    LogStep(3, "Enter (confirm 'Replay', enter replay list)");
-    PressKey(DIK_RETURN);
-    time_scale::MenuSleep(2000);
-
-    LogStep(4, "Enter (select 1st replay file)");
-    PressKey(DIK_RETURN);
-    time_scale::MenuSleep(1000);
-
-    LogStep(5, "Enter (start replay playback)");
-    PressKey(DIK_RETURN);
-    time_scale::MenuSleep(700);
-
-    frame_sync::SetUnthrottled(true);
-    LogSequenceComplete("th06");
-    return 0;
-}
-
-BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(hinst);
-        LogInit(hinst, "th06_autoplay.log");
-        InitRuntimeConfig();
-        Log("DLL_PROCESS_ATTACH: installing IAT hook");
-        InstallDinputHook();
-        if (!InstallFrameSyncD3D8(1024)) {
-            // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
-            InstallSpeedHackHook();
-            // 画面上fpsカウンター表示の倍速録画補正(reports/90)。th06のfps計算
-            // (RVA 0x23f3f〜、書式"%.02ffps")はWINMM.dll!timeGetTimeで経過時間を測る
-            // (0x23f5d=初回のみ基準時刻、0x23f68=毎フレーム現在時刻、500ms毎に更新)。
-            // clock/speed_hackはQPCしか偽装しないため、補正しないと2倍速(vpatch GameFPS=120)で
-            // 「120.00fps」と表示される。両呼び出しの戻り先RVAを対象にする。
-            // なおvpatch.iniのCalcFPS=1だとvpatch自身がfpsを計算・表示するため、倍速録画時は
-            // recording/instance.pyがCalcFPS=0に書き換える。InstallSpeedHackHook()の後に呼ぶこと。
-            static const ULONG_PTR kFpsTimeRvas[] = {0x00023f63, 0x00023f6e};
-            InstallFpsDisplayCorrectionHookTimeGetTime(kFpsTimeRvas, 2);
-        }
-        // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
-        // A/V同期マーカー(reports/88)を有効にする。
-        InstallDSoundHook();
-        // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
-        // (thprac_th06.cpp)の`GAME_MANAGER = (GameManager*)0x69bca0`(絶対VA、
-        // ImageBase=0x400000前提、RVA=0x29bca0)由来。GameManager構造体はポインタ
-        // 間接参照不要で直接この位置にある。score(uint32, +0x04)は画面表示値と
-        // 等倍(th07/th11/th20と異なりth06は10倍換算不要)。livesRemaining(int8,
-        // +0x181a)は1バイトのみである点に注意。フル尺録画でリプレイ記録スコアとの
-        // 完全一致を実機確認済み(touhou-recorder
-        // reports/53_phase53_score_monitor_all_titles.md)。
-        {
-            ScoreMonitorConfig sm;
-            sm.baseRva = 0x29bca0;
-            sm.baseIsPointer = false;
-            sm.scoreOffset = 0x04;
-            sm.scoreWidth = 4;
-            sm.stageOffset = 0x1a34;
-            sm.stageWidth = 4;
-            sm.livesOffset = 0x181a;
-            sm.livesWidth = 1;
-            sm.grazeOffset = 0x18; // grazeInTotal(累積グレイズ)
-            sm.grazeWidth = 4;
-            sm.intervalMs = 1000;
-            StartScoreMonitorThread(sm);
-        }
-        // 倍速録画の進行速度確認用(reports/89)。
-        CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
-    }
-    return TRUE;
-}
+DEFINE_TITLE(kSpec)

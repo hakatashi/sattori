@@ -29,121 +29,65 @@
 // このMODは常に「1番目のスロット(No.01)」を選ぶ固定シーケンスのため、
 // record_th10.py側でコピー先ファイル名を"th10_01.rpy"に正規化する。
 
-#include <windows.h>
-#include <stdlib.h>
-#include "audio/dsound.h"
-#include "autoplay/window_wait.h"
-#include "clock/speed_hack.h"
-#include "core/log.h"
-#include "core/runtime_config.h"
-#include "core/time_scale.h"
-#include "input/dinput.h"
-#include "monitor/score_monitor.h"
+#include "autoplay/title_main.h"
 #include "present/capture/d3d9_readback.h"
-#include "present/capture/frame_sync.h"
 #include "present/limiter.h"
 #include "texture/d3dx_filter.h"
 
 using namespace autoplay;
 
-// DirectInput scan codes.
-static const BYTE DIK_DOWN = 0xD0;
-static const BYTE DIK_RETURN = 0x1C;
+namespace {
 
-static DWORD WINAPI AutoPlayThread(LPVOID) {
-    Log("=== th10_replay_autoplay: AutoPlayThread started ===");
+const MenuStep kMenu[] = {
+    {.key = Key::kReturn, .waitMs = 1000, .label = "Enter (dismiss 'Press Any Button' title screen)"},
+    {.key = Key::kDown, .repeat = 2, .waitMs = 500,
+     .label = "Down x2 (select 'Replay' on main menu, skipping locked 'Extra Start')"},
+    {.key = Key::kReturn, .waitMs = 500, .label = "Enter (confirm 'Replay', enter replay list)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (select 1st replay file)"},
+    {.key = Key::kReturn, .waitMs = 700,
+     .label = "Enter (confirm playback, start replay from Stage 1)"},
+};
 
-    DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
-    if (!hwnd) {
-        Log("ERROR: game window never appeared, aborting sequence");
-        return 1;
-    }
+const TitleSpec kSpec = {
+    .name = "th10",
+    // 6000ms(フレーム同期は8000ms)で安定してタイトルを消せることを確認済み(上のコメント)。
+    .titleWaitMs = 6000,
+    .titleWaitMsFrameSync = 8000,
+    .firstStep = 0,
+    .menu = kMenu,
+    // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
+    // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
+    .textFilter = InstallD3DXFilterHook,
+    .installFrameSync = InstallFrameSyncD3D9,
+    .frameSyncStepDiv = 1024,
+    // 倍速録画(reports/89)ではPresentの上限をFPS_LIMIT_TARGET_HZ(60×倍率)に合わせる
+    // (touhou-recorderでは低速録画検証のフェーズ58・62から同じ構成)。**等倍では入れない**:
+    // このタイトルはVsyncPatchが60fpsへのフレーム制御を担っており、present/limiterは
+    // FPS_LIMIT_TARGET_HZ未設定でも60fpsで間引くため、二重の制御でゲーム進行が約3%遅れた
+    // (MOD統合テストで被弾タイミングが127秒時点で4.1秒遅延、Issue #288)。
+    .installLimiter = InstallFpsLimiterHook,
+    .limiterOnlyWhenScaled = true,
+    // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
+    // (thprac_th10.cpp)の`enum ADDRS`および`THGuiPrac::State()`内の実書き込み
+    // コードから収集した絶対VA(0x474c44=score, 0x474c70=life, 0x474c7c=stage)を、
+    // 0x474c00を基点(RVA=0x74c00)としたオフセットに整理したもの。score(内部値)は
+    // 画面表示値の1/10(th07/th08/th11/th20と同じ×10系列)。グレイズはth10エンジン
+    // にそもそも実装が見当たらない(thprac側もTHPracParamにgrazeフィールドが無い)
+    // ため計測しない。フル尺録画での記録スコアとの完全一致を実機確認済み
+    // (touhou-recorder reports/57、150,277,360で一致)。
+    .scoreMonitor = {
+        .baseRva = 0x74c00,
+        .baseIsPointer = false,
+        .scoreOffset = 0x44,
+        .scoreWidth = 4,
+        .stageOffset = 0x7c,
+        .stageWidth = 4,
+        .livesOffset = 0x70,
+        .livesWidth = 4,
+        .intervalMs = 1000,
+    },
+};
 
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
-        Log("ERROR: GetDeviceState hook was never called, aborting sequence");
-        return 1;
-    }
+}  // namespace
 
-    const DWORD titleWaitMs = frame_sync::Active() ? 8000 : 6000;
-    Log("Buffering %lums for title screen logo animation...", (unsigned long)titleWaitMs);
-    time_scale::MenuSleep(titleWaitMs);
-
-    LogStep(0, "Enter (dismiss 'Press Any Button' title screen)");
-    PressKey(DIK_RETURN);
-    time_scale::MenuSleep(1000);
-
-    LogStep(1, "Down x2 (select 'Replay' on main menu, skipping locked 'Extra Start')");
-    for (int i = 0; i < 2; i++) {
-        PressKey(DIK_DOWN);
-        time_scale::MenuSleep(500);
-    }
-
-    LogStep(2, "Enter (confirm 'Replay', enter replay list)");
-    PressKey(DIK_RETURN);
-    time_scale::MenuSleep(500);
-
-    LogStep(3, "Enter (select 1st replay file)");
-    PressKey(DIK_RETURN);
-    time_scale::MenuSleep(700);
-
-    LogStep(4, "Enter (confirm playback, start replay from Stage 1)");
-    PressKey(DIK_RETURN);
-    time_scale::MenuSleep(700);
-
-    frame_sync::SetUnthrottled(true);
-    LogSequenceComplete("th10");
-    return 0;
-}
-
-BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(hinst);
-        LogInit(hinst, "th10_autoplay.log");
-        InitRuntimeConfig();
-        Log("DLL_PROCESS_ATTACH: installing IAT hook");
-        InstallDinputHook();
-        // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
-        // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
-        InstallD3DXFilterHook();
-        if (!InstallFrameSyncD3D9(1024)) {
-            // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
-            InstallSpeedHackHook();
-            // 倍速録画(reports/89)ではPresentの上限をFPS_LIMIT_TARGET_HZ(60×倍率)に合わせる
-            // (touhou-recorderでは低速録画検証のフェーズ58・62から同じ構成)。**等倍では入れない**:
-            // このタイトルはVsyncPatchが60fpsへのフレーム制御を担っており、present/limiterは
-            // FPS_LIMIT_TARGET_HZ未設定でも60fpsで間引くため、二重の制御でゲーム進行が約3%遅れた
-            // (MOD統合テストで被弾タイミングが127秒時点で4.1秒遅延、Issue #288)。
-            {
-                const double targetHz = Config().fpsLimitTargetHz;
-                if (targetHz > 0.0 && targetHz != 60.0) InstallFpsLimiterHook();
-            }
-        }
-        // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
-        // A/V同期マーカー(reports/88)を有効にする。
-        InstallDSoundHook();
-        // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
-        // (thprac_th10.cpp)の`enum ADDRS`および`THGuiPrac::State()`内の実書き込み
-        // コードから収集した絶対VA(0x474c44=score, 0x474c70=life, 0x474c7c=stage)を、
-        // 0x474c00を基点(RVA=0x74c00)としたオフセットに整理したもの。score(内部値)は
-        // 画面表示値の1/10(th07/th08/th11/th20と同じ×10系列)。グレイズはth10エンジン
-        // にそもそも実装が見当たらない(thprac側もTHPracParamにgrazeフィールドが無い)
-        // ため計測しない。フル尺録画での記録スコアとの完全一致を実機確認済み
-        // (touhou-recorder reports/57、150,277,360で一致)。
-        {
-            ScoreMonitorConfig sm;
-            sm.baseRva = 0x74c00;
-            sm.baseIsPointer = false;
-            sm.scoreOffset = 0x44;
-            sm.scoreWidth = 4;
-            sm.stageOffset = 0x7c;
-            sm.stageWidth = 4;
-            sm.livesOffset = 0x70;
-            sm.livesWidth = 4;
-            sm.intervalMs = 1000;
-            StartScoreMonitorThread(sm);
-        }
-        CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
-    }
-    return TRUE;
-}
+DEFINE_TITLE(kSpec)

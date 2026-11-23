@@ -1,0 +1,70 @@
+# MOD のタイトル定義の宣言化(`TitleSpec`、Issue #394)の前後比較のローカル検証
+
+- **検証日**: 2026-11-24
+- **対象**: `worker/mods/` の 14 タイトルの `dllmain.cpp` を `TitleSpec`・`RunMenuScript` の宣言へ移した前後の、MOD のログ(契約行・フックの組み込み行・Step の並びと間隔)と録画の合否
+- **環境**: 自宅ワーカー機(HakataMatrix)。ホスト直接実行(`worker/games/`・`worker/prefixes/`)、`tests/mod_integration/run.py`、mingw-w64 でビルドした DLL(変更前は `main` の `f1ba7798`)
+- **結論**: フレーム同期の MOD 統合テストは 13 タイトルとも前後で合格し、契約行の順序とフックの組み込み行の集合が一致した。実時間の経路(5 タイトル、2 倍速)でも一致した。**th15 は統合テストの対象外で、ビルドと宣言の突き合わせまで**
+
+宣言化は本番の待ち時間・キー操作の並びを変えない方針(決定は [`decisions/0088`](../decisions/0088-title-spec-declarative-mod-definitions.md))。
+その確認として、変更前の DLL と変更後の DLL で、同じリプレイ・同じホストで MOD ログを採って比べた。
+
+## 目的
+
+Issue #394 の検証項目: 宣言化の前後で待ち時間とキー操作の並びが同じであること(MOD のログ比較)、全タイトルの MOD 統合テストの合格。
+
+## 方法
+
+1. 変更前(`main`)の DLL をビルドして `tests/mod_integration/run.py`(既定のフレーム同期)を全タイトルで実行し、
+   各タイトルの `thNN_autoplay.log` を採取(`--keep-output` つき)。
+2. 変更後の DLL(`make -C worker/mods all check`)で同じテストを実行し、同じく採取。
+3. 両ログから、契約行(`Step N:`・`sequence complete`・`Buffering`)と、フック組み込み行(`Install*`・`hooked ...`・
+   `ScoreMonitor: started`・`WaitForStableWindow`・`FrameSync: capture start / unthrottled`)を取り出して比べる。
+   数値(経過ms・ポーリング回数・フレーム番号・ハンドル値)は正規化し、**契約行は順序つきで、フック組み込み行は多重集合で**比較した。
+4. 実時間の経路: `--capture-mode realtime` で th06・th09・th10・th12・th20 を、`FPS_LIMIT_TARGET_HZ=120`(2 倍速)で
+   前後それぞれ実行し、同様に比べた(上限・fps 表示補正・th12 のコードケーブの組み込みを通すため)。
+   さらに等倍の実時間で th10・th12 を変更後の DLL で実行した(`limiterOnlyWhenScaled` の確認)。
+
+## 結果
+
+| 検証 | 結果 |
+| --- | --- |
+| 変更後の `make -C worker/mods all check` | ビルド成功(`-Werror`)、ホスト単体テスト 23 件合格、`check-imports` OK(18 ファイル) |
+| 変更前の MOD 統合テスト(フレーム同期、13 タイトル) | 全 OK |
+| 変更後の MOD 統合テスト(フレーム同期、13 タイトル) | 全 OK |
+| 契約行(`Step N:` の文言と順序・`Buffering`・`sequence complete`)の前後比較(13 タイトル) | 順序つきで全一致 |
+| フック組み込み行の前後比較(13 タイトル) | 多重集合で全一致 |
+| 実時間・2 倍速(th06・th09・th10・th12・th20) | 契約行は順序つきで一致、フック組み込み行(`InstallSpeedHackHook`・`InstallFpsLimiterHook(D3D8)`・`InstallFpsDisplayCorrectionHook*`・`InstallFpsDisplayScalePatch: OK (factor=0.5000)`)の多重集合が一致 |
+| 実時間・等倍(th10・th12、変更後) | 合格(被弾タイミングも基準内)。`InstallFpsLimiterHook` は組み込まれない(二重の制御を避ける、Issue #288) |
+| 変更後の `worker` の pytest | 596 件合格(`tests/test_mod_title_definitions.py` を追加) |
+
+Step 間の経過時間(フレーム同期、実時間 ms、1 回ずつの測定。変更前 → 変更後):
+
+| タイトル | Step 1→2 | 2→3 | 3→4 | 4→5 |
+| --- | --- | --- | --- | --- |
+| th06 | 633 → 626 | 767 → 767 | 2167 → 2157 | 1134 → 1135 |
+| th07 | 754 → 753 | 858 → 839 | 834 → 834 | 834 → 832 |
+| th10 | 1129 → 1130 | 1269 → 1268 | 633 → 634 | 834 → 833 |
+| th12 | 764 → 768 | 834 → 833 | 633 → 634 | 835 → 831 |
+| th20 | 1095 → 1099 | 845 → 820 | 694 → 637 | 815 → 815 |
+
+フレーム同期の待ちは Present の回数基準(`time_scale::MenuSleep`)で、実時間のばらつき(数 ms〜数十 ms)は
+ホストの負荷による。待ちの指定値(ms)・`PressKey` の押下ポーリング回数は、コードの上で変更前と同じ値を宣言している
+(`kMenu` の `waitMs`)ので、**ミリ秒単位の一致の根拠は、宣言の値がソース上で一致していること(下の考察)と、
+この実測の差がジッターの範囲に収まっていること**の両方。
+
+## 考察・既知の限界
+
+- **前後の差として残るログ行**: th11 の `InstallKeyboardStateHook` が `InstallDSoundHook` の後から入力フックの直後
+  (th20 と同じ位置)へ移った(IAT の別の関数の書き換えで互いに依存しない。0088 の 7)。実機録画は合格している。
+  そのほかは `WaitForStableWindow`・`CreateDevice` などの別スレッドのログの並びの揺れで、順序の保証は元々無い。
+- **GPU 実時間(g6f)の実録画は行っていない**。ローカルの機械には GPU のインスタンスタイプ(`g6f.2xlarge`)がなく、
+  AWS の実験ジョブ(Issue #397)が要る。ただし GPU の段のワーカーは同じ MOD の実時間の経路(上の 2 倍速・等倍の検証と
+  同じ `InstallRealtimeHooks`)を使うので、組み込まれるフックの集合が変更前と同じことまでをここで確かめた。
+- **th15 は MOD 統合テストの対象外**(`tests/fixtures/mod-integration/` にリプレイが無い)。ビルド・宣言の突き合わせ
+  (`tests/test_mod_title_definitions.py`)と、th14 と同じ構造(`ViaCaller` の fps 補正・`titleWaitMsFrameSync=11500`)が
+  同じ形で宣言されていることまでの確認に留まる。実機の録画は次に th15 が本番で流れたときに確かめる。
+- th20 の実時間 2 倍速は変更前の DLL でも録画が異常終了した(前後で同じ結果。原因は調べていない)。
+  実時間・2 倍速の合否(NG)は、被弾タイミングの基準値が等倍の秒で書かれているため(前後で実測値も同じ)。
+  このテストで見たのはフックの組み込みと契約行だけ。
+- 1 回ずつの測定のため、Step 間隔の差(最大約 57ms、th20 の Step 3→4)がジッターか否かは前後それぞれの複数回の測定が無いと言い切れない。
+  契約行の順序と宣言値の一致から、待ちの値が変わっていないことを根拠にしている。

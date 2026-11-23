@@ -23,125 +23,59 @@
 // Right(switch to user replay tab) -> Enter(select 1st user replay file)
 // -> Enter(confirm playback).
 
-#include <windows.h>
-#include "audio/dsound.h"
-#include "autoplay/window_wait.h"
-#include "clock/speed_hack.h"
-#include "core/log.h"
-#include "core/runtime_config.h"
-#include "core/time_scale.h"
-#include "input/dinput.h"
-#include "monitor/score_monitor.h"
+#include "autoplay/title_main.h"
 #include "present/capture/d3d9_readback.h"
-#include "present/capture/frame_sync.h"
 #include "texture/d3dx_filter.h"
 
 using namespace autoplay;
 
-// Win32 virtual-key codes.
-static const BYTE VK_DOWN_KEY = 0x28;
-static const BYTE VK_RIGHT_KEY = 0x27;
-static const BYTE VK_RETURN_KEY = 0x0D;
+namespace {
 
-static DWORD WINAPI AutoPlayThread(LPVOID) {
-    Log("=== th11_replay_autoplay: AutoPlayThread started ===");
+const MenuStep kMenu[] = {
+    {.key = Key::kDown, .repeat = 2, .waitMs = 250, .label = "Down x2 (select 'Replay' on main menu)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (confirm 'Replay', enter replay list)"},
+    {.key = Key::kRight, .waitMs = 500, .label = "Right (switch to user replay tab)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (select 1st user replay file)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (confirm playback, start replay)"},
+};
 
-    DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
-    if (!hwnd) {
-        Log("ERROR: game window never appeared, aborting sequence");
-        return 1;
-    }
-
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
-        Log("ERROR: neither GetDeviceState nor GetKeyboardState hook was ever called, aborting sequence");
-        return 1;
-    }
-
+const TitleSpec kSpec = {
+    .name = "th11",
+    .input = InputPath::kKeyboardState,
     // th08 only needs 1500ms here; th11's title logo animation is longer and
     // sending Down/Enter too early lands on the wrong menu item (Practice
     // Start, Rank Select, etc.) instead of "Replay". 6000ms (8000ms for
     // frame-sync) was found to reliably reach the main menu.
-    const DWORD titleWaitMs = frame_sync::Active() ? 8000 : 6000;
-    Log("Buffering %lums for title screen animation...", (unsigned long)titleWaitMs);
-    time_scale::MenuSleep(titleWaitMs);
+    .titleWaitMs = 6000,
+    .titleWaitMsFrameSync = 8000,
+    .menu = kMenu,
+    // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
+    // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
+    .textFilter = InstallD3DXFilterHook,
+    .installFrameSync = InstallFrameSyncD3D9,
+    .frameSyncStepDiv = 1024,
+    // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
+    // (thprac_th11.cpp)の`Globals* globals = (Globals*)0x4a56e0`(絶対VA、
+    // RVA=0xa56e0)由来。th20と同じくポインタ間接参照は不要(構造体自体が固定
+    // RVAに置かれている)。score(int32, +0x04)は画面表示値の1/10(th07/th20と
+    // 同じ慣習)。stage(+0x48)はthprac側の`STAGE_NUM`列挙値(=globals+0x48)と
+    // 一致することを構造体オフセット計算で裏付け済み。フル尺録画でリプレイ
+    // 記録スコアとの完全一致を実機確認済み(touhou-recorder
+    // reports/53_phase53_score_monitor_all_titles.md、ゲームオーバーで終わる
+    // リプレイでも最終スコアが記録値と厳密に一致することまで確認済み)。
+    .scoreMonitor = {
+        .baseRva = 0xa56e0,
+        .scoreOffset = 0x04,
+        .scoreWidth = 4,
+        .stageOffset = 0x48,
+        .stageWidth = 4,
+        .livesOffset = 0x38,
+        .livesWidth = 4,
+        .grazeOffset = 0x74,
+        .grazeWidth = 4,
+    },
+};
 
-    LogStep(1, "Down x2 (select 'Replay' on main menu)");
-    for (int i = 0; i < 2; i++) {
-        PressVKey(VK_DOWN_KEY);
-        time_scale::MenuSleep(250);
-    }
+}  // namespace
 
-    LogStep(2, "Enter (confirm 'Replay', enter replay list)");
-    PressVKey(VK_RETURN_KEY);
-    time_scale::MenuSleep(700);
-
-    LogStep(3, "Right (switch to user replay tab)");
-    PressVKey(VK_RIGHT_KEY);
-    time_scale::MenuSleep(500);
-
-    // Within the user replay tab, th11 assigns each replay file to a fixed
-    // list slot parsed from the number in its filename (th11_ud0001.rpy
-    // always shows as slot "No.0001"), unlike th07/th08 where a single
-    // copied file simply occupies slot 1. The caller MUST place the target
-    // replay as "th11_ud0000.rpy" in the instance's replay/ directory for
-    // this Enter to land on it (verified in touhou-recorder reports/35).
-    LogStep(4, "Enter (select 1st user replay file)");
-    PressVKey(VK_RETURN_KEY);
-    time_scale::MenuSleep(700);
-
-    LogStep(5, "Enter (confirm playback, start replay)");
-    PressVKey(VK_RETURN_KEY);
-    time_scale::MenuSleep(700);
-
-    frame_sync::SetUnthrottled(true);
-    LogSequenceComplete("th11");
-    return 0;
-}
-
-BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(hinst);
-        LogInit(hinst, "th11_autoplay.log");
-        InitRuntimeConfig();
-        Log("DLL_PROCESS_ATTACH: installing IAT hooks");
-        InstallDinputHook();
-        // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
-        // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
-        InstallD3DXFilterHook();
-        if (!InstallFrameSyncD3D9(1024)) {
-            // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
-            InstallSpeedHackHook();
-        }
-        // BGM/SEの再生周波数をFPS_LIMIT_TARGET_HZ/60倍にスケールし(等倍なら無変更)、
-        // A/V同期マーカー(reports/88)を有効にする。
-        InstallDSoundHook();
-        InstallKeyboardStateHook();
-        // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
-        // (thprac_th11.cpp)の`Globals* globals = (Globals*)0x4a56e0`(絶対VA、
-        // RVA=0xa56e0)由来。th20と同じくポインタ間接参照は不要(構造体自体が固定
-        // RVAに置かれている)。score(int32, +0x04)は画面表示値の1/10(th07/th20と
-        // 同じ慣習)。stage(+0x48)はthprac側の`STAGE_NUM`列挙値(=globals+0x48)と
-        // 一致することを構造体オフセット計算で裏付け済み。フル尺録画でリプレイ
-        // 記録スコアとの完全一致を実機確認済み(touhou-recorder
-        // reports/53_phase53_score_monitor_all_titles.md、ゲームオーバーで終わる
-        // リプレイでも最終スコアが記録値と厳密に一致することまで確認済み)。
-        {
-            ScoreMonitorConfig sm;
-            sm.baseRva = 0xa56e0;
-            sm.baseIsPointer = false;
-            sm.scoreOffset = 0x04;
-            sm.scoreWidth = 4;
-            sm.stageOffset = 0x48;
-            sm.stageWidth = 4;
-            sm.livesOffset = 0x38;
-            sm.livesWidth = 4;
-            sm.grazeOffset = 0x74;
-            sm.grazeWidth = 4;
-            sm.intervalMs = 1000;
-            StartScoreMonitorThread(sm);
-        }
-        CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
-    }
-    return TRUE;
-}
+DEFINE_TITLE(kSpec)
