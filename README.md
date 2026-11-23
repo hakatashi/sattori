@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="apps/web/public/og-image-en.jpg" alt="TouhouSattori - Automatic Touhou Replay Recording Service">
-</p>
+[![TouhouSattori - Automatic Touhou Replay Recording Service](apps/web/public/og-image-en.jpg)](https://sattori.hakatashi.com/)
 
 # TouhouSattori
 
