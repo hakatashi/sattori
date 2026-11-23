@@ -1,63 +1,36 @@
 <p align="center">
-  <img src="apps/web/public/logo-black.svg" alt="Sattori" height="80">
+  <img src="apps/web/public/og-image-en.jpg" alt="TouhouSattori - Automatic Touhou Replay Recording Service" height="80">
 </p>
 
-# Sattori
+# TouhouSattori
 
-**東方Projectのリプレイファイルをアップロードするだけで、録画動画を自動生成できる無料ウェブサービス。**
+**TouhouSattori is a free web service that automatically generates a recorded video from a Touhou Project replay file — just upload the replay.**
 
-東方原作ファンが、動画ファイルの扱いに詳しくなくても、面倒な処理をせずに気軽に
-リプレイの録画動画を作成し、各種動画サイトへ簡単にアップロードできるようにする
-ことを目指しています。
+Our goal is to let fans of the original Touhou games create replay videos with ease, without any knowledge of video files or tedious processing, and to upload them to video sites with minimal effort.
 
-## 仕組み
+## Current Status
 
-1. リプレイファイル（`.rpy`）をブラウザからアップロード
-2. AWS 上で東方本体を Wine + Xvfb + ffmpeg によりヘッドレス録画（GPU不要）
-3. 完成した動画を CloudFront 経由でダウンロード
+After its initial release on 2026-08-22, we have been steadily adding features and expanding the list of supported titles.
 
-録画パイプラインは、PoC（実機検証レポート・MOD・スクリプト一式を
-[`research/touhou-recorder`](research/touhou-recorder/README.md) にスナップショットとして収録）で
-th07（妖々夢）・th08（永夜抄）の E2E 動作を実証済みで、その知見をもとに構築しています。
+### Supported Titles
 
-## モノレポ構成
+* Embodiment of Scarlet Devil (th06)
+* Embodiment of Scarlet Devil: Classic (th06c)
+* Embodiment of Scarlet Devil: New Classic (th06nc)
+* Perfect Cherry Blossom (th07)
+* Imperishable Night (th08)
+* Phantasmagoria of Flower View (th09)
+* Mountain of Faith (th10)
+* Subterranean Animism (th11)
+* Undefined Fantastic Object (th12)
+* Fairy Wars (th128)
+* Ten Desires (th13)
+* Double Dealing Character (th14)
+* Legacy of Lunatic Kingdom (th15)
+* Fossilized Wonders (th20)
 
-| パッケージ | 内容 |
-| --- | --- |
-| [`apps/web`](apps/web/README.md) | フロントエンド（Vite + React + CSS Modules） |
-| [`apps/api`](apps/api/README.md) | バックエンド API（AWS Lambda ハンドラ / TypeScript） |
-| [`packages/shared`](packages/shared/README.md) | フロント・API 共有の型定義 |
-| [`packages/replay-parser`](packages/replay-parser/README.md) | `.rpy` デコーダ |
-| [`worker`](worker/README.md) | 録画ワーカー（Python + Docker、EC2 Spot 上で実行） |
-| [`infra`](infra/README.md) | AWS CDK（TypeScript）によるインフラ定義 |
+## License / Disclaimer
 
-技術スタック: TypeScript 7.0 / Vite / React / Vitest / CSS Modules / AWS CDK /
-pnpm workspaces + Turborepo。
+The source code of this repository is released under the [MIT License](./LICENSE).
 
-## 開発
-
-```bash
-pnpm install            # 依存インストール（asdf で pnpm 10.33 / Node 24 を使用）
-pnpm build              # 全パッケージビルド
-pnpm test               # 全パッケージのテスト
-pnpm typecheck          # 型チェック
-pnpm --filter @sattori/web dev   # フロントエンドの開発サーバ
-```
-
-## 現在の状況
-
-アップロード→解析プレビュー→メール認証（マジックリンク）→録画→進捗ポーリング→
-ダウンロード→完了メール送信という主要フローは実装済みで、2026-08-22に初回リリースしました。
-対応タイトルは東方紅魔郷（th06・th06c・th06nc）・東方妖々夢（th07）・東方永夜抄（th08）・
-東方花映塚（th09）・東方風神録（th10）・東方地霊殿（th11）・東方星蓮船（th12）・
-東方神霊廟（th13）・東方輝針城（th14）・東方紺珠伝（th15）・東方錦上京（th20）・妖精大戦争（th128）の14本です。
-
-全体アーキテクチャや常に踏まえておくべき設計判断は **[`AGENTS.md`](./AGENTS.md)** を、
-各パッケージの実装詳細はそれぞれの README.md を参照してください。
-
-## ライセンス / 注意
-
-本リポジトリのソースコードは [MIT License](./LICENSE) のもとで公開されています。
-
-Sattori はファンメイドの非公式サービスです。東方Project © 上海アリス幻樂団。
-ゲーム本体・リプレイ等の著作権物はリポジトリに含まれません。
+Touhou Project is the copyrighted work of Team Shanghai Alice. This project is a fan-made, unofficial service and is not affiliated with Team Shanghai Alice. The repository does not contain any copyrighted material such as the games themselves, code, or assets.
