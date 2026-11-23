@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/web/public/og-image-en.jpg" alt="TouhouSattori - Automatic Touhou Replay Recording Service" height="80">
+  <img src="apps/web/public/og-image-en.jpg" alt="TouhouSattori - Automatic Touhou Replay Recording Service">
 </p>
 
 # TouhouSattori
