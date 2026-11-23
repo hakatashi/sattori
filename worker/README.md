@@ -260,7 +260,7 @@ GPU用カスタムAMI(`docs/decisions/0046-gpu-ec2-instance-and-fixed-ami.md`)�
 - **タイムアウト打ち切り(検知方式がリプレイ終了検知ではなく録画時間の上限)も検知・警告のみで、
   自動リトライはしない**(Issue #161。`JobRecord.timedOut`に記録して同じ警告表示に乗せる。同 §3)。
   フレーム同期の経路は、実時間120分に加えて**リプレイ尺(動画の秒)が2時間を超えても打ち切る**
-  (`framesync.MAX_REPLAY_VIDEO_SEC`。実時間より速く進むため、終了を検知できないと動画が5時間に及んだ)。
+  (`framesync.MAX_REPLAY_VIDEO_SEC`。実時間より速く進むため、実時間の上限だけでは動画の尺を制限できない)。
 - **Wineクラッシュ(ゲーム本体の未処理例外)だけは検知して自動リトライする**(Issue #267)。
   上記2つと違い非決定的でリトライにより解消しうるため。検知は`wine.log`に現れる`Unhandled`で
   行い(`WINE_UNHANDLED_EXCEPTION_MARKER`)、`classification="crashed"`として破棄・リトライする。
