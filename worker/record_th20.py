@@ -29,6 +29,10 @@ def build_config(pulse_sink):
         # デシンク対策。ゲーム起動直後にアタッチする(`recording.process.attach_thprac()`)。
         # games/th20/ に同梱しておくこと。
         thprac_exe="thprac.v2.3.0.3.exe",
+        # スペルプラクティスの耐久時間切れで一覧画面へ戻るリプレイ用。一覧画面は背景の動きが大きく
+        # 閾値15では取りこぼすため、プレイ中の最小(約50)との間の35にする(全画面で照合)。
+        replay_list_detect=True,
+        replay_list_mad_threshold=35.0,
     )
 
 

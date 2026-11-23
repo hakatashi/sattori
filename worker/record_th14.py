@@ -29,6 +29,9 @@ def build_config(pulse_sink):
         # 終了後のメニューの明滅をこの矩形で静止判定から除外する(1280x960のウィンドウ座標系、
         # touhou-recorder reports/103)。
         still_detect_exclude_rect=[(85, 426, 85 + 295, 426 + 429)],
+        # スペルプラクティスの耐久時間切れで一覧画面へ戻るリプレイ用(th13と同じ)。
+        replay_list_detect=True,
+        replay_list_exclude_rows=(18, 25),
     )
 
 

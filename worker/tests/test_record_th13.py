@@ -55,3 +55,14 @@ def test_build_config_uses_a_display_number_not_shared_with_other_titles():
         for game in others
     }
     assert record_th13.build_config("sattori_job_test").display not in displays
+
+
+def test_build_config_detects_the_replay_list_screen_for_spell_practice_timeouts():
+    """耐久で時間切れにしたスペルプラクティスは一覧画面へ戻り、画面静止が成立しない
+    (docs/reports/2026-11-24-spell-practice-timeout-end-detection.md)。"""
+    config = record_th13.build_config("sattori_job_test")
+
+    assert config.replay_list_detect is True
+    assert config.replay_list_exclude_rows == (19, 25)
+    assert config.replay_list_mad_threshold == None
+    assert config.replay_list_template_path.endswith("assets/replay_end_templates/th13_replay_list.png")

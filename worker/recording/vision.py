@@ -166,6 +166,16 @@ def load_end_template(path):
     return np.asarray(img, dtype=np.float32)
 
 
+def build_replay_list_mask(exclude_rows):
+    """リプレイ一覧画面の照合に使う画素のマスク(160x120、True=使う)。`exclude_rows`は
+    除く行の範囲[開始, 終了)で、一覧の先頭行(プレイヤー名・日付などリプレイごとに変わる)を
+    除くために使う。None なら全画面。"""
+    mask = np.ones((120, 160), dtype=bool)
+    if exclude_rows is not None:
+        mask[exclude_rows[0]:exclude_rows[1]] = False
+    return mask
+
+
 def build_end_template_mask(rect, w, h):
     """GameConfig.end_template_rect(元のウィンドウ座標系のx0,y0,x1,y1)を、
     grab_frame()が常にリサイズする160x120グレースケール座標系のブールマスク

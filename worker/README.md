@@ -183,6 +183,8 @@ S3オブジェクトメタデータ(`sattori-time-scale`)として、配信版�
 - **イメージに焼き込むもの**(`docker build` の前に `worker/` 配下へ配置する): ウォーター
   マーク素材 `assets/watermark/watermark-60fps.webm`(VP9アルファ)と、リプレイ終了検知用の
   テンプレート `assets/replay_end_templates/{th06,th06c,th07,th08,th09,th10}.png`
+  と、フレーム同期の2本目の終了条件に使う `{th13,th14,th20}_replay_list.png`
+  ([`decisions/0087`](../docs/decisions/0087-spell-practice-timeout-replay-list-detection.md))
   ([`decisions/0011`](../docs/decisions/0011-replay-end-template-matching.md))。いずれも
   タイトル固有アセットではなく録画パイプライン自体が使う共通素材のため。
 - **イメージには含めず、タイトル資産アーカイブとしてS3へ置くもの**: ゲーム本体
