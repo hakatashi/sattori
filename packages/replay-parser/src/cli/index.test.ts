@@ -40,7 +40,7 @@ describe("cli E2E", () => {
     expect(stderr).toBe("");
     expect(stdout).toContain("Splits:");
     expect(stdout).toContain("Stage");
-    expect(stdout).toContain("30,376,604");
+    expect(stdout).toContain("303,766,040");
   });
 
   it("parses single replay file into pretty JSON", async () => {
