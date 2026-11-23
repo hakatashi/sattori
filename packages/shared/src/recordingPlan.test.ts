@@ -44,7 +44,7 @@ describe("RECORDING_PLANS", () => {
   });
 
   it("録画非対応タイトルは段を持たない", () => {
-    expect(recordingPlanFor("th14")).toEqual([]);
+    expect(recordingPlanFor("th143")).toEqual([]);
   });
 
   it("段のidはタイトルの中で一意", () => {
@@ -80,6 +80,7 @@ describe("RECORDING_PLANS", () => {
       "th12",
       "th128",
       "th13",
+      "th14",
       "th15",
       "th20",
       "th06nc",
@@ -142,6 +143,15 @@ describe("RECORDING_PLANS", () => {
         "cpu-fs-2xl:eu-south-2 fs c7i.2xlarge,c7a.2xlarge,m7i.2xlarge",
         "gpu:eu-south-2 x1 g6f.2xlarge",
         "gpu:eu-north-1 x1 g6f.2xlarge",
+      ],
+    ],
+    [
+      ["th14"],
+      // 1280x960でも、GPUでの録画が未検証なのでGPUの段は持たない（Issue #80）。
+      [
+        "home fs",
+        "cpu-fs-4xl:eu-south-2 fs c7i.4xlarge",
+        "cpu-fs-2xl:eu-south-2 fs c7i.2xlarge,c7a.2xlarge,m7i.2xlarge",
       ],
     ],
     [
@@ -229,7 +239,7 @@ describe("initialRecordingSpeed", () => {
   });
 
   it("録画非対応タイトルは等倍", () => {
-    expect(initialRecordingSpeed({ game: "th14" })).toBe(1);
+    expect(initialRecordingSpeed({ game: "th143" })).toBe(1);
   });
 });
 

@@ -76,7 +76,7 @@
 | `present/limiter.*` | Present の上限(reports/46)。目標fpsは`FPS_LIMIT_TARGET_HZ`(既定60)。リアルタイム時に `limiter` を積まないタイトル(`th06`・`th07`・`th08`・`th10`・`th11`・`th12`)では、`FRAME_SYNC_PIPE` 未設定時に Present 自体をフックしない |
 | `present/capture/frame_sync.*` | フレーム同期コーディネータ。最初の Present で仮想時計を開始し、`MENU_WAIT`/シーケンス完了時に上限を解除(`SetUnthrottled(true)`)、Present ごとに仮想時計の進行・バックバッファ読み出し・仮想音声ミキシングを駆動する |
 | `present/capture/pipe_writer.*`・`pixel_format.h`・`readback.h`・`d3d_surface_capture.h` | FIFOパイプ書き込み(任意ストライド行書き・ピクセル形式変換)と D3D8/D3D9 共有のPOD読み出し基盤(パイプライン読み出しと `GetRasterStatus` フック) |
-| `present/capture/d3d8_readback.*`・`d3d9_readback.*`・`d3d11_readback.*` | バックエンド別エントリ。`InstallFrameSyncD3D8`(th06 は `stepDiv=1024`、th07/th08/th09 は `32`)、`InstallFrameSyncD3D9`(th10/th11/th12/th128/th13/th15/th20 は `1024`)、`InstallFrameSyncD3D11`(th06c/th06nc は `64`)。すべて `FRAME_SYNC_PIPE` 未設定時は `false` を返して何もしない |
+| `present/capture/d3d8_readback.*`・`d3d9_readback.*`・`d3d11_readback.*` | バックエンド別エントリ。`InstallFrameSyncD3D8`(th06 は `stepDiv=1024`、th07/th08/th09 は `32`)、`InstallFrameSyncD3D9`(th10/th11/th12/th128/th13/th14/th15/th20 は `1024`)、`InstallFrameSyncD3D11`(th06c/th06nc は `64`)。すべて `FRAME_SYNC_PIPE` 未設定時は `false` を返して何もしない |
 
 ## 6. 音声(`audio/`)・仮想ミキサ(`audio/virtual/`)
 

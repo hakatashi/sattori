@@ -11,9 +11,9 @@ const FIXTURES_DIR = path.resolve(
   "../../../../packages/replay-parser/test-fixtures",
 );
 const TH07_FIXTURE = path.join(FIXTURES_DIR, "th07/th7_07.rpy");
-// th14 はパーサーとしては認識できるが Sattori の録画対応タイトルには含まれない。
-// (th11・th13は録画対応タイトルに追加されたため、この検証には使えなくなった)
-const TH14_FIXTURE = path.join(FIXTURES_DIR, "th14/th14_01.rpy");
+// th143 はパーサーとしては認識できるが Sattori の録画対応タイトルには含まれない。
+// (th11・th13・th14は録画対応タイトルに追加されたため、この検証には使えなくなった)
+const TH143_FIXTURE = path.join(FIXTURES_DIR, "th143/th143_01.rpy");
 
 const s3Mock = mockClient(S3Client);
 
@@ -83,11 +83,11 @@ describe("POST /replays/parse", () => {
     });
   });
 
-  it("録画未対応タイトル（th14）は422でエラーを返す", async () => {
+  it("録画未対応タイトル（th143）は422でエラーを返す", async () => {
     const { handler } = await import("./parseReplay.js");
-    mockUploadedReplay(new Uint8Array(await readFile(TH14_FIXTURE)));
+    mockUploadedReplay(new Uint8Array(await readFile(TH143_FIXTURE)));
 
-    const res = await handler(makeEvent({ replayKey: "replays/th14.rpy" }), {} as never, () => {});
+    const res = await handler(makeEvent({ replayKey: "replays/th143.rpy" }), {} as never, () => {});
     const result = res as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(422);
     expect(parseBody(result)).toMatchObject({ code: "unsupported_game" });

@@ -205,6 +205,16 @@ TITLES = {
         "expected_final_state": (7, -1, 751),
         "expected_hit_game_seconds": [83.1, 88.8, 94.1],
     },
+    "th14": {
+        "replay": "th14_25.rpy",
+        "expected_score": 10_284_040,
+        "expected_duration_seconds": 6903 / 60,
+        "display": ":106",
+        "capture_size": (1280, 960),
+        "expected_play_seconds": 119.0,
+        "expected_final_state": (7, -1, 449),
+        "expected_hit_game_seconds": [105.4, 111.1, 116.3],
+    },
     "th20": {
         "replay": "th20_08.rpy",
         "expected_score": 9_243_950,

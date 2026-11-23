@@ -131,7 +131,7 @@ claim が解除され、EC2 でリトライされる。
 | `HOME_WORKER_ROLE_ARN` | (なし) | CfnOutput `HomeWorkerRoleArn`。**本番では必ず指定する**（未指定だと環境の認証情報をそのままコンテナへ渡す） |
 | `HOME_WORKER_ID` | `home-1` | ワーカー識別子。複数台にするなら一意にすること |
 | `HOME_WORKER_MAX_CONCURRENCY` | `2` | 同時録画数の上限。**上げる前に「実機検証の記録」を読むこと** — 2並列でもCPU温度が上限に張り付くため、安全な並列度は冷却状態とホストの他負荷に依存する |
-| `HOME_WORKER_SUPPORTED_GAMES` | 録画の段に自宅の段を持つタイトル全部（`HOME_WORKER_GAME_IDS`。現状は全13タイトル） | 引き受けるタイトル。自宅マシンの都合で一部だけ受け持ちたい場合に上書きする。**段に自宅の段が無いタイトル（th06nc・th20。実時間方式でGPU描画が必須、Issue #241・#82・#288）は指定できない**（指定すると`ConfigError`で起動失敗する）。フレーム同期の自宅の段を持つタイトル（th12・th15）はGPU描画が要っても指定できる（[`decisions/0079`](../docs/decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)） |
+| `HOME_WORKER_SUPPORTED_GAMES` | 録画の段に自宅の段を持つタイトル全部（`HOME_WORKER_GAME_IDS`。現状は全14タイトル） | 引き受けるタイトル。自宅マシンの都合で一部だけ受け持ちたい場合に上書きする。**段に自宅の段が無いタイトル（th06nc・th20。実時間方式でGPU描画が必須、Issue #241・#82・#288）は指定できない**（指定すると`ConfigError`で起動失敗する）。フレーム同期の自宅の段を持つタイトル（th12・th15）はGPU描画が要っても指定できる（[`decisions/0079`](../docs/decisions/0079-home-worker-accepts-frame-sync-gpu-titles.md)） |
 | `HOME_WORKER_LOAD_THRESHOLD` | `0.7` | 1コアあたりのロードアベレージがこれを超えている間は新規 claim を止める |
 | `HOME_WORKER_POLL_INTERVAL_SEC` | `3` | オファー探索の間隔 |
 | `HOME_WORKER_DOCKER_CPUS` | (なし) | `docker run --cpus` |

@@ -183,7 +183,8 @@ interface FrameSyncFactors {
 // 実時間効率は、EC2は実験ジョブでの実測（上限解除後の平均速度を切り捨て。th12・th15は
 // docs/reports/2026-11-22-th12-th15-frame-sync-ec2-verification.md、それ以外の640x480は
 // docs/reports/2026-11-22-th06-to-th13-frame-sync-ec2-verification.md、th20・th06ncは
-// docs/reports/2026-11-23-th20-th06nc-frame-sync-ec2-verification.md）、自宅はこのマシンの2並列の実測
+// docs/reports/2026-11-23-th20-th06nc-frame-sync-ec2-verification.md、th14は
+// docs/reports/2026-11-23-th14-frame-sync-ec2-verification.md）、自宅はこのマシンの2並列の実測
 // （docs/reports/2026-11-22-worker-frame-sync-full-length-verification.md）。
 const TH12_FACTORS: FrameSyncFactors = { home: 2.0, twoXl: 2.2, fourXl: 3.1 };
 const TH06_FACTORS: FrameSyncFactors = { home: 3.1, twoXl: 3.9, fourXl: 5.2 };
@@ -196,6 +197,7 @@ const TH11_FACTORS: FrameSyncFactors = { home: 1.9, twoXl: 2.3, fourXl: 3.5 };
 const TH128_FACTORS: FrameSyncFactors = { home: 1.7, twoXl: 2.0, fourXl: 2.8 };
 const TH13_FACTORS: FrameSyncFactors = { home: 1.3, twoXl: 1.9, fourXl: 2.7 };
 const TH06NC_FACTORS: FrameSyncFactors = { home: 0.9, twoXl: 1.2, fourXl: 1.7 };
+const TH14_FACTORS: FrameSyncFactors = { home: 0.6, twoXl: 0.75, fourXl: 1.1 };
 const TH15_FACTORS: FrameSyncFactors = { home: 0.6, twoXl: 0.95, fourXl: 1.7 };
 const TH20_FACTORS: FrameSyncFactors = { home: 0.6, twoXl: 0.95, fourXl: 1.5 };
 
@@ -214,10 +216,11 @@ function frameSyncLowResPlan(factors: FrameSyncFactors, gpuSpeed?: RecordingSpee
 }
 
 /**
- * 1280x960のタイトル（th15・th20）の計画: 自宅 → `c7i.4xlarge` → `.2xlarge`帯（推定尺が長いと飛ばす。いずれもフレーム
+ * 1280x960のタイトル（th14・th15・th20）の計画: 自宅 → `c7i.4xlarge` → `.2xlarge`帯（推定尺が長いと飛ばす。いずれもフレーム
  * 同期）→ GPU（実時間1倍速、最後の段）。CPU負荷が高く、`.4xlarge`のほうが速度が単価の比より速いので`.4xlarge`が先。
+ * `gpu: false`ならGPUの段を持たない（th14: GPUでの録画が未検証、Issue #80）。
  */
-function frameSync1280Plan(factors: FrameSyncFactors): RecordingStep[] {
+function frameSync1280Plan(factors: FrameSyncFactors, options: { gpu: boolean } = { gpu: true }): RecordingStep[] {
   return [
     homeFrameSyncStep({ estimatedRealtimeFactor: factors.home }),
     frameSyncCpuStep("4xl", { estimatedRealtimeFactor: factors.fourXl }),
@@ -225,7 +228,7 @@ function frameSync1280Plan(factors: FrameSyncFactors): RecordingStep[] {
       maxEstimatedDurationSeconds: FRAME_SYNC_1280X960_2XL_MAX_ESTIMATED_SECONDS,
       estimatedRealtimeFactor: factors.twoXl,
     }),
-    ...gpuSteps(1),
+    ...(options.gpu ? gpuSteps(1) : []),
   ];
 }
 
@@ -239,6 +242,7 @@ function frameSync1280Plan(factors: FrameSyncFactors): RecordingStep[] {
  *   実時間の2倍速。かつての実時間のCPU1/2倍速・`g6.2xlarge`の段は廃止した（#391）（`docs/decisions/0081`）。
  * - th15・th20（1280x960）: CPU負荷が高いので`.4xlarge`帯が先。GPUの段は実時間の1倍速。th20の実時間CPU低速録画は
  *   置き換えた（`docs/decisions/0081`）。
+ * - th14（1280x960）: th15・th20と同じ形だがGPUの段は持たない（GPUインスタンスでの録画が未検証、Issue #80）。
  */
 export const RECORDING_PLANS: Readonly<Partial<Record<GameId, readonly RecordingStep[]>>> = {
   th06: frameSyncLowResPlan(TH06_FACTORS, 2),
@@ -251,6 +255,7 @@ export const RECORDING_PLANS: Readonly<Partial<Record<GameId, readonly Recording
   th12: frameSyncLowResPlan(TH12_FACTORS, 2),
   th128: frameSyncLowResPlan(TH128_FACTORS, 2),
   th13: frameSyncLowResPlan(TH13_FACTORS),
+  th14: frameSync1280Plan(TH14_FACTORS, { gpu: false }),
   th15: frameSync1280Plan(TH15_FACTORS),
   th20: frameSync1280Plan(TH20_FACTORS),
   th06nc: frameSyncLowResPlan(TH06NC_FACTORS, 2),
