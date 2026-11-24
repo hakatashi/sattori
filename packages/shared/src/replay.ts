@@ -50,13 +50,6 @@ export interface ReplayInfo {
 }
 
 /**
- * ステージ記録(`splits[].score`)の単位を画面表示値へ換算する倍率。th07のステージ記録だけ
- * 内部値(表示値の1/10)で、ヘッダの`score`は表示値。他のタイトルは等倍（実リプレイで確認:
- * th06系・th08のステージ記録は表示値）。
- */
-const SPLIT_SCORE_MULTIPLIERS: Partial<Record<string, number>> = { th07: 10 };
-
-/**
  * `@sattori/touhou-replay-parser` の `ParsedReplay`（ステージ内訳など Sattori では
  * 使わない情報も含むリッチな型）を `ReplayInfo` に変換する。
  * replay-parser は単体でOSS公開できるよう Sattori 固有の型に依存しない設計に
@@ -74,7 +67,7 @@ export function fromParsedReplay(parsed: ParsedReplay): ReplayInfo {
     difficulty: parsed.difficulty,
     stage: parsed.stage,
     score: parsed.score,
-    finalStageScore: finalSplit?.score == null ? null : finalSplit.score * (SPLIT_SCORE_MULTIPLIERS[parsed.game] ?? 1),
+    finalStageScore: finalSplit?.score == null ? null : finalSplit.score,
     cleared: parsed.cleared,
     estimatedDurationSeconds: parsed.frameCount === null ? null : Math.round(parsed.frameCount / 60),
   };

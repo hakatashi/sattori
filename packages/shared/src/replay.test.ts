@@ -38,10 +38,10 @@ describe("fromParsedReplay", () => {
     });
   });
 
-  it("takes finalStageScore from the last split, converting th07's internal unit to display value", () => {
+  it("takes finalStageScore from the last split as-is", () => {
     const split = (score: number) => ({ stage: 6, score }) as ParsedReplay["splits"][number];
-    // th07のステージ記録は内部値(表示値の1/10)。
-    expect(fromParsedReplay(baseParsedReplay({ splits: [split(100), split(21916904)] })).finalStageScore).toBe(
+    // 単位換算はreplay-parser側で済んでいる(th07のステージ記録も表示値で返る)。
+    expect(fromParsedReplay(baseParsedReplay({ splits: [split(100), split(219169040)] })).finalStageScore).toBe(
       219169040,
     );
     // th06系のステージ記録は表示値(ヘッダと20点食い違う実例、th06 3731b273)。

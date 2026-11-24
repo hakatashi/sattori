@@ -11,6 +11,9 @@ const DIFFICULTIES = ["Easy", "Normal", "Hard", "Lunatic", "Extra", "Phantasm"];
 
 const HEADER_SIZE = 0x54;
 
+/** Replay files store scores in internal units; the displayed score is 10x that. */
+const SCORE_UNIT = 10;
+
 /**
  * Size of the fixed per-checkpoint header preceding each stage's raw input
  * log within the decompressed body (37 bytes of fields actually read by
@@ -93,7 +96,7 @@ export function parseTh07(original: Uint8Array): ParsedReplay {
   const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName("th07", character);
   const date = decodeAnsiText(decodeData.subarray(4, 9));
   const name = decodeAnsiText(decodeData.subarray(10, 18));
-  const score = readBufferedUint32LE(decodeData, 24) * 10;
+  const score = readBufferedUint32LE(decodeData, 24) * SCORE_UNIT;
 
   // checkpoints are decodeData-relative offsets to each stage's score
   // snapshot header, paired with the 1-based stage number that slot
@@ -173,7 +176,10 @@ function perCheckpointFrameCounts(decodeData: Uint8Array, checkpointOffsets: num
 function readSplitCommon(decodeData: Uint8Array, offset: number, stage: number): ReplayStageSplit {
   const split = emptySplit();
   split.stage = stage;
-  split.score = readBufferedUint32LE(decodeData, offset);
+  // The checkpoint stores the score in internal units (1/10 of the displayed
+  // value), same as the header's score at body offset 24, so scale it to the
+  // on-screen value to keep `splits[].score` comparable with `score`.
+  split.score = readBufferedUint32LE(decodeData, offset) * SCORE_UNIT;
   split.piv = readBufferedUint32LE(decodeData, offset + 0x8);
   const pointItems = readBufferedUint32LE(decodeData, offset + 0x4);
   const cherryMax = readBufferedUint32LE(decodeData, offset + 0xc);
