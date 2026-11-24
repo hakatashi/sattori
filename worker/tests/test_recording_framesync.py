@@ -313,6 +313,15 @@ def test_monitor_gives_up_at_the_recording_timeout(tmp_path):
     assert any("TIMEOUT" in m for m in messages)
 
 
+def test_monitor_gives_up_when_replay_video_exceeds_max_length(tmp_path):
+    assert framesync.MAX_REPLAY_VIDEO_SEC == 2 * 60 * 60
+    result, messages = _monitor(
+        tmp_path, [i % 250 for i in range(200)], max_video_sec=10, stall_timeout_sec=10_000,
+    )
+    assert result.timed_out and not result.detected
+    assert any("録画尺" in m for m in messages)
+
+
 def test_monitor_reports_ffmpeg_exit(tmp_path):
     result, _ = _monitor(tmp_path, [1] * 10, proc=_FakeProc(returncode=1))
     assert result.ffmpeg_exited and not result.detected
