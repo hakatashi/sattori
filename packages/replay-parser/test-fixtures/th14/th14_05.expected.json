@@ -1,0 +1,47 @@
+{
+  "game": "th14",
+  "gameTitle": "東方輝針城 ～ Double Dealing Character.",
+  "formatVersion": 139,
+  "player": "koyi",
+  "date": "26/11/24 15:39",
+  "parsedDate": {
+    "fullYear": null,
+    "shortYear": 26,
+    "month": 11,
+    "date": 24,
+    "hours": 15,
+    "minutes": 39,
+    "seconds": null
+  },
+  "recordedAt": 1795502369,
+  "character": "ReimuA",
+  "characterNameJa": "霊夢A",
+  "characterNameEn": "Reimu A",
+  "difficulty": "Normal",
+  "stage": "Stage 6 (Spell Practice No. 98)",
+  "score": 20000000,
+  "cleared": false,
+  "loadout": null,
+  "splits": [
+    {
+      "stage": 6,
+      "score": 0,
+      "power": "4.00",
+      "piv": 10000,
+      "lives": {
+        "count": 0,
+        "pieces": 0,
+        "maxPieces": 3
+      },
+      "bombs": {
+        "count": 0,
+        "pieces": 0,
+        "maxPieces": 8
+      },
+      "graze": 0,
+      "additional": null,
+      "frameCount": 2987
+    }
+  ],
+  "frameCount": 2987
+}

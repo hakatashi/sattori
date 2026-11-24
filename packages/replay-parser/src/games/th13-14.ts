@@ -8,6 +8,20 @@ import { DATE_TOKENS_YMD_HM, parseDateComponents } from "../date-format.js";
 import { decodeModernBody, RECORDED_AT_OFFSET_12BYTE_NAME } from "./modern-body.js";
 
 /**
+ * Offset (within the decompressed body header) of the zero-based spell card
+ * index of a spell practice replay; `0xffffffff` for every other kind of
+ * replay. Like th20, the USER section only says `Stage N` (the stage the card
+ * belongs to), so this number is the only thing distinguishing a spell
+ * practice replay from a stage practice one. Adding one gives the "No." the
+ * in-game Spell Practice menu shows (confirmed against 7 real replays: th13
+ * No. 45/62/82, th14 No. 66/98). th14's header is 0x20 bytes longer, which
+ * shifts the field accordingly.
+ */
+const TH13_SPELL_CARD_OFFSET = 0x70;
+const TH14_SPELL_CARD_OFFSET = 0x90;
+const NOT_SPELL_PRACTICE = 0xffffffff;
+
+/**
  * The t13r magic is shared by th13 (東方神霊廟, TD) and th14 (東方輝針城, DDC),
  * and is distinguished by the version byte in the USER section (144 means TD,
  * anything else means DDC) (ported from Read_t13r in threplay; the
@@ -102,6 +116,13 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
     }
   }
 
+  const spellCardIndex = readBufferedUint32LE(decodedata, isTd ? TH13_SPELL_CARD_OFFSET : TH14_SPELL_CARD_OFFSET);
+  const normalizedStage = normalizeText(stage);
+  const stageText =
+    spellCardIndex === NOT_SPELL_PRACTICE
+      ? normalizedStage
+      : `${normalizedStage ?? "Stage"} (Spell Practice No. ${spellCardIndex + 1})`;
+
   const game = isTd ? "th13" : "th14";
   const characterName = normalizeText(character);
   const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName(game, characterName);
@@ -117,7 +138,7 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
     characterNameJa,
     characterNameEn,
     difficulty: normalizeText(difficulty),
-    stage: normalizeText(stage),
+    stage: stageText,
     score,
     cleared: stage.includes("Clear"),
     loadout: null,

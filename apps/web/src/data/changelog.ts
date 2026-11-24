@@ -17,6 +17,11 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-24",
+    ja: "東方神霊廟 (th13)・東方輝針城 (th14) のスペルプラクティスのリプレイで、ステージ表示にスペルカード番号が表示されるように改善",
+    en: "Improved Ten Desires (th13) and Double Dealing Character (th14) spell practice replays to show the spell card number in the stage display",
+  },
+  {
+    date: "2026-11-24",
     ja: "リプレイずれの警告が、実際にはずれていない動画（東方永夜抄のスペルプラクティス、東方妖々夢・東方紅魔郷など）で表示されることがある問題を改善",
     en: "Reduced false replay desync warnings on videos that were not actually out of sync (e.g. Imperishable Night spell practice, Perfect Cherry Blossom, Embodiment of Scarlet Devil)",
   },
