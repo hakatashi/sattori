@@ -100,6 +100,9 @@ EXPECTED_DURATION_SECONDS = os.environ.get("EXPECTED_DURATION_SECONDS")
 # job.replayInfo.scoreから転記する(未取得なら未設定)。リプレイずれの事後検証
 # (Issue #103、recording.modlog.check_replay_desync())に使う。
 EXPECTED_SCORE = os.environ.get("EXPECTED_SCORE")
+# 最終ステージのステージ記録のスコア(画面表示値、`replayInfo.finalStageScore`)。ヘッダのスコアと
+# 食い違うリプレイ(th06系等)で、どちらに一致してもずれ無しとみなすために使う。
+EXPECTED_FINAL_STAGE_SCORE = os.environ.get("EXPECTED_FINAL_STAGE_SCORE")
 
 REPO = "/app"
 WORK_DIR = f"/app/runs/{JOB_ID}"
@@ -456,6 +459,8 @@ def record(s3, *, title_assets_s3=None, replay_s3=None):
             cmd += ["--expected-duration-seconds", EXPECTED_DURATION_SECONDS]
         if EXPECTED_SCORE:
             cmd += ["--expected-score", EXPECTED_SCORE]
+        if EXPECTED_FINAL_STAGE_SCORE:
+            cmd += ["--final-stage-score", EXPECTED_FINAL_STAGE_SCORE]
         cmd += ["--desync-result-path", DESYNC_RESULT_PATH]
         cmd += ["--timeout-result-path", TIMEOUT_RESULT_PATH]
         cmd += ["--cut-result-path", CUT_RESULT_PATH]

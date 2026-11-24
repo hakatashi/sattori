@@ -31,6 +31,13 @@ export interface ReplayInfo {
   stage: string | null;
   /** スコア。 */
   score: number | null;
+  /**
+   * 最終ステージのステージ記録に残るスコア（画面表示値）。ヘッダの`score`と食い違うリプレイ
+   * （th06系で実在）で、録画後のリプレイずれ検証がどちらに一致してもずれ無しとみなすために使う
+   * （`worker/recording/modlog.py`の`check_replay_desync()`）。ステージ記録を持たないタイトル・
+   * 読めないリプレイ、およびこの項目の追加前に作られたジョブレコードでは null または未設定。
+   */
+  finalStageScore?: number | null;
   /** クリア（全面クリア）記録かどうか。判定できなければ null。 */
   cleared: boolean | null;
   /**
@@ -43,12 +50,20 @@ export interface ReplayInfo {
 }
 
 /**
+ * ステージ記録(`splits[].score`)の単位を画面表示値へ換算する倍率。th07のステージ記録だけ
+ * 内部値(表示値の1/10)で、ヘッダの`score`は表示値。他のタイトルは等倍（実リプレイで確認:
+ * th06系・th08のステージ記録は表示値）。
+ */
+const SPLIT_SCORE_MULTIPLIERS: Partial<Record<string, number>> = { th07: 10 };
+
+/**
  * `@sattori/touhou-replay-parser` の `ParsedReplay`（ステージ内訳など Sattori では
  * 使わない情報も含むリッチな型）を `ReplayInfo` に変換する。
  * replay-parser は単体でOSS公開できるよう Sattori 固有の型に依存しない設計に
  * なっているため、変換はこの Sattori 側（shared）で行う。
  */
 export function fromParsedReplay(parsed: ParsedReplay): ReplayInfo {
+  const finalSplit = parsed.splits[parsed.splits.length - 1];
   return {
     game: parsed.game,
     player: parsed.player ?? "",
@@ -59,6 +74,7 @@ export function fromParsedReplay(parsed: ParsedReplay): ReplayInfo {
     difficulty: parsed.difficulty,
     stage: parsed.stage,
     score: parsed.score,
+    finalStageScore: finalSplit?.score == null ? null : finalSplit.score * (SPLIT_SCORE_MULTIPLIERS[parsed.game] ?? 1),
     cleared: parsed.cleared,
     estimatedDurationSeconds: parsed.frameCount === null ? null : Math.round(parsed.frameCount / 60),
   };

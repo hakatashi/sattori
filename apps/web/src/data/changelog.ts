@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-11-24",
+    ja: "リプレイずれの警告が、実際にはずれていない動画（東方永夜抄のスペルプラクティス、東方妖々夢・東方紅魔郷など）で表示されることがある問題を改善",
+    en: "Reduced false replay desync warnings on videos that were not actually out of sync (e.g. Imperishable Night spell practice, Perfect Cherry Blossom, Embodiment of Scarlet Devil)",
+  },
+  {
     date: "2026-11-23",
     ja: "東方花映塚 (th09) で、リプレイずれの警告が常に表示されていた問題を修正",
     en: "Fixed an issue where the replay desync warning was always shown for Phantasmagoria of Flower View (th09)",
