@@ -99,6 +99,19 @@ class GameConfig:
     # th10はend_template_rectで絞り込んだ領域でも同一画面同士の実測MADがth06/07/08より
     # 高め(背景アニメーションの影響)なため、専用の閾値を使う(touhou-recorder reports/56)。
     end_template_mad_threshold: float | None = None
+    # **2本目の終了条件**としてのリプレイ一覧画面テンプレート照合(フレーム同期の経路のみ)。
+    # `end_template_path`と違い画面静止検知を**置き換えず**、静止判定に加えて毎サンプル照合する
+    # (正常終了=終了メニューの静止を取りこぼさないため)。スペルプラクティスを耐久で時間切れに
+    # したth13・th14・th20のリプレイは再生後に一覧画面へ戻り、そこは背景が全面で動き続けるので
+    # 静止検知が永久に成立しない(docs/reports/2026-11-24-spell-practice-timeout-end-detection.md)。
+    # Trueにすると`assets/replay_end_templates/{game_id}_replay_list.png`を読む。
+    replay_list_detect: bool = False
+    replay_list_template_path: str | None = None
+    # 一覧画面照合のMAD閾値。未指定ならEND_TEMPLATE_MAD_THRESHOLD。
+    replay_list_mad_threshold: float | None = None
+    # 照合から除く行の範囲[開始, 終了)(160x120座標)。一覧の先頭行はプレイヤー名・日付などリプレイごとに
+    # 変わるため除く。未指定なら全画面で照合する。
+    replay_list_exclude_rows: tuple[int, int] | None = None
     # Xvfbの画面サイズ("WxHx24")。未指定なら全タイトル共通の XVFB_SCREEN(800x600x24)。
     # th20は1280x960ウィンドウで起動するため個別指定が要る(reports/44)。
     xvfb_screen: str | None = None
@@ -194,6 +207,12 @@ class GameConfig:
             object.__setattr__(
                 self, "end_template_path",
                 f"{WORKER_ROOT}/assets/replay_end_templates/{self.game_id}.png",
+            )
+
+        if self.replay_list_detect and self.replay_list_template_path is None:
+            object.__setattr__(
+                self, "replay_list_template_path",
+                f"{WORKER_ROOT}/assets/replay_end_templates/{self.game_id}_replay_list.png",
             )
 
     @classmethod

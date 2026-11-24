@@ -360,12 +360,19 @@ def _read_preview(path):
 # ---------------------------------------------------------------------------
 # 終了検知
 # ---------------------------------------------------------------------------
+STOP_REASONS_BY_DETECTION = {
+    "template": "リプレイ選択画面テンプレート照合",
+    "replay_list": "リプレイ一覧画面への復帰(テンプレート照合)",
+    "still": "画面静止検知",
+}
+
+
 @dataclass
 class _Monitor:
     """`_monitor_until_end()`の結果。"""
 
     detected: bool = False
-    detected_by: str | None = None  # "template" / "still"
+    detected_by: str | None = None  # "template" / "still" / "replay_list"
     frozen: bool = False
     crashed: bool = False
     stalled: bool = False  # サブ出力が実時間でSTALL_TIMEOUT_SEC増えなかった
@@ -424,6 +431,8 @@ def _monitor_until_end(config, detection, video_proc, paths, start_number, *,
     streak_start_number = None
     consecutive_still = 0
     consecutive_template = 0
+    consecutive_list = 0
+    list_streak_start_number = None
     consecutive_freeze = 0
     wine_log_path = f"{config.instance_dir}/wine.log"
     wine_log_offset = os.path.getsize(wine_log_path) if os.path.exists(wine_log_path) else 0
@@ -478,6 +487,26 @@ def _monitor_until_end(config, detection, video_proc, paths, start_number, *,
         video_sec = next_number / POLL_STREAM_FPS
         real_sec = now - real_start
         speed = (next_number - start_number) / POLL_STREAM_FPS / real_sec if real_sec > 0 else 0.0
+
+        # 2本目の終了条件: リプレイ一覧画面へ戻ったら終了。スペルプラクティスを耐久で時間切れに
+        # したリプレイは終了メニューに入らず一覧へ戻り、背景が動き続けるため画面静止が成立しない。
+        # 画面静止/テンプレート照合の判定は妨げない(どちらかが先に成立した方で終了する)。
+        if detection.replay_list_template is not None:
+            list_d = mad_masked(frame, detection.replay_list_template, detection.replay_list_mask)
+            if list_d < detection.replay_list_mad_threshold:
+                if consecutive_list == 0:
+                    list_streak_start_number = next_number
+                consecutive_list += 1
+            else:
+                consecutive_list = 0
+            if consecutive_list:
+                log(f"poll: video={video_sec:.1f}s replay_list_MAD={list_d:.2f} "
+                    f"replay_list_consecutive={consecutive_list}")
+            if consecutive_list >= template_required:
+                log("リプレイ一覧画面と連続して一致したためリプレイ終了と判定しました")
+                result.detected, result.detected_by = True, "replay_list"
+                result.content_end_sec = list_streak_start_number / POLL_STREAM_FPS
+                return result
 
         if detection.template is not None:
             # テンプレートが使えるゲームは、画面静止を待たずに毎回テンプレート照合する
@@ -602,6 +631,12 @@ def attempt_recording_frame_sync(config, replay_path, output_path, progress_dir,
     paths = _intermediate_paths(output_path)
     env = _frame_sync_env(config, paths)
     end_template = load_end_template(config.end_template_path)
+    replay_list_template = None
+    if config.replay_list_detect:
+        replay_list_template = load_end_template(config.replay_list_template_path)
+        if replay_list_template is None:
+            log(f"WARNING: {config.replay_list_template_path} が見つからないため、リプレイ一覧画面への"
+                "復帰は検知できません(スペルプラクティスの耐久時間切れで止まらない可能性あり)")
     if end_template is None:
         log(
             f"WARNING: {config.end_template_path} が見つからないため、画面静止のみで"
@@ -645,7 +680,8 @@ def attempt_recording_frame_sync(config, replay_path, output_path, progress_dir,
             log("ERROR: 'FrameSync: capture start' の行を読み取れませんでした")
             return failure()
         width, height, pix_fmt = capture
-        detection = build_end_detection(config, end_template, width, height)
+        detection = build_end_detection(
+            config, end_template, width, height, replay_list_template=replay_list_template)
 
         video_cmd = build_video_cmd(config, width, height, pix_fmt, paths)
         log(f"録画開始(フレーム同期): {' '.join(video_cmd)}")
@@ -714,7 +750,7 @@ def attempt_recording_frame_sync(config, replay_path, output_path, progress_dir,
         if monitor.detected:
             classification = "good"
             stop_reason = (
-                "リプレイ選択画面テンプレート照合" if monitor.detected_by == "template" else "画面静止検知")
+                STOP_REASONS_BY_DETECTION.get(monitor.detected_by, "画面静止検知"))
         elif monitor.crashed:
             classification, stop_reason = "crashed", "Wineクラッシュ検知(wine.log)"
         elif monitor.frozen:

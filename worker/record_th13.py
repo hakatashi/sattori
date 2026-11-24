@@ -25,6 +25,10 @@ def build_config(pulse_sink):
         # 終了検知は画面静止検知のみ(end_template_pathは意図的に用意しない)。リプレイ
         # 終了後のメニューの明滅をこの矩形で静止判定から除外する(reports/100)。
         still_detect_exclude_rect=(48, 220, 48 + 159, 220 + 212),
+        # スペルプラクティスを耐久で時間切れにしたリプレイは一覧画面へ戻り、静止検知が成立しない。
+        # 一覧画面のテンプレート照合を2本目の終了条件にする(先頭行=プレイヤー名・日付は除く)。
+        replay_list_detect=True,
+        replay_list_exclude_rows=(19, 25),
     )
 
 

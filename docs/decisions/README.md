@@ -98,6 +98,7 @@
 | [0084](0084-mod-integration-test-defaults-to-frame-sync.md) | 2026-11-23 | worker / docs | MOD統合テストの既定をフレーム同期にし、決定性を使う検証項目(最終状態の完全一致・被弾のゲーム内時刻・仮想ミキサの整合・出力動画の形式等)を増やす。実時間は`--capture-mode realtime`で残す | 有効 |
 | [0085](0085-th14-frame-sync-plan-without-gpu.md) | 2026-11-23 | packages/shared / worker | th14の録画の段は、GPUの段を持たないフレーム同期の3段（自宅→4xlarge帯→2xlarge帯）にする | 有効 |
 | [0086](0086-desync-check-tolerates-known-false-positives.md) | 2026-11-24 | worker / apps/api / packages/shared | リプレイずれ検知は、原因が分かった偽陽性（th08の表示用スコア・最終ステージ記録・最終値の微小な不足）だけを狭く許容する | 有効 |
+| [0087](0087-spell-practice-timeout-replay-list-detection.md) | 2026-11-24 | worker | スペルプラクティスの耐久時間切れは、リプレイ一覧画面のテンプレート照合を2本目の終了条件にして検知する | 有効 |
 
 ## 書き方
 

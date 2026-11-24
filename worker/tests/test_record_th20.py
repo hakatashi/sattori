@@ -76,3 +76,14 @@ def test_build_config_uses_a_display_number_not_shared_with_other_titles():
         for module in (record_th06, record_th07, record_th08, record_th11, record_th20)
     }
     assert len(displays) == 5
+
+
+def test_build_config_detects_the_replay_list_screen_for_spell_practice_timeouts():
+    """耐久で時間切れにしたスペルプラクティスは一覧画面へ戻り、画面静止が成立しない
+    (docs/reports/2026-11-24-spell-practice-timeout-end-detection.md)。"""
+    config = record_th20.build_config("sattori_job_test")
+
+    assert config.replay_list_detect is True
+    assert config.replay_list_exclude_rows is None
+    assert config.replay_list_mad_threshold == 35.0
+    assert config.replay_list_template_path.endswith("assets/replay_end_templates/th20_replay_list.png")

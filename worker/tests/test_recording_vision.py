@@ -216,3 +216,11 @@ def test_read_side_stream_frame_returns_none_on_corrupt_file(tmp_path):
     assert gray is None
     assert color is None
     assert mtime is None
+
+
+def test_build_replay_list_mask_excludes_only_the_given_rows():
+    full = vision.build_replay_list_mask(None)
+    assert full.shape == (120, 160) and full.all()
+    masked = vision.build_replay_list_mask((19, 25))
+    assert not masked[19:25].any()
+    assert masked[:19].all() and masked[25:].all()

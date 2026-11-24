@@ -46,6 +46,7 @@ from .vision import (
     END_TEMPLATE_MAD_THRESHOLD,
     STILL_MAD_THRESHOLD,
     build_end_template_mask,
+    build_replay_list_mask,
     build_still_mask,
     grab_frame,
     grab_frame_from_video,
@@ -201,9 +202,13 @@ class _EndDetection:
     template_mask: object
     template_mad_threshold: float
     still_mask: object
+    # 2本目の終了条件(リプレイ一覧画面の照合、フレーム同期の経路のみ)。Noneなら使わない。
+    replay_list_template: object = None
+    replay_list_mask: object = None
+    replay_list_mad_threshold: float = END_TEMPLATE_MAD_THRESHOLD
 
 
-def build_end_detection(config, end_template, width, height):
+def build_end_detection(config, end_template, width, height, replay_list_template=None):
     """`width`x`height`の画面に対する終了検知の参照画像とマスクを組み立てる
     (実時間の録画・フレーム同期キャプチャで共通)。"""
     return _EndDetection(
@@ -212,6 +217,10 @@ def build_end_detection(config, end_template, width, height):
         template_mask=build_end_template_mask(config.end_template_rect, width, height),
         template_mad_threshold=(
             config.end_template_mad_threshold or END_TEMPLATE_MAD_THRESHOLD),
+        replay_list_template=replay_list_template,
+        replay_list_mask=build_replay_list_mask(config.replay_list_exclude_rows),
+        replay_list_mad_threshold=(
+            config.replay_list_mad_threshold or END_TEMPLATE_MAD_THRESHOLD),
     )
 
 

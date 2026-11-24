@@ -239,10 +239,12 @@ def _poll_file(tmp_path, frames):
     return str(path)
 
 
-def _detection(template=None):
+def _detection(template=None, replay_list_template=None):
     still_mask = np.ones((framesync.POLL_FRAME_H, framesync.POLL_FRAME_W), dtype=bool)
     return pipeline._EndDetection(
         template=template, template_mask=still_mask, template_mad_threshold=15.0, still_mask=still_mask,
+        replay_list_template=replay_list_template, replay_list_mask=still_mask,
+        replay_list_mad_threshold=15.0,
     )
 
 
@@ -289,6 +291,41 @@ def test_monitor_template_match_ends_after_two_consecutive_matches(tmp_path):
     assert result.detected and result.detected_by == "template"
     # テンプレートに最初に一致したサンプル(動画の75秒 = 600枚)の位置
     assert result.content_end_sec == pytest.approx(75.0, abs=2.1)
+
+
+def test_monitor_replay_list_match_ends_even_when_the_list_screen_never_goes_still(tmp_path):
+    # 一覧画面は背景が動き続けるので画面静止は成立しない。テンプレートの近傍(±3)で揺れ続けても
+    # 一覧画面のテンプレートと2回連続で一致すれば終了し、終端は一致の始まりになる。
+    template = np.full((framesync.POLL_FRAME_H, framesync.POLL_FRAME_W), 200, dtype=np.float32)
+    frames = [(i * 3) % 120 for i in range(600)] + [197 + (i % 7) for i in range(1200)]
+    result, _ = _monitor(tmp_path, frames, detection=_detection(replay_list_template=template))
+    assert result.detected and result.detected_by == "replay_list"
+    assert result.content_end_sec == pytest.approx(75.0, abs=2.1)
+
+
+def test_monitor_without_replay_list_template_keeps_running_on_a_moving_list_screen(tmp_path):
+    frames = [(i * 3) % 120 for i in range(600)] + [197 + (i % 7) for i in range(1200)]
+    result, _ = _monitor(tmp_path, frames, max_video_sec=200)
+    assert not result.detected
+
+
+def test_monitor_replay_list_does_not_hide_a_still_end(tmp_path):
+    # 一覧画面のテンプレートがあっても、通常の終了(画面静止)は従来どおり検知される。
+    template = np.full((framesync.POLL_FRAME_H, framesync.POLL_FRAME_W), 250, dtype=np.float32)
+    frames = [(i * 3) % 120 for i in range(400)] + [77] * 400
+    result, _ = _monitor(tmp_path, frames, detection=_detection(replay_list_template=template))
+    assert result.detected and result.detected_by == "still"
+
+
+def test_monitor_replay_list_needs_consecutive_matches(tmp_path):
+    # 1サンプルだけ一致しても終了しない(動画の2秒=16枚おきに取るので、1回だけ一致する位置に置く)
+    template = np.full((framesync.POLL_FRAME_H, framesync.POLL_FRAME_W), 200, dtype=np.float32)
+    frames = [(i * 3) % 120 for i in range(800)]
+    for i in range(135, 137):  # 猶予後の最初のサンプル(120枚目)以降の1サンプル
+        frames[i] = 200
+    result, _ = _monitor(tmp_path, frames, detection=_detection(replay_list_template=template),
+                         max_video_sec=100)
+    assert result.detected_by != "replay_list"
 
 
 def test_monitor_stops_when_the_poll_stream_stalls_in_real_time(tmp_path):
