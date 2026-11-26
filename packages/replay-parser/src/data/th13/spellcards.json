@@ -1,0 +1,637 @@
+[
+  {
+    "number": 1,
+    "difficulty": "Easy",
+    "name": "符蝶「死蝶の舞」"
+  },
+  {
+    "number": 2,
+    "difficulty": "Normal",
+    "name": "符蝶「死蝶の舞」"
+  },
+  {
+    "number": 3,
+    "difficulty": "Hard",
+    "name": "符蝶「死蝶の舞　- 桜花 -」"
+  },
+  {
+    "number": 4,
+    "difficulty": "Lunatic",
+    "name": "符蝶「死蝶の舞　- 桜花 -」"
+  },
+  {
+    "number": 5,
+    "difficulty": "Easy",
+    "name": "幽蝶「ゴーストスポット」"
+  },
+  {
+    "number": 6,
+    "difficulty": "Normal",
+    "name": "幽蝶「ゴーストスポット」"
+  },
+  {
+    "number": 7,
+    "difficulty": "Hard",
+    "name": "幽蝶「ゴーストスポット　- 桜花 -」"
+  },
+  {
+    "number": 8,
+    "difficulty": "Lunatic",
+    "name": "幽蝶「ゴーストスポット　- 桜花 -」"
+  },
+  {
+    "number": 9,
+    "difficulty": "Easy",
+    "name": "冥符「常夜桜」"
+  },
+  {
+    "number": 10,
+    "difficulty": "Easy",
+    "name": "冥符「常夜桜」"
+  },
+  {
+    "number": 11,
+    "difficulty": "Hard",
+    "name": "冥符「常夜桜」"
+  },
+  {
+    "number": 12,
+    "difficulty": "Lunatic",
+    "name": "冥符「常夜桜」"
+  },
+  {
+    "number": 13,
+    "difficulty": "Hard",
+    "name": "桜符「西行桜吹雪」"
+  },
+  {
+    "number": 14,
+    "difficulty": "Lunatic",
+    "name": "桜符「西行桜吹雪」"
+  },
+  {
+    "number": 15,
+    "difficulty": "Easy",
+    "name": "響符「マウンテンエコー」"
+  },
+  {
+    "number": 16,
+    "difficulty": "Normal",
+    "name": "響符「マウンテンエコー」"
+  },
+  {
+    "number": 17,
+    "difficulty": "Hard",
+    "name": "響符「マウンテンエコースクランブル」"
+  },
+  {
+    "number": 18,
+    "difficulty": "Lunatic",
+    "name": "響符「マウンテンエコースクランブル」"
+  },
+  {
+    "number": 19,
+    "difficulty": "Easy",
+    "name": "響符「パワーレゾナンス」"
+  },
+  {
+    "number": 20,
+    "difficulty": "Normal",
+    "name": "響符「パワーレゾナンス」"
+  },
+  {
+    "number": 21,
+    "difficulty": "Hard",
+    "name": "響符「パワーレゾナンス」"
+  },
+  {
+    "number": 22,
+    "difficulty": "Lunatic",
+    "name": "響符「パワーレゾナンス」"
+  },
+  {
+    "number": 23,
+    "difficulty": "Easy",
+    "name": "山彦「ロングレンジエコー」"
+  },
+  {
+    "number": 24,
+    "difficulty": "Normal",
+    "name": "山彦「ロングレンジエコー」"
+  },
+  {
+    "number": 25,
+    "difficulty": "Hard",
+    "name": "山彦「アンプリファイエコー」"
+  },
+  {
+    "number": 26,
+    "difficulty": "Lunatic",
+    "name": "山彦「アンプリファイエコー」"
+  },
+  {
+    "number": 27,
+    "difficulty": "Easy",
+    "name": "大声「チャージドクライ」"
+  },
+  {
+    "number": 28,
+    "difficulty": "Normal",
+    "name": "大声「チャージドクライ」"
+  },
+  {
+    "number": 29,
+    "difficulty": "Hard",
+    "name": "大声「チャージドヤッホー」"
+  },
+  {
+    "number": 30,
+    "difficulty": "Lunatic",
+    "name": "大声「チャージドヤッホー」"
+  },
+  {
+    "number": 31,
+    "difficulty": "Hard",
+    "name": "虹符「アンブレラサイクロン」"
+  },
+  {
+    "number": 32,
+    "difficulty": "Lunatic",
+    "name": "虹符「アンブレラサイクロン」"
+  },
+  {
+    "number": 33,
+    "difficulty": "Easy",
+    "name": "回復「ヒールバイデザイア」"
+  },
+  {
+    "number": 34,
+    "difficulty": "Normal",
+    "name": "回復「ヒールバイデザイア」"
+  },
+  {
+    "number": 35,
+    "difficulty": "Hard",
+    "name": "回復「ヒールバイデザイア」"
+  },
+  {
+    "number": 36,
+    "difficulty": "Lunatic",
+    "name": "回復「ヒールバイデザイア」"
+  },
+  {
+    "number": 37,
+    "difficulty": "Easy",
+    "name": "毒爪「ポイズンレイズ」"
+  },
+  {
+    "number": 38,
+    "difficulty": "Normal",
+    "name": "毒爪「ポイズンレイズ」"
+  },
+  {
+    "number": 39,
+    "difficulty": "Hard",
+    "name": "毒爪「ポイズンマーダー」"
+  },
+  {
+    "number": 40,
+    "difficulty": "Lunatic",
+    "name": "毒爪「ポイズンマーダー」"
+  },
+  {
+    "number": 41,
+    "difficulty": "Easy",
+    "name": "欲符「稼欲霊招来」"
+  },
+  {
+    "number": 42,
+    "difficulty": "Normal",
+    "name": "欲符「稼欲霊招来」"
+  },
+  {
+    "number": 43,
+    "difficulty": "Hard",
+    "name": "欲霊「スコアデザイアイーター」"
+  },
+  {
+    "number": 44,
+    "difficulty": "Lunatic",
+    "name": "欲霊「スコアデザイアイーター」"
+  },
+  {
+    "number": 45,
+    "difficulty": "Normal",
+    "name": "邪符「ヤンシャオグイ」"
+  },
+  {
+    "number": 46,
+    "difficulty": "Hard",
+    "name": "邪符「グーフンイエグイ」"
+  },
+  {
+    "number": 47,
+    "difficulty": "Lunatic",
+    "name": "邪符「グーフンイエグイ」"
+  },
+  {
+    "number": 48,
+    "difficulty": "Easy",
+    "name": "入魔「ゾウフォルゥモォ」"
+  },
+  {
+    "number": 49,
+    "difficulty": "Normal",
+    "name": "入魔「ゾウフォルゥモォ」"
+  },
+  {
+    "number": 50,
+    "difficulty": "Hard",
+    "name": "入魔「ゾウフォルゥモォ」"
+  },
+  {
+    "number": 51,
+    "difficulty": "Lunatic",
+    "name": "入魔「ゾウフォルゥモォ」"
+  },
+  {
+    "number": 52,
+    "difficulty": "Easy",
+    "name": "降霊「死人タンキー」"
+  },
+  {
+    "number": 53,
+    "difficulty": "Normal",
+    "name": "降霊「死人タンキー」"
+  },
+  {
+    "number": 54,
+    "difficulty": "Hard",
+    "name": "通霊「トンリン芳香」"
+  },
+  {
+    "number": 55,
+    "difficulty": "Lunatic",
+    "name": "通霊「トンリン芳香」"
+  },
+  {
+    "number": 56,
+    "difficulty": "Easy",
+    "name": "道符「タオ胎動」"
+  },
+  {
+    "number": 57,
+    "difficulty": "Normal",
+    "name": "道符「タオ胎動」"
+  },
+  {
+    "number": 58,
+    "difficulty": "Hard",
+    "name": "道符「タオ胎動」"
+  },
+  {
+    "number": 59,
+    "difficulty": "Lunatic",
+    "name": "道符「タオ胎動」"
+  },
+  {
+    "number": 60,
+    "difficulty": "Normal",
+    "name": "雷矢「ガゴウジサイクロン」"
+  },
+  {
+    "number": 61,
+    "difficulty": "Hard",
+    "name": "雷矢「ガゴウジサイクロン」"
+  },
+  {
+    "number": 62,
+    "difficulty": "Lunatic",
+    "name": "雷矢「ガゴウジトルネード」"
+  },
+  {
+    "number": 63,
+    "difficulty": "Easy",
+    "name": "天符「雨の磐舟」"
+  },
+  {
+    "number": 64,
+    "difficulty": "Normal",
+    "name": "天符「雨の磐舟」"
+  },
+  {
+    "number": 65,
+    "difficulty": "Hard",
+    "name": "天符「天の磐舟よ天へ昇れ」"
+  },
+  {
+    "number": 66,
+    "difficulty": "Lunatic",
+    "name": "天符「天の磐舟よ天へ昇れ」"
+  },
+  {
+    "number": 67,
+    "difficulty": "Easy",
+    "name": "投皿「物部の八十平瓮」"
+  },
+  {
+    "number": 68,
+    "difficulty": "Normal",
+    "name": "投皿「物部の八十平瓮」"
+  },
+  {
+    "number": 69,
+    "difficulty": "Hard",
+    "name": "投皿「物部の八十平瓮」"
+  },
+  {
+    "number": 70,
+    "difficulty": "Lunatic",
+    "name": "投皿「物部の八十平瓮」"
+  },
+  {
+    "number": 71,
+    "difficulty": "Easy",
+    "name": "炎符「廃仏の炎風」"
+  },
+  {
+    "number": 72,
+    "difficulty": "Normal",
+    "name": "炎符「廃仏の炎風」"
+  },
+  {
+    "number": 73,
+    "difficulty": "Hard",
+    "name": "炎符「桜井寺炎上」"
+  },
+  {
+    "number": 74,
+    "difficulty": "Lunatic",
+    "name": "炎符「桜井寺炎上」"
+  },
+  {
+    "number": 75,
+    "difficulty": "Easy",
+    "name": "聖童女「大物忌正餐」"
+  },
+  {
+    "number": 76,
+    "difficulty": "Normal",
+    "name": "聖童女「大物忌正餐」"
+  },
+  {
+    "number": 77,
+    "difficulty": "Hard",
+    "name": "聖童女「大物忌正餐」"
+  },
+  {
+    "number": 78,
+    "difficulty": "Lunatic",
+    "name": "聖童女「大物忌正餐」"
+  },
+  {
+    "number": 79,
+    "difficulty": "Easy",
+    "name": "名誉「十二階の色彩」"
+  },
+  {
+    "number": 80,
+    "difficulty": "Normal",
+    "name": "名誉「十二階の色彩」"
+  },
+  {
+    "number": 81,
+    "difficulty": "Hard",
+    "name": "名誉「十二階の冠位」"
+  },
+  {
+    "number": 82,
+    "difficulty": "Lunatic",
+    "name": "名誉「十二階の冠位」"
+  },
+  {
+    "number": 83,
+    "difficulty": "Easy",
+    "name": "仙符「日出ずる処の道士」"
+  },
+  {
+    "number": 84,
+    "difficulty": "Normal",
+    "name": "仙符「日出ずる処の道士」"
+  },
+  {
+    "number": 85,
+    "difficulty": "Hard",
+    "name": "仙符「日出ずる処の天子」"
+  },
+  {
+    "number": 86,
+    "difficulty": "Lunatic",
+    "name": "仙符「日出ずる処の天子」"
+  },
+  {
+    "number": 87,
+    "difficulty": "Easy",
+    "name": "召喚「豪族乱舞」"
+  },
+  {
+    "number": 88,
+    "difficulty": "Normal",
+    "name": "召喚「豪族乱舞」"
+  },
+  {
+    "number": 89,
+    "difficulty": "Hard",
+    "name": "召喚「豪族乱舞」"
+  },
+  {
+    "number": 90,
+    "difficulty": "Lunatic",
+    "name": "召喚「豪族乱舞」"
+  },
+  {
+    "number": 91,
+    "difficulty": "Easy",
+    "name": "秘宝「斑鳩寺の天球儀」"
+  },
+  {
+    "number": 92,
+    "difficulty": "Normal",
+    "name": "秘宝「斑鳩寺の天球儀」"
+  },
+  {
+    "number": 93,
+    "difficulty": "Hard",
+    "name": "秘宝「斑鳩寺の天球儀」"
+  },
+  {
+    "number": 94,
+    "difficulty": "Lunatic",
+    "name": "秘宝「聖徳太子のオーパーツ」"
+  },
+  {
+    "number": 95,
+    "difficulty": "Easy",
+    "name": "光符「救世観音の光後光」"
+  },
+  {
+    "number": 96,
+    "difficulty": "Normal",
+    "name": "光符「救世観音の光後光」"
+  },
+  {
+    "number": 97,
+    "difficulty": "Hard",
+    "name": "光符「グセフラッシュ」"
+  },
+  {
+    "number": 98,
+    "difficulty": "Lunatic",
+    "name": "光符「グセフラッシュ」"
+  },
+  {
+    "number": 99,
+    "difficulty": "Easy",
+    "name": "眼光「十七条のレーザー」"
+  },
+  {
+    "number": 100,
+    "difficulty": "Normal",
+    "name": "眼光「十七条のレーザー」"
+  },
+  {
+    "number": 101,
+    "difficulty": "Hard",
+    "name": "神光「逆らう事なきを宗とせよ」"
+  },
+  {
+    "number": 102,
+    "difficulty": "Lunatic",
+    "name": "神光「逆らう事なきを宗とせよ」"
+  },
+  {
+    "number": 103,
+    "difficulty": "Easy",
+    "name": "「星降る神霊廟」"
+  },
+  {
+    "number": 104,
+    "difficulty": "Normal",
+    "name": "「星降る神霊廟」"
+  },
+  {
+    "number": 105,
+    "difficulty": "Hard",
+    "name": "「生まれたての神霊」"
+  },
+  {
+    "number": 106,
+    "difficulty": "Lunatic",
+    "name": "「生まれたての神霊」"
+  },
+  {
+    "number": 107,
+    "difficulty": "Extra",
+    "name": "アンノウン「軌道不明の鬼火」"
+  },
+  {
+    "number": 108,
+    "difficulty": "Extra",
+    "name": "アンノウン「姿態不明の空魚」"
+  },
+  {
+    "number": 109,
+    "difficulty": "Extra",
+    "name": "アンノウン「原理不明の妖怪玉」"
+  },
+  {
+    "number": 110,
+    "difficulty": "Extra",
+    "name": "壱番勝負「霊長化弾幕変化」"
+  },
+  {
+    "number": 111,
+    "difficulty": "Extra",
+    "name": "弐番勝負「肉食化弾幕変化」"
+  },
+  {
+    "number": 112,
+    "difficulty": "Extra",
+    "name": "参番勝負「延羽化弾幕変化」"
+  },
+  {
+    "number": 113,
+    "difficulty": "Extra",
+    "name": "四番勝負「両生化弾幕変化」"
+  },
+  {
+    "number": 114,
+    "difficulty": "Extra",
+    "name": "伍番勝負「鳥獣戯画」"
+  },
+  {
+    "number": 115,
+    "difficulty": "Extra",
+    "name": "六番勝負「狸の化け学校」"
+  },
+  {
+    "number": 116,
+    "difficulty": "Extra",
+    "name": "七番勝負「野生の離島」"
+  },
+  {
+    "number": 117,
+    "difficulty": "Extra",
+    "name": "変化「まぬけ巫女の偽調伏」"
+  },
+  {
+    "number": 118,
+    "difficulty": "Extra",
+    "name": "「マミゾウ化弾幕十変化」"
+  },
+  {
+    "number": 119,
+    "difficulty": "Extra",
+    "name": "猯符「満月のポンポコリン」"
+  },
+  {
+    "number": 120,
+    "difficulty": "Overdrive",
+    "name": "桜符「桜吹雪地獄」"
+  },
+  {
+    "number": 121,
+    "difficulty": "Overdrive",
+    "name": "山彦「ヤマビコの本領発揮エコー」"
+  },
+  {
+    "number": 122,
+    "difficulty": "Overdrive",
+    "name": "毒爪「死なない殺人鬼」"
+  },
+  {
+    "number": 123,
+    "difficulty": "Overdrive",
+    "name": "道符「ＴＡＯ胎動　～道～」"
+  },
+  {
+    "number": 124,
+    "difficulty": "Overdrive",
+    "name": "怨霊「入鹿の雷」"
+  },
+  {
+    "number": 125,
+    "difficulty": "Overdrive",
+    "name": "聖童女「太陽神の鷲」"
+  },
+  {
+    "number": 126,
+    "difficulty": "Overdrive",
+    "name": "「神霊大宇宙」"
+  },
+  {
+    "number": 127,
+    "difficulty": "Overdrive",
+    "name": "「ワイルドカーペット」"
+  }
+]

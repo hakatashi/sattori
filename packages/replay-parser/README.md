@@ -225,6 +225,19 @@ Two more things to be aware of when reading a practice-mode th20 replay:
   clear the in-game list shows as "St5"; both the USER section and the stage
   record say stage 6, which is what the playback actually does.
 
+### Notes on th13 (東方神霊廟, TD) spell practice
+
+th13 Spell Practice replays resolve the card number to its name through a
+127-entry number→difficulty→name table (`src/data/th13/spellcards.json`),
+transcribed from the game's own Player Data / Spell Select screens (the names
+are not stored as plain or single-XOR text in `th13.exe` or the ECL files).
+`stage` comes out as `"Spell Practice No. 121 山彦「ヤマビコの本領発揮エコー」"` (as in th06nc, with no stage prefix),
+and `difficulty` is taken from the table. This matters for No. 120–127, the
+Spell Practice–only **Overdrive** cards: their USER section abbreviates the
+difficulty to `O.D.`, which is reported as `"Overdrive"`. Numbers are
+difficulty-scoped (No. 1–4 are one card at Easy–Lunatic) and some cards are
+renamed on Hard/Lunatic. th14 still reports the number only.
+
 ### Notes on th128 (妖精大戦争 ～ 東方三月精, GFW)
 
 `cleared`, `recordedAt`, and the per-split `stage`/`graze`/`frameCount` (and

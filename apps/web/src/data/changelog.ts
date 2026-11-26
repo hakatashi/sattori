@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-11-27",
+    ja: "東方神霊廟 (th13) のスペルプラクティスのリプレイで、スペルカード名と難易度（Overdrive を含む）を表示するように改善",
+    en: "Improved Ten Desires (th13) spell practice replays to show the spell card name and difficulty (including Overdrive)",
+  },
+  {
     date: "2026-11-24",
     ja: "東方神霊廟 (th13)・東方輝針城 (th14)・東方錦上京 (th20) のスペルプラクティスで、耐久して時間切れになったリプレイの録画が終わらず、長時間の動画になってしまう問題を修正",
     en: "Fixed recordings of Ten Desires (th13), Double Dealing Character (th14) and th20 spell practice replays that ended by surviving until the time limit never finishing and producing very long videos",

@@ -15,6 +15,7 @@
   --difficulty-lunatic: #9C27B0;
   --difficulty-extra: #E53935;
   --difficulty-phantasm: #F06292;
+  --difficulty-overdrive: #FB8C00;
   --radius: 6px;
   /* 難易度バッジ等、彩度の高い背景の上に乗せる文字色。テーマに関わらず白固定
      （--panelを流用すると、ダーク時にpanelが暗色化して文字が背景と同化するため）。 */
