@@ -28,7 +28,7 @@ const NOT_SPELL_PRACTICE = 0xffffffff;
  * plain or singly-XORed text in `th13.exe` or the ECL files, so there was no
  * way to extract them from the game assets). The number is difficulty-scoped
  * like th06nc's: one card has one number per difficulty it exists at (No. 1-4
- * 符蝶「死蝶の舞」 Easy–Lunatic, and some cards are renamed on Hard/Lunatic).
+ * 符牒「死蝶の舞」 Easy–Lunatic, and some cards are renamed on Hard/Lunatic).
  * No. 107-119 are Extra and No. 120-127 are the Spell Practice–only
  * "Overdrive" cards, whose replays record the difficulty as `O.D.`.
  */

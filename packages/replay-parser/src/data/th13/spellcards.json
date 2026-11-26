@@ -2,22 +2,22 @@
   {
     "number": 1,
     "difficulty": "Easy",
-    "name": "符蝶「死蝶の舞」"
+    "name": "符牒「死蝶の舞」"
   },
   {
     "number": 2,
     "difficulty": "Normal",
-    "name": "符蝶「死蝶の舞」"
+    "name": "符牒「死蝶の舞」"
   },
   {
     "number": 3,
     "difficulty": "Hard",
-    "name": "符蝶「死蝶の舞　- 桜花 -」"
+    "name": "符牒「死蝶の舞　- 桜花 -」"
   },
   {
     "number": 4,
     "difficulty": "Lunatic",
-    "name": "符蝶「死蝶の舞　- 桜花 -」"
+    "name": "符牒「死蝶の舞　- 桜花 -」"
   },
   {
     "number": 5,
@@ -46,7 +46,7 @@
   },
   {
     "number": 10,
-    "difficulty": "Easy",
+    "difficulty": "Normal",
     "name": "冥符「常夜桜」"
   },
   {
@@ -592,7 +592,7 @@
   {
     "number": 119,
     "difficulty": "Extra",
-    "name": "猯符「満月のポンポコリン」"
+    "name": "狢符「満月のポンポコリン」"
   },
   {
     "number": 120,
@@ -622,7 +622,7 @@
   {
     "number": 125,
     "difficulty": "Overdrive",
-    "name": "聖童女「太陽神の鷲」"
+    "name": "聖童女「太陽神の贄」"
   },
   {
     "number": 126,
