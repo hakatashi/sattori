@@ -17,18 +17,8 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-28",
-    ja: "東方錦上京 (th20) のスペルプラクティスのリプレイで、スペルカード名を表示するように改善",
-    en: "Improved Fossilized Wonders (th20) spell practice replays to show the spell card name",
-  },
-  {
-    date: "2026-11-28",
-    ja: "東方輝針城 (th14) のスペルプラクティスのリプレイで、スペルカード名を表示するように改善",
-    en: "Improved Double Dealing Character (th14) spell practice replays to show the spell card name",
-  },
-  {
-    date: "2026-11-27",
-    ja: "東方神霊廟 (th13) のスペルプラクティスのリプレイで、スペルカード名と難易度（Overdrive を含む）を表示するように改善",
-    en: "Improved Ten Desires (th13) spell practice replays to show the spell card name and difficulty (including Overdrive)",
+    ja: "東方神霊廟 (th13)・東方輝針城 (th14)・東方錦上京 (th20) のスペルプラクティスのリプレイで、スペルカード名を表示するように改善（th13 は難易度の Overdrive にも対応）",
+    en: "Improved Ten Desires (th13), Double Dealing Character (th14) and Fossilized Wonders (th20) spell practice replays to show the spell card name (th13 also shows the Overdrive difficulty)",
   },
   {
     date: "2026-11-24",
