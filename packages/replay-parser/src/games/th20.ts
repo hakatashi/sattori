@@ -1,5 +1,6 @@
 import { ByteReader } from "../byte-reader.js";
 import { localizeCharacterName } from "../character-names.js";
+import th20SpellCardsData from "../data/th20/spellcards.json" with { type: "json" };
 import { readBufferedUint32LE } from "../lzss.js";
 import { readModernUserdata } from "../userdata.js";
 import { DATE_TOKENS_YMD_HM, parseDateComponents } from "../date-format.js";
@@ -83,11 +84,25 @@ const STONE_SLOT_OFFSETS: Record<(typeof STONE_LOADOUT_SLOTS)[number], number> =
  * The number matches the "No." the game's own Spell Practice menu shows, plus
  * one: the single spell practice replay available while this was worked out
  * holds 99 here and is No. 100 (Lunatic 「不生不滅の石の女神」) in-game. The
- * name itself is *not* resolved — see `docs/research/th20-replay-format.md` §5
- * for why mapping the index to a card name is still an open question.
+ * name is looked up in `TH20_SPELL_CARDS_BY_NUMBER` below.
  */
 const SPELL_CARD_OFFSET = 0xfc;
 const NOT_SPELL_PRACTICE = 0xffffffff;
+
+/**
+ * Spell Practice card number → difficulty/name (No. 1-100 are difficulty-scoped
+ * in groups of four, Easy/Normal/Hard/Lunatic; No. 101-113 are Extra). Numbers
+ * and difficulties come from the game's Player Data screen; the names were
+ * cross-checked against the ones decoded from the stage ECL files in
+ * `th20.dat` (see `docs/reports/2026-11-28-spell-card-names-from-ecl.md`), and
+ * the two sets match exactly.
+ */
+interface Th20SpellCard {
+  number: number;
+  difficulty: string;
+  name: string;
+}
+const TH20_SPELL_CARDS_BY_NUMBER = new Map<number, Th20SpellCard>((th20SpellCardsData as Th20SpellCard[]).map((card) => [card.number, card]));
 const BODY_HEADER_SIZE = 0x100;
 
 const SHOT_BASES = ["Reimu", "Marisa"];
@@ -332,10 +347,11 @@ function readStageRecords(
  * which no other project decodes. `loadout` (the 4-slot 石 choice — see
  * `readLoadout`) comes from the same investigation's §3.1.1 correction.
  */
-function spellPracticeStage(stage: string | null, spellCardNumber: number | null): string | null {
+function spellPracticeStage(spellCardNumber: number | null, card: Th20SpellCard | undefined, stage: string | null): string | null {
   if (spellCardNumber === null) return stage;
-  const suffix = `Spell Practice No. ${spellCardNumber}`;
-  return stage === null ? suffix : `${stage} (${suffix})`;
+  const label = `Spell Practice No. ${spellCardNumber}`;
+  // Like th06nc/th13/th14: no stage prefix (the stage is in `splits[0].stage`).
+  return card === undefined ? label : `${label} ${card.name}`;
 }
 
 export function parseTh20(original: Uint8Array): ParsedReplay {
@@ -353,6 +369,7 @@ export function parseTh20(original: Uint8Array): ParsedReplay {
   const character = shotBase !== null && stoneName !== null ? `${shotBase}${stoneName}` : null;
   const { ja: characterNameJa, en: characterNameEn } = localizeCharacterName("th20", character);
   const spellCardNumber = readSpellCardNumber(decodedata);
+  const spellCard = spellCardNumber === null ? undefined : TH20_SPELL_CARDS_BY_NUMBER.get(spellCardNumber);
   const { splits, frameCount } = readStageRecords(decodedata, spellCardNumber);
 
   return {
@@ -371,13 +388,13 @@ export function parseTh20(original: Uint8Array): ParsedReplay {
     character,
     characterNameJa,
     characterNameEn,
-    difficulty: normalizeText(userdata.difficulty),
+    difficulty: spellCard?.difficulty ?? normalizeText(userdata.difficulty),
     // A spell practice replay's USER section only names the stage the card
     // belongs to, which makes it indistinguishable from a stage practice
     // record of the same stage. th08 has no such problem because its own USER
     // section spells the card out; for th20 the number has to be appended here
     // (see `SPELL_CARD_OFFSET`).
-    stage: spellPracticeStage(normalizeText(userdata.stage), spellCardNumber),
+    stage: spellPracticeStage(spellCardNumber, spellCard, normalizeText(userdata.stage)),
     score: userdata.score,
     cleared: userdata.stage.includes("Clear"),
     loadout,

@@ -1,0 +1,567 @@
+[
+  {
+    "number": 1,
+    "difficulty": "Easy",
+    "name": "塵符「コズミックダスト」"
+  },
+  {
+    "number": 2,
+    "difficulty": "Normal",
+    "name": "塵符「コズミックダスト」"
+  },
+  {
+    "number": 3,
+    "difficulty": "Hard",
+    "name": "塵符「宇宙塵」"
+  },
+  {
+    "number": 4,
+    "difficulty": "Lunatic",
+    "name": "塵符「宇宙塵」"
+  },
+  {
+    "number": 5,
+    "difficulty": "Easy",
+    "name": "塵符「唐櫃返し」"
+  },
+  {
+    "number": 6,
+    "difficulty": "Normal",
+    "name": "塵符「唐櫃返し」"
+  },
+  {
+    "number": 7,
+    "difficulty": "Hard",
+    "name": "塵符「唐櫃大返し」"
+  },
+  {
+    "number": 8,
+    "difficulty": "Lunatic",
+    "name": "塵符「唐櫃大返し」"
+  },
+  {
+    "number": 9,
+    "difficulty": "Easy",
+    "name": "塵符「塵のすみか」"
+  },
+  {
+    "number": 10,
+    "difficulty": "Normal",
+    "name": "塵符「塵のすみか」"
+  },
+  {
+    "number": 11,
+    "difficulty": "Hard",
+    "name": "塵符「塵のすみか」"
+  },
+  {
+    "number": 12,
+    "difficulty": "Lunatic",
+    "name": "塵符「塵のすみか」"
+  },
+  {
+    "number": 13,
+    "difficulty": "Easy",
+    "name": "魅符「まつろわぬ沢の気」"
+  },
+  {
+    "number": 14,
+    "difficulty": "Normal",
+    "name": "魅符「まつろわぬ沢の気」"
+  },
+  {
+    "number": 15,
+    "difficulty": "Hard",
+    "name": "魅符「荒くれる沢の気」"
+  },
+  {
+    "number": 16,
+    "difficulty": "Lunatic",
+    "name": "魅符「荒くれる沢の気」"
+  },
+  {
+    "number": 17,
+    "difficulty": "Easy",
+    "name": "魅符「うなされる森の気」"
+  },
+  {
+    "number": 18,
+    "difficulty": "Normal",
+    "name": "魅符「うなされる森の気」"
+  },
+  {
+    "number": 19,
+    "difficulty": "Hard",
+    "name": "魅符「息苦しい森の気」"
+  },
+  {
+    "number": 20,
+    "difficulty": "Lunatic",
+    "name": "魅符「息苦しい森の気」"
+  },
+  {
+    "number": 21,
+    "difficulty": "Easy",
+    "name": "魑符「荒ぶる山の気」"
+  },
+  {
+    "number": 22,
+    "difficulty": "Normal",
+    "name": "魑符「荒ぶる山の気」"
+  },
+  {
+    "number": 23,
+    "difficulty": "Hard",
+    "name": "魑符「怒れる山の気」"
+  },
+  {
+    "number": 24,
+    "difficulty": "Lunatic",
+    "name": "魑符「怒れる山の気」"
+  },
+  {
+    "number": 25,
+    "difficulty": "Easy",
+    "name": "謎符「ピラミダルラビリンス」"
+  },
+  {
+    "number": 26,
+    "difficulty": "Normal",
+    "name": "謎符「ピラミダルラビリンス」"
+  },
+  {
+    "number": 27,
+    "difficulty": "Hard",
+    "name": "謎符「ヘキサゴナルラビリンス」"
+  },
+  {
+    "number": 28,
+    "difficulty": "Lunatic",
+    "name": "謎符「ヘキサゴナルラビリンス」"
+  },
+  {
+    "number": 29,
+    "difficulty": "Easy",
+    "name": "塞符「ロジカルウォール」"
+  },
+  {
+    "number": 30,
+    "difficulty": "Normal",
+    "name": "塞符「ロジカルウォール」"
+  },
+  {
+    "number": 31,
+    "difficulty": "Hard",
+    "name": "塞符「ロジカルグレートウォール」"
+  },
+  {
+    "number": 32,
+    "difficulty": "Lunatic",
+    "name": "塞符「ロジカルグレートウォール」"
+  },
+  {
+    "number": 33,
+    "difficulty": "Easy",
+    "name": "謎符「エンシャントトラップ」"
+  },
+  {
+    "number": 34,
+    "difficulty": "Normal",
+    "name": "謎符「エンシャントトラップ」"
+  },
+  {
+    "number": 35,
+    "difficulty": "Hard",
+    "name": "謎符「エンシャントトラップ」"
+  },
+  {
+    "number": 36,
+    "difficulty": "Lunatic",
+    "name": "謎符「エンシャントトラップ」"
+  },
+  {
+    "number": 37,
+    "difficulty": "Easy",
+    "name": "金符「弾幕の金字塔」"
+  },
+  {
+    "number": 38,
+    "difficulty": "Normal",
+    "name": "金符「弾幕の金字塔」"
+  },
+  {
+    "number": 39,
+    "difficulty": "Hard",
+    "name": "金符「弾幕の金字塔」"
+  },
+  {
+    "number": 40,
+    "difficulty": "Lunatic",
+    "name": "金符「弾幕の金字塔」"
+  },
+  {
+    "number": 41,
+    "difficulty": "Easy",
+    "name": "虚符「ストリーミングドール」"
+  },
+  {
+    "number": 42,
+    "difficulty": "Normal",
+    "name": "虚符「ストリーミングドール」"
+  },
+  {
+    "number": 43,
+    "difficulty": "Hard",
+    "name": "虚符「ストリーミングマリオネット」"
+  },
+  {
+    "number": 44,
+    "difficulty": "Lunatic",
+    "name": "虚符「ストリーミングマリオネット」"
+  },
+  {
+    "number": 45,
+    "difficulty": "Easy",
+    "name": "群符「ラブルデータ」"
+  },
+  {
+    "number": 46,
+    "difficulty": "Normal",
+    "name": "群符「ラブルデータ」"
+  },
+  {
+    "number": 47,
+    "difficulty": "Hard",
+    "name": "群符「ラブルビッグデータ」"
+  },
+  {
+    "number": 48,
+    "difficulty": "Lunatic",
+    "name": "群符「ラブルビッグデータ」"
+  },
+  {
+    "number": 49,
+    "difficulty": "Easy",
+    "name": "「シカを射るだけの美しい記憶」"
+  },
+  {
+    "number": 50,
+    "difficulty": "Normal",
+    "name": "「シカを射るだけの美しい記憶」"
+  },
+  {
+    "number": 51,
+    "difficulty": "Hard",
+    "name": "「シカを射るだけの美しい記憶」"
+  },
+  {
+    "number": 52,
+    "difficulty": "Lunatic",
+    "name": "「シカを射るだけの美しい記憶」"
+  },
+  {
+    "number": 53,
+    "difficulty": "Easy",
+    "name": "虚構「ディスコミュニケーション」"
+  },
+  {
+    "number": 54,
+    "difficulty": "Normal",
+    "name": "虚構「ディスコミュニケーション」"
+  },
+  {
+    "number": 55,
+    "difficulty": "Hard",
+    "name": "虚構「ディスコミュニケーション」"
+  },
+  {
+    "number": 56,
+    "difficulty": "Lunatic",
+    "name": "虚構「ディスコミュニケーション」"
+  },
+  {
+    "number": 57,
+    "difficulty": "Easy",
+    "name": "宝珠「潮盈珠」"
+  },
+  {
+    "number": 58,
+    "difficulty": "Normal",
+    "name": "宝珠「潮盈珠」"
+  },
+  {
+    "number": 59,
+    "difficulty": "Hard",
+    "name": "宝珠「潮盈珠」"
+  },
+  {
+    "number": 60,
+    "difficulty": "Lunatic",
+    "name": "宝珠「潮盈珠」"
+  },
+  {
+    "number": 61,
+    "difficulty": "Easy",
+    "name": "災禍「山津波」"
+  },
+  {
+    "number": 62,
+    "difficulty": "Normal",
+    "name": "災禍「山津波」"
+  },
+  {
+    "number": 63,
+    "difficulty": "Hard",
+    "name": "災禍「長い山津波」"
+  },
+  {
+    "number": 64,
+    "difficulty": "Lunatic",
+    "name": "災禍「終わらない山津波」"
+  },
+  {
+    "number": 65,
+    "difficulty": "Easy",
+    "name": "宝珠「潮乾珠」"
+  },
+  {
+    "number": 66,
+    "difficulty": "Normal",
+    "name": "宝珠「潮乾珠」"
+  },
+  {
+    "number": 67,
+    "difficulty": "Hard",
+    "name": "宝珠「潮乾珠」"
+  },
+  {
+    "number": 68,
+    "difficulty": "Lunatic",
+    "name": "宝珠「潮乾珠」"
+  },
+  {
+    "number": 69,
+    "difficulty": "Easy",
+    "name": "「ムーンドラゴン」"
+  },
+  {
+    "number": 70,
+    "difficulty": "Normal",
+    "name": "「ムーンドラゴン」"
+  },
+  {
+    "number": 71,
+    "difficulty": "Hard",
+    "name": "「ムーンドラゴン」"
+  },
+  {
+    "number": 72,
+    "difficulty": "Lunatic",
+    "name": "「ムーンドラゴン」"
+  },
+  {
+    "number": 73,
+    "difficulty": "Easy",
+    "name": "石神「巌となるさざれ石」"
+  },
+  {
+    "number": 74,
+    "difficulty": "Normal",
+    "name": "石神「巌となるさざれ石」"
+  },
+  {
+    "number": 75,
+    "difficulty": "Hard",
+    "name": "石神「巌となるさざれ石」"
+  },
+  {
+    "number": 76,
+    "difficulty": "Lunatic",
+    "name": "石神「巌となるさざれ石」"
+  },
+  {
+    "number": 77,
+    "difficulty": "Easy",
+    "name": "死符「永遠の冬」"
+  },
+  {
+    "number": 78,
+    "difficulty": "Normal",
+    "name": "死符「永遠の冬」"
+  },
+  {
+    "number": 79,
+    "difficulty": "Hard",
+    "name": "死符「恒久の冬」"
+  },
+  {
+    "number": 80,
+    "difficulty": "Lunatic",
+    "name": "死符「恒久の冬」"
+  },
+  {
+    "number": 81,
+    "difficulty": "Easy",
+    "name": "生符「混沌の冬」"
+  },
+  {
+    "number": 82,
+    "difficulty": "Normal",
+    "name": "生符「混沌の冬」"
+  },
+  {
+    "number": 83,
+    "difficulty": "Hard",
+    "name": "生符「混沌の冬」"
+  },
+  {
+    "number": 84,
+    "difficulty": "Lunatic",
+    "name": "生符「混沌の冬」"
+  },
+  {
+    "number": 85,
+    "difficulty": "Easy",
+    "name": "「弾幕の化石」"
+  },
+  {
+    "number": 86,
+    "difficulty": "Normal",
+    "name": "「弾幕の化石」"
+  },
+  {
+    "number": 87,
+    "difficulty": "Hard",
+    "name": "「弾幕の化石」"
+  },
+  {
+    "number": 88,
+    "difficulty": "Lunatic",
+    "name": "「弾幕の化石」"
+  },
+  {
+    "number": 89,
+    "difficulty": "Easy",
+    "name": "地符「幻想のリリクウィー」"
+  },
+  {
+    "number": 90,
+    "difficulty": "Normal",
+    "name": "地符「幻想のリリクウィー」"
+  },
+  {
+    "number": 91,
+    "difficulty": "Hard",
+    "name": "地符「幻想のリリクウィー」"
+  },
+  {
+    "number": 92,
+    "difficulty": "Lunatic",
+    "name": "地符「幻想のリリクウィー」"
+  },
+  {
+    "number": 93,
+    "difficulty": "Easy",
+    "name": "月符「錦の上のイマジナリー」"
+  },
+  {
+    "number": 94,
+    "difficulty": "Normal",
+    "name": "月符「錦の上のイマジナリー」"
+  },
+  {
+    "number": 95,
+    "difficulty": "Hard",
+    "name": "月符「錦の上のイマジナリー」"
+  },
+  {
+    "number": 96,
+    "difficulty": "Lunatic",
+    "name": "月符「錦の上のイマジナリー」"
+  },
+  {
+    "number": 97,
+    "difficulty": "Easy",
+    "name": "「ストーンゴッデス」"
+  },
+  {
+    "number": 98,
+    "difficulty": "Normal",
+    "name": "「ストーンゴッデス」"
+  },
+  {
+    "number": 99,
+    "difficulty": "Hard",
+    "name": "「不生不滅の石の女神」"
+  },
+  {
+    "number": 100,
+    "difficulty": "Lunatic",
+    "name": "「不生不滅の石の女神」"
+  },
+  {
+    "number": 101,
+    "difficulty": "Extra",
+    "name": "鹿符「ディアジェノサイダー」"
+  },
+  {
+    "number": 102,
+    "difficulty": "Extra",
+    "name": "蛇姫「スネークランダー」"
+  },
+  {
+    "number": 103,
+    "difficulty": "Extra",
+    "name": "「ゾルタクスコミュニケーション」"
+  },
+  {
+    "number": 104,
+    "difficulty": "Extra",
+    "name": "真実「テトラモノアイ」"
+  },
+  {
+    "number": 105,
+    "difficulty": "Extra",
+    "name": "真実「オールドイルミナティ」"
+  },
+  {
+    "number": 106,
+    "difficulty": "Extra",
+    "name": "真実「ケムトレイルクラウド」"
+  },
+  {
+    "number": 107,
+    "difficulty": "Extra",
+    "name": "真実「レプティリアンインテリジェンス」"
+  },
+  {
+    "number": 108,
+    "difficulty": "Extra",
+    "name": "真実「フラットアーサー」"
+  },
+  {
+    "number": 109,
+    "difficulty": "Extra",
+    "name": "真実「アーティフィシャルディザスター」"
+  },
+  {
+    "number": 110,
+    "difficulty": "Extra",
+    "name": "真実「ニューワールドオーダー」"
+  },
+  {
+    "number": 111,
+    "difficulty": "Extra",
+    "name": "真実「タルタリアンラプソディ」"
+  },
+  {
+    "number": 112,
+    "difficulty": "Extra",
+    "name": "「チョコレートリバー」"
+  },
+  {
+    "number": 113,
+    "difficulty": "Extra",
+    "name": "「アンゴルモアの大王」"
+  }
+]

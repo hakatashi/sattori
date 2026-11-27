@@ -1,5 +1,7 @@
 import { ByteReader } from "../byte-reader.js";
 import { localizeCharacterName } from "../character-names.js";
+import th13SpellCardsData from "../data/th13/spellcards.json" with { type: "json" };
+import th14SpellCardsData from "../data/th14/spellcards.json" with { type: "json" };
 import { readBufferedUint32LE } from "../lzss.js";
 import { jumpToUser, parseScoreWithTrailingZero } from "../userdata.js";
 import { emptySplit, normalizeText, resourceCount, type ParsedReplay, type ReplayStageSplit } from "../types.js";
@@ -20,6 +22,35 @@ import { decodeModernBody, RECORDED_AT_OFFSET_12BYTE_NAME } from "./modern-body.
 const TH13_SPELL_CARD_OFFSET = 0x70;
 const TH14_SPELL_CARD_OFFSET = 0x90;
 const NOT_SPELL_PRACTICE = 0xffffffff;
+
+/**
+ * Spell Practice card number → difficulty/name, per game.
+ *
+ * th13: transcribed from the game's own Player Data / Spell Select screens
+ * (the names also decode from the ECL files with the same rolling XOR as th14,
+ * and the table matches them exactly). The number is difficulty-scoped like th06nc's: one card has one number per
+ * difficulty it exists at (No. 1-4 符牒「死蝶の舞」 Easy–Lunatic, and some cards
+ * are renamed on Hard/Lunatic). No. 107-119 are Extra and No. 120-127 are the
+ * Spell Practice–only "Overdrive" cards, whose replays record the difficulty
+ * as `O.D.`.
+ *
+ * th14: 120 cards, numbered the same difficulty-scoped way (No. 1-2 氷符
+ * 「アルティメットブリザード」 are Hard/Lunatic only; No. 109-120 are Extra).
+ * The numbers come from the Player Data screen; the names were cross-checked
+ * against the ones decoded from the stage ECL files (the spell card name
+ * operand is XOR-masked with a rolling key, 0x77 / step 7 / step-of-step 16),
+ * and the two sets match exactly.
+ */
+interface SpellCard {
+  number: number;
+  difficulty: string;
+  name: string;
+}
+function indexByNumber(cards: SpellCard[]): Map<number, SpellCard> {
+  return new Map(cards.map((card) => [card.number, card]));
+}
+const TH13_SPELL_CARDS_BY_NUMBER = indexByNumber(th13SpellCardsData as SpellCard[]);
+const TH14_SPELL_CARDS_BY_NUMBER = indexByNumber(th14SpellCardsData as SpellCard[]);
 
 /**
  * The t13r magic is shared by th13 (東方神霊廟, TD) and th14 (東方輝針城, DDC),
@@ -118,10 +149,19 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
 
   const spellCardIndex = readBufferedUint32LE(decodedata, isTd ? TH13_SPELL_CARD_OFFSET : TH14_SPELL_CARD_OFFSET);
   const normalizedStage = normalizeText(stage);
-  const stageText =
-    spellCardIndex === NOT_SPELL_PRACTICE
-      ? normalizedStage
-      : `${normalizedStage ?? "Stage"} (Spell Practice No. ${spellCardIndex + 1})`;
+  let normalizedDifficulty = normalizeText(difficulty);
+  let stageText = normalizedStage;
+  if (spellCardIndex !== NOT_SPELL_PRACTICE) {
+    const spellNumber = spellCardIndex + 1;
+    const card = (isTd ? TH13_SPELL_CARDS_BY_NUMBER : TH14_SPELL_CARDS_BY_NUMBER).get(spellNumber);
+    // The USER section abbreviates Overdrive to `O.D.`; the table has the
+    // full name (and agrees with the USER section for every other difficulty).
+    if (card !== undefined) normalizedDifficulty = card.difficulty;
+    const label = card === undefined ? `Spell Practice No. ${spellNumber}` : `Spell Practice No. ${spellNumber} ${card.name}`;
+    // th13/th14 follow th06nc (`Spell Practice No. 33 name`, no stage prefix;
+    // the stage is already in `splits[0].stage`).
+    stageText = label;
+  }
 
   const game = isTd ? "th13" : "th14";
   const characterName = normalizeText(character);
@@ -137,7 +177,7 @@ export function parseTh1314(original: Uint8Array): ParsedReplay {
     character: characterName,
     characterNameJa,
     characterNameEn,
-    difficulty: normalizeText(difficulty),
+    difficulty: normalizedDifficulty,
     stage: stageText,
     score,
     cleared: stage.includes("Clear"),

@@ -53,6 +53,10 @@
   &.phantasm {
     background: var(--difficulty-phantasm);
   }
+
+  &.overdrive {
+    background: var(--difficulty-overdrive);
+  }
 }
 
 .basicInfo {

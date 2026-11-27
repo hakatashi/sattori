@@ -215,15 +215,48 @@ Two more things to be aware of when reading a practice-mode th20 replay:
   writes the whole card into its USER section (so `stage` comes out as
   `"カード名\tNo. 87 恋符「ノンディレクショナルレーザー」"`); th20 stores no card
   name anywhere in the file, and its USER section only names the stage the card
-  belongs to. The body header does hold the card index, so `stage` gets the
-  game's own Spell Practice number appended (`"Stage 6 (Spell Practice
-  No. 100)"`) and `splits[0].additional` gains a `spellCardNumber`. Resolving
-  that number to a name would need a lookup table this package does not have
-  (research doc §5).
+  belongs to. The body header does hold the card index, which this package
+  resolves through a 113-entry number→difficulty→name table
+  (`src/data/th20/spellcards.json`): `stage` comes out as
+  `"Spell Practice No. 100 「不生不滅の石の女神」"` (as in th06nc/th13/th14, with
+  no stage prefix), `difficulty` is taken from the table, and
+  `splits[0].additional` gains a `spellCardNumber`. The numbers are
+  difficulty-scoped (No. 1–100 in groups of Easy/Normal/Hard/Lunatic, No.
+  101–113 Extra). The names were transcribed from the Player Data screen and
+  match the ones decoded from the stage ECL files in `th20.dat` exactly (same
+  rolling XOR as th13/th14; see
+  `docs/reports/2026-11-28-spell-card-names-from-ecl.md`).
 - **The game's own replay list can label the stage differently from what the
   replay contains.** `test-fixtures/th20/th20_07.rpy` is a Hard stage 6 practice
   clear the in-game list shows as "St5"; both the USER section and the stage
   record say stage 6, which is what the playback actually does.
+
+### Notes on th13 (東方神霊廟, TD) spell practice
+
+th13 Spell Practice replays resolve the card number to its name through a
+127-entry number→difficulty→name table (`src/data/th13/spellcards.json`),
+transcribed from the game's own Player Data / Spell Select screens. The names
+can also be decoded from the stage ECL files (same key as th14 below), and the
+table matches them exactly.
+`stage` comes out as `"Spell Practice No. 121 山彦「ヤマビコの本領発揮エコー」"` (as in th06nc, with no stage prefix),
+and `difficulty` is taken from the table. This matters for No. 120–127, the
+Spell Practice–only **Overdrive** cards: their USER section abbreviates the
+difficulty to `O.D.`, which is reported as `"Overdrive"`. Numbers are
+difficulty-scoped (No. 1–4 are one card at Easy–Lunatic) and some cards are
+renamed on Hard/Lunatic.
+
+### Notes on th14 (東方輝針城, DDC) spell practice
+
+th14 works the same way as th13 (`src/data/th14/spellcards.json`, 120 entries,
+`stage` = `"Spell Practice No. 66 欺符「逆針撃」"`). The names can be extracted
+from the game assets: the spell card name operand in the stage ECL files
+(inside `th14.dat`; th13 uses the same key) is XOR-masked with a rolling key
+(initial key 0x77, step 7, step increment 16 per byte; decode as cp932), see
+`docs/reports/2026-11-28-spell-card-names-from-ecl.md`. The decoded name set
+matches the one transcribed from the Player Data screen exactly; the
+number→name mapping comes
+from that screen (No. 1–2 氷符「アルティメットブリザード」 are Hard/Lunatic only,
+No. 109–120 are Extra).
 
 ### Notes on th128 (妖精大戦争 ～ 東方三月精, GFW)
 
