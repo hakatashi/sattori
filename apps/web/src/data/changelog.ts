@@ -17,6 +17,11 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-28",
+    ja: "東方錦上京 (th20) のスペルプラクティスのリプレイで、スペルカード名を表示するように改善",
+    en: "Improved Fossilized Wonders (th20) spell practice replays to show the spell card name",
+  },
+  {
+    date: "2026-11-28",
     ja: "東方輝針城 (th14) のスペルプラクティスのリプレイで、スペルカード名を表示するように改善",
     en: "Improved Double Dealing Character (th14) spell practice replays to show the spell card name",
   },

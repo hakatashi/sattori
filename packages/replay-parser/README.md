@@ -215,11 +215,17 @@ Two more things to be aware of when reading a practice-mode th20 replay:
   writes the whole card into its USER section (so `stage` comes out as
   `"カード名\tNo. 87 恋符「ノンディレクショナルレーザー」"`); th20 stores no card
   name anywhere in the file, and its USER section only names the stage the card
-  belongs to. The body header does hold the card index, so `stage` gets the
-  game's own Spell Practice number appended (`"Stage 6 (Spell Practice
-  No. 100)"`) and `splits[0].additional` gains a `spellCardNumber`. Resolving
-  that number to a name would need a lookup table this package does not have
-  (research doc §5).
+  belongs to. The body header does hold the card index, which this package
+  resolves through a 113-entry number→difficulty→name table
+  (`src/data/th20/spellcards.json`): `stage` comes out as
+  `"Spell Practice No. 100 「不生不滅の石の女神」"` (as in th06nc/th13/th14, with
+  no stage prefix), `difficulty` is taken from the table, and
+  `splits[0].additional` gains a `spellCardNumber`. The numbers are
+  difficulty-scoped (No. 1–100 in groups of Easy/Normal/Hard/Lunatic, No.
+  101–113 Extra). The names were transcribed from the Player Data screen and
+  match the ones decoded from the stage ECL files in `th20.dat` exactly (same
+  rolling XOR as th13/th14; see
+  `docs/reports/2026-11-28-spell-card-names-from-ecl.md`).
 - **The game's own replay list can label the stage differently from what the
   replay contains.** `test-fixtures/th20/th20_07.rpy` is a Hard stage 6 practice
   clear the in-game list shows as "St5"; both the USER section and the stage
