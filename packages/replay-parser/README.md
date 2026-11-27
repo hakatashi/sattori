@@ -229,8 +229,9 @@ Two more things to be aware of when reading a practice-mode th20 replay:
 
 th13 Spell Practice replays resolve the card number to its name through a
 127-entry number→difficulty→name table (`src/data/th13/spellcards.json`),
-transcribed from the game's own Player Data / Spell Select screens (the names
-are not stored as plain or single-XOR text in `th13.exe` or the ECL files).
+transcribed from the game's own Player Data / Spell Select screens. The names
+can also be decoded from the stage ECL files (same key as th14 below), and the
+table matches them exactly.
 `stage` comes out as `"Spell Practice No. 121 山彦「ヤマビコの本領発揮エコー」"` (as in th06nc, with no stage prefix),
 and `difficulty` is taken from the table. This matters for No. 120–127, the
 Spell Practice–only **Overdrive** cards: their USER section abbreviates the
@@ -241,11 +242,13 @@ renamed on Hard/Lunatic.
 ### Notes on th14 (東方輝針城, DDC) spell practice
 
 th14 works the same way as th13 (`src/data/th14/spellcards.json`, 120 entries,
-`stage` = `"Spell Practice No. 66 欺符「逆針撃」"`). Unlike th13, the names *can*
-be extracted from the game assets: the spell card name operand in the stage
-ECL files (inside `th14.dat`) is XOR-masked with a rolling key (initial key
-0x77, step 7, step increment 16 per byte). The decoded name set matches the one
-transcribed from the Player Data screen exactly; the number→name mapping comes
+`stage` = `"Spell Practice No. 66 欺符「逆針撃」"`). The names can be extracted
+from the game assets: the spell card name operand in the stage ECL files
+(inside `th14.dat`; th13 uses the same key) is XOR-masked with a rolling key
+(initial key 0x77, step 7, step increment 16 per byte; decode as cp932), see
+`docs/reports/2026-11-28-spell-card-names-from-ecl.md`. The decoded name set
+matches the one transcribed from the Player Data screen exactly; the
+number→name mapping comes
 from that screen (No. 1–2 氷符「アルティメットブリザード」 are Hard/Lunatic only,
 No. 109–120 are Extra).
 
