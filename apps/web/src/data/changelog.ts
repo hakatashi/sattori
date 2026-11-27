@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    date: "2026-11-28",
+    ja: "東方輝針城 (th14) のスペルプラクティスのリプレイで、スペルカード名を表示するように改善",
+    en: "Improved Double Dealing Character (th14) spell practice replays to show the spell card name",
+  },
+  {
     date: "2026-11-27",
     ja: "東方神霊廟 (th13) のスペルプラクティスのリプレイで、スペルカード名と難易度（Overdrive を含む）を表示するように改善",
     en: "Improved Ten Desires (th13) spell practice replays to show the spell card name and difficulty (including Overdrive)",

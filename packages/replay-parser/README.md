@@ -236,7 +236,18 @@ and `difficulty` is taken from the table. This matters for No. 120–127, the
 Spell Practice–only **Overdrive** cards: their USER section abbreviates the
 difficulty to `O.D.`, which is reported as `"Overdrive"`. Numbers are
 difficulty-scoped (No. 1–4 are one card at Easy–Lunatic) and some cards are
-renamed on Hard/Lunatic. th14 still reports the number only.
+renamed on Hard/Lunatic.
+
+### Notes on th14 (東方輝針城, DDC) spell practice
+
+th14 works the same way as th13 (`src/data/th14/spellcards.json`, 120 entries,
+`stage` = `"Spell Practice No. 66 欺符「逆針撃」"`). Unlike th13, the names *can*
+be extracted from the game assets: the spell card name operand in the stage
+ECL files (inside `th14.dat`) is XOR-masked with a rolling key (initial key
+0x77, step 7, step increment 16 per byte). The decoded name set matches the one
+transcribed from the Player Data screen exactly; the number→name mapping comes
+from that screen (No. 1–2 氷符「アルティメットブリザード」 are Hard/Lunatic only,
+No. 109–120 are Extra).
 
 ### Notes on th128 (妖精大戦争 ～ 東方三月精, GFW)
 

@@ -1,0 +1,602 @@
+[
+  {
+    "number": 1,
+    "difficulty": "Hard",
+    "name": "氷符「アルティメットブリザード」"
+  },
+  {
+    "number": 2,
+    "difficulty": "Lunatic",
+    "name": "氷符「アルティメットブリザード」"
+  },
+  {
+    "number": 3,
+    "difficulty": "Easy",
+    "name": "水符「テイルフィンスラップ」"
+  },
+  {
+    "number": 4,
+    "difficulty": "Normal",
+    "name": "水符「テイルフィンスラップ」"
+  },
+  {
+    "number": 5,
+    "difficulty": "Hard",
+    "name": "水符「テイルフィンスラップ」"
+  },
+  {
+    "number": 6,
+    "difficulty": "Lunatic",
+    "name": "水符「テイルフィンスラップ」"
+  },
+  {
+    "number": 7,
+    "difficulty": "Easy",
+    "name": "鱗符「スケールウェイブ」"
+  },
+  {
+    "number": 8,
+    "difficulty": "Normal",
+    "name": "鱗符「スケールウェイブ」"
+  },
+  {
+    "number": 9,
+    "difficulty": "Hard",
+    "name": "鱗符「逆鱗の荒波」"
+  },
+  {
+    "number": 10,
+    "difficulty": "Lunatic",
+    "name": "鱗符「逆鱗の大荒波」"
+  },
+  {
+    "number": 11,
+    "difficulty": "Easy",
+    "name": "飛符「フライングヘッド」"
+  },
+  {
+    "number": 12,
+    "difficulty": "Normal",
+    "name": "飛符「フライングヘッド」"
+  },
+  {
+    "number": 13,
+    "difficulty": "Hard",
+    "name": "飛符「フライングヘッド」"
+  },
+  {
+    "number": 14,
+    "difficulty": "Lunatic",
+    "name": "飛符「フライングヘッド」"
+  },
+  {
+    "number": 15,
+    "difficulty": "Easy",
+    "name": "首符「クローズアイショット」"
+  },
+  {
+    "number": 16,
+    "difficulty": "Normal",
+    "name": "首符「クローズアイショット」"
+  },
+  {
+    "number": 17,
+    "difficulty": "Hard",
+    "name": "首符「ろくろ首飛来」"
+  },
+  {
+    "number": 18,
+    "difficulty": "Lunatic",
+    "name": "首符「ろくろ首飛来」"
+  },
+  {
+    "number": 19,
+    "difficulty": "Easy",
+    "name": "飛頭「マルチプリケイティブヘッド」"
+  },
+  {
+    "number": 20,
+    "difficulty": "Normal",
+    "name": "飛頭「マルチプリケイティブヘッド」"
+  },
+  {
+    "number": 21,
+    "difficulty": "Hard",
+    "name": "飛頭「セブンズヘッド」"
+  },
+  {
+    "number": 22,
+    "difficulty": "Lunatic",
+    "name": "飛頭「ナインズヘッド」"
+  },
+  {
+    "number": 23,
+    "difficulty": "Easy",
+    "name": "飛頭「デュラハンナイト」"
+  },
+  {
+    "number": 24,
+    "difficulty": "Normal",
+    "name": "飛頭「デュラハンナイト」"
+  },
+  {
+    "number": 25,
+    "difficulty": "Hard",
+    "name": "飛頭「デュラハンナイト」"
+  },
+  {
+    "number": 26,
+    "difficulty": "Lunatic",
+    "name": "飛頭「デュラハンナイト」"
+  },
+  {
+    "number": 27,
+    "difficulty": "Hard",
+    "name": "牙符「月下の犬歯」"
+  },
+  {
+    "number": 28,
+    "difficulty": "Lunatic",
+    "name": "牙符「月下の犬歯」"
+  },
+  {
+    "number": 29,
+    "difficulty": "Easy",
+    "name": "変身「トライアングルファング」"
+  },
+  {
+    "number": 30,
+    "difficulty": "Normal",
+    "name": "変身「トライアングルファング」"
+  },
+  {
+    "number": 31,
+    "difficulty": "Hard",
+    "name": "変身「スターファング」"
+  },
+  {
+    "number": 32,
+    "difficulty": "Lunatic",
+    "name": "変身「スターファング」"
+  },
+  {
+    "number": 33,
+    "difficulty": "Easy",
+    "name": "咆哮「ストレンジロア」"
+  },
+  {
+    "number": 34,
+    "difficulty": "Normal",
+    "name": "咆哮「ストレンジロア」"
+  },
+  {
+    "number": 35,
+    "difficulty": "Hard",
+    "name": "咆哮「満月の遠吠え」"
+  },
+  {
+    "number": 36,
+    "difficulty": "Lunatic",
+    "name": "咆哮「満月の遠吠え」"
+  },
+  {
+    "number": 37,
+    "difficulty": "Easy",
+    "name": "狼符「スターリングパウンス」"
+  },
+  {
+    "number": 38,
+    "difficulty": "Normal",
+    "name": "狼符「スターリングパウンス」"
+  },
+  {
+    "number": 39,
+    "difficulty": "Hard",
+    "name": "天狼「ハイスピードパウンス」"
+  },
+  {
+    "number": 40,
+    "difficulty": "Lunatic",
+    "name": "天狼「ハイスピードパウンス」"
+  },
+  {
+    "number": 41,
+    "difficulty": "Easy",
+    "name": "平曲「祇園精舎の鐘の音」"
+  },
+  {
+    "number": 42,
+    "difficulty": "Normal",
+    "name": "平曲「祇園精舎の鐘の音」"
+  },
+  {
+    "number": 43,
+    "difficulty": "Hard",
+    "name": "平曲「祇園精舎の鐘の音」"
+  },
+  {
+    "number": 44,
+    "difficulty": "Lunatic",
+    "name": "平曲「祇園精舎の鐘の音」"
+  },
+  {
+    "number": 45,
+    "difficulty": "Easy",
+    "name": "怨霊「耳無し芳一」"
+  },
+  {
+    "number": 46,
+    "difficulty": "Normal",
+    "name": "怨霊「耳無し芳一」"
+  },
+  {
+    "number": 47,
+    "difficulty": "Hard",
+    "name": "怨霊「平家の大怨霊」"
+  },
+  {
+    "number": 48,
+    "difficulty": "Lunatic",
+    "name": "怨霊「平家の大怨霊」"
+  },
+  {
+    "number": 49,
+    "difficulty": "Easy",
+    "name": "楽符「邪悪な五線譜」"
+  },
+  {
+    "number": 50,
+    "difficulty": "Normal",
+    "name": "楽符「邪悪な五線譜」"
+  },
+  {
+    "number": 51,
+    "difficulty": "Hard",
+    "name": "楽符「凶悪な五線譜」"
+  },
+  {
+    "number": 52,
+    "difficulty": "Lunatic",
+    "name": "楽符「ダブルスコア」"
+  },
+  {
+    "number": 53,
+    "difficulty": "Easy",
+    "name": "琴符「諸行無常の琴の音」"
+  },
+  {
+    "number": 54,
+    "difficulty": "Normal",
+    "name": "琴符「諸行無常の琴の音」"
+  },
+  {
+    "number": 55,
+    "difficulty": "Hard",
+    "name": "琴符「諸行無常の琴の音」"
+  },
+  {
+    "number": 56,
+    "difficulty": "Lunatic",
+    "name": "琴符「諸行無常の琴の音」"
+  },
+  {
+    "number": 57,
+    "difficulty": "Easy",
+    "name": "響符「平安の残響」"
+  },
+  {
+    "number": 58,
+    "difficulty": "Normal",
+    "name": "響符「平安の残響」"
+  },
+  {
+    "number": 59,
+    "difficulty": "Hard",
+    "name": "響符「エコーチェンバー」"
+  },
+  {
+    "number": 60,
+    "difficulty": "Lunatic",
+    "name": "響符「エコーチェンバー」"
+  },
+  {
+    "number": 61,
+    "difficulty": "Easy",
+    "name": "箏曲「下克上送箏曲」"
+  },
+  {
+    "number": 62,
+    "difficulty": "Normal",
+    "name": "箏曲「下克上送箏曲」"
+  },
+  {
+    "number": 63,
+    "difficulty": "Hard",
+    "name": "箏曲「下克上レクイエム」"
+  },
+  {
+    "number": 64,
+    "difficulty": "Lunatic",
+    "name": "箏曲「下克上レクイエム」"
+  },
+  {
+    "number": 65,
+    "difficulty": "Easy",
+    "name": "欺符「逆針撃」"
+  },
+  {
+    "number": 66,
+    "difficulty": "Normal",
+    "name": "欺符「逆針撃」"
+  },
+  {
+    "number": 67,
+    "difficulty": "Hard",
+    "name": "欺符「逆針撃」"
+  },
+  {
+    "number": 68,
+    "difficulty": "Lunatic",
+    "name": "欺符「逆針撃」"
+  },
+  {
+    "number": 69,
+    "difficulty": "Easy",
+    "name": "逆符「鏡の国の弾幕」"
+  },
+  {
+    "number": 70,
+    "difficulty": "Normal",
+    "name": "逆符「鏡の国の弾幕」"
+  },
+  {
+    "number": 71,
+    "difficulty": "Hard",
+    "name": "逆符「イビルインザミラー」"
+  },
+  {
+    "number": 72,
+    "difficulty": "Lunatic",
+    "name": "逆符「イビルインザミラー」"
+  },
+  {
+    "number": 73,
+    "difficulty": "Easy",
+    "name": "逆符「天地有用」"
+  },
+  {
+    "number": 74,
+    "difficulty": "Normal",
+    "name": "逆符「天地有用」"
+  },
+  {
+    "number": 75,
+    "difficulty": "Hard",
+    "name": "逆符「天下転覆」"
+  },
+  {
+    "number": 76,
+    "difficulty": "Lunatic",
+    "name": "逆符「天下転覆」"
+  },
+  {
+    "number": 77,
+    "difficulty": "Easy",
+    "name": "逆弓「天壌夢弓」"
+  },
+  {
+    "number": 78,
+    "difficulty": "Normal",
+    "name": "逆弓「天壌夢弓」"
+  },
+  {
+    "number": 79,
+    "difficulty": "Hard",
+    "name": "逆弓「天壌夢弓の詔勅」"
+  },
+  {
+    "number": 80,
+    "difficulty": "Lunatic",
+    "name": "逆弓「天壌夢弓の詔勅」"
+  },
+  {
+    "number": 81,
+    "difficulty": "Easy",
+    "name": "逆転「リバースヒエラルキー」"
+  },
+  {
+    "number": 82,
+    "difficulty": "Normal",
+    "name": "逆転「リバースヒエラルキー」"
+  },
+  {
+    "number": 83,
+    "difficulty": "Hard",
+    "name": "逆転「チェンジエアブレイブ」"
+  },
+  {
+    "number": 84,
+    "difficulty": "Lunatic",
+    "name": "逆転「チェンジエアブレイブ」"
+  },
+  {
+    "number": 85,
+    "difficulty": "Easy",
+    "name": "小弾「小人の道」"
+  },
+  {
+    "number": 86,
+    "difficulty": "Normal",
+    "name": "小弾「小人の道」"
+  },
+  {
+    "number": 87,
+    "difficulty": "Hard",
+    "name": "小弾「小人の茨道」"
+  },
+  {
+    "number": 88,
+    "difficulty": "Lunatic",
+    "name": "小弾「小人の茨道」"
+  },
+  {
+    "number": 89,
+    "difficulty": "Easy",
+    "name": "小槌「大きくなあれ」"
+  },
+  {
+    "number": 90,
+    "difficulty": "Normal",
+    "name": "小槌「大きくなあれ」"
+  },
+  {
+    "number": 91,
+    "difficulty": "Hard",
+    "name": "小槌「もっと大きくなあれ」"
+  },
+  {
+    "number": 92,
+    "difficulty": "Lunatic",
+    "name": "小槌「もっと大きくなあれ」"
+  },
+  {
+    "number": 93,
+    "difficulty": "Easy",
+    "name": "妖剣「輝針剣」"
+  },
+  {
+    "number": 94,
+    "difficulty": "Normal",
+    "name": "妖剣「輝針剣」"
+  },
+  {
+    "number": 95,
+    "difficulty": "Hard",
+    "name": "妖剣「輝針剣」"
+  },
+  {
+    "number": 96,
+    "difficulty": "Lunatic",
+    "name": "妖剣「輝針剣」"
+  },
+  {
+    "number": 97,
+    "difficulty": "Easy",
+    "name": "小槌「お前が大きくなあれ」"
+  },
+  {
+    "number": 98,
+    "difficulty": "Normal",
+    "name": "小槌「お前が大きくなあれ」"
+  },
+  {
+    "number": 99,
+    "difficulty": "Hard",
+    "name": "小槌「お前が大きくなあれ」"
+  },
+  {
+    "number": 100,
+    "difficulty": "Lunatic",
+    "name": "小槌「お前が大きくなあれ」"
+  },
+  {
+    "number": 101,
+    "difficulty": "Easy",
+    "name": "「進撃の小人」"
+  },
+  {
+    "number": 102,
+    "difficulty": "Normal",
+    "name": "「進撃の小人」"
+  },
+  {
+    "number": 103,
+    "difficulty": "Hard",
+    "name": "「ウォールオブイッスン」"
+  },
+  {
+    "number": 104,
+    "difficulty": "Lunatic",
+    "name": "「ウォールオブイッスン」"
+  },
+  {
+    "number": 105,
+    "difficulty": "Easy",
+    "name": "「ホップオマイサムセブン」"
+  },
+  {
+    "number": 106,
+    "difficulty": "Normal",
+    "name": "「ホップオマイサムセブン」"
+  },
+  {
+    "number": 107,
+    "difficulty": "Hard",
+    "name": "「七人の一寸法師」"
+  },
+  {
+    "number": 108,
+    "difficulty": "Lunatic",
+    "name": "「七人の一寸法師」"
+  },
+  {
+    "number": 109,
+    "difficulty": "Extra",
+    "name": "弦楽「嵐のアンサンブル」"
+  },
+  {
+    "number": 110,
+    "difficulty": "Extra",
+    "name": "弦楽「浄瑠璃世界」"
+  },
+  {
+    "number": 111,
+    "difficulty": "Extra",
+    "name": "一鼓「暴れ宮太鼓」"
+  },
+  {
+    "number": 112,
+    "difficulty": "Extra",
+    "name": "二鼓「怨霊アヤノツヅミ」"
+  },
+  {
+    "number": 113,
+    "difficulty": "Extra",
+    "name": "三鼓「午前零時のスリーストライク」"
+  },
+  {
+    "number": 114,
+    "difficulty": "Extra",
+    "name": "死鼓「ランドパーカス」"
+  },
+  {
+    "number": 115,
+    "difficulty": "Extra",
+    "name": "五鼓「デンデン太鼓」"
+  },
+  {
+    "number": 116,
+    "difficulty": "Extra",
+    "name": "六鼓「オルタネイトスティッキング」"
+  },
+  {
+    "number": 117,
+    "difficulty": "Extra",
+    "name": "七鼓「高速和太鼓ロケット」"
+  },
+  {
+    "number": 118,
+    "difficulty": "Extra",
+    "name": "八鼓「雷神の怒り」"
+  },
+  {
+    "number": 119,
+    "difficulty": "Extra",
+    "name": "「ブルーレディショー」"
+  },
+  {
+    "number": 120,
+    "difficulty": "Extra",
+    "name": "「プリスティンビート」"
+  }
+]
