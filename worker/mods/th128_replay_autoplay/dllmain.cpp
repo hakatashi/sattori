@@ -19,118 +19,58 @@
 // 経由して起動するだけで解消することを実機確認済み(touhou-recorder reports/70)。
 // th20と同じ理由で、record_th128.pyのthprac_exe指定を外さないこと。
 
-#include <windows.h>
-#include <stdlib.h>
-#include "audio/dsound.h"
-#include "autoplay/window_wait.h"
-#include "clock/speed_hack.h"
-#include "core/log.h"
-#include "core/runtime_config.h"
-#include "core/time_scale.h"
-#include "input/dinput.h"
-#include "monitor/score_monitor.h"
+#include "autoplay/title_main.h"
 #include "present/capture/d3d9_readback.h"
-#include "present/capture/frame_sync.h"
 #include "present/limiter.h"
 #include "texture/d3dx_filter.h"
 
 using namespace autoplay;
 
-// DirectInput scan codes.
-static const BYTE DIK_DOWN = 0xD0;
-static const BYTE DIK_RIGHT = 0xCD;
-static const BYTE DIK_RETURN = 0x1C;
+namespace {
 
-static DWORD WINAPI AutoPlayThread(LPVOID) {
-    Log("=== th128_replay_autoplay: AutoPlayThread started ===");
+const MenuStep kMenu[] = {
+    {.key = Key::kDown, .waitMs = 500, .label = "Down x1 (select 'Replay' on main menu)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (confirm 'Replay', enter replay list)"},
+    {.key = Key::kRight, .waitMs = 500, .label = "Right (switch to user replay tab)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (select 1st user replay file)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (confirm playback, start replay)"},
+};
 
-    DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
-    if (!hwnd) {
-        Log("ERROR: game window never appeared, aborting sequence");
-        return 1;
-    }
-
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
-        Log("ERROR: GetDeviceState hook was never called, aborting sequence");
-        return 1;
-    }
-
+const TitleSpec kSpec = {
+    .name = "th128",
     // タイトル画面表示後、最大10秒程度までキー入力を受け付けないことがある
     // (ユーザー申告、touhou-recorder reports/70)という懸念から当初8000msを取っていたが、
     // sattori本体での実機検証(docs/reports/2026-09-16-th128-title-screen-wait-reduction-verification.md)
-    // で2000msでもシーケンスが安定して成功することを確認し、短縮した。
-    const DWORD titleWaitMs = frame_sync::Active() ? 8000 : 2000;
-    Log("Buffering %lums (scaled) for title screen load...", (unsigned long)titleWaitMs);
-    time_scale::MenuSleep(titleWaitMs);
+    // で2000msでもシーケンスが安定して成功することを確認し、短縮した(フレーム同期は8000msのまま)。
+    .titleWaitMs = 2000,
+    .titleWaitMsFrameSync = 8000,
+    .menu = kMenu,
+    // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
+    // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
+    .textFilter = InstallD3DXFilterHook,
+    .installFrameSync = InstallFrameSyncD3D9,
+    .frameSyncStepDiv = 1024,
+    // 低速録画用フック。FPS_LIMIT_TARGET_HZ未設定時はscale=1.0で従来動作と完全互換
+    // (touhou-recorder reports/72で30fps実機検証済み)。
+    .installLimiter = InstallFpsLimiterHook,
+    // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
+    // (thprac_th128.cppの`th128_patch_main`フック内で練習モードの初期値を
+    // ゲーム内変数へ直接書き込んでいる箇所)の絶対VA(image base 0x400000)から収集し、
+    // 基点0x4b4c00(RVA=0xb4c00)からのオフセットに整理したもの。フル尺録画
+    // (通常・Extra両方)で記録スコアとの完全一致を実機確認済み(touhou-recorder reports/71)。
+    //   score:      +0xc4 (画面表示値の1/10、th10/th12と同じ×10系列)
+    //   motivation: +0x164(「やる気」ゲージ、残機に相当。表示値は生値/100)
+    // グレイズはth128エンジンに実装が見当たらない(thprac側もTHPracParamに
+    // grazeフィールドが無い)ため計測しない。
+    .scoreMonitor = {
+        .baseRva = 0xb4c00,
+        .scoreOffset = 0xc4,
+        .scoreWidth = 4,
+        .livesOffset = 0x164,
+        .livesWidth = 4,
+    },
+};
 
-    LogStep(1, "Down x1 (select 'Replay' on main menu)");
-    PressKey(DIK_DOWN);
-    time_scale::MenuSleep(500);
+}  // namespace
 
-    LogStep(2, "Enter (confirm 'Replay', enter replay list)");
-    PressKey(DIK_RETURN);
-    time_scale::MenuSleep(700);
-
-    LogStep(3, "Right (switch to user replay tab)");
-    PressKey(DIK_RIGHT);
-    time_scale::MenuSleep(500);
-
-    // th11/th12/th20と同じ規約: 対象リプレイは事前にインスタンスの
-    // replay/ディレクトリへ"th128_ud0000.rpy"として配置されている必要がある
-    // (record_th128.pyのcanonical_slot)。
-    LogStep(4, "Enter (select 1st user replay file)");
-    PressKey(DIK_RETURN);
-    time_scale::MenuSleep(700);
-
-    LogStep(5, "Enter (confirm playback, start replay)");
-    PressKey(DIK_RETURN);
-    time_scale::MenuSleep(700);
-
-    frame_sync::SetUnthrottled(true);
-    LogSequenceComplete("th128");
-    return 0;
-}
-
-BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(hinst);
-        LogInit(hinst, "th128_autoplay.log");
-        InitRuntimeConfig();
-        Log("DLL_PROCESS_ATTACH: installing IAT hooks");
-        InstallDinputHook();
-        // D3DXLoadSurfaceFromMemoryの縮小フィルタ補完(文字のジャギー対策、touhou-recorder
-        // reports/101・102)。既定で有効(D3DX_AREA_FILTER=0で無効)。
-        InstallD3DXFilterHook();
-        if (!InstallFrameSyncD3D9(1024)) {
-            // 倍速録画(reports/89): SPEED_HACK_MULTIPLIER未設定(等倍)なら何もしない。
-            InstallSpeedHackHook();
-            // 低速録画用フック。FPS_LIMIT_TARGET_HZ未設定時はscale=1.0で従来動作と完全互換
-            // (touhou-recorder reports/72で30fps実機検証済み)。
-            InstallFpsLimiterHook();
-        }
-        InstallDSoundHook();
-        // リプレイずれ判定用のスコア等サンプリング(Issue #103)。RVAはthprac
-        // (thprac_th128.cppの`th128_patch_main`フック内で練習モードの初期値を
-        // ゲーム内変数へ直接書き込んでいる箇所)の絶対VA(image base 0x400000)から収集し、
-        // 基点0x4b4c00(RVA=0xb4c00)からのオフセットに整理したもの。フル尺録画
-        // (通常・Extra両方)で記録スコアとの完全一致を実機確認済み(touhou-recorder reports/71)。
-        //   score:      +0xc4 (画面表示値の1/10、th10/th12と同じ×10系列)
-        //   motivation: +0x164(「やる気」ゲージ、残機に相当。表示値は生値/100)
-        // グレイズはth128エンジンに実装が見当たらない(thprac側もTHPracParamに
-        // grazeフィールドが無い)ため計測しない。
-        {
-            ScoreMonitorConfig sm;
-            sm.baseRva = 0xb4c00;
-            sm.baseIsPointer = false;
-            sm.scoreOffset = 0xc4;
-            sm.scoreWidth = 4;
-            sm.livesOffset = 0x164;
-            sm.livesWidth = 4;
-            sm.intervalMs = 1000;
-            StartScoreMonitorThread(sm);
-        }
-        CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
-    }
-    return TRUE;
-}
+DEFINE_TITLE(kSpec)

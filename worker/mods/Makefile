@@ -29,6 +29,9 @@ MOD_core        := core/log.cpp core/pe_iat.cpp core/runtime_config.cpp core/tim
 MOD_code_patch  := core/code_patch.cpp
 MOD_dinput      := input/dinput.cpp
 MOD_window_wait := autoplay/window_wait.cpp
+# メニュー操作のスクリプト実行部(全タイトル)と、32bitタイトルのDllMain・AutoPlayThreadの共通部(Issue #394)
+MOD_menu_script := autoplay/menu_script.cpp
+MOD_title_main  := autoplay/title_main.cpp
 MOD_speed_hack  := clock/speed_hack.cpp
 MOD_fps_display := clock/fps_display.cpp
 MOD_present     := present/bus.cpp present/limiter.cpp present/d3d8.cpp present/d3d9.cpp
@@ -56,7 +59,7 @@ CHECK_ONLY_SRCS_64 :=
 
 # 倍速録画(Issue #288)のQPC偽装・音声周波数スケールとA/V同期マーカー・スコア監視は、
 # 全32bitタイトル共通で組み込む。
-BASE32 := core dinput window_wait speed_hack dsound score
+BASE32 := core dinput window_wait speed_hack dsound score menu_script title_main
 
 # ---------------------------------------------------------------------------
 # タイトルの宣言
@@ -70,11 +73,11 @@ th06_ARCH := 32
 th06_MODS := $(BASE32) fps_display frame_sync_d3d8
 # th06c: 64bit(PE32+)。DXライブラリなので入力・音声はGetProcAddress経由
 th06c_ARCH   := 64
-th06c_MODS   := core dxlib score frame_sync_d3d11
+th06c_MODS   := core dxlib score menu_script frame_sync_d3d11
 th06c_STATIC := 1
 # th06nc: th06cに加えてCPU描画用のBC7展開(D3D11_DECODE_BC7=1のときだけ有効、reports/96)。-ldxguidが要る
 th06nc_ARCH   := 64
-th06nc_MODS   := core dxlib score bc7 frame_sync_d3d11
+th06nc_MODS   := core dxlib score menu_script bc7 frame_sync_d3d11
 th06nc_STATIC := 1
 th06nc_LIBS   := -ldxguid
 th07_ARCH := 32

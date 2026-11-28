@@ -24,130 +24,66 @@
 // must place the target replay as "th20_ud0000.rpy" for this Enter to land
 // on it.
 
-#include <windows.h>
-#include <stdlib.h>
-#include "audio/dsound.h"
-#include "autoplay/window_wait.h"
+#include "autoplay/title_main.h"
 #include "clock/fps_display.h"
-#include "clock/speed_hack.h"
-#include "core/log.h"
-#include "core/runtime_config.h"
-#include "core/time_scale.h"
-#include "input/dinput.h"
-#include "monitor/score_monitor.h"
 #include "present/capture/d3d9_readback.h"
-#include "present/capture/frame_sync.h"
 #include "present/limiter.h"
 
 using namespace autoplay;
 
-// Win32 virtual-key codes.
-static const BYTE VK_DOWN_KEY = 0x28;
-static const BYTE VK_RIGHT_KEY = 0x27;
-static const BYTE VK_RETURN_KEY = 0x0D;
+namespace {
 
-static DWORD WINAPI AutoPlayThread(LPVOID) {
-    Log("=== th20_replay_autoplay: AutoPlayThread started ===");
+const MenuStep kMenu[] = {
+    {.key = Key::kDown, .repeat = 3, .waitMs = 250, .label = "Down x3 (select 'Replay' on main menu)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (confirm 'Replay', enter replay list)"},
+    {.key = Key::kRight, .waitMs = 500, .label = "Right (switch to user replay tab)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (select 1st user replay file)"},
+    {.key = Key::kReturn, .waitMs = 700, .label = "Enter (confirm playback, start replay from Stage 1)"},
+};
 
-    DWORD pid = GetCurrentProcessId();
-    HWND hwnd = WaitForStableWindow(pid, /*stableMs=*/800, /*timeoutMs=*/30000);
-    if (!hwnd) {
-        Log("ERROR: game window never appeared, aborting sequence");
-        return 1;
-    }
-
-    if (!WaitForHookActive(/*timeoutMs=*/30000)) {
-        Log("ERROR: neither GetDeviceState nor GetKeyboardState hook was ever called, aborting sequence");
-        return 1;
-    }
-
+const TitleSpec kSpec = {
+    .name = "th20",
+    .input = InputPath::kKeyboardState,
     // 実機検証(reports/44参照)で、th20のタイトルロゴアニメーションから
     // メニュー項目(Game Start等のテキスト)が実際に操作可能になるまでは
     // 従来タイトル(th11等)より大幅に長く、5000ms程度の待機ではメニューが
     // まだ表示されておらず最初の数回のDown入力が空振りすることを確認した。
     // 10000ms待つことで確実にメニュー表示後からDown x3を開始できる。
-    Log("Buffering 10000ms (scaled) for title screen logo animation...");
-    time_scale::MenuSleep(10000);
+    .titleWaitMs = 10000,
+    .menu = kMenu,
+    .installFrameSync = InstallFrameSyncD3D9,
+    .frameSyncStepDiv = 1024,
+    // AWS実機(Intel Xeon/Nitro仮想化)でth20のフレームペーシングが崩れ、
+    // ゲーム内fpsカウンターが常時75fps前後(本来60fps)になりリプレイが
+    // 早回しになる不具合への対策(フェーズ46追加調査、詳細はpresent/limiter.h参照)。
+    .installLimiter = InstallFpsLimiterHook,
+    // th20自身のfpsカウンター表示がスローモーション化(FPS_LIMIT_TARGET_HZ)
+    // に連動して低い値を表示してしまう問題(reports/47の既知の制約)への対策。
+    // 表示計算に使われていることを実証済みの特定コールサイトのみ時刻の
+    // 進み方を補正し、等倍相当のfps値を表示させる(reports/48参照)。
+    .realtimeExtra = [] { InstallFpsDisplayCorrectionHook(0x0001cb54); },
+    // リプレイずれ判定用に、ゲーム内スコア・ステージ番号・残機・グレイズを
+    // 1秒間隔でMODログへ出力する(Issue #103、reports/50)。
+    // RVAはthpracのthprac_th20.cpp(rel_addrs::GAME_SIDE0 = 0x1ba568 と
+    // GlobalsSide構造体)由来。GlobalsSide本体は RVA(GAME_SIDE0 + 0x88) に
+    // 直に置かれており、score(uint64)がその先頭、life_stocksが+0xb8、
+    // grazeが+0xe4、ステージ番号が+0x1f4。th20 ver1.00cで検証済み。フル尺録画で
+    // リプレイ記録スコアとの完全一致を実機確認済み(reports/50、
+    // touhou-recorder reports/53_phase53_score_monitor_all_titlesで
+    // score_monitor.hの構造体リファクタ後もリグレッション無しを再確認済み)。
+    .scoreMonitor = {
+        .baseRva = 0x1ba568 + 0x88,
+        .scoreOffset = 0x00,
+        .scoreWidth = 8,
+        .stageOffset = 0x1f4,
+        .stageWidth = 4,
+        .livesOffset = 0xb8,
+        .livesWidth = 4,
+        .grazeOffset = 0xe4,
+        .grazeWidth = 4,
+    },
+};
 
-    LogStep(1, "Down x3 (select 'Replay' on main menu)");
-    for (int i = 0; i < 3; i++) {
-        PressVKey(VK_DOWN_KEY);
-        time_scale::MenuSleep(250);
-    }
+}  // namespace
 
-    LogStep(2, "Enter (confirm 'Replay', enter replay list)");
-    PressVKey(VK_RETURN_KEY);
-    time_scale::MenuSleep(700);
-
-    LogStep(3, "Right (switch to user replay tab)");
-    PressVKey(VK_RIGHT_KEY);
-    time_scale::MenuSleep(500);
-
-    LogStep(4, "Enter (select 1st user replay file)");
-    PressVKey(VK_RETURN_KEY);
-    time_scale::MenuSleep(700);
-
-    LogStep(5, "Enter (confirm playback, start replay from Stage 1)");
-    PressVKey(VK_RETURN_KEY);
-    time_scale::MenuSleep(700);
-
-    frame_sync::SetUnthrottled(true);
-    LogSequenceComplete("th20");
-    return 0;
-}
-
-BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(hinst);
-        LogInit(hinst, "th20_autoplay.log");
-        InitRuntimeConfig();
-        Log("DLL_PROCESS_ATTACH: installing IAT hooks");
-        InstallDinputHook();
-        InstallKeyboardStateHook();
-        if (!InstallFrameSyncD3D9(1024)) {
-            // 倍速録画(reports/85・89): QPCの経過時間をSPEED_HACK_MULTIPLIER倍に伸ばす。
-            // 未設定(等倍)なら何もしない。
-            InstallSpeedHackHook();
-            // AWS実機(Intel Xeon/Nitro仮想化)でth20のフレームペーシングが崩れ、
-            // ゲーム内fpsカウンターが常時75fps前後(本来60fps)になりリプレイが
-            // 早回しになる不具合への対策(フェーズ46追加調査、詳細はpresent/limiter.h参照)。
-            InstallFpsLimiterHook();
-            // th20自身のfpsカウンター表示がスローモーション化(FPS_LIMIT_TARGET_HZ)
-            // に連動して低い値を表示してしまう問題(reports/47の既知の制約)への対策。
-            // 表示計算に使われていることを実証済みの特定コールサイトのみ時刻の
-            // 進み方を補正し、等倍相当のfps値を表示させる(reports/48参照)。
-            InstallFpsDisplayCorrectionHook(0x0001cb54);
-        }
-        // present/limiterによるゲーム進行のスローモーション化(reports/47)は
-        // 映像・ゲームロジックのみに効き、DirectSoundのBGM/SEストリーミングには
-        // 連動しないため、別途SetFrequencyフックで音声側も同じ比率でスケールする。
-        InstallDSoundHook();
-        // リプレイずれ判定用に、ゲーム内スコア・ステージ番号・残機・グレイズを
-        // 1秒間隔でMODログへ出力する(Issue #103、reports/50)。
-        // RVAはthpracのthprac_th20.cpp(rel_addrs::GAME_SIDE0 = 0x1ba568 と
-        // GlobalsSide構造体)由来。GlobalsSide本体は RVA(GAME_SIDE0 + 0x88) に
-        // 直に置かれており、score(uint64)がその先頭、life_stocksが+0xb8、
-        // grazeが+0xe4、ステージ番号が+0x1f4。th20 ver1.00cで検証済み。フル尺録画で
-        // リプレイ記録スコアとの完全一致を実機確認済み(reports/50、
-        // touhou-recorder reports/53_phase53_score_monitor_all_titlesで
-        // score_monitor.hの構造体リファクタ後もリグレッション無しを再確認済み)。
-        {
-            const uint32_t kGlobalsSide = 0x1ba568 + 0x88; // = 0x1ba5f0
-            ScoreMonitorConfig sm;
-            sm.baseRva = kGlobalsSide;
-            sm.baseIsPointer = false;
-            sm.scoreOffset = 0x00;
-            sm.scoreWidth = 8;
-            sm.stageOffset = 0x1f4;
-            sm.stageWidth = 4;
-            sm.livesOffset = 0xb8;
-            sm.livesWidth = 4;
-            sm.grazeOffset = 0xe4;
-            sm.grazeWidth = 4;
-            sm.intervalMs = 1000;
-            StartScoreMonitorThread(sm);
-        }
-        CreateThread(NULL, 0, AutoPlayThread, NULL, 0, NULL);
-    }
-    return TRUE;
-}
+DEFINE_TITLE(kSpec)

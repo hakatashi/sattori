@@ -215,6 +215,17 @@ TITLES = {
         "expected_final_state": (7, -1, 449),
         "expected_hit_game_seconds": [105.4, 111.1, 116.3],
     },
+    "th15": {
+        "replay": "th15_09.rpy",
+        "expected_score": 17_101_210,
+        "expected_duration_seconds": 9215 / 60,
+        "display": ":104",
+        "capture_size": (1280, 960),
+        "expected_play_seconds": 157.1,
+        # th15はステージ番号のRVAが未特定(stageWidth未指定)なのでステージは0固定
+        "expected_final_state": (0, -1, 1267),
+        "expected_hit_game_seconds": [142.5, 148.7, 155.1],
+    },
     "th20": {
         "replay": "th20_08.rpy",
         "expected_score": 9_243_950,

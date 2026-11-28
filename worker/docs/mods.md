@@ -27,13 +27,46 @@
 | `audio/` | 音声の周波数スケール・同期マーカー・フレーム同期用仮想ミキサ(§6) |
 | `texture/` | 描画の補正(文字の縮小フィルタ・BC7展開、§7) |
 | `monitor/` | スコア監視(デシンクの事後検知、§8) |
-| `autoplay/` | メニュー操作の共通部(ウィンドウの安定待ち、th06c/th06ncの共通部) |
-| `thNN_replay_autoplay/` | タイトルごとの自動再生MOD(`dllmain.cpp`)。組み込むフックの違いは各タイトルの背景ファイル |
+| `autoplay/` | 自動再生の共通部(`TitleSpec`・`DEFINE_TITLE`・メニュー操作のスクリプト実行・ウィンドウの安定待ち、th06c/th06ncの共通部、§1.1) |
+| `thNN_replay_autoplay/` | タイトルごとの自動再生MOD(`dllmain.cpp`)。**宣言(`TitleSpec`)だけを書く**。組み込むフックの違いは各タイトルの背景ファイル |
 | `tools/` | インジェクタ(`injector.cpp`、複数DLLの順次注入)・Steamworks APIスタブ(`steam_stub.cpp`、`-DAPP_ID`・`-DLOG_NAME` でth06c用・th06nc用の2つをビルド) |
 | `tests/` | Win32 に依存しないロジックの単体テスト(ホストの g++、`make test`)とログ契約のゴールデン(§9) |
 
 タイトルが使うモジュールは `Makefile` の「タイトルの宣言」(`thNN_ARCH`・`thNN_MODS`・
 `thNN_STATIC`)で決まる。ソースは `"core/log.h"` のように `mods/` からのパスで include する。
+
+### 1.1 タイトル定義(`autoplay/title_main.*`・`menu_script.*`、Issue #394)
+
+th06〜th20・th128(32bit、12本)の `dllmain.cpp` は、`TitleSpec`(`autoplay/title_main.h`)という**宣言**を
+書いて `DEFINE_TITLE(kSpec)` するだけで、`DllMain` と `AutoPlayThread` の流れは `autoplay::TitleDllMain` が持つ
+(`LogInit` → `InitRuntimeConfig` → 入力フック → 文字フィルタ → フレーム同期、なければ倍速録画のフック →
+DirectSoundフック → ScoreMonitor → AutoPlayThread)。**この流れ・待ちの倍率・フレーム同期の分岐をタイトル側に
+書かないこと**。タイトルごとに書くのは次の項目だけ。
+
+| `TitleSpec` の項目 | 内容 |
+| --- | --- |
+| `name` | タイトルID。ログ名(`<name>_autoplay.log`)と `sequence complete` 行に使う |
+| `input` | キーの注入経路。`kDInput`(`GetDeviceState`、`PressKey`)か `kKeyboardState`(`GetKeyboardState`、`PressVKey`。th11・th20) |
+| `titleWaitMs`・`titleWaitMsFrameSync` | タイトル画面の待ち(フレーム同期時だけ別の値にするときは後者、0なら同じ) |
+| `firstStep`・`menu` | メニュー操作。`menu` は `MenuStep`(キー・回数・待ち・`Step N:` の文言)の並びで、実行は `RunMenuScript`(`autoplay/menu_script.*`)が行う。th10 だけ Step 0 始まり |
+| `textFilter` | 文字の縮小フィルタ(th10・th11・th12・th128・th13) |
+| `installFrameSync`・`frameSyncStepDiv` | フレーム同期のバックエンド(`InstallFrameSyncD3D8/D3D9`)と stepDiv |
+| `installLimiter`・`limiterOnlyWhenScaled` | 実時間の録画の Present の上限(D3D9/D3D8)。`limiterOnlyWhenScaled` は倍速のときだけ入れる(VsyncPatch が 60fps を制御する th10・th12。等倍で入れると二重の制御になる) |
+| `realtimeExtra` | 実時間の録画だけのタイトル固有の処理(fps 表示の補正、th12 のコードケーブ)。**宣言に収まらない処理だけをここに置く** |
+| `scoreMonitor` | `ScoreMonitorConfig`(RVA・幅) |
+
+`TitleSpec` の項目は**宣言順にしか designated initializer で書けない**(C++20)。どのモジュールをリンクするかは
+`Makefile` の `thNN_MODS`・`thNN_ARCH`(タイトルの宣言)が決め、`TitleSpec` はその中のどれをどの順で呼ぶかを決める
+(Present のバックエンドを変えるときは両方を直す)。vpatch(`vpatch_thNN.dll`)の注入はワーカー側
+(`recording/instance.py`・`record_thNN.py` の `extra_dlls`)の責務で、MOD の `TitleSpec` には持たない。
+
+th06c・th06nc(DXライブラリ、64bit)は起動の流れ(起動ダイアログ・入力ポーリングの待ち・`WaitForStableWindow` の
+種類)が違うので `TitleSpec` を使わず、`DllMain` と起動待ちは各 `dllmain.cpp` に残して、**メニュー操作だけ**
+`MenuStep` の並びと `RunMenuScript` を共有する(th06c の「カーソル位置を読んで Down を送る」は `MenuStep::custom`)。
+
+**待ちとキー操作の等価性**: `RunMenuScript` は各 Step で「`LogStep` → キーを押す → `time_scale::MenuSleep(待ち)`」を
+`repeat` 回繰り返すだけで、宣言化の前後で待ち時間・キー操作の並び・契約行は変わらない。待ちの値(ms)を変えるときは
+実機検証が要る(AGENTS.md §3)。
 
 ## 2. 共通基盤(`core/`)
 
