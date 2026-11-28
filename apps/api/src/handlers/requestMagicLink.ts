@@ -2,12 +2,15 @@ import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import {
   DEFAULT_LANGUAGE,
+  DEFAULT_TH06NC_LANGUAGE,
   EMAIL_PATTERN,
   isSupportedGame,
   isSupportedLanguage,
+  isTh06ncLanguage,
   initialCaptureMode,
   initialRecordingSpeed,
   parseReplayInfo,
+  supportsTh06ncLanguage,
   supportsTh10BugfixMarisaB,
   type GameId,
   type JobRecord,
@@ -178,6 +181,12 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       // th06ncの1080p録画（Issue #241）は廃止した（Issue #317、`docs/decisions/0066`）。古い
       // フロントエンドのキャッシュがtrueを送ってきても無視する。
       th06ncHighResolution: false,
+      // th06ncの表示言語(Issue #378)。th06nc以外のリプレイ(サーバー側の再パース結果で判定)や
+      // 未知の言語名は既定(日本語)へ握り潰す。
+      th06ncLanguage:
+        supportsTh06ncLanguage(game) && isTh06ncLanguage(body.options.th06ncLanguage)
+          ? body.options.th06ncLanguage
+          : DEFAULT_TH06NC_LANGUAGE,
       recordingSpeed,
       captureMode: initialCaptureMode({ game }),
     },

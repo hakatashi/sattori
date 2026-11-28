@@ -5,6 +5,7 @@ import type { CaptureMode } from "./recordingPlan.js";
 import type { RecordingSpeed } from "./recordingSpeed.js";
 import type { SupportedLanguage } from "./language.js";
 import type { ReplayInfo } from "./replay.js";
+import type { Th06ncLanguage } from "./th06ncLanguage.js";
 import type { HomeWorkerOfferState, WorkerEnvironment, WorkerKind } from "./worker.js";
 
 /**
@@ -64,6 +65,15 @@ export interface RecordingOptions {
    */
   th06ncHighResolution: boolean;
   /**
+   * th06ncの表示言語（Issue #378）。詳細は`th06ncLanguage.ts`。**th06ncのリプレイでしか選べない**
+   * （`supportsTh06ncLanguage()`）。それ以外のタイトルでは`POST /magic-links`が握り潰して
+   * 既定（日本語）を書く。ワーカーへは`TH06NC_LANGUAGE`として渡る。
+   *
+   * このフィールドの導入前に作られたジョブには無いため省略可能にしてあり、読むときは
+   * 必ず`th06ncLanguageOf()`を通すこと（欠損は日本語）。
+   */
+  th06ncLanguage?: Th06ncLanguage;
+  /**
    * 録画速度（Issue #288・#316）。**ユーザーは選ばない**（Issue #317）。録画の段
    * （`recordingPlan.ts`）が決め、`POST /magic-links`が最初の段の速度を、`Launch`が実際に
    * 割り当てる段の速度を書く。ジョブの途中で変わりうる。ワーカーへは`FPS_LIMIT_TARGET_HZ`として渡る。
@@ -84,6 +94,7 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   watermark: true,
   th10BugfixMarisaB: false,
   th06ncHighResolution: false,
+  th06ncLanguage: "japanese",
   recordingSpeed: 1,
 };
 

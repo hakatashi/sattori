@@ -86,6 +86,21 @@ const char *NameOf(void *self) {
 // touhou-recorder reports/74・78。th06cは4771400、th06ncは4763590。GetAppID()が呼ばれた場合に備えた値)。
 constexpr uint32_t kAppId = APP_ID;
 
+// ゲームの表示言語(Steamの言語名)。実Steamではライブラリのプロパティで選ぶ設定で、
+// ゲーム側に言語選択UIは無い(th06nc。Issue #378)。環境変数`STEAM_GAME_LANGUAGE`で
+// 上書きでき、未設定・空なら従来どおり日本語。値の検証はワーカー(`record_th06nc.py`)側で行う。
+constexpr const char *kDefaultLanguage = "japanese";
+constexpr const char *kAvailableLanguages =
+    "brazilian,english,french,german,italian,japanese,koreana,latam,russian,schinese,"
+    "spanish,tchinese";
+
+const char *CurrentLanguage() {
+  static char buf[32];
+  DWORD n = GetEnvironmentVariableA("STEAM_GAME_LANGUAGE", buf, sizeof(buf));
+  if (n == 0 || n >= sizeof(buf)) return kDefaultLanguage;
+  return buf;
+}
+
 // 既定の戻り値0(false/NULL)では不都合なメソッドの個別対応。
 // スロット番号はSteamworks SDKの各インターフェースのvtable順。
 // 戻り値をNULLのまま返すとゲームが即座に逆参照してクラッシュするもの(文字列を
@@ -98,11 +113,13 @@ bool ResolveOverride(const char *name, int slot, uint64_t *out, const char **not
         *note = "BIsSubscribed";
         return true;
       case 4:  // GetCurrentGameLanguage()
-        *out = reinterpret_cast<uint64_t>("japanese");
+        *out = reinterpret_cast<uint64_t>(CurrentLanguage());
         *note = "GetCurrentGameLanguage";
         return true;
       case 5:  // GetAvailableGameLanguages()
-        *out = reinterpret_cast<uint64_t>("japanese");
+        // 実Steamは配信している全言語をカンマ区切りで返す。選んだ言語が含まれていないと
+        // 言語を検証するタイトルが弾く恐れがあるため、既定の日本語以外も常に含める。
+        *out = reinterpret_cast<uint64_t>(kAvailableLanguages);
         *note = "GetAvailableGameLanguages";
         return true;
     }

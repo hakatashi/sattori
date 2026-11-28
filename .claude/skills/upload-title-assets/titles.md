@@ -109,6 +109,8 @@ aws s3 cp /tmp/th06nc-assets.tar.gz \
 > `games/th06nc/steam_api64.dll`は`rsync`前に
 > `mods/th06nc_steam_stub/build/steam_api64.dll`で上書きしてからtarに固めること
 > （`cp mods/th06nc_steam_stub/build/steam_api64.dll games/th06nc/steam_api64.dll`）。
+> **スタブは表示言語（Issue #378、`STEAM_GAME_LANGUAGE`）を返す版でなければならない**。古いスタブの
+> ままだと、ページAで言語を選んでも常に日本語で録れる（`worker/docs/titles/th06nc.md`「表示言語」）。
 
 ## 4. th07（東方妖々夢）
 

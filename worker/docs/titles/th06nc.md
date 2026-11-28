@@ -73,6 +73,45 @@ RGBA8へ展開すると、8スレッドで60fpsに届く。
   （reports/97 §3）。品質判定は配信版のユニークフレームで行うこと。
 - 1080pはCPU描画では使わない（GPU描画でも廃止予定）。
 
+## 表示言語（Issue #378、[`decisions/0089`](../../../docs/decisions/0089-th06nc-display-language-via-steam-stub.md)）
+
+th06ncは12言語に対応しているが、**ゲーム内に言語設定は無く、Steamライブラリの「言語」設定で決まる**。
+ゲームは起動時に`ISteamApps::GetCurrentGameLanguage()`が返すSteamの言語名（`japanese`・`english`・
+`schinese`・`tchinese`・`koreana`・`french`・`german`・`spanish`・`latam`・`russian`・`brazilian`・`italian`）を
+読み、スペルカード名・会話・UIの文字列を切り替える。exeには上記の言語名と、対応するロケール名
+（`zh-CN`・`es-419`・`pt-BR`など）の文字列が埋め込まれている。
+
+- **Steamworks APIスタブ（`mods/tools/steam_stub.cpp`）が環境変数`STEAM_GAME_LANGUAGE`の値を返す**
+  （未設定は従来どおり`japanese`）。スタブはth06cと共用だが、th06cの`record_th06c.py`は渡さないので
+  日本語のまま。`record_th06nc.py`が`TH06NC_LANGUAGE`（`apps/api/src/workerEnv.ts`が
+  `job.options.th06ncLanguage`から設定する）を検証して`GameConfig.extra_env`の`STEAM_GAME_LANGUAGE`へ渡す。
+  Steamの言語名以外は日本語に倒す。
+- **英語の言語名は`english`**（exeに文字列は無いが、`GetCurrentGameLanguage()`が`english`を返すと英語表示になる。
+  ローカルで実機確認済み）。
+- `GetAvailableGameLanguages()`は実Steam同様に全言語をカンマ区切りで返す。
+- **スタブを更新したらタイトル資産（`games/th06nc/steam_api64.dll`）の再アップロードが必要**
+  （`upload-title-assets` skill）。古いスタブのままだと言語を渡しても日本語で録れる（エラーにはならない）。
+- リプレイファイルは言語に依存しないので、言語を変えてもリプレイずれには影響しない
+  （同じ`th6_31.rpy`でスコア・理論尺とも日本語と一致、`tests/mod_integration`で確認）。
+
+実機確認の結果（このマシン、CPU描画・フレーム同期）:
+
+| 言語 | 結果 |
+|---|---|
+| `english` | OK。「Derangement of Scarlet Devil - Sister of Scarlet」、Hi Score/Player/Bomb/Power/Graze/Points |
+| `japanese`（新スタブ） | OK。退行なし（再生区間132.9秒、`replay_start_frame=575`） |
+| `koreana` | 表示はハングルのタイトルロゴ・メニューで成功。終了位置・スコア・デシンク検知は日本語と同じ。統合テストの「再生区間」だけ+3.8秒でNG（下記） |
+
+**韓国語のNGは言語の問題ではなく、配信版の開始位置の推定誤差**: `find_frame_sync_replay_start_frame()`は
+実時間×60Hzでメニュー区間を遡って開始フレームを求めるが、この実行はメニュー区間のfpsが27.5
+（英語の実行は38.3）と遅く、推定が約220フレーム（3.7秒）手前にずれた。`unthrottled=1 at frame=805`・
+終了位置（142.5秒）は日本語・英語と同一。マシンが遅いとき配信版の頭にメニューが少し余計に入りうる
+が、録画内容そのものは正しい。
+
+上記以外の言語（簡体字・繁体字・フランス語など）の文字の描画は個別には確認していない。
+`TH06NC_LANGUAGE=<言語名> python3 tests/mod_integration/run.py --game th06nc --keep-output`で
+同じ手順で確認できる（ホストの`games/th06nc/steam_api64.dll`を新しいスタブにしておくこと）。
+
 ## 起動時ダイアログは無い（th06cとの違い）
 
 th06cは起動のたびに「解像度を選択してください」モーダルダイアログを出すが、th06ncには

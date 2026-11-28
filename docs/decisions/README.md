@@ -100,6 +100,7 @@
 | [0086](0086-desync-check-tolerates-known-false-positives.md) | 2026-11-24 | worker / apps/api / packages/shared | リプレイずれ検知は、原因が分かった偽陽性（th08の表示用スコア・最終ステージ記録・最終値の微小な不足）だけを狭く許容する | 有効 |
 | [0087](0087-spell-practice-timeout-replay-list-detection.md) | 2026-11-24 | worker | スペルプラクティスの耐久時間切れは、リプレイ一覧画面のテンプレート照合を2本目の終了条件にして検知する | 有効 |
 | [0088](0088-title-spec-declarative-mod-definitions.md) | 2026-11-24 | worker | MOD のタイトル定義を `TitleSpec` の宣言にし、DllMain・AutoPlayThread・メニュー操作の流れを共通化する | 有効 |
+| [0089](0089-th06nc-display-language-via-steam-stub.md) | 2026-11-28 | worker / api / web | th06ncの表示言語は、Steamworks APIスタブが返す言語名で切り替え、詳細設定で選ばせる | 有効 |
 
 ## 書き方
 

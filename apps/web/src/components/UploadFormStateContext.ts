@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, type Dispatch, type SetStateAction } from "react";
-import { DEFAULT_RECORDING_OPTIONS, type ReplayInfo } from "@sattori/shared";
+import { DEFAULT_RECORDING_OPTIONS, type ReplayInfo, type Th06ncLanguage } from "@sattori/shared";
 
 /**
  * idle: 未選択、または直前の選択がエラーで終わった状態。
@@ -30,6 +30,8 @@ export interface UploadFormPersistedState {
   setPhase: Dispatch<SetStateAction<UploadFormPhase>>;
   th10BugfixMarisaB: boolean;
   setTh10BugfixMarisaB: Dispatch<SetStateAction<boolean>>;
+  th06ncLanguage: Th06ncLanguage;
+  setTh06ncLanguage: Dispatch<SetStateAction<Th06ncLanguage>>;
 }
 
 export const UploadFormStateContext = createContext<UploadFormPersistedState | null>(null);
@@ -51,6 +53,9 @@ export function useUploadFormPersistedState(): UploadFormPersistedState {
   const [th10BugfixMarisaB, setTh10BugfixMarisaB] = useState(
     DEFAULT_RECORDING_OPTIONS.th10BugfixMarisaB,
   );
+  const [th06ncLanguage, setTh06ncLanguage] = useState<Th06ncLanguage>(
+    DEFAULT_RECORDING_OPTIONS.th06ncLanguage ?? "japanese",
+  );
 
   return {
     file,
@@ -67,6 +72,8 @@ export function useUploadFormPersistedState(): UploadFormPersistedState {
     setPhase,
     th10BugfixMarisaB,
     setTh10BugfixMarisaB,
+    th06ncLanguage,
+    setTh06ncLanguage,
   };
 }
 

@@ -114,6 +114,32 @@ describe("buildWorkerEnv", () => {
     expect(env.TH10_BUGFIX_MARISA_B).toBeUndefined();
   });
 
+  it("th06nc なら TH06NC_LANGUAGE に選ばれた言語を渡す(Issue #378)", () => {
+    const th06nc = {
+      ...job,
+      game: "th06nc",
+      options: { ...job.options, th06ncLanguage: "koreana" },
+    } as unknown as JobRecord;
+
+    const env = buildWorkerEnv(config, th06nc, "task-token", { spotInterruptionWatch: false, dataRegion: config.ec2.region, gpuWorker: false });
+
+    expect(env.TH06NC_LANGUAGE).toBe("koreana");
+  });
+
+  it("th06nc でも言語の指定が無い(オプション導入前の)ジョブは japanese を渡す", () => {
+    const th06nc = { ...job, game: "th06nc" } as unknown as JobRecord;
+
+    const env = buildWorkerEnv(config, th06nc, "task-token", { spotInterruptionWatch: false, dataRegion: config.ec2.region, gpuWorker: false });
+
+    expect(env.TH06NC_LANGUAGE).toBe("japanese");
+  });
+
+  it("th06nc 以外には TH06NC_LANGUAGE を付けない", () => {
+    const env = buildWorkerEnv(config, job, "task-token", { spotInterruptionWatch: false, dataRegion: config.ec2.region, gpuWorker: false });
+
+    expect(env.TH06NC_LANGUAGE).toBeUndefined();
+  });
+
   it("等倍録画では FPS_LIMIT_TARGET_HZ を付けない(未指定＝等倍がワーカー側の既定)", () => {
     const env = buildWorkerEnv(config, job, "task-token", { spotInterruptionWatch: false, dataRegion: config.ec2.region, gpuWorker: false });
 

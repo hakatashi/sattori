@@ -5,6 +5,7 @@ export * from "./replay.js";
 export * from "./worker.js";
 export * from "./recordingSpeed.js";
 export * from "./th10BugfixMarisaB.js";
+export * from "./th06ncLanguage.js";
 export * from "./recordingPlan.js";
 export * from "./experiment.js";
 export * from "./gpuRecording.js";

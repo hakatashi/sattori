@@ -25,6 +25,7 @@ const TH07_FIXTURE = path.join(FIXTURES_DIR, "th07/th7_07.rpy");
 // (parseReplay.test.tsと同じ用途)。
 const TH143_FIXTURE = path.join(FIXTURES_DIR, "th143/th143_01.rpy");
 const TH10_MARISA_B_FIXTURE = path.join(FIXTURES_DIR, "th10/th10_23.rpy");
+const TH06NC_FIXTURE = path.join(FIXTURES_DIR, "th06nc/th6_01.rpy");
 const TH10_REIMU_A_FIXTURE = path.join(FIXTURES_DIR, "th10/th10_02.rpy");
 
 const REQUIRED_ENV: Record<string, string> = {
@@ -413,6 +414,61 @@ describe("POST /magic-links", () => {
       .commandCalls(PutCommand)
       .find((call) => call.args[0].input.Item?.status === "pending");
     expect(jobPut?.args[0].input.Item?.options).toMatchObject({ th10BugfixMarisaB: false });
+  });
+
+  it("th06ncの.rpyなら options.th06ncLanguage をそのまま保存する(Issue #378)", async () => {
+    mockUploadedReplay(new Uint8Array(await readFile(TH06NC_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        options: { watermark: true, th06ncLanguage: "english" },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.game).toBe("th06nc");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ th06ncLanguage: "english" });
+  });
+
+  it("th06ncでも未知の言語名なら options.th06ncLanguage を日本語にする", async () => {
+    mockUploadedReplay(new Uint8Array(await readFile(TH06NC_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        options: { watermark: true, th06ncLanguage: "klingon" },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ th06ncLanguage: "japanese" });
+  });
+
+  it("th06nc以外(th07)の.rpyなら options.th06ncLanguage を握り潰して日本語にする", async () => {
+    mockUploadedReplay(new Uint8Array(await readFile(TH07_FIXTURE)));
+    const { handler } = await import("./requestMagicLink.js");
+    await handler(
+      makeEvent({
+        replayKey: VALID_REPLAY_KEY,
+        options: { watermark: true, th06ncLanguage: "english" },
+        email: "user@example.com",
+      }),
+      {} as never,
+      () => {},
+    );
+    const jobPut = ddbMock
+      .commandCalls(PutCommand)
+      .find((call) => call.args[0].input.Item?.status === "pending");
+    expect(jobPut?.args[0].input.Item?.options).toMatchObject({ th06ncLanguage: "japanese" });
   });
 
   it("レート制限に達していれば429を返しメールを送らない", async () => {

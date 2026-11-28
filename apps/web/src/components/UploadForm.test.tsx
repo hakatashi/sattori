@@ -257,7 +257,7 @@ describe("UploadForm", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
+      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false, th06ncLanguage: "japanese" },
       "user@example.com",
       "ja",
     );
@@ -366,7 +366,7 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       "replays/x.rpy",
-      { watermark: true, th10BugfixMarisaB: true, th06ncHighResolution: false },
+      { watermark: true, th10BugfixMarisaB: true, th06ncHighResolution: false, th06ncLanguage: "japanese" },
       "marisa@example.com",
       "ja",
     );
@@ -395,7 +395,7 @@ describe("UploadForm のth10「バグマリ」修正オプション", () => {
     await waitFor(() => expect(screen.getByText("メールを確認してください")).toBeTruthy());
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
+      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false, th06ncLanguage: "japanese" },
       "koishi@example.com",
       "ja",
     );
@@ -456,7 +456,83 @@ describe("UploadForm の録画完了の目安（Issue #317）", () => {
 
     expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
       expect.anything(),
-      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false },
+      { watermark: true, th10BugfixMarisaB: false, th06ncHighResolution: false, th06ncLanguage: "japanese" },
+      "koishi@example.com",
+      "ja",
+    );
+  });
+});
+
+describe("UploadForm のth06nc表示言語オプション（Issue #378）", () => {
+  function languageSelect(): HTMLSelectElement {
+    return screen.getByRole("combobox") as HTMLSelectElement;
+  }
+
+  const TH06NC_REPLAY_INFO: ReplayInfo = { ...SAMPLE_REPLAY_INFO, game: "th06nc" };
+
+  it("th06ncのリプレイなら選択でき、既定は日本語", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH06NC_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th6_01.rpy");
+
+    await waitFor(() => expect(languageSelect().disabled).toBe(false));
+    expect(languageSelect().value).toBe("japanese");
+    expect(screen.queryByText(/New Classic のリプレイでのみ/)).toBeNull();
+  });
+
+  it("th06nc以外のリプレイではグレーアウトする", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+    renderUploadForm();
+    selectFile("th7_07.rpy");
+
+    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    expect(languageSelect().disabled).toBe(true);
+    expect(screen.getByText(/New Classic のリプレイでのみ/)).toBeTruthy();
+  });
+
+  it("言語を選んで送信すると options.th06ncLanguage が送られる", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH06NC_REPLAY_INFO });
+    mockedClient.requestMagicLink.mockResolvedValue({});
+    renderUploadForm();
+    selectFile("th6_01.rpy");
+    await waitFor(() => expect(languageSelect().disabled).toBe(false));
+
+    fireEvent.change(languageSelect(), { target: { value: "koreana" } });
+    fillEmail("koishi@example.com");
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(nextStepButton());
+    });
+
+    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ th06ncLanguage: "koreana" }),
+      "koishi@example.com",
+      "ja",
+    );
+  });
+
+  it("言語を選んだあとth06nc以外のリプレイへ差し替えると、送信される値は日本語に戻る", async () => {
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: TH06NC_REPLAY_INFO });
+    mockedClient.requestMagicLink.mockResolvedValue({});
+    renderUploadForm();
+    selectFile("th6_01.rpy");
+    await waitFor(() => expect(languageSelect().disabled).toBe(false));
+    fireEvent.change(languageSelect(), { target: { value: "french" } });
+
+    mockedShared.parseReplayInfo.mockReturnValue({ ok: true, info: SAMPLE_REPLAY_INFO });
+    selectFile("th7_07.rpy");
+    await waitFor(() => expect(screen.getByText("MarisaA")).toBeTruthy());
+    expect(languageSelect().disabled).toBe(true);
+    fillEmail("koishi@example.com");
+    await waitFor(() => expect(nextStepButton().disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(nextStepButton());
+    });
+
+    expect(mockedClient.requestMagicLink).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ th06ncLanguage: "japanese" }),
       "koishi@example.com",
       "ja",
     );

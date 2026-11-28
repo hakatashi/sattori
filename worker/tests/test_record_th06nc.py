@@ -28,7 +28,8 @@ def test_build_config_defaults_to_720p(monkeypatch):
     assert config.gpu_display is True
     assert config.dxvk_dll_overrides == "d3d11,dxgi,d3d10core=n"
     assert config.poll_side_stream is True
-    assert config.extra_env == ()
+    # 言語は既定が日本語(Issue #378)。GPU描画ではそれ以外の環境変数は渡さない。
+    assert config.extra_env == (("STEAM_GAME_LANGUAGE", "japanese"),)
     # 720p既定ではCRTCモードの明示変更は不要(Xorgのデフォルトモードのままでよい、
     # touhou-recorder reports/81 §9.9.1)。
     assert config.crtc_mode is None
@@ -78,3 +79,48 @@ def test_build_config_renders_on_the_cpu_without_a_gpu_worker(monkeypatch):
     assert env["D3D11_DECODE_BC7"] == "1"
     assert int(env["LP_NUM_THREADS"]) >= 1
     assert "TH06NC_TIME_SCALE" not in env
+
+
+@pytest.mark.parametrize("language", [
+    "english", "schinese", "tchinese", "koreana", "french", "german",
+    "spanish", "latam", "russian", "brazilian", "italian",
+])
+def test_build_config_passes_requested_language_to_the_steam_stub(monkeypatch, language):
+    monkeypatch.setenv("TH06NC_LANGUAGE", language)
+
+    config = record_th06nc.build_config("sattori_job_test")
+
+    assert ("STEAM_GAME_LANGUAGE", language) in config.extra_env
+
+
+@pytest.mark.parametrize("value", ["", "klingon", "JAPANESE", "en"])
+def test_build_config_falls_back_to_japanese_for_unknown_language(monkeypatch, value):
+    # Steamの言語名以外を渡すと、ゲームが未知の言語として何を表示するか不明なので日本語にする。
+    monkeypatch.setenv("TH06NC_LANGUAGE", value)
+
+    config = record_th06nc.build_config("sattori_job_test")
+
+    assert ("STEAM_GAME_LANGUAGE", "japanese") in config.extra_env
+
+
+def test_build_config_keeps_cpu_rendering_env_alongside_language(monkeypatch):
+    monkeypatch.delenv("GPU_WORKER", raising=False)
+    monkeypatch.setenv("TH06NC_LANGUAGE", "french")
+
+    config = record_th06nc.build_config("sattori_job_test")
+
+    env = dict(config.extra_env)
+    assert env["STEAM_GAME_LANGUAGE"] == "french"
+    assert env["D3D11_DECODE_BC7"] == "1"
+
+
+def test_languages_match_the_shared_typescript_list():
+    # `packages/shared/src/th06ncLanguage.ts`の`TH06NC_LANGUAGES`(APIがワーカーへ渡す値の集合)と
+    # 食い違うと、UIで選べる言語がワーカーで日本語に化ける。
+    import re
+    from pathlib import Path
+
+    source = (Path(record_th06nc.__file__).resolve().parents[1]
+              / "packages/shared/src/th06ncLanguage.ts").read_text(encoding="utf-8")
+    body = re.search(r"TH06NC_LANGUAGES = \[(.*?)\] as const", source, re.S).group(1)
+    assert set(re.findall(r'"(\w+)"', body)) == record_th06nc._LANGUAGES
