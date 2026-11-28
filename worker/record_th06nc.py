@@ -47,6 +47,23 @@ def _scale_rect(rects, from_wh, to_wh):
     ]
 
 
+# 表示言語(Issue #378)。th06ncは実Steamのライブラリ設定で言語を選ぶ作りで、ゲーム側に選択UIは無い。
+# 起動時に`ISteamApps::GetCurrentGameLanguage()`が返す言語名で決まるので、Steamworks APIスタブ
+# (`mods/tools/steam_stub.cpp`)が環境変数`STEAM_GAME_LANGUAGE`を返す。値はSteamの言語名。
+# `packages/shared/src/th06ncLanguage.ts`の`TH06NC_LANGUAGES`と一致させること。
+_LANGUAGES = frozenset({
+    "japanese", "english", "schinese", "tchinese", "koreana", "french", "german",
+    "spanish", "latam", "russian", "brazilian", "italian",
+})
+_DEFAULT_LANGUAGE = "japanese"
+
+
+def _language():
+    """`TH06NC_LANGUAGE`環境変数(`apps/api/src/workerEnv.ts`が設定)。未指定・不正値は日本語。"""
+    language = os.environ.get("TH06NC_LANGUAGE", "")
+    return language if language in _LANGUAGES else _DEFAULT_LANGUAGE
+
+
 def _cpu_rendering_env():
     """CPU描画(Xvfb+wined3d+llvmpipe)用にゲームへ渡す環境変数(touhou-recorder reports/96・97)。"""
     env = [
@@ -93,7 +110,7 @@ def build_config(pulse_sink):
         gpu_display=gpu,
         dxvk_dll_overrides="d3d11,dxgi,d3d10core=n" if gpu else "d3d11,dxgi,d3d10core=b",
         crtc_mode=spec["crtc_mode"] if gpu else None,
-        extra_env=() if gpu else _cpu_rendering_env(),
+        extra_env=(("STEAM_GAME_LANGUAGE", _language()),) + (() if gpu else _cpu_rendering_env()),
         # ウィンドウ+装飾が720p/1080pどちらでも収まる仮想画面サイズ
         # (touhou-recorder reports/81で実機使用)。
         xvfb_screen="2200x1400x24",

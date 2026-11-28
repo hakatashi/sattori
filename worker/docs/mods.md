@@ -29,7 +29,7 @@
 | `monitor/` | スコア監視(デシンクの事後検知、§8) |
 | `autoplay/` | 自動再生の共通部(`TitleSpec`・`DEFINE_TITLE`・メニュー操作のスクリプト実行・ウィンドウの安定待ち、th06c/th06ncの共通部、§1.1) |
 | `thNN_replay_autoplay/` | タイトルごとの自動再生MOD(`dllmain.cpp`)。**宣言(`TitleSpec`)だけを書く**。組み込むフックの違いは各タイトルの背景ファイル |
-| `tools/` | インジェクタ(`injector.cpp`、複数DLLの順次注入)・Steamworks APIスタブ(`steam_stub.cpp`、`-DAPP_ID`・`-DLOG_NAME` でth06c用・th06nc用の2つをビルド) |
+| `tools/` | インジェクタ(`injector.cpp`、複数DLLの順次注入)・Steamworks APIスタブ(`steam_stub.cpp`、`-DAPP_ID`・`-DLOG_NAME` でth06c用・th06nc用の2つをビルド。`GetCurrentGameLanguage()`は環境変数`STEAM_GAME_LANGUAGE`の値、未設定なら`japanese`を返す。Issue #378) |
 | `tests/` | Win32 に依存しないロジックの単体テスト(ホストの g++、`make test`)とログ契約のゴールデン(§9) |
 
 タイトルが使うモジュールは `Makefile` の「タイトルの宣言」(`thNN_ARCH`・`thNN_MODS`・

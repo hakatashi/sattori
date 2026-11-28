@@ -3,6 +3,8 @@ import {
   NATIVE_RECORDING_SPEED,
   recordingSpeedOf,
   recordingTargetHz,
+  TH06NC_LANGUAGE_GAME_ID,
+  th06ncLanguageOf,
 } from "@sattori/shared";
 import type {
   AdminJobRecord,
@@ -131,6 +133,11 @@ export function buildWorkerEnv(
     // `WorkerEnvOptions`を経由せず`job.options`から直接読む——割り当て先に応じて
     // 呼び出し側が値を変える必要が無い。
     env.TH10_BUGFIX_MARISA_B = "1";
+  }
+  if (job.game === TH06NC_LANGUAGE_GAME_ID) {
+    // th06ncの表示言語（Issue #378）。日本語も明示して渡す（ワーカーの既定と二重になるが、
+    // 管理画面で「このジョブは何語で録るか」が環境変数から読める方が調べやすい）。
+    env.TH06NC_LANGUAGE = th06ncLanguageOf(job.options);
   }
   return env;
 }

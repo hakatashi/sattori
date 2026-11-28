@@ -3,15 +3,20 @@ import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import {
   EMAIL_PATTERN,
+  DEFAULT_TH06NC_LANGUAGE,
   estimateRecordingCompletionSeconds,
   GAME_TITLES,
   isGpuStep,
   isSupportedGame,
+  isTh06ncLanguage,
   parseReplayInfo,
   recordingPlanFor,
   recordingSpeedForStep,
   SUPPORTED_GAME_IDS,
+  supportsTh06ncLanguage,
   supportsTh10BugfixMarisaB,
+  TH06NC_LANGUAGE_LABELS,
+  TH06NC_LANGUAGES,
   type GameId,
 } from "@sattori/shared";
 import { trackParseError } from "../api/analytics.ts";
@@ -95,6 +100,8 @@ export function UploadForm() {
     setPhase,
     th10BugfixMarisaB,
     setTh10BugfixMarisaB,
+    th06ncLanguage,
+    setTh06ncLanguage,
   } = useUploadFormState();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -109,6 +116,9 @@ export function UploadForm() {
     preview?.character ?? null,
   );
   const th10BugfixMarisaBChecked = th10BugfixMarisaBSelectable && th10BugfixMarisaB;
+  // th06ncの表示言語(Issue #378)。th06nc以外のリプレイでは選べず、送るのも既定(日本語)のみ。
+  const th06ncLanguageSelectable = supportsTh06ncLanguage(game);
+  const th06ncLanguageValue = th06ncLanguageSelectable ? th06ncLanguage : DEFAULT_TH06NC_LANGUAGE;
 
   // 録画速度はユーザーが選ばない（Issue #317）。目安の時間だけを出す。
   const estimatedMinutes =
@@ -234,6 +244,7 @@ export function UploadForm() {
           th10BugfixMarisaB: th10BugfixMarisaBChecked,
           // th06ncの1080p録画は廃止した（Issue #317）。APIも無視する。
           th06ncHighResolution: false,
+          th06ncLanguage: th06ncLanguageValue,
         },
         email,
         locale,
@@ -438,6 +449,37 @@ export function UploadForm() {
               {th10BugfixMarisaBSelectable
                 ? t("uploadForm.th10BugfixMarisaBHintLine2")
                 : t("uploadForm.th10BugfixMarisaBUnsupportedGame")}
+            </small>
+          </span>
+        </label>
+        {/*
+          th06ncの表示言語(Issue #378)。ゲーム内に言語設定は無くSteamのライブラリ側の設定で決まるため、
+          録画ワーカーが起動時に指定する(`worker/docs/titles/th06nc.md`)。th06nc以外のリプレイでは
+          グレーアウトする。
+        */}
+        <label
+          className={clsx(styles.option, !th06ncLanguageSelectable && styles.optionDisabled)}
+        >
+          <span>
+            {t("uploadForm.th06ncLanguageOption")}
+            <select
+              className={styles.optionSelect}
+              value={th06ncLanguageValue}
+              onChange={(e) => {
+                if (isTh06ncLanguage(e.target.value)) setTh06ncLanguage(e.target.value);
+              }}
+              disabled={busy || !th06ncLanguageSelectable}
+            >
+              {TH06NC_LANGUAGES.map((language) => (
+                <option key={language} value={language}>
+                  {TH06NC_LANGUAGE_LABELS[language]}
+                </option>
+              ))}
+            </select>
+            <small className={styles.optionHint}>
+              {th06ncLanguageSelectable
+                ? t("uploadForm.th06ncLanguageHint")
+                : t("uploadForm.th06ncLanguageUnsupportedGame")}
             </small>
           </span>
         </label>

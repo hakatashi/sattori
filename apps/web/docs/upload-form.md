@@ -42,6 +42,19 @@ th06nc限定で1080pを選べるオプションがあったが、CPUの段（1/2
 （[`docs/decisions/0066`](../../../docs/decisions/0066-recording-fallback-plan-as-config.md)）。
 UIから消し、`POST /magic-links`も古いフロントエンドのキャッシュが送るtrueを無視する。
 
+## 2.1 th06ncの表示言語（Issue #378）
+
+詳細設定に、th06ncのリプレイを解析したときだけ選べる「表示言語」のドロップダウンを出す
+（th10の「バグマリ」修正と同じく、他タイトルではグレーアウトして理由を添える）。動画に映るスペルカード名・
+会話・一部のUIの言語が変わるだけで、リプレイの内容（ずれ）には影響しない。
+
+- 選択肢は公式の12言語。表示名は各言語の自称（`TH06NC_LANGUAGE_LABELS`）でUIの表示言語によらず固定、
+  既定は日本語（`DEFAULT_RECORDING_OPTIONS.th06ncLanguage`）。
+- 選んだ言語は`options.th06ncLanguage`で送る。**th06ncから他タイトルへリプレイを差し替えたときは、
+  state に選択が残っていても日本語を送る**（`UploadForm.tsx`の`th06ncLanguageValue`。サーバーも握り潰す）。
+- 経緯と仕組み（Steamworks APIスタブ経由）は
+  [`decisions/0089`](../../../docs/decisions/0089-th06nc-display-language-via-steam-stub.md)。
+
 ## 3. 録画速度は選ばせない。完了の目安だけを出す（Issue #288・#317）
 
 録画速度（倍速録画、[`0058`](../../../docs/decisions/0058-speedup-recording-on-gpu-instances.md)）は、

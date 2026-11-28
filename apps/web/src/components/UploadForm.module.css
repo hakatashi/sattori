@@ -194,6 +194,13 @@ li.supportedTitle.supported {
   margin-top: 0.15rem;
 }
 
+/* 詳細設定の選択式の項目(th06ncの表示言語、Issue #378)。ラベル文の下に置く。 */
+.optionSelect {
+  display: block;
+  margin-top: 0.3rem;
+  font: inherit;
+}
+
 /* 録画完了までの目安時間（Issue #317）。送信ボタンの直上に1行だけ出す。 */
 .estimate {
   margin: 1rem 0 0.5rem;

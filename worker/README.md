@@ -112,6 +112,7 @@
 | `TH06NC_RESOLUTION` | `1080p`でth06nc(GPU描画必須)を1080pで録画する(Issue #241、
   [`titles/th06nc.md`](docs/titles/th06nc.md))。省略時・それ以外の値は720p。
   th06nc以外では読まれない |
+| `TH06NC_LANGUAGE` | th06ncの表示言語(Issue #378)。Steamの言語名(`japanese`・`english`・`schinese`・`tchinese`・`koreana`・`french`・`german`・`spanish`・`latam`・`russian`・`brazilian`・`italian`)。`record_th06nc.py`が検証してSteamworks APIスタブ向けの`STEAM_GAME_LANGUAGE`へ渡す([`titles/th06nc.md`](docs/titles/th06nc.md))。省略時・不正値は日本語。th06nc以外では読まれない |
 
 ## 4. 出力ファイル
 録画完了後に `convert.py` が**1回の ffmpeg 呼び出し**で配信用に変換する(リプレイ再生区間外の

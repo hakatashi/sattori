@@ -73,6 +73,50 @@ RGBA8へ展開すると、8スレッドで60fpsに届く。
   （reports/97 §3）。品質判定は配信版のユニークフレームで行うこと。
 - 1080pはCPU描画では使わない（GPU描画でも廃止予定）。
 
+## 表示言語（Issue #378、[`decisions/0089`](../../../docs/decisions/0089-th06nc-display-language-via-steam-stub.md)）
+
+th06ncは12言語に対応しているが、**ゲーム内に言語設定は無く、Steamライブラリの「言語」設定で決まる**。
+ゲームは起動時に`ISteamApps::GetCurrentGameLanguage()`が返すSteamの言語名（`japanese`・`english`・
+`schinese`・`tchinese`・`koreana`・`french`・`german`・`spanish`・`latam`・`russian`・`brazilian`・`italian`）を
+読み、スペルカード名・会話・UIの文字列を切り替える。exeには上記の言語名と、対応するロケール名
+（`zh-CN`・`es-419`・`pt-BR`など）の文字列が埋め込まれている。
+
+- **Steamworks APIスタブ（`mods/tools/steam_stub.cpp`）が環境変数`STEAM_GAME_LANGUAGE`の値を返す**
+  （未設定は従来どおり`japanese`）。スタブはth06cと共用だが、th06cの`record_th06c.py`は渡さないので
+  日本語のまま。`record_th06nc.py`が`TH06NC_LANGUAGE`（`apps/api/src/workerEnv.ts`が
+  `job.options.th06ncLanguage`から設定する）を検証して`GameConfig.extra_env`の`STEAM_GAME_LANGUAGE`へ渡す。
+  Steamの言語名以外は日本語に倒す。
+- **英語の言語名は`english`**（exeに文字列は無いが、`GetCurrentGameLanguage()`が`english`を返すと英語表示になる。
+  ローカルで実機確認済み）。
+- `GetAvailableGameLanguages()`は実Steam同様に全言語をカンマ区切りで返す。
+- **スタブを更新したらタイトル資産（`games/th06nc/steam_api64.dll`）の再アップロードが必要**
+  （`upload-title-assets` skill）。古いスタブのままだと言語を渡しても日本語で録れる（エラーにはならない）。
+- リプレイファイルは言語に依存しないので、言語を変えてもリプレイずれには影響しない
+  （同じ`th6_31.rpy`でスコア・理論尺とも日本語と一致、`tests/mod_integration`で確認）。
+
+実機確認の結果（このマシン、CPU描画・フレーム同期、2026-11-28）:
+
+- **全12言語で`tests/mod_integration`（`th6_31.rpy`、約2分半）が通った**（`TH06NC_LANGUAGE=<言語名>`で1言語ずつ実行。
+  再生区間132.7〜132.8秒、録画の完走・デシンク無し・三者照合とも全言語で同じ）。録画から抜いたフレームで、
+  メニュー（リプレイ一覧の見出しと「処理落ち率」）・ステージ表示・スペルカード名・HUD（Player/Bomb/Power/Graze/Points）が
+  言語ごとに切り替わっていることを12言語とも目視で確認した。スペイン語（`spanish`）と中南米（`latam`）は語句の
+  大文字小文字などが違う別訳になっている。
+- **フル尺**（`packages/replay-parser/test-fixtures/th06nc/th6_01.rpy`、Hard通し105355フレーム=約29分）を
+  `english`・`schinese`・`russian`で録画した。3本とも完走（動画1692.8秒・101567フレーム・音声と長さ一致）、
+  デシンク無し、記録スコア91645280と一致、理論尺比−5.07〜−5.08%（許容−30〜+10%）で言語による差は無かった。
+  実行時間は約20分（上限解除後は平均1.45倍速）。
+- 初回の韓国語の実行だけ、統合テストの「再生区間」が基準から+3.8秒ずれてNGになった。**言語の問題ではなく
+  配信版の開始位置の推定誤差**（原因は下記）で、同じ韓国語の再実行を含む全12言語の通し実行では全て通った。
+
+  `find_frame_sync_replay_start_frame()`は実時間×60Hzでメニュー区間を遡って開始フレームを求めるが、
+  あの実行はメニュー区間のfpsが27.5（通常は38前後）と遅く、推定が約220フレーム（3.7秒）手前にずれた。
+  `unthrottled=1 at frame=805`・終了位置は他の言語と同一。マシンが遅いとき配信版の頭にメニューが少し
+  余計に入りうるが、録画内容そのものは正しい。
+
+ダイアログ（会話）の描画は、フル尺の動画から個別に確認していない。手順は
+`TH06NC_LANGUAGE=<言語名> python3 tests/mod_integration/run.py --game th06nc --keep-output`
+（ホストの`games/th06nc/steam_api64.dll`を新しいスタブにしておくこと）。
+
 ## 起動時ダイアログは無い（th06cとの違い）
 
 th06cは起動のたびに「解像度を選択してください」モーダルダイアログを出すが、th06ncには

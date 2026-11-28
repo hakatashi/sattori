@@ -191,7 +191,9 @@ GPU用のLaunch Template・別ECRイメージを使い、フォールバック�
 th06ncの1080p録画オプション（Issue #241、`TH06NC_RESOLUTION=1080p`）は
 `th10BugfixMarisaB`と同じパターン——`job.options`から直接読む——を使う。th06ncは
 自宅ワーカーへ絶対に来ないため「割り当て先に応じて有効/無効が変わる」性質を
-持たず、`WorkerEnvOptions`を経由する必要が無い。
+持たず、`WorkerEnvOptions`を経由する必要が無い。表示言語（Issue #378、`TH06NC_LANGUAGE`）も同じ
+パターンで、`job.game`がth06ncのときだけ`job.options.th06ncLanguage`（欠損は日本語）を渡す。
+`POST /magic-links`は、th06nc以外のリプレイ（サーバー側の再パース結果で判定）・未知の言語名を日本語に握り潰す。
 
 `TASK_TOKEN`（Step Functionsの実行を任意に成功/失敗させられるベアラ）を含むため、
 ログや外部への出力では必ず `redactWorkerEnv()` を通すこと。**この約束は型で強制して

@@ -17,6 +17,11 @@ export interface ChangelogEntry {
 export const changelogEntries: ChangelogEntry[] = [
   {
     date: "2026-11-28",
+    ja: "東方紅魔郷: New Classic (th06nc) のリプレイで、詳細設定から動画の表示言語（日本語・英語・簡体字・繁体字・韓国語・フランス語・ドイツ語・スペイン語・ロシア語・ポルトガル語・イタリア語）を選べるように改善",
+    en: "Added a display language option to the advanced settings for Embodiment of Scarlet Devil: New Classic (th06nc) replays (Japanese, English, Simplified/Traditional Chinese, Korean, French, German, Spanish, Russian, Portuguese, Italian)",
+  },
+  {
+    date: "2026-11-28",
     ja: "東方神霊廟 (th13)・東方輝針城 (th14)・東方錦上京 (th20) のスペルプラクティスのリプレイで、スペルカード名を表示するように改善（th13 は難易度の Overdrive にも対応）",
     en: "Improved Ten Desires (th13), Double Dealing Character (th14) and Fossilized Wonders (th20) spell practice replays to show the spell card name (th13 also shows the Overdrive difficulty)",
   },
